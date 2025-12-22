@@ -1,29 +1,38 @@
 {
   "expo": {
-    "name": "BitcoinWalletTracker",
-    "slug": "BitcoinWalletTracker",
+    "name": "Trustless",
+    "slug": "Trustless",
+    "scheme": "trustless",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-icon-white.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.btc.trustless",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Trustless uses the camera to scan Bitcoin address QR codes.",
+        "NSFaceIDUsageDescription": "Trustless uses Face ID to secure your wallet."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "package": "com.btc.trustless",
       "edgeToEdgeEnabled": true
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": [
+      "expo-font",
+      "expo-local-authentication",
+      "expo-asset"
+    ]
   }
 }
