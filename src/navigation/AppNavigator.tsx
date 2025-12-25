@@ -35,6 +35,7 @@ import OnboardingWalletScreen from '../screens/OnboardingWalletScreen';
 import AddressDetailsScreen from '../screens/AddressDetailsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
+import SupportScreen from '../screens/SupportScreen';
 import { getAppIsAuthenticated, setAppIsAuthenticated, getBiometricPromptShown, setBiometricPromptShown } from '../services/authState'; 
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -391,6 +392,14 @@ const AppNavigator = () => {
               component={TermsConditionsScreen}
               options={({ navigation }) => ({
                 title: 'Terms & Conditions',
+                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+              })}
+            />
+            <Stack.Screen
+              name="Support"
+              component={SupportScreen}
+              options={({ navigation }) => ({
+                title: 'Support Trustless',
                 headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
               })}
             />

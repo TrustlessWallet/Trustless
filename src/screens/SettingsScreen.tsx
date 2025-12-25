@@ -435,6 +435,14 @@ const SettingsScreen = () => {
             <Text style={styles.rowLabel}>Terms & Conditions</Text>
             <Feather name="chevron-right" size={24} color={theme.colors.primary} />
           </TouchableOpacity>
+           {/* Added Support Row */}
+           <TouchableOpacity 
+            style={styles.row}
+            onPress={() => navigation.navigate('Support' as any)}
+          >
+            <Text style={styles.rowLabel}>Support Trustless</Text>
+            <Feather name="heart" size={24} color={theme.colors.bitcoin} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
