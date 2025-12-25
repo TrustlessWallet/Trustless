@@ -122,4 +122,5 @@ export type RootStackParamList = {
   AuthCheck: undefined;
   PrivacyPolicy: undefined;
   TermsConditions: undefined;
+  Support: undefined;
 };
