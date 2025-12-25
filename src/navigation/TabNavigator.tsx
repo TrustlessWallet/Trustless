@@ -16,6 +16,7 @@ const TabNavigator = () => {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <Tab.Navigator
+        initialRouteName="Wallet"
         screenOptions={{
           sceneStyle: { backgroundColor: theme.colors.background },
           headerShown: true, 

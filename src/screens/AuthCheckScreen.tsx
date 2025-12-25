@@ -35,7 +35,8 @@ const AuthCheckScreen = () => {
                 setAppIsAuthenticated(true);
                 await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
                 const defaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-                const screenToLoad: keyof TabParamList = defaultScreen === 'Wallet' ? 'Wallet' : 'Tracker';
+                // Logic changed: default to Wallet if 'Tracker' is not explicitly set
+                const screenToLoad: keyof TabParamList = defaultScreen === 'Tracker' ? 'Tracker' : 'Wallet';
                 navigation.replace('MainTabs', { screen: screenToLoad });
             } else {
                 Alert.alert('Authentication failed', 'Please try again.');
