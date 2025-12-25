@@ -83,7 +83,6 @@ const SettingsScreen = () => {
       setHideWalletBalance(savedWalletPref === 'true');
       
       const savedDefaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-      // Logic changed: default to Wallet if savedDefaultScreen is null or explicitly 'Wallet'
       if (savedDefaultScreen === 'Tracker') {
         setDefaultScreen('Tracker');
       } else {
@@ -265,39 +264,46 @@ const SettingsScreen = () => {
         
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>App Settings</Text>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Theme</Text>
-            <TouchableOpacity onPress={toggleTheme}>
-              <View style={styles.switcher}>
-                <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                <Text style={styles.switcherText}>{isDark ? 'Dark' : 'Light'}</Text>
-                <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-              </View>
-            </TouchableOpacity>
+          
+          <View style={styles.rowWrapper}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Theme</Text>
+              <TouchableOpacity onPress={toggleTheme}>
+                <View style={styles.switcher}>
+                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  <Text style={styles.switcherText}>{isDark ? 'Dark' : 'Light'}</Text>
+                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Bitcoin Network</Text>
-            <TouchableOpacity onPress={handleNetworkChange}>
-              <View style={styles.switcher}>
-                <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                <Text style={[styles.switcherText, { color: IS_TESTNET ? theme.colors.bitcoin : theme.colors.primary }]}>
-                  {NETWORK_NAME}
-                </Text>
-                <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-              </View>
-            </TouchableOpacity>
+          <View style={styles.rowWrapper}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Bitcoin Network</Text>
+              <TouchableOpacity onPress={handleNetworkChange}>
+                <View style={styles.switcher}>
+                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  <Text style={[styles.switcherText, { color: IS_TESTNET ? theme.colors.bitcoin : theme.colors.primary }]}>
+                    {NETWORK_NAME}
+                  </Text>
+                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Default Screen</Text>
-            <TouchableOpacity onPress={handleDefaultScreenChange}>
-              <View style={styles.switcher}>
-                <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                <Text style={styles.switcherText}>{defaultScreen}</Text>
-                <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-              </View>
-            </TouchableOpacity>
+          <View style={styles.rowWrapper}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Default Screen</Text>
+              <TouchableOpacity onPress={handleDefaultScreenChange}>
+                <View style={styles.switcher}>
+                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  <Text style={styles.switcherText}>{defaultScreen}</Text>
+                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -362,52 +368,60 @@ const SettingsScreen = () => {
             )}
           </View>
 
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Hide Tracker Balance</Text>
-            <TouchableOpacity onPress={toggleHideTrackerBalance}>
-              <View style={styles.switcher}>
-                <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                <Text style={styles.switcherText}>{hideTrackerBalance ? 'On' : 'Off'}</Text>
-                <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Hide Wallet Balance</Text>
-            <TouchableOpacity onPress={toggleHideWalletBalance}>
-              <View style={styles.switcher}>
-                <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                <Text style={styles.switcherText}>{hideWalletBalance ? 'On' : 'Off'}</Text>
-                <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Enable Biometrics</Text>
-            <View style={styles.switcher}>
-              <TouchableOpacity onPress={toggleBiometrics}>
-                <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-              </TouchableOpacity>
-              <Text style={styles.switcherText}>{isBiometricsEnabled ? 'On' : 'Off'}</Text>
-              <TouchableOpacity onPress={toggleBiometrics}>
-                <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+          <View style={styles.rowWrapper}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Hide Tracker Balance</Text>
+              <TouchableOpacity onPress={toggleHideTrackerBalance}>
+                <View style={styles.switcher}>
+                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  <Text style={styles.switcherText}>{hideTrackerBalance ? 'On' : 'Off'}</Text>
+                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                </View>
               </TouchableOpacity>
             </View>
           </View>
 
-          {isBiometricsEnabled && (
+          <View style={styles.rowWrapper}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Auto Lock</Text>
+              <Text style={styles.rowLabel}>Hide Wallet Balance</Text>
+              <TouchableOpacity onPress={toggleHideWalletBalance}>
+                <View style={styles.switcher}>
+                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  <Text style={styles.switcherText}>{hideWalletBalance ? 'On' : 'Off'}</Text>
+                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.rowWrapper}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Enable Biometrics</Text>
               <View style={styles.switcher}>
-                <TouchableOpacity onPress={() => handleAutoLockChange('prev')}>
+                <TouchableOpacity onPress={toggleBiometrics}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
                 </TouchableOpacity>
-                <Text style={styles.switcherText}>{getAutoLockLabel(autoLockOptions[autoLockTimeIndex])}</Text>
-                <TouchableOpacity onPress={() => handleAutoLockChange('next')}>
+                <Text style={styles.switcherText}>{isBiometricsEnabled ? 'On' : 'Off'}</Text>
+                <TouchableOpacity onPress={toggleBiometrics}>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
                 </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {isBiometricsEnabled && (
+            <View style={styles.rowWrapper}>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Auto Lock</Text>
+                <View style={styles.switcher}>
+                  <TouchableOpacity onPress={() => handleAutoLockChange('prev')}>
+                    <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                  <Text style={styles.switcherText}>{getAutoLockLabel(autoLockOptions[autoLockTimeIndex])}</Text>
+                  <TouchableOpacity onPress={() => handleAutoLockChange('next')}>
+                    <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           )}
@@ -415,28 +429,48 @@ const SettingsScreen = () => {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
-          <TouchableOpacity 
-            style={styles.row}
-            onPress={() => Linking.openURL('https://github.com/pechen987/Trustless')}
-          >
-            <Text style={styles.rowLabel}>Github</Text>
-            <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.row}
-            onPress={() => navigation.navigate('PrivacyPolicy')}
-          >
-            <Text style={styles.rowLabel}>Privacy Policy</Text>
-            <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.row}
-            onPress={() => navigation.navigate('TermsConditions')}
-          >
-            <Text style={styles.rowLabel}>Terms & Conditions</Text>
-            <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-          </TouchableOpacity>
-           {/* Added Support Row */}
+          
+          <View style={styles.rowWrapper}>
+            <TouchableOpacity 
+              style={styles.row}
+              onPress={() => Linking.openURL('https://github.com/pechen987/Trustless')}
+            >
+              <Text style={styles.rowLabel}>Github</Text>
+              <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.rowWrapper}>
+            <TouchableOpacity 
+              style={styles.row}
+              onPress={() => Linking.openURL('https://tally.so/r/Y5RyOz')}
+            >
+              <Text style={styles.rowLabel}>Contact us</Text>
+              <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.rowWrapper}>
+            <TouchableOpacity 
+              style={styles.row}
+              onPress={() => navigation.navigate('PrivacyPolicy')}
+            >
+              <Text style={styles.rowLabel}>Privacy Policy</Text>
+              <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.rowWrapper}>
+            <TouchableOpacity 
+              style={styles.row}
+              onPress={() => navigation.navigate('TermsConditions')}
+            >
+              <Text style={styles.rowLabel}>Terms & Conditions</Text>
+              <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.rowWrapper}>
            <TouchableOpacity 
             style={styles.row}
             onPress={() => navigation.navigate('Support' as any)}
@@ -444,6 +478,7 @@ const SettingsScreen = () => {
             <Text style={styles.rowLabel}>Support Trustless</Text>
             <Feather name="heart" size={24} color={theme.colors.bitcoin} />
           </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -498,13 +533,15 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     color: theme.colors.primary,
     marginBottom: 16,
   },
+  rowWrapper: {
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   rowNoBorder: {
     flexDirection: 'row',
