@@ -28,12 +28,21 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.btc.trustless",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "plugins": [
       "expo-font",
       "expo-local-authentication",
       "expo-asset"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "997b0852-0a8b-434d-8927-dc50771b8b51"
+      }
+    }
   }
 }
