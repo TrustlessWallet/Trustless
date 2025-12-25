@@ -53,7 +53,7 @@ const AppNavigator = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [isBackgrounded, setIsBackgrounded] = useState(false);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('MainTabs');
-  const [initialTab, setInitialTab] = useState<keyof TabParamList>('Tracker');
+  const [initialTab, setInitialTab] = useState<keyof TabParamList>('Wallet'); // Default to Wallet
   const [currentRouteName, setCurrentRouteName] = useState<string | undefined>(undefined);
   const appState = useRef(AppState.currentState);
   
@@ -146,7 +146,8 @@ const AppNavigator = () => {
       try {
         const hasCompletedOnboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
         const savedDefaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-        setInitialTab(savedDefaultScreen === 'Wallet' ? 'Wallet' : 'Tracker');
+        // Logic changed: default to Wallet if savedDefaultScreen is null or explicitly 'Wallet'
+        setInitialTab(savedDefaultScreen === 'Tracker' ? 'Tracker' : 'Wallet');
 
         if (hasCompletedOnboarding === null) {
           setNeedsOnboarding(true);

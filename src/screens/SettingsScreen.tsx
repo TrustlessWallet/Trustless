@@ -46,7 +46,7 @@ const SettingsScreen = () => {
   const [autoLockTimeIndex, setAutoLockTimeIndex] = useState(3);
   const [hideTrackerBalance, setHideTrackerBalance] = useState(false);
   const [hideWalletBalance, setHideWalletBalance] = useState(false);
-  const [defaultScreen, setDefaultScreen] = useState<'Tracker' | 'Wallet'>('Tracker');
+  const [defaultScreen, setDefaultScreen] = useState<'Wallet' | 'Tracker'>('Wallet');
   
   const [customNodeUrl, setCustomNodeUrl] = useState('');
   const [isEditingNode, setIsEditingNode] = useState(false);
@@ -83,10 +83,11 @@ const SettingsScreen = () => {
       setHideWalletBalance(savedWalletPref === 'true');
       
       const savedDefaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-      if (savedDefaultScreen === 'Wallet') {
-        setDefaultScreen('Wallet');
-      } else {
+      // Logic changed: default to Wallet if savedDefaultScreen is null or explicitly 'Wallet'
+      if (savedDefaultScreen === 'Tracker') {
         setDefaultScreen('Tracker');
+      } else {
+        setDefaultScreen('Wallet');
       }
 
       const savedNode = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY);
@@ -194,7 +195,7 @@ const SettingsScreen = () => {
   };
 
   const handleDefaultScreenChange = async () => {
-    const newValue = defaultScreen === 'Tracker' ? 'Wallet' : 'Tracker';
+    const newValue = defaultScreen === 'Wallet' ? 'Tracker' : 'Wallet';
     setDefaultScreen(newValue);
     await AsyncStorage.setItem(DEFAULT_SCREEN_KEY, newValue);
   };
