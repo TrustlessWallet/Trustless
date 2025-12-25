@@ -416,7 +416,7 @@ const SettingsScreen = () => {
           <Text style={styles.sectionTitle}>About</Text>
           <TouchableOpacity 
             style={styles.row}
-            onPress={() => Linking.openURL('https://github.com')}
+            onPress={() => Linking.openURL('https://github.com/pechen987/Trustless')}
           >
             <Text style={styles.rowLabel}>Github</Text>
             <Feather name="chevron-right" size={24} color={theme.colors.primary} />

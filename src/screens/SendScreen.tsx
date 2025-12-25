@@ -143,7 +143,7 @@ const SendScreen = () => {
             
             Alert.alert(
                 'Transaction Sent!',
-                `Your transaction has been broadcasted.\n\nTxID: ${txid}`,
+                `Your transaction has been broadcasted.`,
                 [{ 
                     text: 'OK', 
                     onPress: () => {

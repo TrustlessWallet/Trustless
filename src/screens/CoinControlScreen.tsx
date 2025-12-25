@@ -212,7 +212,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     backgroundColor: theme.colors.surface, 
   },
   rowSelected: {
-    borderColor: theme.colors.primary, 
+    borderColor: theme.colors.bitcoin, 
+    borderWidth: 1,
   },
   addressContainer: { flex: 1, marginRight: 8 },
   addressText: { 

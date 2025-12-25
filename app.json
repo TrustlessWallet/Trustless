@@ -18,7 +18,8 @@
       "bundleIdentifier": "com.btc.trustless",
       "infoPlist": {
         "NSCameraUsageDescription": "Trustless uses the camera to scan Bitcoin address QR codes.",
-        "NSFaceIDUsageDescription": "Trustless uses Face ID to secure your wallet."
+        "NSFaceIDUsageDescription": "Trustless uses Face ID to secure your wallet.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
