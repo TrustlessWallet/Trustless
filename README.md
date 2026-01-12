@@ -33,9 +33,9 @@ To run the project, you need Node.js and a setup for iOS (Xcode) or Android (And
 
     * **iOS (Mac only):**
         ```bash
-        npx expo run:ios
+        npm run ios
         ```
-        *To run on a physical device, add the `--device` flag and ensure your iPhone is connected.*
+        *To run on a physical device, add the `-- --device` flag and ensure your iPhone is connected.*
    
 
     * **Manual Build (Advanced):**
