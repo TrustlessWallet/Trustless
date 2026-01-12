@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "prestart": "node scripts/write-version.js",
-    "preios": "node scripts/write-version.js",
-    "preandroid": "node scripts/write-version.js",
+    "prestart": "node src/scripts/write-version.js",
+    "preios": "node src/scripts/write-version.js",
+    "preandroid": "node src/scripts/write-version.js",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
