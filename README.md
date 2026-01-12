@@ -50,7 +50,9 @@ To run the project, you need Node.js and a setup for iOS (Xcode) or Android (And
 
 We welcome contributions to Trustless! Please follow the standard fork-and-pull request workflow.
 
-### Process
+### Issues
+
+### Contribution Process
 
 1.  **Fork the repository** to your own GitHub account.
 2.  **Clone your fork** to your local machine.
@@ -62,7 +64,7 @@ We welcome contributions to Trustless! Please follow the standard fork-and-pull 
 ### Guidelines
 
 * **Code Style:** Keep code clean and consistent.
-* **Testing:** Ensure the app builds and runs via `npx expo run:ios` or `npx expo run:android` before submitting.
+* **Testing:** Ensure the app builds and runs via `npm run:ios` before submitting.
 * **Issues:** Open an issue to discuss major changes before starting work.
 
 ## License
