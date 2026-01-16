@@ -160,7 +160,7 @@ const WalletScreen = () => {
 
     if (!activeWallet) {
         return (
-            <SafeAreaView style={styles.container} edges={['right', 'left', 'bottom']}>
+            <SafeAreaView style={styles.container} edges={['right', 'left']}>
                 <View style={styles.emptyStateContainer}>
                     <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate('BackupIntro')}>
                         <Feather name="plus-circle" size={18} color={theme.colors.inversePrimary} />
@@ -179,7 +179,7 @@ const WalletScreen = () => {
     }
 
     return (
-        <SafeAreaView style={styles.container} edges={['right', 'left', 'bottom']}>
+        <SafeAreaView style={styles.container} edges={['right', 'left']}>
             <View style={styles.topSection}>
                 <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
                     <Text style={styles.walletName}>{activeWallet.name}</Text>
