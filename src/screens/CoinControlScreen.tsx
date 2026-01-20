@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
 import { useNavigation, RouteProp, useRoute } from '@react-navigation/native';
 import { useWallet } from '../contexts/WalletContext';
@@ -8,7 +8,10 @@ import { UTXO, RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Feather } from '@expo/vector-icons';
+
 type RoutePropType = RouteProp<RootStackParamList, 'CoinControl'>;
+
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 const formatAddress = (address: string) => {
   if (!address || address.length <= 10) return address;
@@ -18,18 +21,27 @@ const formatTxidShort = (txid: string) => {
   if (!txid || txid.length <= 8) return txid;
   return `${txid.substring(0, 4)}...${txid.substring(txid.length - 4)}`;
 };
+
 const CoinControlScreen = () => {
   const navigation = useNavigation();
   const route = useRoute<RoutePropType>();
   const { onSelect, targetAmount } = route.params;
-  const { activeWallet } = useWallet();
-  const { theme } = useTheme();
-  const styles = useMemo(() => getStyles(theme), [theme]);
+  const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
+  const { theme, isDark } = useTheme();
+  const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
+  
   const [utxos, setUtxos] = useState<UTXO[]>([]);
   const [selectedUtxos, setSelectedUtxos] = useState<UTXO[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Edit State
+  const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
+  const editInputRef = useRef<TextInput>(null);
+
   const UTXO_CACHE_PREFIX = '@utxoCache:';
   const UTXO_CACHE_STALE_MS = 240000;
+
   useEffect(() => {
     const getUtxos = async () => {
       if (!activeWallet) {
@@ -74,6 +86,15 @@ const CoinControlScreen = () => {
     };
     getUtxos();
   }, [activeWallet, targetAmount]);
+
+  useEffect(() => {
+    if (editingUtxoKey && editInputRef.current) {
+      setTimeout(() => {
+        editInputRef.current?.focus();
+      }, 100);
+    }
+  }, [editingUtxoKey]);
+
   const handleSelectUtxo = (utxo: UTXO) => {
     setSelectedUtxos(prev => {
       const isSelected = prev.some(u => u.txid === utxo.txid && u.vout === utxo.vout);
@@ -84,24 +105,83 @@ const CoinControlScreen = () => {
       }
     });
   };
+
   const handleConfirmSelection = () => {
     onSelect(selectedUtxos);
     navigation.goBack();
   };
+
   const handleAutomaticSelection = () => {
     onSelect([]); 
     navigation.goBack();
   };
+
+  const startEditing = (utxo: UTXO, currentLabel: string) => {
+    setEditingUtxoKey(`${utxo.txid}:${utxo.vout}`);
+    setEditingLabel(currentLabel);
+  };
+
+  const stopEditing = async (txid: string, vout: number) => {
+    if (!editingUtxoKey) return;
+    
+    if (editingLabel.trim().length === 0) {
+      setEditingUtxoKey(null);
+      return;
+    }
+
+    await updateUtxoLabel(txid, vout, editingLabel.trim());
+    setEditingUtxoKey(null);
+  };
+
   const totalSelected = selectedUtxos.reduce((sum, u) => sum + u.value, 0);
   const canConfirm = totalSelected >= targetAmount;
+
   const renderItem = ({ item }: { item: UTXO }) => {
     const isSelected = selectedUtxos.some(u => u.txid === item.txid && u.vout === item.vout);
+    const key = `${item.txid}:${item.vout}`;
+    const label = getUtxoLabel(item.txid, item.vout) || 'UTXO';
+    const isEditing = editingUtxoKey === key;
+
     return (
       <TouchableOpacity
         style={[styles.row, isSelected && styles.rowSelected]}
         onPress={() => handleSelectUtxo(item)}
+        activeOpacity={0.7}
       >
         <View style={styles.addressContainer}>
+            {/* Editable Label Section */}
+            {isEditing ? (
+              <TextInput
+                ref={editInputRef}
+                style={styles.utxoNameInput}
+                value={editingLabel}
+                onChangeText={setEditingLabel}
+                onBlur={() => stopEditing(item.txid, item.vout)}
+                onSubmitEditing={() => stopEditing(item.txid, item.vout)}
+                returnKeyType="done"
+                autoFocus
+                blurOnSubmit
+                multiline={false}
+                numberOfLines={1}
+                keyboardAppearance={isDark ? 'dark' : 'light'}
+                placeholderTextColor={theme.colors.muted}
+                textAlignVertical="center"
+              />
+            ) : (
+              <TouchableOpacity 
+                style={styles.utxoNameTouchable}
+                onPress={(e) => {
+                    e.stopPropagation();
+                    startEditing(item, label);
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 0, right: 20 }}
+              >
+                <Text style={styles.utxoLabelText}>{label}</Text>
+                <Feather name="edit" style={styles.editIcon} />
+              </TouchableOpacity>
+            )}
+
             <Text style={styles.addressText}>{formatAddress(item.address)}</Text>
             <Text style={styles.txidText}>{formatTxidShort(item.txid)}:{item.vout}</Text>
         </View>
@@ -111,9 +191,11 @@ const CoinControlScreen = () => {
       </TouchableOpacity>
     );
   };
+
   if (loading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
   }
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -132,6 +214,7 @@ const CoinControlScreen = () => {
         keyExtractor={item => `${item.txid}:${item.vout}`}
         contentContainerStyle={styles.listContent}
         style={styles.list}
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No spendable coins found.</Text>
@@ -156,7 +239,8 @@ const CoinControlScreen = () => {
     </SafeAreaView>
   );
 };
-const getStyles = (theme: Theme) => StyleSheet.create({
+
+const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   container: { 
     flex: 1, 
     backgroundColor: theme.colors.background 
@@ -194,7 +278,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   list: {
     flex: 1,
-    maxHeight: 450,
+    maxHeight: 450, // Preserved from your code
   },
   listContent: { 
     gap: 8,
@@ -216,16 +300,50 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     borderWidth: 1,
   },
   addressContainer: { flex: 1, marginRight: 8 },
-  addressText: { 
+  
+  // NEW STYLES for Editable Label (Matched to AddressDetailsScreen)
+  utxoNameTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    height: 32,
+    marginBottom: 2,
+  },
+  utxoNameInput: {
+    fontFamily: 'SpaceMono-Bold',
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.primary,
+    padding: 0,
+    margin: 0,
+    height: 32,
+    marginBottom: 2,
+    textAlignVertical: 'center',
+  },
+  utxoLabelText: {
+    fontFamily: 'SpaceMono-Bold',
     fontSize: 16, 
+    fontWeight: '600', 
     color: theme.colors.primary, 
-    fontWeight: '500' 
+  },
+  editIcon: {
+    fontSize: 16,
+    color: theme.colors.primary,
+    marginLeft: 8,
+  },
+  // END NEW STYLES
+
+  addressText: { 
+    fontSize: 14, // Adjusted slightly to distinguish from Title
+    color: theme.colors.muted, 
+    fontFamily: 'monospace',
+    marginBottom: 2,
   },
   txidText: { 
     fontFamily: 'monospace', 
     fontSize: 12, 
     color: theme.colors.muted, 
-    marginTop: 4 
+    marginTop: 0 
   },
   balanceText: { 
     fontSize: 16, 
@@ -279,4 +397,5 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     color: theme.colors.bitcoin, 
   },
 });
+
 export default CoinControlScreen;
