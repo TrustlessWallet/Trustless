@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import 'react-native-get-random-values';
 import * as bip39 from 'bip39';
 import * as Keychain from 'react-native-keychain';
@@ -9,11 +9,12 @@ import { BIP32Factory } from 'bip32';
 import * as bitcoin from 'bitcoinjs-lib';
 import { payments } from 'bitcoinjs-lib';
 import { ECPairFactory } from 'ecpair';
-import { Wallet, DerivedAddress, BitcoinAddress, DerivedAddressInfo } from '../types';
+import { Wallet, DerivedAddress, BitcoinAddress, DerivedAddressInfo, UTXO } from '../types';
 import { 
     fetchAddressBalances, 
     fetchAddressInfoBatch, 
     calculateTransactionMetrics,
+    fetchUTXOs,
 } from '../services/bitcoin';
 import { NETWORK, DERIVATION_PARENT_PATH, NETWORK_NAME } from '../constants/network'; 
 
@@ -58,6 +59,10 @@ interface WalletContextType {
   incrementChangeIndex: (walletId: string, lastUsedIndex: number) => Promise<void>;
   getOrCreateNextUnusedReceiveAddress: (currentAddress: string, currentIndex: number) => Promise<{ address: string, index: number } | null>;
   
+  // UTXO Management
+  updateUtxoLabel: (txid: string, vout: number, label: string) => Promise<void>;
+  scanAndNameUtxos: () => Promise<void>;
+  getUtxoLabel: (txid: string, vout: number) => string;
 
   savedAddresses: BitcoinAddress[];
   loadingSavedAddresses: boolean;
@@ -65,7 +70,6 @@ interface WalletContextType {
   removeSavedAddress: (addressId: string) => Promise<void>;
   updateSavedAddressName: (addressId: string, newName: string) => Promise<void>;
   refreshSavedAddressBalances: () => Promise<void>;
-
 
   trackedAddresses: BitcoinAddress[];
   loadingTrackedAddresses: boolean;
@@ -88,8 +92,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const [trackedAddresses, setTrackedAddresses] = useState<BitcoinAddress[]>([]);
   const [loadingTrackedAddresses, setLoadingTrackedAddresses] = useState(true);
-
-  const triggerRefresh = () => setLastRefreshTime(Date.now());
 
   const WALLETS_KEY = getStorageKey(KEYCHAIN_WALLETS_METADATA_KEY_BASE);
   const ACTIVE_WALLET_KEY = getStorageKey(KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE);
@@ -119,6 +121,100 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return null;
     }
   };
+
+  // --- UTXO Management Methods (Defined early to be used in effects) ---
+  const getUtxoLabel = useCallback((txid: string, vout: number): string => {
+      if (!activeWallet) return '';
+      const key = `${txid}:${vout}`;
+      return activeWallet.utxoLabels[key] || '';
+  }, [activeWallet]);
+
+  const updateUtxoLabel = async (txid: string, vout: number, label: string) => {
+      if (!activeWallet) return;
+      const key = `${txid}:${vout}`;
+      const newLabels = { ...activeWallet.utxoLabels, [key]: label };
+      
+      const updatedWallet = { ...activeWallet, utxoLabels: newLabels };
+      
+      const updatedWallets = wallets.map(w => w.id === activeWallet.id ? { ...w, utxoLabels: newLabels } : w);
+      
+      setActiveWallet(updatedWallet);
+      setWallets(updatedWallets);
+      await Keychain.setGenericPassword('user', JSON.stringify(updatedWallets), { service: WALLETS_KEY });
+  };
+
+  const scanAndNameUtxos = async () => {
+    if (!activeWallet) return;
+
+    // 1. Fetch all UTXOs for known active addresses
+    const infoCache = activeWallet.derivedAddressInfoCache ?? [];
+    const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
+    const changeIndex = activeWallet.changeAddressIndex ?? 0;
+    const changeAddresses = (activeWallet.derivedChangeAddresses ?? [])
+        .filter(a => a.index <= changeIndex + 1)
+        .map(a => a.address);
+    
+    const targetAddresses = [...new Set([...receiveForUtxos, ...changeAddresses])];
+    if (targetAddresses.length === 0) return;
+
+    try {
+        const fetchedUtxos = await fetchUTXOs(targetAddresses);
+        
+        let labels = { ...activeWallet.utxoLabels };
+        let nextCount = activeWallet.nextUtxoCount;
+        let changed = false;
+
+        // 2. Identify new UTXOs that don't have a label yet
+        const newUtxos = fetchedUtxos.filter(u => !labels[`${u.txid}:${u.vout}`]);
+
+        if (newUtxos.length > 0) {
+            // 3. Sort them: Block Height (asc) -> TxID (asc) -> Vout (asc)
+            newUtxos.sort((a, b) => {
+                const heightA = a.status.block_height || Number.MAX_SAFE_INTEGER;
+                const heightB = b.status.block_height || Number.MAX_SAFE_INTEGER;
+                if (heightA !== heightB) return heightA - heightB;
+                if (a.txid !== b.txid) return a.txid.localeCompare(b.txid);
+                return a.vout - b.vout;
+            });
+
+            // 4. Assign names
+            for (const utxo of newUtxos) {
+                const key = `${utxo.txid}:${utxo.vout}`;
+                labels[key] = `UTXO #${nextCount++}`;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            const updatedWallet = { ...activeWallet, utxoLabels: labels, nextUtxoCount: nextCount };
+            const updatedWallets = wallets.map(w => w.id === activeWallet.id ? { 
+                ...w, 
+                utxoLabels: labels, 
+                nextUtxoCount: nextCount 
+            } : w);
+
+            setActiveWallet(updatedWallet);
+            setWallets(updatedWallets);
+            await Keychain.setGenericPassword('user', JSON.stringify(updatedWallets), { service: WALLETS_KEY });
+        }
+
+    } catch (error) {
+        console.error("Failed to scan and name UTXOs:", error);
+    }
+  };
+
+  const triggerRefresh = () => {
+    setLastRefreshTime(Date.now());
+    scanAndNameUtxos(); // Also scan for new UTXOs when refreshing
+  };
+
+  // Automatically scan for UTXO names when active wallet changes
+  useEffect(() => {
+    if (activeWallet) {
+        scanAndNameUtxos();
+    }
+  }, [activeWallet?.id]);
+
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -201,6 +297,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let derivedReceiveAddresses: DerivedAddress[] = walletMetadata.derivedReceiveAddresses;
     let derivedChangeAddresses: DerivedAddress[] = [];
     let derivedAddressInfoCache: DerivedAddressInfo[] = walletMetadata.derivedAddressInfoCache || [];
+
+    // Init legacy wallets that don't have these fields
+    const utxoLabels = walletMetadata.utxoLabels || {};
+    const nextUtxoCount = walletMetadata.nextUtxoCount || 1;
 
     for (let i = 0; i < GAP_LIMIT; i++) {
         const derived = deriveChangeAddress(root, i);
@@ -285,14 +385,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         derivedAddressInfoCache, 
         address: currentReceiveAddress,
         receiveAddressIndex: firstUnusedIndex,
+        utxoLabels,
+        nextUtxoCount,
       };
 
       const updatedWallets = currentWallets.map(w => w.id === walletId ? {
           ...w,
           changeAddressIndex: w.changeAddressIndex ?? 0,
-          derivedReceiveAddresses,
-          derivedChangeAddresses,
-          derivedAddressInfoCache, 
+          derivedReceiveAddresses, 
+          derivedChangeAddresses, 
+          derivedAddressInfoCache,
+          utxoLabels,
+          nextUtxoCount,
       } : w);
 
       setWallets(updatedWallets);
@@ -373,6 +477,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       derivedReceiveAddresses: [], 
       derivedChangeAddresses: [],
       derivedAddressInfoCache: [],
+      utxoLabels: {},
+      nextUtxoCount: 1,
     };
     
     await Keychain.setGenericPassword('user', mnemonic, { service: `${KEYCHAIN_SERVICE_PREFIX}.${newWalletId}` });
@@ -665,6 +771,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     createAndSignTransaction,
     incrementChangeIndex,
     getOrCreateNextUnusedReceiveAddress,
+    
+    // UTXO Methods
+    updateUtxoLabel,
+    scanAndNameUtxos,
+    getUtxoLabel,
     
     savedAddresses,
     loadingSavedAddresses,

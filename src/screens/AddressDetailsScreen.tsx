@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Linking, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Linking, Alert, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -11,9 +11,12 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, DERIVATION_PARENT_PATH } from '../constants/network';
+
 const QR_SIZE = 220;
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'AddressDetails'>;
 type RoutePropType = RouteProp<RootStackParamList, 'AddressDetails'>;
+
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 const formatBalance = (sats: number) => {
     const btc = (sats || 0) / 100000000;
@@ -22,26 +25,34 @@ const formatBalance = (sats: number) => {
       minimumFractionDigits: 8,
     }).format(btc).replace(/,/g, ' ');
 };
+
 const formatAddress = (address: string) => {
   if (!address || address.length <= 10) return address;
   return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
 };
+
 const formatAddressInChunks = (address: string | undefined) => {
   if (!address) return '';
   return address.match(/.{1,4}/g)?.join(' ') || '';
 };
+
 const AddressDetailsScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
   const { address } = route.params;
   const scrollRef = useRef<ScrollView>(null);
-  const { activeWallet } = useWallet();
+  const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
   const [balance, setBalance] = useState(0);
   const [utxos, setUtxos] = useState<UTXO[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
+  const editInputRef = useRef<TextInput>(null);
+
   const receiveData = activeWallet?.derivedReceiveAddresses.find(a => a.address === address);
   const changeData = activeWallet?.derivedChangeAddresses.find(a => a.address === address);
   const derivationPath = receiveData
@@ -49,6 +60,7 @@ const AddressDetailsScreen = () => {
     : changeData
       ? `${DERIVATION_PARENT_PATH}/1/${changeData.index}`
       : null;
+
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -58,12 +70,14 @@ const AddressDetailsScreen = () => {
       ),
     });
   }, [navigation, theme.colors.primary]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const balancePromise = fetchBitcoinBalance(address);
       const utxosPromise = fetchUTXOs([address]);
       const txsPromise = fetchAddressTransactions([address]);
+
       setBalance(await balancePromise);
       setUtxos(await utxosPromise);
       setTransactions(await txsPromise);
@@ -74,13 +88,41 @@ const AddressDetailsScreen = () => {
       setLoading(false);
     }
   }, [address]);
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (editingUtxoKey && editInputRef.current) {
+      setTimeout(() => {
+        editInputRef.current?.focus();
+      }, 100);
+    }
+  }, [editingUtxoKey]);
+
+  const startEditing = (utxo: UTXO, currentLabel: string) => {
+    setEditingUtxoKey(`${utxo.txid}:${utxo.vout}`);
+    setEditingLabel(currentLabel);
+  };
+
+  const stopEditing = async (txid: string, vout: number) => {
+    if (!editingUtxoKey) return;
+    
+    if (editingLabel.trim().length === 0) {
+      setEditingUtxoKey(null);
+      return;
+    }
+
+    await updateUtxoLabel(txid, vout, editingLabel.trim());
+    setEditingUtxoKey(null);
+  };
+
   const handleOpenExplorer = () => {
     const url = `${EXPLORER_UI_URL}/address/${address}`;
     Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open block explorer."));
   };
+
   if (loading) {
     return (
       <View style={styles.centeredContainer}>
@@ -88,11 +130,13 @@ const AddressDetailsScreen = () => {
       </View>
     );
   }
+
   return (
     <ScrollView 
       ref={scrollRef}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={true}
+      keyboardShouldPersistTaps="handled"
     >
       <View style={styles.header}>
         {derivationPath && (
@@ -110,31 +154,67 @@ const AddressDetailsScreen = () => {
         <Text style={styles.balanceText}>
           {formatBtc(balance)} <Text style={styles.orangeSymbol}>₿</Text>
         </Text>
+        
         <TouchableOpacity style={styles.explorerButton} onPress={handleOpenExplorer}>
           <Feather name="external-link" size={18} color={theme.colors.inversePrimary} />
           <Text style={styles.explorerButtonText}>View on Explorer</Text>
         </TouchableOpacity>
       </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Spendable Coins (UTXOs)</Text>
         {utxos.length === 0 ? (
           <Text style={styles.emptyText}>No spendable coins (utxos) found.</Text>
         ) : (
           <>
-            {utxos.map((item) => (
-              <View key={`${item.txid}:${item.vout}`} style={styles.utxoRow}>
-                <View style={styles.itemDetails}>
-                  <Text style={styles.itemTitle}>UTXO</Text>
-                  <Text style={styles.itemTxid} selectable>
-                    {item.txid.substring(0, 6)}...{item.txid.substring(item.txid.length - 6)}:{item.vout}
-                  </Text>
+            {utxos.map((item) => {
+              const key = `${item.txid}:${item.vout}`;
+              const label = getUtxoLabel(item.txid, item.vout) || 'UTXO';
+              const isEditing = editingUtxoKey === key;
+              
+              return (
+                <View key={key} style={styles.utxoRow}>
+                  <View style={styles.itemDetails}>
+                    {isEditing ? (
+                      <TextInput
+                        ref={editInputRef}
+                        style={styles.utxoNameInput}
+                        value={editingLabel}
+                        onChangeText={setEditingLabel}
+                        onBlur={() => stopEditing(item.txid, item.vout)}
+                        onSubmitEditing={() => stopEditing(item.txid, item.vout)}
+                        returnKeyType="done"
+                        autoFocus
+                        blurOnSubmit
+                        multiline={false}
+                        numberOfLines={1}
+                        keyboardAppearance={isDark ? 'dark' : 'light'}
+                        underlineColorAndroid="transparent"
+                        placeholderTextColor={theme.colors.muted}
+                      />
+                    ) : (
+                      <TouchableOpacity 
+                        style={styles.utxoNameTouchable}
+                        onPress={() => startEditing(item, label)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 10, bottom: 10, left: 0, right: 20 }}
+                      >
+                        <Text style={styles.itemTitle}>{label}</Text>
+                        <Feather name="edit" style={styles.editIcon} />
+                      </TouchableOpacity>
+                    )}
+                    <Text style={styles.itemTxid} selectable>
+                      {item.txid.substring(0, 6)}...{item.txid.substring(item.txid.length - 6)}:{item.vout}
+                    </Text>
+                  </View>
+                  <Text style={styles.itemAmount}>{formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text></Text>
                 </View>
-                <Text style={styles.itemAmount}>{formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text></Text>
-              </View>
-            ))}
+              );
+            })}
           </>
         )}
       </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Transaction History</Text>
         {transactions.length === 0 ? (
@@ -144,6 +224,7 @@ const AddressDetailsScreen = () => {
             {transactions.map((item) => {
               const isSend = item.type === 'send';
               let otherAddress = 'Multiple';
+              
               if (isSend) {
                 const externalOutputs = item.vout.filter(o => o.scriptpubkey_address !== address);
                 if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
@@ -151,9 +232,11 @@ const AddressDetailsScreen = () => {
                 const externalInputs = item.vin.filter(i => i.prevout?.scriptpubkey_address !== address);
                 if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
               }
+
               const txDate = item.status.block_time
                 ? new Date(item.status.block_time * 1000).toLocaleString()
                 : 'Pending confirmation';
+
               return (
                 <TouchableOpacity 
                   key={item.txid} 
@@ -190,6 +273,7 @@ const AddressDetailsScreen = () => {
     </ScrollView>
   );
 };
+
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
@@ -291,15 +375,38 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   itemDetails: {
     flex: 1,
   },
-  itemTitle: {
+  utxoNameTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    height: 32,
+    marginBottom: 2,
+  },
+  utxoNameInput: {
+    fontFamily: 'SpaceMono-Bold',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     color: theme.colors.primary,
-    marginBottom: 4,
+    padding: 0,
+    margin: 0,
+    height: 32,
+    marginBottom: 2,
+    textAlignVertical: 'center', // Helps align text vertically on Android
+  },
+  editIcon: {
+    fontSize: 16,
+    color: theme.colors.primary,
+    marginLeft: 8,
+  },
+  itemTitle: {
+    fontFamily: 'SpaceMono-Bold',
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.primary,
   },
   itemTxid: {
     fontFamily: 'monospace',
-    fontSize: 12,
+    fontSize: 14,
     color: theme.colors.muted,
   },
   itemAmount: {
@@ -323,7 +430,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     gap: 4,
   },
   txDate: {
-    fontSize: 13,
+    fontSize: 14,
     color: theme.colors.muted,
   },
   txType: {
@@ -332,7 +439,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.primary
   },
   txAddress: {
-    fontSize: 13,
+    fontSize: 14,
     color: theme.colors.muted,
     fontFamily: 'monospace'
   },
@@ -351,4 +458,5 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.muted,
   },
 });
+
 export default AddressDetailsScreen;

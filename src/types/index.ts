@@ -74,6 +74,8 @@ export interface Wallet {
   derivedReceiveAddresses: DerivedAddress[];
   derivedChangeAddresses: DerivedAddress[];
   derivedAddressInfoCache: DerivedAddressInfo[];
+  utxoLabels: Record<string, string>;
+  nextUtxoCount: number;
 }
 export type TabParamList = {
   Tracker: undefined;
