@@ -42,8 +42,22 @@
             width: 100%;
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
+            align-items: center;
             margin-bottom: 40px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            /* Fallback background if image is missing */
+            background-color: #222; 
         }
 
         h1 {
@@ -61,6 +75,7 @@
             cursor: pointer;
             font-family: inherit;
             font-size: 0.8rem;
+            border-radius: 4px;
         }
 
         button#theme-toggle:hover {
@@ -138,50 +153,53 @@
 <body>
 
     <header>
-        <h1>Trustless</h1>
+        <div class="brand">
+            <img src="assets/icon.png" alt="Trustless Logo" class="logo" onerror="this.style.display='none'">
+            <h1>Trustless</h1>
+        </div>
         <button id="theme-toggle" onclick="toggleTheme()">Switch Theme</button>
     </header>
 
     <main>
         <div class="intro">
-            [cite_start]Trustless is a fully open-source, Bitcoin-only mobile wallet[cite: 5]. 
-            [cite_start]It is very minimalist and easy to use, yet very functional[cite: 5].
+            Trustless is a fully open-source, Bitcoin-only mobile wallet. 
+            It is very minimalist and easy to use, yet very functional.
             <br><br>
-            [cite_start]<a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a> [cite: 5]
+            <a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a>
         </div>
 
         <ul class="features-list">
             <li>
                 <h3>Bitcoin wallet</h3>
-                [cite_start]<p>Import or create new wallets, track balances, send and receive Bitcoin[cite: 5].</p>
+                <p>Import or create new wallets, track balances, send and receive Bitcoin.</p>
             </li>
             <li>
                 <h3>Address tracker</h3>
-                <p>Track any Bitcoin address balance just by entering it. [cite_start]No private keys required[cite: 5].</p>
+                <p>Track any Bitcoin address balance just by entering it. No private keys required.</p>
             </li>
             <li>
                 <h3>Receive address change</h3>
-                <p>Have 20 unused receive addresses at all times to choose from. [cite_start]This is a privacy feature, because address reuse links payments together[cite: 5].</p>
+                <p>Have 20 unused receive addresses at all times to choose from. This preserves privacy by preventing address reuse.</p>
             </li>
             <li>
                 <h3>Balance breakdown</h3>
-                [cite_start]<p>See actual UTXOs you own by clicking on your total wallet balance[cite: 5].</p>
+                <p>See actual UTXOs you own by clicking on your total wallet balance.</p>
             </li>
             <li>
                 <h3>Coin control</h3>
-                [cite_start]<p>Choose which UTXOs to use for a transaction[cite: 5].</p>
+                <p>Choose specifically which UTXOs to use for a transaction.</p>
             </li>
             <li>
                 <h3>BIP44 change address management</h3>
-                [cite_start]<p>Following best privacy practices, all change addresses are derived from a 1/n chain and are only used once[cite: 5].</p>
+                <p>All change addresses are derived from a 1/n chain and are only used once.</p>
             </li>
             <li>
                 <h3>Custom node connection</h3>
-                [cite_start]<p>Connect to your own node via Esplora API URL[cite: 5].</p>
+                <p>Connect to your own node via Esplora API URL.</p>
             </li>
             <li>
                 <h3>Network switch</h3>
-                [cite_start]<p>Use testnet network for transaction testing / development[cite: 5].</p>
+                <p>Use testnet network for transaction testing and development.</p>
             </li>
         </ul>
     </main>
@@ -190,16 +208,16 @@
         <div class="legal-block">
             <strong>LEGAL ENTITY</strong>
             KRUGLOV IGOR<br>
-            [cite_start]VAT: 13159460966 [cite: 1]
+            VAT: 13159460966
         </div>
         <div class="legal-block">
             <strong>REGISTERED OFFICE</strong>
             VIA GIACOMO MATTEOTTI 51<br>
-            [cite_start]20017 RHO (MI), ITALY [cite: 1]
+            20017 RHO (MI), ITALY
         </div>
         <div class="legal-block">
             <strong>CONTACT</strong>
-            [cite_start]igorek.ekrug@gmail.com [cite: 1]
+            igorek.ekrug@gmail.com
         </div>
     </footer>
 
