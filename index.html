@@ -36,12 +36,15 @@
             padding: 40px 20px;
             box-sizing: border-box;
             transition: background-color 0.3s, color 0.3s;
+            /* FIX: Use gap for consistent spacing between header/main/footer */
+            gap: 60px; 
         }
 
         /* LAYOUT CONTAINERS */
         .container-limited {
             max-width: 1100px;
-            margin: 0 auto;
+            margin-left: auto;
+            margin-right: auto;
             width: 100%;
         }
 
@@ -49,7 +52,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 60px;
+            /* margin-bottom removed in favor of body gap */
         }
 
         /* MAIN GRID LAYOUT */
@@ -135,8 +138,15 @@
         }
 
         /* DEVICE IMAGE STYLES */
+        .device-container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
         .device-container img {
-            width: 100%;
+            /* FIX: Reduced size to 80% */
+            width: 80%;
             height: auto;
             display: block;
             /* Adds depth to the phone mockup */
@@ -153,7 +163,7 @@
             color: var(--muted);
             border-top: 1px solid var(--border);
             padding-top: 30px;
-            margin-top: 60px;
+            /* margin-top removed in favor of body gap */
             display: flex;
             flex-wrap: wrap;
             gap: 40px;
@@ -174,6 +184,9 @@
             .device-container {
                 max-width: 450px; /* Don't let phone get too huge on tablets */
                 margin: 0 auto;
+            }
+            .device-container img {
+                 width: 100%; /* On mobile, let it fill its container */
             }
         }
     </style>
