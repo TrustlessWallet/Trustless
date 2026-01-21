@@ -12,6 +12,7 @@
             --border: #333333;
             --accent: #f7931a; /* Bitcoin Orange */
             --link: #ffffff;
+            --shadow: rgba(255, 255, 255, 0.1);
         }
 
         [data-theme="light"] {
@@ -21,6 +22,7 @@
             --border: #e0e0e0;
             --accent: #f7931a;
             --link: #000000;
+            --shadow: rgba(0, 0, 0, 0.2);
         }
 
         body {
@@ -36,16 +38,30 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
-        header {
-            max-width: 800px;
+        /* LAYOUT CONTAINERS */
+        .container-limited {
+            max-width: 1100px;
             margin: 0 auto;
             width: 100%;
+        }
+
+        header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 40px;
+            margin-bottom: 60px;
         }
 
+        /* MAIN GRID LAYOUT */
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr; /* Split into two columns */
+            gap: 60px;
+            align-items: start;
+        }
+
+        /* STYLES */
         .brand {
             display: flex;
             align-items: center;
@@ -56,8 +72,7 @@
             width: 50px;
             height: 50px;
             border-radius: 12px;
-            /* Fallback background if image is missing */
-            background-color: #222; 
+            background-color: #222; /* Fallback */
         }
 
         h1 {
@@ -83,13 +98,6 @@
             border-color: var(--text);
         }
 
-        main {
-            flex: 1;
-            max-width: 800px;
-            margin: 0 auto;
-            width: 100%;
-        }
-
         .intro {
             font-size: 1.1rem;
             line-height: 1.6;
@@ -101,6 +109,7 @@
         .features-list {
             list-style: none;
             padding: 0;
+            margin: 0;
         }
 
         .features-list li {
@@ -125,19 +134,26 @@
             font-size: 0.95rem;
         }
 
+        /* DEVICE IMAGE STYLES */
+        .device-container img {
+            width: 100%;
+            height: auto;
+            display: block;
+            /* Adds depth to the phone mockup */
+            filter: drop-shadow(0 20px 30px var(--shadow));
+        }
+
         a {
             color: var(--link);
             text-decoration: underline;
         }
 
         footer {
-            max-width: 800px;
-            margin: 60px auto 0 auto;
-            width: 100%;
             font-size: 0.75rem;
             color: var(--muted);
             border-top: 1px solid var(--border);
             padding-top: 30px;
+            margin-top: 60px;
             display: flex;
             flex-wrap: wrap;
             gap: 40px;
@@ -148,11 +164,23 @@
             margin-bottom: 5px;
             color: var(--text);
         }
+
+        /* RESPONSIVE DESIGN (MOBILE) */
+        @media (max-width: 850px) {
+            main {
+                grid-template-columns: 1fr; /* Stack into 1 column */
+                gap: 40px;
+            }
+            .device-container {
+                max-width: 450px; /* Don't let phone get too huge on tablets */
+                margin: 0 auto;
+            }
+        }
     </style>
 </head>
 <body>
 
-    <header>
+    <header class="container-limited">
         <div class="brand">
             <img src="assets/icon.png" alt="Trustless Logo" class="logo" onerror="this.style.display='none'">
             <h1>Trustless</h1>
@@ -160,51 +188,57 @@
         <button id="theme-toggle" onclick="toggleTheme()">Switch Theme</button>
     </header>
 
-    <main>
-        <div class="intro">
-            Trustless is a fully open-source, Bitcoin-only mobile wallet. 
-            It is very minimalist and easy to use, yet very functional.
-            <br><br>
-            <a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a>
+    <main class="container-limited">
+        <div class="content-left">
+            <div class="intro">
+                Trustless is a fully open-source, Bitcoin-only mobile wallet. 
+                It is very minimalist and easy to use, yet very functional.
+                <br><br>
+                <a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a>
+            </div>
+
+            <ul class="features-list">
+                <li>
+                    <h3>Bitcoin wallet</h3>
+                    <p>Import or create new wallets, track balances, send and receive Bitcoin.</p>
+                </li>
+                <li>
+                    <h3>Address tracker</h3>
+                    <p>Track any Bitcoin address balance just by entering it. No private keys required.</p>
+                </li>
+                <li>
+                    <h3>Receive address change</h3>
+                    <p>Have 20 unused receive addresses at all times to choose from. This preserves privacy by preventing address reuse.</p>
+                </li>
+                <li>
+                    <h3>Balance breakdown</h3>
+                    <p>See actual UTXOs you own by clicking on your total wallet balance.</p>
+                </li>
+                <li>
+                    <h3>Coin control</h3>
+                    <p>Choose specifically which UTXOs to use for a transaction.</p>
+                </li>
+                <li>
+                    <h3>BIP44 change address management</h3>
+                    <p>All change addresses are derived from a 1/n chain and are only used once.</p>
+                </li>
+                <li>
+                    <h3>Custom node connection</h3>
+                    <p>Connect to your own node via Esplora API URL.</p>
+                </li>
+                <li>
+                    <h3>Network switch</h3>
+                    <p>Use testnet network for transaction testing and development.</p>
+                </li>
+            </ul>
         </div>
 
-        <ul class="features-list">
-            <li>
-                <h3>Bitcoin wallet</h3>
-                <p>Import or create new wallets, track balances, send and receive Bitcoin.</p>
-            </li>
-            <li>
-                <h3>Address tracker</h3>
-                <p>Track any Bitcoin address balance just by entering it. No private keys required.</p>
-            </li>
-            <li>
-                <h3>Receive address change</h3>
-                <p>Have 20 unused receive addresses at all times to choose from. This preserves privacy by preventing address reuse.</p>
-            </li>
-            <li>
-                <h3>Balance breakdown</h3>
-                <p>See actual UTXOs you own by clicking on your total wallet balance.</p>
-            </li>
-            <li>
-                <h3>Coin control</h3>
-                <p>Choose specifically which UTXOs to use for a transaction.</p>
-            </li>
-            <li>
-                <h3>BIP44 change address management</h3>
-                <p>All change addresses are derived from a 1/n chain and are only used once.</p>
-            </li>
-            <li>
-                <h3>Custom node connection</h3>
-                <p>Connect to your own node via Esplora API URL.</p>
-            </li>
-            <li>
-                <h3>Network switch</h3>
-                <p>Use testnet network for transaction testing and development.</p>
-            </li>
-        </ul>
+        <div class="device-container">
+             <img src="assets/Device.png" alt="Trustless Wallet on iPhone">
+        </div>
     </main>
 
-    <footer>
+    <footer class="container-limited">
         <div class="legal-block">
             <strong>LEGAL ENTITY</strong>
             KRUGLOV IGOR<br>
