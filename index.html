@@ -35,6 +35,7 @@
             box-sizing: border-box;
             transition: background-color 0.3s, color 0.3s;
             gap: 60px;
+            overflow-x: hidden; /* Prevent horizontal scrollbars */
         }
 
         /* LAYOUT CONTAINERS */
@@ -45,13 +46,13 @@
             width: 100%;
         }
 
+        /* HEADER */
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            /* FIX: Added gap to prevent button touching text on mobile */
-            gap: 20px; 
-            flex-wrap: wrap; /* Safety wrap for very small screens */
+            flex-wrap: wrap; /* Allows wrapping on very small screens */
+            gap: 20px; /* Space between Logo and Theme Button on mobile */
         }
 
         /* MAIN GRID LAYOUT (DESKTOP) */
@@ -59,9 +60,37 @@
             flex: 1;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 60px;
-            /* CRITICAL FIX: Ensure columns stretch to full height so 'sticky' has room to move */
-            align-items: stretch; 
+            gap: 0 60px; /* 0px row gap (handled by margin), 60px col gap */
+            /* Explicit Areas ensure the 'device' column is exactly as tall as intro + features */
+            grid-template-areas: 
+                "intro device"
+                "features device";
+            align-items: start; /* Default align */
+        }
+
+        /* GRID AREAS & STICKY LOGIC */
+        .intro {
+            grid-area: intro;
+            margin-bottom: 40px;
+        }
+
+        .features-list {
+            grid-area: features;
+            /* No margin needed */
+        }
+
+        .device-wrapper {
+            grid-area: device;
+            /* STICKY MAGIC */
+            position: -webkit-sticky;
+            position: sticky;
+            top: 40px; /* Distance from top of viewport */
+            align-self: start; /* Prevents wrapper from stretching to full height of column */
+            
+            width: 70%; 
+            margin: 0 auto;
+            position: relative; 
+            z-index: 10;
         }
 
         /* BRANDING */
@@ -83,19 +112,19 @@
             margin: 0;
             text-transform: uppercase;
             letter-spacing: -1px;
-            white-space: nowrap; /* Prevent header text from breaking awkwardly */
+            line-height: 1;
         }
 
         button#theme-toggle {
             background: none;
             border: 1px solid var(--border);
             color: var(--muted);
-            padding: 5px 10px;
+            padding: 8px 12px;
             cursor: pointer;
             font-family: inherit;
             font-size: 0.8rem;
             border-radius: 4px;
-            white-space: nowrap; /* Keep button text on one line */
+            white-space: nowrap;
         }
 
         button#theme-toggle:hover {
@@ -103,43 +132,20 @@
             border-color: var(--text);
         }
 
-        /* CONTENT PLACEMENT */
-        .intro {
-            grid-column: 1;
-            grid-row: 1; 
+        /* CONTENT STYLES */
+        .intro-text {
             font-size: 1.1rem;
             line-height: 1.6;
-            margin-bottom: 20px; 
             border-left: 2px solid var(--accent);
             padding-left: 20px;
         }
-        
+
         .features-list {
-            grid-column: 1;
-            grid-row: 2; 
             list-style: none;
             padding: 0;
             margin: 0;
         }
 
-        .device-wrapper {
-            grid-column: 2;
-            /* Spans both rows (intro + features) to create a tall track */
-            grid-row: 1 / span 2; 
-            
-            /* STICKY CONFIGURATION */
-            position: -webkit-sticky; /* Safari support */
-            position: sticky;
-            top: 40px; /* Distance from top of screen */
-            align-self: start; /* Allows the item to be shorter than the track */
-            
-            width: 70%; 
-            margin: 0 auto;
-            position: relative; 
-            height: fit-content; /* Ensure it doesn't accidentally stretch */
-        }
-
-        /* FEATURES STYLING */
         .features-list li {
             margin-bottom: 30px;
             padding-bottom: 30px;
@@ -200,7 +206,7 @@
             font-size: 3.5rem; 
             padding: 10px;
             cursor: pointer;
-            z-index: 10;
+            z-index: 20;
             opacity: 0; 
             transition: opacity 0.3s, color 0.3s, transform 0.2s;
             display: flex;
@@ -222,7 +228,7 @@
         .prev { left: -60px; }
         .next { right: -60px; }
 
-        /* FOOTER & LINKS */
+        /* LINKS & FOOTER */
         a {
             color: var(--link);
             text-decoration: underline;
@@ -250,18 +256,19 @@
                 display: flex; 
                 flex-direction: column;
                 gap: 40px;
+                /* Reset Grid properties */
+                grid-template-areas: none;
+                grid-template-columns: none;
             }
             
-            /* REORDERING */
-            .intro { order: 1; }
+            /* Order is naturally handled by HTML structure: Intro -> Device -> Features */
+            
             .device-wrapper {
-                order: 2; 
                 width: 100%;
                 max-width: 350px;
                 position: static; /* No sticky on mobile */
                 margin-bottom: 20px;
             }
-            .features-list { order: 3; }
 
             .nav-btn { display: none; }
         }
@@ -280,10 +287,21 @@
     <main class="container-limited">
         
         <div class="intro">
-            Trustless is a fully open-source, Bitcoin-only mobile wallet. 
-            It is very minimalist and easy to use, yet very functional.
-            <br><br>
-            <a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a>
+            <div class="intro-text">
+                Trustless is a fully open-source, Bitcoin-only mobile wallet. 
+                It is very minimalist and easy to use, yet very functional.
+                <br><br>
+                <a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a>
+            </div>
+        </div>
+
+        <div class="device-wrapper">
+            <button class="nav-btn prev" onclick="scrollCarousel(-1)" aria-label="Previous Image">&lsaquo;</button>
+            
+            <div class="carousel-track" id="carousel">
+                </div>
+
+            <button class="nav-btn next" onclick="scrollCarousel(1)" aria-label="Next Image">&rsaquo;</button>
         </div>
 
         <ul class="features-list">
@@ -320,15 +338,6 @@
                 <p>Use testnet network for transaction testing and development.</p>
             </li>
         </ul>
-
-        <div class="device-wrapper">
-            <button class="nav-btn prev" onclick="scrollCarousel(-1)" aria-label="Previous Image">&lsaquo;</button>
-            
-            <div class="carousel-track" id="carousel">
-                </div>
-
-            <button class="nav-btn next" onclick="scrollCarousel(1)" aria-label="Next Image">&rsaquo;</button>
-        </div>
 
     </main>
 
