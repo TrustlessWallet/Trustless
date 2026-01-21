@@ -51,13 +51,36 @@
             align-items: center;
         }
 
-        /* MAIN GRID LAYOUT */
+        /* MAIN GRID LAYOUT (DESKTOP) */
         main {
             flex: 1;
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 60px;
-            align-items: start;
+            /* Important: Removing 'align-items: start' allows the right column 
+               to stretch to full height, enabling sticky behavior. */
+        }
+
+        /* GRID PLACEMENT */
+        .intro {
+            grid-column: 1;
+            grid-row: 1; /* First item on left */
+        }
+        
+        .features-list {
+            grid-column: 1;
+            grid-row: 2; /* Second item on left */
+        }
+
+        .device-wrapper {
+            grid-column: 2;
+            grid-row: 1 / span 2; /* Spans the entire height of the left column */
+            position: sticky;
+            top: 40px; /* Sticks to top of screen */
+            align-self: start; /* Prevents the wrapper itself from stretching, allowing it to stick */
+            width: 70%; /* 10% smaller preference */
+            margin: 0 auto;
+            position: relative; 
         }
 
         /* BRANDING */
@@ -100,7 +123,7 @@
         .intro {
             font-size: 1.1rem;
             line-height: 1.6;
-            margin-bottom: 50px;
+            margin-bottom: 20px; /* Reduced margin since grid handles gap */
             border-left: 2px solid var(--accent);
             padding-left: 20px;
         }
@@ -134,15 +157,7 @@
             font-size: 0.95rem;
         }
 
-        /* CAROUSEL CONTAINER */
-        .device-wrapper {
-            width: 70%; 
-            margin: 0 auto;
-            position: sticky;
-            top: 40px;
-            position: relative; 
-        }
-
+        /* CAROUSEL */
         .carousel-track {
             display: flex;
             overflow-x: auto;
@@ -174,40 +189,31 @@
             position: absolute;
             top: 50%;
             transform: translateY(-50%);
-            
-            /* Minimalist reset */
             background: none;
             border: none;
-            
             color: var(--text);
-            font-size: 3.5rem; /* Larger icon since no background */
+            font-size: 3.5rem; 
             padding: 10px;
             cursor: pointer;
             z-index: 10;
-            
-            opacity: 0; /* Hidden by default */
+            opacity: 0; 
             transition: opacity 0.3s, color 0.3s, transform 0.2s;
-            
             display: flex;
             align-items: center;
             justify-content: center;
             user-select: none; 
-            
-            /* Subtle shadow to ensure visibility on all backgrounds */
             text-shadow: 0 2px 15px rgba(0,0,0,0.3);
         }
 
-        /* Show buttons only when hovering the wrapper on desktop */
         .device-wrapper:hover .nav-btn {
             opacity: 1;
         }
 
         .nav-btn:hover {
             color: var(--accent);
-            transform: translateY(-50%) scale(1.1); /* Slight grow effect */
+            transform: translateY(-50%) scale(1.1); 
         }
 
-        /* Position */
         .prev { left: -60px; }
         .next { right: -60px; }
 
@@ -237,18 +243,28 @@
         /* RESPONSIVE DESIGN (MOBILE) */
         @media (max-width: 850px) {
             main {
-                grid-template-columns: 1fr; /* Stack into 1 column */
+                display: flex; /* Switch to Flexbox for vertical stacking */
+                flex-direction: column;
                 gap: 40px;
             }
+            
+            /* REORDERING MAGIC */
+            .intro {
+                order: 1;
+            }
             .device-wrapper {
+                order: 2; /* Image comes second */
                 width: 100%;
-                max-width: 350px; /* Limit size on mobile */
-                position: static; /* Remove sticky on mobile */
+                max-width: 350px;
+                position: static; /* No sticky on mobile */
+                margin-bottom: 20px;
             }
-            /* Hide chevrons on mobile, swipe is natural there */
-            .nav-btn {
-                display: none;
+            .features-list {
+                order: 3; /* Features come last */
             }
+
+            /* Hide chevrons on mobile */
+            .nav-btn { display: none; }
         }
     </style>
 </head>
@@ -263,49 +279,48 @@
     </header>
 
     <main class="container-limited">
-        <div class="content-left">
-            <div class="intro">
-                Trustless is a fully open-source, Bitcoin-only mobile wallet. 
-                It is very minimalist and easy to use, yet very functional.
-                <br><br>
-                <a href="https://github.com/TrustlessWallet/Trustless/">View Source Code (GPLv3)</a>
-            </div>
-
-            <ul class="features-list">
-                <li>
-                    <h3>Bitcoin wallet</h3>
-                    <p>Import or create new wallets, track balances, send and receive Bitcoin.</p>
-                </li>
-                <li>
-                    <h3>Address tracker</h3>
-                    <p>Track any Bitcoin address balance just by entering it. No private keys required.</p>
-                </li>
-                <li>
-                    <h3>Receive address change</h3>
-                    <p>Have 20 unused receive addresses at all times to choose from. This preserves privacy by preventing address reuse.</p>
-                </li>
-                <li>
-                    <h3>Balance breakdown</h3>
-                    <p>See actual UTXOs you own by clicking on your total wallet balance.</p>
-                </li>
-                <li>
-                    <h3>Coin control</h3>
-                    <p>Choose specifically which UTXOs to use for a transaction.</p>
-                </li>
-                <li>
-                    <h3>BIP44 change address management</h3>
-                    <p>All change addresses are derived from a 1/n chain and are only used once.</p>
-                </li>
-                <li>
-                    <h3>Custom node connection</h3>
-                    <p>Connect to your own node via Esplora API URL.</p>
-                </li>
-                <li>
-                    <h3>Network switch</h3>
-                    <p>Use testnet network for transaction testing and development.</p>
-                </li>
-            </ul>
+        
+        <div class="intro">
+            Trustless is a fully open-source, Bitcoin-only mobile wallet. 
+            It is very minimalist and easy to use, yet very functional.
+            <br><br>
+            <a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a>
         </div>
+
+        <ul class="features-list">
+            <li>
+                <h3>Bitcoin wallet</h3>
+                <p>Import or create new wallets, track balances, send and receive Bitcoin.</p>
+            </li>
+            <li>
+                <h3>Address tracker</h3>
+                <p>Track any Bitcoin address balance just by entering it. No private keys required.</p>
+            </li>
+            <li>
+                <h3>Receive address change</h3>
+                <p>Have 20 unused receive addresses at all times to choose from. This preserves privacy by preventing address reuse.</p>
+            </li>
+            <li>
+                <h3>Balance breakdown</h3>
+                <p>See actual UTXOs you own by clicking on your total wallet balance.</p>
+            </li>
+            <li>
+                <h3>Coin control</h3>
+                <p>Choose specifically which UTXOs to use for a transaction.</p>
+            </li>
+            <li>
+                <h3>BIP44 change address management</h3>
+                <p>All change addresses are derived from a 1/n chain and are only used once.</p>
+            </li>
+            <li>
+                <h3>Custom node connection</h3>
+                <p>Connect to your own node via Esplora API URL.</p>
+            </li>
+            <li>
+                <h3>Network switch</h3>
+                <p>Use testnet network for transaction testing and development.</p>
+            </li>
+        </ul>
 
         <div class="device-wrapper">
             <button class="nav-btn prev" onclick="scrollCarousel(-1)" aria-label="Previous Image">&lsaquo;</button>
@@ -315,6 +330,7 @@
 
             <button class="nav-btn next" onclick="scrollCarousel(1)" aria-label="Next Image">&rsaquo;</button>
         </div>
+
     </main>
 
     <footer class="container-limited">
@@ -362,7 +378,6 @@
                 const div = document.createElement('div');
                 div.className = 'carousel-item';
                 const img = document.createElement('img');
-                // use encodeURIComponent to handle potential spaces in path safely
                 img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
                 img.alt = `Trustless Wallet Screenshot ${i}`;
                 img.id = `slide-${i}`;
@@ -383,7 +398,6 @@
 
         function scrollCarousel(direction) {
             const track = document.getElementById('carousel');
-            // Scroll by the width of the track container for a full slide jump
             const scrollAmount = track.clientWidth * direction;
             track.scrollBy({
                 left: scrollAmount,
@@ -391,7 +405,6 @@
             });
         }
         
-        // Initialize on load
         initTheme();
     </script>
 </body>
