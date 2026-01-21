@@ -36,8 +36,7 @@
             padding: 40px 20px;
             box-sizing: border-box;
             transition: background-color 0.3s, color 0.3s;
-            /* FIX: Use gap for consistent spacing between header/main/footer */
-            gap: 60px; 
+            gap: 60px; /* Consistent vertical spacing */
         }
 
         /* LAYOUT CONTAINERS */
@@ -52,7 +51,6 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            /* margin-bottom removed in favor of body gap */
         }
 
         /* MAIN GRID LAYOUT */
@@ -64,7 +62,7 @@
             align-items: start;
         }
 
-        /* STYLES */
+        /* BRANDING */
         .brand {
             display: flex;
             align-items: center;
@@ -109,6 +107,7 @@
             padding-left: 20px;
         }
 
+        /* FEATURES LIST */
         .features-list {
             list-style: none;
             padding: 0;
@@ -137,22 +136,46 @@
             font-size: 0.95rem;
         }
 
-        /* DEVICE IMAGE STYLES */
-        .device-container {
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
+        /* CAROUSEL STYLES */
+        .device-wrapper {
+            width: 80%; /* Match previous size preference */
+            margin: 0 auto;
+            position: sticky;
+            top: 40px; /* Keeps phone in view while scrolling features on desktop */
         }
 
-        .device-container img {
-            /* FIX: Reduced size to 80% */
-            width: 80%;
+        .carousel-track {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
+            gap: 20px;
+            padding-bottom: 20px; /* Space for scrollbar */
+            
+            /* Hide scrollbar for cleaner look (optional) */
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none;  /* IE 10+ */
+        }
+        
+        /* Hide scrollbar for WebKit */
+        .carousel-track::-webkit-scrollbar {
+            display: none;
+        }
+
+        .carousel-item {
+            flex: 0 0 100%; /* Each image takes full width of container */
+            scroll-snap-align: center;
+        }
+
+        .carousel-item img {
+            width: 100%;
             height: auto;
             display: block;
-            /* Adds depth to the phone mockup */
             filter: drop-shadow(0 20px 30px var(--shadow));
+            border-radius: 40px; /* Approximate iPhone corner radius */
         }
 
+        /* FOOTER & LINKS */
         a {
             color: var(--link);
             text-decoration: underline;
@@ -163,7 +186,6 @@
             color: var(--muted);
             border-top: 1px solid var(--border);
             padding-top: 30px;
-            /* margin-top removed in favor of body gap */
             display: flex;
             flex-wrap: wrap;
             gap: 40px;
@@ -181,17 +203,15 @@
                 grid-template-columns: 1fr; /* Stack into 1 column */
                 gap: 40px;
             }
-            .device-container {
-                max-width: 450px; /* Don't let phone get too huge on tablets */
-                margin: 0 auto;
-            }
-            .device-container img {
-                 width: 100%; /* On mobile, let it fill its container */
+            .device-wrapper {
+                width: 100%;
+                max-width: 350px; /* Limit size on mobile */
+                position: static; /* Remove sticky on mobile */
             }
         }
     </style>
 </head>
-<body>
+<body onload="initTheme()">
 
     <header class="container-limited">
         <div class="brand">
@@ -246,8 +266,12 @@
             </ul>
         </div>
 
-        <div class="device-container">
-             <img src="assets/Device.png" alt="Trustless Wallet on iPhone">
+        <div class="device-wrapper">
+            <div class="carousel-track" id="carousel">
+                </div>
+            <div style="text-align: center; margin-top: 15px; font-size: 0.8rem; color: var(--muted);">
+                &larr; Swipe to explore &rarr;
+            </div>
         </div>
     </main>
 
@@ -269,12 +293,64 @@
     </footer>
 
     <script>
+        const IMAGE_COUNT = 8;
+        const BASE_PATH = "assets/Website images";
+        const EXTENSION = ".png"; // Change to .jpg if needed
+
+        function initTheme() {
+            // Check system preference or default to dark
+            const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            const currentTheme = document.body.getAttribute('data-theme') || (prefersDark ? 'dark' : 'light');
+            
+            // Generate Carousel Images initially
+            renderCarousel(currentTheme);
+        }
+
         function toggleTheme() {
             const body = document.body;
-            const currentTheme = body.getAttribute('data-theme');
+            const currentTheme = body.getAttribute('data-theme') || 'dark';
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
             body.setAttribute('data-theme', newTheme);
+            updateCarouselImages(newTheme);
         }
+
+        function renderCarousel(theme) {
+            const track = document.getElementById('carousel');
+            track.innerHTML = ''; // Clear existing
+
+            // Determine filename type: 'Device dark 1' vs 'Device white 1'
+            const type = theme === 'dark' ? 'dark' : 'white';
+
+            for (let i = 1; i <= IMAGE_COUNT; i++) {
+                const div = document.createElement('div');
+                div.className = 'carousel-item';
+                
+                const img = document.createElement('img');
+                // Use encodeURIComponent to handle spaces safely
+                img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
+                img.alt = `Trustless Wallet Screenshot ${i}`;
+                img.id = `slide-${i}`; // ID for easy selection later
+                
+                div.appendChild(img);
+                track.appendChild(div);
+            }
+        }
+
+        function updateCarouselImages(newTheme) {
+            // This function updates SRCs in place to preserve scroll position
+            const type = newTheme === 'dark' ? 'dark' : 'white';
+            
+            for (let i = 1; i <= IMAGE_COUNT; i++) {
+                const img = document.getElementById(`slide-${i}`);
+                if (img) {
+                    img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
+                }
+            }
+        }
+        
+        // Initialize on load
+        initTheme();
     </script>
 </body>
 </html>
