@@ -12,7 +12,8 @@
             --border: #333333;
             --accent: #f7931a; /* Bitcoin Orange */
             --link: #ffffff;
-            --shadow: rgba(255, 255, 255, 0.1);
+            /* Shadow var removed as it's no longer needed for images */
+            --btn-bg: rgba(50, 50, 50, 0.5); /* Semi-transparent btn bg for dark mode */
         }
 
         [data-theme="light"] {
@@ -22,7 +23,7 @@
             --border: #e0e0e0;
             --accent: #f7931a;
             --link: #000000;
-            --shadow: rgba(0, 0, 0, 0.2);
+             --btn-bg: rgba(200, 200, 200, 0.5); /* Semi-transparent btn bg for light mode */
         }
 
         body {
@@ -36,7 +37,7 @@
             padding: 40px 20px;
             box-sizing: border-box;
             transition: background-color 0.3s, color 0.3s;
-            gap: 60px; /* Consistent vertical spacing */
+            gap: 60px;
         }
 
         /* LAYOUT CONTAINERS */
@@ -57,7 +58,7 @@
         main {
             flex: 1;
             display: grid;
-            grid-template-columns: 1fr 1fr; /* Split into two columns */
+            grid-template-columns: 1fr 1fr;
             gap: 60px;
             align-items: start;
         }
@@ -73,7 +74,7 @@
             width: 50px;
             height: 50px;
             border-radius: 12px;
-            background-color: #222; /* Fallback */
+            background-color: #222;
         }
 
         h1 {
@@ -136,34 +137,34 @@
             font-size: 0.95rem;
         }
 
-        /* CAROUSEL STYLES */
+        /* CAROUSEL CONTAINER */
         .device-wrapper {
-            width: 80%; /* Match previous size preference */
+            /* FIX: Reduced size from 80% to 70% */
+            width: 70%; 
             margin: 0 auto;
             position: sticky;
-            top: 40px; /* Keeps phone in view while scrolling features on desktop */
+            top: 40px;
+            /* Needed for absolute positioning of chevrons */
+            position: relative; 
         }
 
         .carousel-track {
             display: flex;
             overflow-x: auto;
             scroll-snap-type: x mandatory;
-            -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
+            -webkit-overflow-scrolling: touch;
             gap: 20px;
-            padding-bottom: 20px; /* Space for scrollbar */
-            
-            /* Hide scrollbar for cleaner look (optional) */
-            scrollbar-width: none; /* Firefox */
-            -ms-overflow-style: none;  /* IE 10+ */
+            /* Hide scrollbars */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
         
-        /* Hide scrollbar for WebKit */
         .carousel-track::-webkit-scrollbar {
             display: none;
         }
 
         .carousel-item {
-            flex: 0 0 100%; /* Each image takes full width of container */
+            flex: 0 0 100%;
             scroll-snap-align: center;
         }
 
@@ -171,9 +172,47 @@
             width: 100%;
             height: auto;
             display: block;
-            filter: drop-shadow(0 20px 30px var(--shadow));
-            border-radius: 40px; /* Approximate iPhone corner radius */
+            /* FIX: Shadow filter removed */
+            border-radius: 40px;
         }
+
+        /* NAVIGATION CHEVRONS */
+        .nav-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: var(--btn-bg);
+            color: var(--text);
+            border: none;
+            font-size: 3rem;
+            padding: 0 15px;
+            cursor: pointer;
+            z-index: 10;
+            border-radius: 8px;
+            opacity: 0; /* Hidden by default until hover on desktop */
+            transition: opacity 0.3s, background-color 0.3s;
+            height: 80px; /* Fixed height for easier clicking */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            /* Prevent highlighting the chevron text on quick clicks */
+            user-select: none; 
+        }
+
+        /* Show buttons only when hovering the wrapper on desktop */
+        .device-wrapper:hover .nav-btn {
+            opacity: 1;
+        }
+
+        .nav-btn:hover {
+            background-color: var(--accent);
+            color: #fff;
+        }
+
+        /* Position outside the images slightly */
+        .prev { left: -50px; }
+        .next { right: -50px; }
+
 
         /* FOOTER & LINKS */
         a {
@@ -207,6 +246,10 @@
                 width: 100%;
                 max-width: 350px; /* Limit size on mobile */
                 position: static; /* Remove sticky on mobile */
+            }
+            /* Hide chevrons on mobile, swipe is natural there */
+            .nav-btn {
+                display: none;
             }
         }
     </style>
@@ -267,12 +310,13 @@
         </div>
 
         <div class="device-wrapper">
+            <button class="nav-btn prev" onclick="scrollCarousel(-1)" aria-label="Previous Image">&lsaquo;</button>
+            
             <div class="carousel-track" id="carousel">
                 </div>
-            <div style="text-align: center; margin-top: 15px; font-size: 0.8rem; color: var(--muted);">
-                &larr; Swipe to explore &rarr;
+
+            <button class="nav-btn next" onclick="scrollCarousel(1)" aria-label="Next Image">&rsaquo;</button>
             </div>
-        </div>
     </main>
 
     <footer class="container-limited">
@@ -295,14 +339,11 @@
     <script>
         const IMAGE_COUNT = 8;
         const BASE_PATH = "assets/Website images";
-        const EXTENSION = ".png"; // Change to .jpg if needed
+        const EXTENSION = ".png"; 
 
         function initTheme() {
-            // Check system preference or default to dark
             const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
             const currentTheme = document.body.getAttribute('data-theme') || (prefersDark ? 'dark' : 'light');
-            
-            // Generate Carousel Images initially
             renderCarousel(currentTheme);
         }
 
@@ -310,43 +351,47 @@
             const body = document.body;
             const currentTheme = body.getAttribute('data-theme') || 'dark';
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-            
             body.setAttribute('data-theme', newTheme);
             updateCarouselImages(newTheme);
         }
 
         function renderCarousel(theme) {
             const track = document.getElementById('carousel');
-            track.innerHTML = ''; // Clear existing
-
-            // Determine filename type: 'Device dark 1' vs 'Device white 1'
+            track.innerHTML = ''; 
             const type = theme === 'dark' ? 'dark' : 'white';
 
             for (let i = 1; i <= IMAGE_COUNT; i++) {
                 const div = document.createElement('div');
                 div.className = 'carousel-item';
-                
                 const img = document.createElement('img');
-                // Use encodeURIComponent to handle spaces safely
+                // use encodeURIComponent to handle potential spaces in path safely
                 img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
                 img.alt = `Trustless Wallet Screenshot ${i}`;
-                img.id = `slide-${i}`; // ID for easy selection later
-                
+                img.id = `slide-${i}`;
                 div.appendChild(img);
                 track.appendChild(div);
             }
         }
 
         function updateCarouselImages(newTheme) {
-            // This function updates SRCs in place to preserve scroll position
             const type = newTheme === 'dark' ? 'dark' : 'white';
-            
             for (let i = 1; i <= IMAGE_COUNT; i++) {
                 const img = document.getElementById(`slide-${i}`);
                 if (img) {
                     img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
                 }
             }
+        }
+
+        // FIX: New function for chevron navigation
+        function scrollCarousel(direction) {
+            const track = document.getElementById('carousel');
+            // Scroll by the width of the track container for a full slide jump
+            const scrollAmount = track.clientWidth * direction;
+            track.scrollBy({
+                left: scrollAmount,
+                behavior: 'smooth'
+            });
         }
         
         // Initialize on load
