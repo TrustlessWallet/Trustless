@@ -5,9 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trustless</title>
     <style>
+        :root {
+            --bg: #000000;
+            --text: #ffffff;
+            --muted: #888888;
+            --border: #333333;
+            --accent: #f7931a; /* Bitcoin Orange */
+            --link: #ffffff;
+        }
+
+        [data-theme="light"] {
+            --bg: #ffffff;
+            --text: #000000;
+            --muted: #666666;
+            --border: #e0e0e0;
+            --accent: #f7931a;
+            --link: #000000;
+        }
+
         body {
-            background-color: #000;
-            color: #fff;
+            background-color: var(--bg);
+            color: var(--text);
             font-family: 'Courier New', Courier, monospace;
             display: flex;
             flex-direction: column;
@@ -15,117 +33,183 @@
             margin: 0;
             padding: 40px 20px;
             box-sizing: border-box;
+            transition: background-color 0.3s, color 0.3s;
         }
-        main { 
-            flex: 1; 
+
+        header {
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: -1px;
+        }
+
+        button#theme-toggle {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            padding: 5px 10px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.8rem;
+        }
+
+        button#theme-toggle:hover {
+            color: var(--text);
+            border-color: var(--text);
+        }
+
+        main {
+            flex: 1;
             max-width: 800px;
             margin: 0 auto;
             width: 100%;
         }
-        h1 { 
-            font-size: 2.5rem; 
-            font-weight: bold; 
-            letter-spacing: -1px;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
-        .slogan {
-            font-size: 1.2rem;
-            color: #f7931a; /* Bitcoin Orange */
-            margin-bottom: 40px;
-            font-weight: bold;
-        }
-        .description {
-            font-size: 1rem;
+
+        .intro {
+            font-size: 1.1rem;
             line-height: 1.6;
-            color: #ccc;
-            margin-bottom: 40px;
-            border-left: 2px solid #333;
+            margin-bottom: 50px;
+            border-left: 2px solid var(--accent);
             padding-left: 20px;
         }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 30px;
-            margin-bottom: 60px;
+
+        .features-list {
+            list-style: none;
+            padding: 0;
         }
-        .feature h3 {
-            color: #fff;
-            border-bottom: 1px solid #333;
-            padding-bottom: 10px;
-            margin-bottom: 15px;
+
+        .features-list li {
+            margin-bottom: 30px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid var(--border);
         }
-        .feature p {
-            color: #888;
-            font-size: 0.9rem;
+
+        .features-list li:last-child {
+            border-bottom: none;
+        }
+
+        .features-list h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.1rem;
+        }
+
+        .features-list p {
+            margin: 0;
+            color: var(--muted);
             line-height: 1.5;
+            font-size: 0.95rem;
         }
+
+        a {
+            color: var(--link);
+            text-decoration: underline;
+        }
+
         footer {
+            max-width: 800px;
+            margin: 60px auto 0 auto;
+            width: 100%;
             font-size: 0.75rem;
-            color: #444;
-            border-top: 1px solid #222;
+            color: var(--muted);
+            border-top: 1px solid var(--border);
             padding-top: 30px;
-            margin-top: 60px;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 40px;
         }
-        .legal-block strong { color: #666; display: block; margin-bottom: 5px;}
-        a { color: #fff; text-decoration: none; border-bottom: 1px dotted #666; }
-        a:hover { color: #f7931a; border-color: #f7931a; }
+
+        .legal-block strong {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--text);
+        }
     </style>
 </head>
 <body>
-    <main>
+
+    <header>
         <h1>Trustless</h1>
-        <p class="slogan">No state. No banks. No trust.</p>
+        <button id="theme-toggle" onclick="toggleTheme()">Switch Theme</button>
+    </header>
 
-        <div class="description">
-            <p>
-                A minimalist, fully open-source, Bitcoin-only wallet designed for sovereignty. 
-                Manage your assets with granular control and zero reliance on third parties.
-            </p>
+    <main>
+        <div class="intro">
+            [cite_start]Trustless is a fully open-source, Bitcoin-only mobile wallet[cite: 5]. 
+            [cite_start]It is very minimalist and easy to use, yet very functional[cite: 5].
+            <br><br>
+            [cite_start]<a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a> [cite: 5]
         </div>
 
-        <div class="grid">
-            <div class="feature">
-                <h3>Bitcoin Only</h3>
-                <p>Focused exclusively on the hardest money. No altcoins, no tokens, no noise.</p>
-            </div>
-            <div class="feature">
-                <h3>Coin Control</h3>
-                <p>Select specific UTXOs for every transaction. Manage your digital footprint and fee efficiency.</p>
-            </div>
-            <div class="feature">
-                <h3>Privacy First</h3>
-                <p>Address rotation prevents linkability. Monitor balances via the Address Tracker without exposing private keys.</p>
-            </div>
-            <div class="feature">
-                <h3>Sovereign Node</h3>
-                <p>Connect directly to your own node via Esplora API. Don't trust verify.</p>
-            </div>
-        </div>
-        
-        <p style="color: #666; font-size: 0.8rem;">
-            Open Source (GPLv3) &middot; <a href="https://github.com/pechen987/Trustless">View Code</a>
-        </p>
+        <ul class="features-list">
+            <li>
+                <h3>Bitcoin wallet</h3>
+                [cite_start]<p>Import or create new wallets, track balances, send and receive Bitcoin[cite: 5].</p>
+            </li>
+            <li>
+                <h3>Address tracker</h3>
+                <p>Track any Bitcoin address balance just by entering it. [cite_start]No private keys required[cite: 5].</p>
+            </li>
+            <li>
+                <h3>Receive address change</h3>
+                <p>Have 20 unused receive addresses at all times to choose from. [cite_start]This is a privacy feature, because address reuse links payments together[cite: 5].</p>
+            </li>
+            <li>
+                <h3>Balance breakdown</h3>
+                [cite_start]<p>See actual UTXOs you own by clicking on your total wallet balance[cite: 5].</p>
+            </li>
+            <li>
+                <h3>Coin control</h3>
+                [cite_start]<p>Choose which UTXOs to use for a transaction[cite: 5].</p>
+            </li>
+            <li>
+                <h3>BIP44 change address management</h3>
+                [cite_start]<p>Following best privacy practices, all change addresses are derived from a 1/n chain and are only used once[cite: 5].</p>
+            </li>
+            <li>
+                <h3>Custom node connection</h3>
+                [cite_start]<p>Connect to your own node via Esplora API URL[cite: 5].</p>
+            </li>
+            <li>
+                <h3>Network switch</h3>
+                [cite_start]<p>Use testnet network for transaction testing / development[cite: 5].</p>
+            </li>
+        </ul>
     </main>
 
     <footer>
         <div class="legal-block">
             <strong>LEGAL ENTITY</strong>
             KRUGLOV IGOR<br>
-            VAT: 13159460966
+            [cite_start]VAT: 13159460966 [cite: 1]
         </div>
         <div class="legal-block">
             <strong>REGISTERED OFFICE</strong>
             VIA GIACOMO MATTEOTTI 51<br>
-            20017 RHO (MI), ITALY
+            [cite_start]20017 RHO (MI), ITALY [cite: 1]
         </div>
         <div class="legal-block">
             <strong>CONTACT</strong>
-            igorek.ekrug@gmail.com
+            [cite_start]igorek.ekrug@gmail.com [cite: 1]
         </div>
     </footer>
+
+    <script>
+        function toggleTheme() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            body.setAttribute('data-theme', newTheme);
+        }
+    </script>
 </body>
 </html>
