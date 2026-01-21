@@ -12,8 +12,6 @@
             --border: #333333;
             --accent: #f7931a; /* Bitcoin Orange */
             --link: #ffffff;
-            /* Shadow var removed as it's no longer needed for images */
-            --btn-bg: rgba(50, 50, 50, 0.5); /* Semi-transparent btn bg for dark mode */
         }
 
         [data-theme="light"] {
@@ -23,7 +21,6 @@
             --border: #e0e0e0;
             --accent: #f7931a;
             --link: #000000;
-             --btn-bg: rgba(200, 200, 200, 0.5); /* Semi-transparent btn bg for light mode */
         }
 
         body {
@@ -139,12 +136,10 @@
 
         /* CAROUSEL CONTAINER */
         .device-wrapper {
-            /* FIX: Reduced size from 80% to 70% */
             width: 70%; 
             margin: 0 auto;
             position: sticky;
             top: 40px;
-            /* Needed for absolute positioning of chevrons */
             position: relative; 
         }
 
@@ -154,7 +149,6 @@
             scroll-snap-type: x mandatory;
             -webkit-overflow-scrolling: touch;
             gap: 20px;
-            /* Hide scrollbars */
             scrollbar-width: none;
             -ms-overflow-style: none;
         }
@@ -172,31 +166,35 @@
             width: 100%;
             height: auto;
             display: block;
-            /* FIX: Shadow filter removed */
             border-radius: 40px;
         }
 
-        /* NAVIGATION CHEVRONS */
+        /* NAVIGATION CHEVRONS - MINIMALIST */
         .nav-btn {
             position: absolute;
             top: 50%;
             transform: translateY(-50%);
-            background-color: var(--btn-bg);
-            color: var(--text);
+            
+            /* Minimalist reset */
+            background: none;
             border: none;
-            font-size: 3rem;
-            padding: 0 15px;
+            
+            color: var(--text);
+            font-size: 3.5rem; /* Larger icon since no background */
+            padding: 10px;
             cursor: pointer;
             z-index: 10;
-            border-radius: 8px;
-            opacity: 0; /* Hidden by default until hover on desktop */
-            transition: opacity 0.3s, background-color 0.3s;
-            height: 80px; /* Fixed height for easier clicking */
+            
+            opacity: 0; /* Hidden by default */
+            transition: opacity 0.3s, color 0.3s, transform 0.2s;
+            
             display: flex;
             align-items: center;
             justify-content: center;
-            /* Prevent highlighting the chevron text on quick clicks */
             user-select: none; 
+            
+            /* Subtle shadow to ensure visibility on all backgrounds */
+            text-shadow: 0 2px 15px rgba(0,0,0,0.3);
         }
 
         /* Show buttons only when hovering the wrapper on desktop */
@@ -205,13 +203,13 @@
         }
 
         .nav-btn:hover {
-            background-color: var(--accent);
-            color: #fff;
+            color: var(--accent);
+            transform: translateY(-50%) scale(1.1); /* Slight grow effect */
         }
 
-        /* Position outside the images slightly */
-        .prev { left: -50px; }
-        .next { right: -50px; }
+        /* Position */
+        .prev { left: -60px; }
+        .next { right: -60px; }
 
 
         /* FOOTER & LINKS */
@@ -270,7 +268,7 @@
                 Trustless is a fully open-source, Bitcoin-only mobile wallet. 
                 It is very minimalist and easy to use, yet very functional.
                 <br><br>
-                <a href="https://github.com/pechen987/Trustless">View Source Code (GPLv3)</a>
+                <a href="https://github.com/TrustlessWallet/Trustless/">View Source Code (GPLv3)</a>
             </div>
 
             <ul class="features-list">
@@ -316,7 +314,7 @@
                 </div>
 
             <button class="nav-btn next" onclick="scrollCarousel(1)" aria-label="Next Image">&rsaquo;</button>
-            </div>
+        </div>
     </main>
 
     <footer class="container-limited">
@@ -383,7 +381,6 @@
             }
         }
 
-        // FIX: New function for chevron navigation
         function scrollCarousel(direction) {
             const track = document.getElementById('carousel');
             // Scroll by the width of the track container for a full slide jump
