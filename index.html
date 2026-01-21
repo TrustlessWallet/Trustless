@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KRUGLOV IGOR</title>
+    <title>Trustless</title>
     <style>
         body {
             background-color: #000;
@@ -13,43 +13,117 @@
             flex-direction: column;
             min-height: 100vh;
             margin: 0;
-            padding: 20px;
+            padding: 40px 20px;
+            box-sizing: border-box;
         }
-        main { flex: 1; display: flex; align-items: center; justify-content: center; }
-        h1 { font-size: 1.5rem; font-weight: normal; letter-spacing: 2px; }
+        main { 
+            flex: 1; 
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        h1 { 
+            font-size: 2.5rem; 
+            font-weight: bold; 
+            letter-spacing: -1px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .slogan {
+            font-size: 1.2rem;
+            color: #f7931a; /* Bitcoin Orange */
+            margin-bottom: 40px;
+            font-weight: bold;
+        }
+        .description {
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #ccc;
+            margin-bottom: 40px;
+            border-left: 2px solid #333;
+            padding-left: 20px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            margin-bottom: 60px;
+        }
+        .feature h3 {
+            color: #fff;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .feature p {
+            color: #888;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
         footer {
-            font-size: 0.8rem;
-            color: #666;
-            border-top: 1px solid #333;
-            padding-top: 20px;
-            margin-top: 40px;
-            text-align: left;
+            font-size: 0.75rem;
+            color: #444;
+            border-top: 1px solid #222;
+            padding-top: 30px;
+            margin-top: 60px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
         }
-        .legal-block { margin-bottom: 10px; }
-        a { color: #fff; text-decoration: underline; }
+        .legal-block strong { color: #666; display: block; margin-bottom: 5px;}
+        a { color: #fff; text-decoration: none; border-bottom: 1px dotted #666; }
+        a:hover { color: #f7931a; border-color: #f7931a; }
     </style>
 </head>
 <body>
     <main>
-        <div>
-            <h1>YOU-WORTH.COM</h1>
-            <p>Digital sovereignty and trustless infrastructure.</p>
+        <h1>Trustless</h1>
+        <p class="slogan">No state. No banks. No trust.</p>
+
+        <div class="description">
+            <p>
+                A minimalist, fully open-source, Bitcoin-only wallet designed for sovereignty. 
+                Manage your assets with granular control and zero reliance on third parties.
+            </p>
         </div>
+
+        <div class="grid">
+            <div class="feature">
+                <h3>Bitcoin Only</h3>
+                <p>Focused exclusively on the hardest money. No altcoins, no tokens, no noise.</p>
+            </div>
+            <div class="feature">
+                <h3>Coin Control</h3>
+                <p>Select specific UTXOs for every transaction. Manage your digital footprint and fee efficiency.</p>
+            </div>
+            <div class="feature">
+                <h3>Privacy First</h3>
+                <p>Address rotation prevents linkability. Monitor balances via the Address Tracker without exposing private keys.</p>
+            </div>
+            <div class="feature">
+                <h3>Sovereign Node</h3>
+                <p>Connect directly to your own node via Esplora API. Don't trust verify.</p>
+            </div>
+        </div>
+        
+        <p style="color: #666; font-size: 0.8rem;">
+            Open Source (GPLv3) &middot; <a href="https://github.com/pechen987/Trustless">View Code</a>
+        </p>
     </main>
 
     <footer>
         <div class="legal-block">
-            <strong>LEGAL ENTITY</strong><br>
+            <strong>LEGAL ENTITY</strong>
             KRUGLOV IGOR<br>
             VAT: 13159460966
         </div>
         <div class="legal-block">
-            <strong>REGISTERED OFFICE</strong><br>
+            <strong>REGISTERED OFFICE</strong>
             VIA GIACOMO MATTEOTTI 51<br>
             20017 RHO (MI), ITALY
         </div>
         <div class="legal-block">
-            <strong>CONTACT</strong><br>
+            <strong>CONTACT</strong>
             igorek.ekrug@gmail.com
         </div>
     </footer>
