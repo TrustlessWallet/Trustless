@@ -49,6 +49,9 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            /* FIX: Added gap to prevent button touching text on mobile */
+            gap: 20px; 
+            flex-wrap: wrap; /* Safety wrap for very small screens */
         }
 
         /* MAIN GRID LAYOUT (DESKTOP) */
@@ -57,30 +60,8 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 60px;
-            /* Important: Removing 'align-items: start' allows the right column 
-               to stretch to full height, enabling sticky behavior. */
-        }
-
-        /* GRID PLACEMENT */
-        .intro {
-            grid-column: 1;
-            grid-row: 1; /* First item on left */
-        }
-        
-        .features-list {
-            grid-column: 1;
-            grid-row: 2; /* Second item on left */
-        }
-
-        .device-wrapper {
-            grid-column: 2;
-            grid-row: 1 / span 2; /* Spans the entire height of the left column */
-            position: sticky;
-            top: 40px; /* Sticks to top of screen */
-            align-self: start; /* Prevents the wrapper itself from stretching, allowing it to stick */
-            width: 70%; /* 10% smaller preference */
-            margin: 0 auto;
-            position: relative; 
+            /* CRITICAL FIX: Ensure columns stretch to full height so 'sticky' has room to move */
+            align-items: stretch; 
         }
 
         /* BRANDING */
@@ -102,6 +83,7 @@
             margin: 0;
             text-transform: uppercase;
             letter-spacing: -1px;
+            white-space: nowrap; /* Prevent header text from breaking awkwardly */
         }
 
         button#theme-toggle {
@@ -113,6 +95,7 @@
             font-family: inherit;
             font-size: 0.8rem;
             border-radius: 4px;
+            white-space: nowrap; /* Keep button text on one line */
         }
 
         button#theme-toggle:hover {
@@ -120,21 +103,43 @@
             border-color: var(--text);
         }
 
+        /* CONTENT PLACEMENT */
         .intro {
+            grid-column: 1;
+            grid-row: 1; 
             font-size: 1.1rem;
             line-height: 1.6;
-            margin-bottom: 20px; /* Reduced margin since grid handles gap */
+            margin-bottom: 20px; 
             border-left: 2px solid var(--accent);
             padding-left: 20px;
         }
-
-        /* FEATURES LIST */
+        
         .features-list {
+            grid-column: 1;
+            grid-row: 2; 
             list-style: none;
             padding: 0;
             margin: 0;
         }
 
+        .device-wrapper {
+            grid-column: 2;
+            /* Spans both rows (intro + features) to create a tall track */
+            grid-row: 1 / span 2; 
+            
+            /* STICKY CONFIGURATION */
+            position: -webkit-sticky; /* Safari support */
+            position: sticky;
+            top: 40px; /* Distance from top of screen */
+            align-self: start; /* Allows the item to be shorter than the track */
+            
+            width: 70%; 
+            margin: 0 auto;
+            position: relative; 
+            height: fit-content; /* Ensure it doesn't accidentally stretch */
+        }
+
+        /* FEATURES STYLING */
         .features-list li {
             margin-bottom: 30px;
             padding-bottom: 30px;
@@ -184,7 +189,7 @@
             border-radius: 40px;
         }
 
-        /* NAVIGATION CHEVRONS - MINIMALIST */
+        /* NAVIGATION CHEVRONS */
         .nav-btn {
             position: absolute;
             top: 50%;
@@ -217,7 +222,6 @@
         .prev { left: -60px; }
         .next { right: -60px; }
 
-
         /* FOOTER & LINKS */
         a {
             color: var(--link);
@@ -243,27 +247,22 @@
         /* RESPONSIVE DESIGN (MOBILE) */
         @media (max-width: 850px) {
             main {
-                display: flex; /* Switch to Flexbox for vertical stacking */
+                display: flex; 
                 flex-direction: column;
                 gap: 40px;
             }
             
-            /* REORDERING MAGIC */
-            .intro {
-                order: 1;
-            }
+            /* REORDERING */
+            .intro { order: 1; }
             .device-wrapper {
-                order: 2; /* Image comes second */
+                order: 2; 
                 width: 100%;
                 max-width: 350px;
                 position: static; /* No sticky on mobile */
                 margin-bottom: 20px;
             }
-            .features-list {
-                order: 3; /* Features come last */
-            }
+            .features-list { order: 3; }
 
-            /* Hide chevrons on mobile */
             .nav-btn { display: none; }
         }
     </style>
