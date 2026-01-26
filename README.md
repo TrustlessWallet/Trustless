@@ -49,7 +49,7 @@ To run the project, you need Node.js and a setup for iOS (Xcode) or Android (And
         ```bash
         npm run android
         ```
-        *Ensure you have an Android Emulator running or a physical device connected.*
+        *Make sure you have an Android Emulator running or a physical device connected.*
 
 
 
