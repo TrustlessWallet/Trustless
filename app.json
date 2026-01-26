@@ -23,8 +23,8 @@
       }
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+      "Icon": {
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.btc.trustless",
@@ -34,11 +34,30 @@
         "android.permission.USE_FINGERPRINT"
       ]
     },
-    "plugins": [
-      "expo-font",
-      "expo-local-authentication",
-      "expo-asset"
-    ],
+"plugins": [
+  [
+    "expo-font",
+    {
+      "fonts": [
+        "./assets/fonts/SpaceMono-Regular.ttf",
+        "./assets/fonts/SpaceMono-Italic.ttf",
+        "./assets/fonts/SpaceMono-Bold.ttf",
+        "./assets/fonts/SpaceMono-BoldItalic.ttf"
+      ]
+    }
+  ],
+  "expo-local-authentication",
+  "expo-asset",
+  [
+    "expo-build-properties",
+    {
+      "android": {
+        "largeHeap": true,
+        "usesCleartextTraffic": true
+      }
+    }
+  ]
+],
     "extra": {
       "eas": {
         "projectId": "997b0852-0a8b-434d-8927-dc50771b8b51"

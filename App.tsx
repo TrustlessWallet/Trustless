@@ -13,6 +13,9 @@ import {
   SpaceMono_700Bold,
   SpaceMono_700Bold_Italic,
 } from '@expo-google-fonts/space-mono';
+import 'react-native-get-random-values'; 
+import './shim'; 
+import { registerRootComponent } from 'expo';
 
 LogBox.ignoreLogs([
   'Setting a timer',
@@ -51,13 +54,15 @@ const ThemedAppRoot = () => {
 export default function App() {
   const [networkLoaded, setNetworkLoaded] = useState(false);
   const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>('light');
-  const systemScheme = useColorScheme();
   const [appKey, setAppKey] = useState(0);
+  const systemScheme = useColorScheme();
 
   useEffect(() => {
     const prepareApp = async () => {
       try {
+        console.log('--- START PREPARE APP ---');
         const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
+        
         if (savedNetwork === 'testnet') {
           setNetwork('testnet');
         } else {
@@ -72,17 +77,19 @@ export default function App() {
         }
 
       } catch (e) {
-        console.warn(e);
+        console.warn('PREPARE APP ERROR:', e);
       } finally {
+        console.log('--- SETTING NETWORK LOADED ---');
         setNetworkLoaded(true);
+        
+
+        onNetworkChange(() => {
+          setAppKey(prev => prev + 1);
+        });
       }
     };
 
     prepareApp();
-
-    onNetworkChange(() => {
-      setAppKey(prev => prev + 1);
-    });
   }, []);
 
   let [fontsLoaded] = useFonts({
@@ -111,10 +118,12 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <WalletProvider key={appKey}>
+        <WalletProvider key={appKey}> 
           <ThemedAppRoot />
         </WalletProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
 }
+
+registerRootComponent(App);

@@ -7,15 +7,17 @@ import type { RootStackParamList } from '../types';
 import Video from 'react-native-video';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-const { width } = Dimensions.get('window');
+
 const OnboardingTrackerScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingTracker'>>();
   const isFocused = useIsFocused();
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
+  
   const handleNext = () => {
     navigation.goBack();
   };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -23,16 +25,15 @@ const OnboardingTrackerScreen = () => {
           <View style={styles.videoWrapper}>
             {isFocused && (
               <Video
-                key={Date.now()}
                 source={require('../../assets/TrackerOnboardingFinal.mov')} 
                 style={styles.videoFill}
                 muted={true}
                 repeat={true}
                 resizeMode="cover"
+                disableFocus={true}
               />
             )}
           </View>
-          {}
           <Image
             source={require('../../assets/iPhone16Plus.png')}
             style={styles.frameOverlay}
@@ -52,6 +53,7 @@ const OnboardingTrackerScreen = () => {
     </SafeAreaView>
   );
 };
+
 const getStyles = (theme: Theme) => StyleSheet.create({
   container: {
     flex: 1,

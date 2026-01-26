@@ -1,3 +1,4 @@
+//
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer, useNavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
@@ -53,7 +54,7 @@ const AppNavigator = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [isBackgrounded, setIsBackgrounded] = useState(false);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('MainTabs');
-  const [initialTab, setInitialTab] = useState<keyof TabParamList>('Wallet'); // Default to Wallet
+  const [initialTab, setInitialTab] = useState<keyof TabParamList>('Wallet'); 
   const [currentRouteName, setCurrentRouteName] = useState<string | undefined>(undefined);
   const appState = useRef(AppState.currentState);
   
@@ -143,20 +144,25 @@ const AppNavigator = () => {
 
   useEffect(() => {
     const checkInitialStatus = async () => {
+      console.log('DEBUG: AppNavigator -> checkInitialStatus STARTED');
       try {
+        console.log('DEBUG: AppNavigator -> Checking AsyncStorage...');
         const hasCompletedOnboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
         const savedDefaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-        // Logic changed: default to Wallet if savedDefaultScreen is null or explicitly 'Wallet'
         setInitialTab(savedDefaultScreen === 'Tracker' ? 'Tracker' : 'Wallet');
 
         if (hasCompletedOnboarding === null) {
+          console.log('DEBUG: AppNavigator -> User needs onboarding');
           setNeedsOnboarding(true);
           setIsLoading(false);
           return;
         }
 
+        console.log('DEBUG: AppNavigator -> Checking Biometrics...');
         const isBiometricsEnabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
-        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync(); 
+        console.log('DEBUG: AppNavigator -> Biometrics Enrolled:', isEnrolled); 
         
         if (isBiometricsEnabled === 'true' && isEnrolled) {
           setInitialRoute('AuthCheck');
@@ -164,12 +170,16 @@ const AppNavigator = () => {
       } catch (e) {
         console.error("Failed to check app status", e);
       } finally {
+        console.log('DEBUG: AppNavigator -> checkInitialStatus FINISHED. Setting isLoading = false');
         setIsLoading(false);
       }
     };
 
     if (!walletLoading) {
+        console.log('DEBUG: AppNavigator -> Wallet Loaded. Starting Status Check...');
       checkInitialStatus();
+    } else {
+        console.log('DEBUG: AppNavigator -> Waiting for Wallet Loading...');
     }
   }, [walletLoading]);
 
@@ -280,6 +290,9 @@ const AppNavigator = () => {
           source={splashIcon}
           style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
         />
+        <Text style={{ marginTop: 20, color: isDark ? 'white' : 'black' }}>
+            {walletLoading ? "Loading Wallet..." : "Checking App Status..."}
+        </Text>
       </View>
     );
   }

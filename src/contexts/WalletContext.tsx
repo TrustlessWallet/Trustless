@@ -59,7 +59,6 @@ interface WalletContextType {
   incrementChangeIndex: (walletId: string, lastUsedIndex: number) => Promise<void>;
   getOrCreateNextUnusedReceiveAddress: (currentAddress: string, currentIndex: number) => Promise<{ address: string, index: number } | null>;
   
-  // UTXO Management
   updateUtxoLabel: (txid: string, vout: number, label: string) => Promise<void>;
   scanAndNameUtxos: () => Promise<void>;
   getUtxoLabel: (txid: string, vout: number) => string;
@@ -122,7 +121,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  // --- UTXO Management Methods (Defined early to be used in effects) ---
   const getUtxoLabel = useCallback((txid: string, vout: number): string => {
       if (!activeWallet) return '';
       const key = `${txid}:${vout}`;
@@ -146,7 +144,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const scanAndNameUtxos = async () => {
     if (!activeWallet) return;
 
-    // 1. Fetch all UTXOs for known active addresses
     const infoCache = activeWallet.derivedAddressInfoCache ?? [];
     const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
     const changeIndex = activeWallet.changeAddressIndex ?? 0;
@@ -164,11 +161,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         let nextCount = activeWallet.nextUtxoCount;
         let changed = false;
 
-        // 2. Identify new UTXOs that don't have a label yet
+
         const newUtxos = fetchedUtxos.filter(u => !labels[`${u.txid}:${u.vout}`]);
 
         if (newUtxos.length > 0) {
-            // 3. Sort them: Block Height (asc) -> TxID (asc) -> Vout (asc)
+
             newUtxos.sort((a, b) => {
                 const heightA = a.status.block_height || Number.MAX_SAFE_INTEGER;
                 const heightB = b.status.block_height || Number.MAX_SAFE_INTEGER;
@@ -177,7 +174,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 return a.vout - b.vout;
             });
 
-            // 4. Assign names
             for (const utxo of newUtxos) {
                 const key = `${utxo.txid}:${utxo.vout}`;
                 labels[key] = `UTXO #${nextCount++}`;
@@ -205,10 +201,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const triggerRefresh = () => {
     setLastRefreshTime(Date.now());
-    scanAndNameUtxos(); // Also scan for new UTXOs when refreshing
+    scanAndNameUtxos();
   };
 
-  // Automatically scan for UTXO names when active wallet changes
   useEffect(() => {
     if (activeWallet) {
         scanAndNameUtxos();
@@ -218,30 +213,38 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   useEffect(() => {
     const bootstrap = async () => {
+      console.log('DEBUG: Starting Wallet Bootstrap...');
       setLoading(true);
       setLoadingSavedAddresses(true);
       setLoadingTrackedAddresses(true);
       try {
+        console.log('DEBUG: Fetching Wallets from Keychain...');
         const walletsCreds = await Keychain.getGenericPassword({ service: WALLETS_KEY });
+        console.log('DEBUG: Wallets fetched:', walletsCreds ? 'Found' : 'Empty');
+
         const walletsFromStorage: Wallet[] = walletsCreds ? JSON.parse(walletsCreds.password) : [];
         let activeId: string | null = null;
         
+        console.log('DEBUG: Fetching Active Wallet ID...');
         const activeIdCreds = await Keychain.getGenericPassword({ service: ACTIVE_WALLET_KEY });
         if (activeIdCreds) {
             activeId = activeIdCreds.password;
         }
 
         if (walletsFromStorage.length > 0) {
+            console.log('DEBUG: Loading Active Wallet...');
             if (!activeId || !walletsFromStorage.find(w => w.id === activeId)) {
                 activeId = walletsFromStorage[0].id;
                 await Keychain.setGenericPassword('user', activeId, { service: ACTIVE_WALLET_KEY });
             }
             await loadAndSetActiveWallet(activeId, walletsFromStorage);
         } else {
+            console.log('DEBUG: No wallets to load, setting empty state.');
             setWallets([]);
             setActiveWallet(null);
         }
 
+        console.log('DEBUG: Fetching Saved Addresses...');
         const savedAddressesCreds = await Keychain.getGenericPassword({ service: SAVED_ADDR_KEY });
         if (savedAddressesCreds) {
             setSavedAddresses(JSON.parse(savedAddressesCreds.password));
@@ -249,6 +252,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setSavedAddresses([]);
         }
 
+        console.log('DEBUG: Fetching Tracked Addresses...');
         const trackedAddressesCreds = await Keychain.getGenericPassword({ service: TRACKED_ADDR_KEY });
         if (trackedAddressesCreds) {
             setTrackedAddresses(JSON.parse(trackedAddressesCreds.password));
@@ -257,8 +261,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
       } catch (error) {
-        console.error("Failed to bootstrap wallet:", error);
+        console.error("DEBUG: Failed to bootstrap wallet:", error);
       } finally {
+        console.log('DEBUG: Bootstrap Finished. Setting Loading = False');
         setLoading(false);
         setLoadingSavedAddresses(false);
         setLoadingTrackedAddresses(false);
@@ -298,7 +303,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let derivedChangeAddresses: DerivedAddress[] = [];
     let derivedAddressInfoCache: DerivedAddressInfo[] = walletMetadata.derivedAddressInfoCache || [];
 
-    // Init legacy wallets that don't have these fields
+
     const utxoLabels = walletMetadata.utxoLabels || {};
     const nextUtxoCount = walletMetadata.nextUtxoCount || 1;
 
@@ -681,7 +686,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  // --- Address Book Methods ---
   const addSavedAddress = async (address: Omit<BitcoinAddress, 'id'>) => {
     const addressWithId = { ...address, id: uuidv4() };
     const newAddresses = [...savedAddresses, addressWithId];
@@ -718,7 +722,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  // --- Tracker Methods ---
+
   const addTrackedAddress = async (address: Omit<BitcoinAddress, 'id'>) => {
     const addressWithId = { ...address, id: uuidv4() };
     const newAddresses = [...trackedAddresses, addressWithId];
@@ -772,7 +776,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     incrementChangeIndex,
     getOrCreateNextUnusedReceiveAddress,
     
-    // UTXO Methods
+
     updateUtxoLabel,
     scanAndNameUtxos,
     getUtxoLabel,

@@ -145,9 +145,7 @@ const OnboardingWalletScreen = () => {
         keyExtractor={(item) => item.key}
         renderItem={({ item, index }) => (
           <View style={styles.slide}>
-            {/* Phone Mockup Container */}
             <View style={styles.phoneContainer}>
-              {/* Content Wrapper (Video or QR) */}
               <View style={[
                   styles.videoWrapper, 
                   item.type === 'qr' && styles.qrWrapperBackground 
@@ -188,7 +186,6 @@ const OnboardingWalletScreen = () => {
                 )}
               </View>
 
-              {/* Frame Overlay */}
               <Image
                 source={require('../../assets/iPhone16Plus.png')}
                 style={styles.frameOverlay}
@@ -196,7 +193,6 @@ const OnboardingWalletScreen = () => {
               />
             </View>
 
-            {/* Text Content */}
             <View style={styles.textContainer}>
               <Text style={styles.headline}>{item.headline}</Text>
               <Text style={styles.bodyText}>
