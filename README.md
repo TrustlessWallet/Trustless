@@ -20,7 +20,7 @@ To run the project, you need Node.js and a setup for iOS (Xcode) or Android (And
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/pechen987/Trustless.git
+    git clone [https://github.com/pechen987/Trustless.git](https://github.com/pechen987/Trustless.git)
     cd Trustless
     ```
 
@@ -36,7 +36,6 @@ To run the project, you need Node.js and a setup for iOS (Xcode) or Android (And
         npm run ios
         ```
         *To run on a physical device, add the `-- --device` flag and ensure your iPhone is connected.*
-   
 
     * **Manual Build (Advanced):**
         If the automated commands fail, you can generate the native directories and build manually:
@@ -45,6 +44,14 @@ To run the project, you need Node.js and a setup for iOS (Xcode) or Android (And
         cd ios && pod install && cd ..
         ```
         Then open a Trustless.xcworkspace file in your ios folder to open the project in xCode. From there you can install the app manually.
+
+    * **Android:**
+        ```bash
+        npm run android
+        ```
+        *Ensure you have an Android Emulator running or a physical device connected.*
+
+
 
 ## Contributing
 
