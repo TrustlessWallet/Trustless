@@ -1,9 +1,12 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const defaultConfig = getDefaultConfig(__dirname);
+
+// 1. Preserve your custom Source and Asset Extensions (WASM, Video, etc.)
 defaultConfig.resolver.sourceExts = [
   'expo.ts', 'expo.tsx', 'expo.js', 'expo.jsx',
   'ts', 'tsx', 'js', 'jsx', 'json', 'mjs', 'cjs',
 ];
+
 defaultConfig.resolver.assetExts = [
   ...defaultConfig.resolver.assetExts,
   'wasm',
@@ -16,8 +19,10 @@ defaultConfig.resolver.assetExts = [
   'mpg',
   'mpeg'
 ];
+
+// 2. Merge your Node Modules with the new TCP Socket modules
 defaultConfig.resolver.extraNodeModules = {
-  ...require('node-libs-browser'), 
+  ...require('node-libs-browser'), // Keep your existing base
   crypto: require.resolve('react-native-crypto'),
   stream: require.resolve('stream-browserify'),
   buffer: require.resolve('buffer'),
@@ -27,7 +32,13 @@ defaultConfig.resolver.extraNodeModules = {
   vm: require.resolve('vm-browserify'),
   path: require.resolve('path-browserify'),
   os: require.resolve('os-browserify/browser'),
+
+  // --- NEW ADDITIONS FOR ELECTRUM (Privacy/Speed) ---
+  net: require.resolve('react-native-tcp-socket'),
+  tls: require.resolve('react-native-tcp-socket'),
 };
+
+// 3. Preserve your custom Transformer/Minifier config
 defaultConfig.transformer = {
   ...defaultConfig.transformer,
   minifierConfig: {
@@ -38,4 +49,5 @@ defaultConfig.transformer = {
     },
   },
 };
+
 module.exports = defaultConfig;

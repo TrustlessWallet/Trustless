@@ -10,7 +10,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { CUSTOM_NODE_URL_KEY, testNodeConnection } from '../services/bitcoin';
+// FIX: Remove CUSTOM_NODE_URL_KEY from import to prevent TS error
+import { testNodeConnection } from '../services/bitcoin';
 import { EXPLORER_API_URL, NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network'; 
 import { setAppIsAuthenticated } from '../services/authState';
 import { StyledInput } from '../components/StyledInput'; 
@@ -25,6 +26,9 @@ const HIDE_TRACKER_BALANCE_KEY = '@hideTrackerBalance';
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_SCREEN_KEY = '@defaultScreen';
 const NETWORK_PREF_KEY = '@network_preference';
+
+// FIX: Define key locally to match electrum.ts and avoid circular imports
+const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
 
 const autoLockOptions = ['Off', 0, 1, 5, 30, 60];
 
@@ -219,8 +223,10 @@ const SettingsScreen = () => {
     );
   };
 
+  // --- NEW LOGIC FOR TCP/TLS CONNECTION ---
   const handleSaveNodeUrl = async () => {
-    const trimmed = customNodeUrl.trim();
+    // 1. Remove http/https (Electrum uses TCP)
+    const trimmed = customNodeUrl.trim().replace(/^https?:\/\//, '');
     
     if (trimmed.length === 0) {
       await AsyncStorage.removeItem(CUSTOM_NODE_URL_KEY);
@@ -231,12 +237,19 @@ const SettingsScreen = () => {
       return;
     }
 
-    if (!trimmed.startsWith('http')) {
-      Alert.alert("Invalid URL", "URL must start with http:// or https://.");
+    // 2. Validate Format (Host:Port)
+    const parts = trimmed.split(':');
+    if (parts.length < 2) {
+      Alert.alert(
+        "Invalid Format", 
+        "Please use the format: Host:Port:Protocol\n\nExample:\n192.168.1.50:50001:tcp"
+      );
       return;
     }
 
     setConnectionStatus('testing');
+    
+    // We try to connect using the trimmed string
     const isConnected = await testNodeConnection(trimmed);
     
     if (isConnected) {
@@ -250,7 +263,7 @@ const SettingsScreen = () => {
       setConnectionStatus('failed');
       Alert.alert(
         "Connection Failed", 
-        `Could not connect to the provided node or it is not on ${NETWORK_NAME}.`
+        `Could not connect to ${trimmed}.\nCheck your firewall and ensure the node is reachable.`
       );
     }
   };
@@ -335,11 +348,16 @@ const SettingsScreen = () => {
               />
             </TouchableOpacity>
             
+            {/* --- UPDATED UI FOR HOST:PORT INPUT --- */}
             {isEditingNode && (
               <View style={styles.nodeInputContainer}>
                 <Text style={styles.helperText}>
-                  Enter Mempool/Esplora API URL for {NETWORK_NAME}.
+                  Connect to your own Electrum Server or a public node.
                 </Text>
+                <Text style={[styles.helperText, { color: theme.colors.primary, marginBottom: 8 }]}>
+                  Format: Host:Port:Protocol
+                </Text>
+
                 <StyledInput
                   containerStyle={styles.inputSpacing}
                   value={customNodeUrl}
@@ -347,7 +365,8 @@ const SettingsScreen = () => {
                     setCustomNodeUrl(text);
                     if (connectionStatus === 'failed') setConnectionStatus('idle');
                   }}
-                  placeholder={EXPLORER_API_URL}
+                  // Updated Placeholder
+                  placeholder="e.g. 192.168.1.50:50001:tcp"
                   placeholderTextColor={theme.colors.muted}
                   autoCapitalize="none"
                   autoComplete="off"
@@ -356,6 +375,13 @@ const SettingsScreen = () => {
                   autoCorrect={false}
                   keyboardAppearance={isDark ? 'dark' : 'light'}
                 />
+                
+                <Text style={[styles.helperText, { fontSize: 11, opacity: 0.7, marginBottom: 16 }]}>
+                   Examples:{'\n'}
+                   • 192.168.1.50:50001:tcp (Local){'\n'}
+                   • electrum.blockstream.info:60001:tcp
+                </Text>
+
                 <TouchableOpacity 
                   style={[styles.saveButton, connectionStatus === 'testing' && styles.disabledButton]}
                   onPress={handleSaveNodeUrl}

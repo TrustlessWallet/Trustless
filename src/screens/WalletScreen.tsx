@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context'; 
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, Transaction, UTXO } from '../types';
+import { RootStackParamList, Transaction } from '../types';
 import { useWallet } from '../contexts/WalletContext';
-import { fetchUTXOs, fetchAddressTransactions } from '../services/bitcoin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
+import { useWalletTransactions, useWalletUTXOs } from '../hooks/useBalance';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
@@ -31,70 +31,40 @@ const formatAddress = (address: string) => {
 
 const WalletScreen = () => {
     const navigation = useNavigation<NavigationProp>();
-    const { activeWallet, loading: walletLoading, lastRefreshTime, triggerRefresh } = useWallet();
+    const { activeWallet, loading: walletLoading, triggerRefresh } = useWallet();
     const { theme } = useTheme(); 
     const styles = useMemo(() => getStyles(theme), [theme]); 
-    const [balance, setBalance] = useState(0);
-    const [utxos, setUtxos] = useState<UTXO[]>([]);
-    const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [loadingBalance, setLoadingBalance] = useState(true);
-    const [loadingTxs, setLoadingTxs] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
     const [hideBalance, setHideBalance] = useState(false);
     const isFocused = useIsFocused();
 
-    const fetchWalletData = useCallback(async (isManualRefresh = false) => {
-      const addresses = activeWallet?.derivedReceiveAddresses.map(a => a.address);
-      if (!addresses || addresses.length === 0) {
-        setLoadingBalance(false);
-        setLoadingTxs(false);
-        return;
-      }
-      if (isManualRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoadingBalance(true);
-        setLoadingTxs(true);
-      }
-
-      try {
-        const changeAddresses = activeWallet?.derivedChangeAddresses.map(a => a.address) ?? [];
-        const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
-        const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
-        const receiveForTxs = infoCache.filter(i => i.tx_count > 0).map(i => i.address);
-        
-        const utxoAddresses = [...new Set([...receiveForUtxos, ...changeAddresses])];
-        const txAddresses = [...new Set([...receiveForTxs, ...changeAddresses])];
-
-        const utxosPromise = fetchUTXOs(utxoAddresses);
-        const txsPromise = fetchAddressTransactions(txAddresses);
-
-        const fetchedUtxos = await utxosPromise;
-        const totalBalance = fetchedUtxos.reduce((sum, u) => sum + u.value, 0);
-        setBalance(totalBalance);
-        setUtxos(fetchedUtxos);
-        setLoadingBalance(false);
-
-        const fetchedTxs = await txsPromise;
-        setTransactions(fetchedTxs);
-        setLoadingTxs(false);
-
-      } catch (e) {
-        console.error("WalletScreen: Failed to fetch wallet data", e);
-        setLoadingBalance(false);
-        setLoadingTxs(false);
-      } finally {
-        if (isManualRefresh) {
-            setRefreshing(false);
-        }
-      }
+    // 1. Calculate Balance directly from Context (Instant)
+    const balance = useMemo(() => {
+        if (!activeWallet) return 0;
+        return activeWallet.derivedAddressInfoCache.reduce((acc, curr) => acc + curr.balance, 0);
     }, [activeWallet]);
 
-    useEffect(() => {
-        if (activeWallet) {
-            fetchWalletData(false);
-        }
-    }, [activeWallet, lastRefreshTime]);
+    // 2. Prepare addresses for History/UTXO fetching
+    const queryAddresses = useMemo(() => {
+        if (!activeWallet) return [];
+        const changeAddresses = activeWallet.derivedChangeAddresses.map(a => a.address);
+        const infoCache = activeWallet.derivedAddressInfoCache;
+        // Only check addresses that have been used to save bandwidth
+        const usedAddresses = infoCache.filter(i => i.tx_count > 0 || i.balance > 0).map(i => i.address);
+        return [...new Set([...usedAddresses, ...changeAddresses])];
+    }, [activeWallet]);
+
+    // 3. Use Hybrid Hook (Instant Load from DB + Background Sync)
+    const { 
+        data: transactions, 
+        isLoading: loadingTxs, 
+        refetch: refetchTxs,
+        isRefetching: isRefetchingTxs 
+    } = useWalletTransactions(activeWallet?.id, queryAddresses);
+
+    const { 
+        data: utxos, 
+        refetch: refetchUtxos 
+    } = useWalletUTXOs(queryAddresses);
 
     useEffect(() => {
       const loadPreference = async () => {
@@ -107,7 +77,9 @@ const WalletScreen = () => {
     }, [isFocused]);
 
     const onRefresh = () => {
-        triggerRefresh();
+        triggerRefresh(); // Syncs balance
+        refetchTxs();     // Syncs history
+        refetchUtxos();   // Syncs UTXOs
     };
 
     const renderTransactionItem = ({ item }: { item: Transaction }) => {
@@ -151,8 +123,9 @@ const WalletScreen = () => {
       );
     };
 
-    const recentTxs = transactions.slice(0, 3);
-    const hasTransactions = transactions.length > 0;
+    const txList = transactions || [];
+    const recentTxs = txList.slice(0, 3);
+    const hasTransactions = txList.length > 0;
 
     if (walletLoading) {
         return <View style={styles.centeredContainer}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
@@ -187,13 +160,11 @@ const WalletScreen = () => {
                 </TouchableOpacity>
                 <TouchableOpacity 
                     style={styles.balanceContainer} 
-                    onPress={() => navigation.navigate('BalanceDetail', { utxos: utxos })}
+                    onPress={() => navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
                 >
-                    {loadingBalance ? <ActivityIndicator color={theme.colors.primary} /> : (
-                        <Text style={styles.balanceText}>
-                            {hideBalance ? '*******' : <>{formatBalance(balance)} <Text style={styles.orangeSymbol}>₿</Text></>}
-                        </Text>
-                    )}
+                    <Text style={styles.balanceText}>
+                        {hideBalance ? '*******' : <>{formatBalance(balance)} <Text style={styles.orangeSymbol}>₿</Text></>}
+                    </Text>
                 </TouchableOpacity>
                 <View style={styles.actionsContainer}>
                     <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive')}>
@@ -209,7 +180,7 @@ const WalletScreen = () => {
 
             <ScrollView
                 style={styles.bottomSection}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
+                refreshControl={<RefreshControl refreshing={isRefetchingTxs} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
             >
                 {loadingTxs ? <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : (
                     hasTransactions ? (
@@ -217,7 +188,7 @@ const WalletScreen = () => {
                             {recentTxs.map((tx) => (
                                 <View key={tx.txid}>{renderTransactionItem({ item: tx })}</View>
                             ))}
-                            {transactions.length > 5 && (
+                            {txList.length > 5 && (
                                 <TouchableOpacity style={styles.showMoreButton} onPress={() => navigation.navigate('TransactionHistory')}>
                                     <Text style={styles.showMoreText}>Show full history</Text>
                                 </TouchableOpacity>

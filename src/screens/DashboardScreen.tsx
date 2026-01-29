@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, TextInput, Keyboard } from 'react-native';
+import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context'; 
 import { Text } from '../components/StyledText';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -55,7 +55,7 @@ const DashboardScreen = () => {
     };
     if (isFocused) {
       loadPreference();
-      refreshBalances(false);
+      // Removed refreshBalances(false); -> React Query handles this now
     }
   }, [isFocused]);
 
@@ -71,7 +71,6 @@ const DashboardScreen = () => {
       await refreshTrackedAddressBalances();
     } catch (error) {
       console.error("Failed to refresh balances", error);
-      Alert.alert("Error", "Could not refresh balances.");
     }
     if (isManualRefresh) setRefreshing(false);
   };
@@ -195,7 +194,6 @@ const DashboardScreen = () => {
             tintColor={theme.colors.primary} 
           />
         }
-        // Removed TouchableWithoutFeedback wrapper and used these props instead:
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       />
@@ -219,7 +217,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   flatList: {
-    flex: 1, // Ensures the list takes up available space for proper scrolling
+    flex: 1, 
   },
   centered: {
     padding: 32,

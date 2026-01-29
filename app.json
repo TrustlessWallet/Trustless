@@ -34,30 +34,31 @@
         "android.permission.USE_FINGERPRINT"
       ]
     },
-"plugins": [
-  [
-    "expo-font",
-    {
-      "fonts": [
-        "./assets/fonts/SpaceMono-Regular.ttf",
-        "./assets/fonts/SpaceMono-Italic.ttf",
-        "./assets/fonts/SpaceMono-Bold.ttf",
-        "./assets/fonts/SpaceMono-BoldItalic.ttf"
-      ]
-    }
-  ],
-  "expo-local-authentication",
-  "expo-asset",
-  [
-    "expo-build-properties",
-    {
-      "android": {
-        "largeHeap": true,
-        "usesCleartextTraffic": true
-      }
-    }
-  ]
-],
+    "plugins": [
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/SpaceMono-Regular.ttf",
+            "./assets/fonts/SpaceMono-Italic.ttf",
+            "./assets/fonts/SpaceMono-Bold.ttf",
+            "./assets/fonts/SpaceMono-BoldItalic.ttf"
+          ]
+        }
+      ],
+      "expo-local-authentication",
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "largeHeap": true,
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-sqlite"
+    ],
     "extra": {
       "eas": {
         "projectId": "997b0852-0a8b-434d-8927-dc50771b8b51"
