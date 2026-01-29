@@ -333,11 +333,17 @@ const AppNavigator = () => {
             <Stack.Screen name="BackupDisclaimer" component={BackupDisclaimerScreen} options={{ title: 'Backup wallet' }} />
             <Stack.Screen name="AddressBook" component={AddressBookScreen} options={{ title: 'Saved addresses' }} />
             <Stack.Screen name="AddSavedAddress" component={AddSavedAddressScreen} options={{ title: 'Add new address' }} />
-            <Stack.Screen name="BalanceDetail" component={BalanceDetailScreen} options={{ title: 'Balance details' }} />
             <Stack.Screen name="CoinControl" component={CoinControlScreen} options={{ title: 'Select coins to spend' }} />
           </Stack.Group>
 
           <Stack.Group screenOptions={{ presentation: 'modal' }}>
+
+            <Stack.Screen
+              name="BalanceDetail"
+              component={BalanceDetailScreen}
+              options={{ title: 'Balance details' }}
+            />
+
             <Stack.Screen 
             name="AddressDetails" 
             component={AddressDetailsScreen} 

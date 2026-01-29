@@ -2,15 +2,14 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { 
   View, 
   StyleSheet, 
-  SafeAreaView,
   TouchableOpacity, 
   Linking, 
   Alert, 
   TextInput, 
-  Keyboard,
+  KeyboardAvoidingView,
   Platform,
-  Dimensions,
-  ScrollView 
+  FlatList,
+  Keyboard
 } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -21,18 +20,9 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, DERIVATION_PARENT_PATH } from '../constants/network';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withTiming
-} from 'react-native-reanimated';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BalanceDetail'>;
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// no-op
 
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 const formatAddressShort = (address: string) => {
@@ -51,12 +41,7 @@ const BalanceDetailScreen = () => {
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   
-  const editInputRef = useRef<TextInput>(null);
-  
-  // Animation Value
-  const containerTranslateY = useSharedValue(0);
-  const itemRefs = useRef<Map<string, View>>(new Map());
-  const scrollViewRef = useRef<ScrollView>(null);
+  const flatListRef = useRef<FlatList>(null);
 
   const sortedUtxos = useMemo(() => 
     [...utxos].sort((a, b) => b.value - a.value), 
@@ -73,57 +58,31 @@ const BalanceDetailScreen = () => {
     });
   }, [navigation, theme.colors.primary]);
 
+  // Scroll to the active item when editing starts
   useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => {
-        if (editingUtxoKey) {
-          const itemView = itemRefs.current.get(editingUtxoKey);
-          if (itemView) {
-            itemView.measureInWindow((x, y, width, height) => {
-              const itemBottom = y + height;
-              const keyboardTop = SCREEN_HEIGHT - e.endCoordinates.height;
-              
-              if (itemBottom > keyboardTop) {
-                // Slide up just enough to show the input + buffer
-                const offset = keyboardTop - itemBottom - 60; 
-                containerTranslateY.value = withTiming(offset, { duration: 250 });
-              }
-            });
-          }
-        }
+    if (editingUtxoKey && sortedUtxos.length > 0) {
+      const index = sortedUtxos.findIndex(
+        u => `${u.txid}:${u.vout}` === editingUtxoKey
+      );
+      
+      if (index !== -1) {
+        // Wait for keyboard animation
+        const timer = setTimeout(() => {
+          flatListRef.current?.scrollToIndex({
+            index,
+            animated: true,
+            viewPosition: 0.5 
+          });
+        }, 300);
+        return () => clearTimeout(timer);
       }
-    );
-
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        containerTranslateY.value = withTiming(0, { duration: 250 });
-      }
-    );
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [editingUtxoKey]);
-
-  useEffect(() => {
-    if (editingUtxoKey && editInputRef.current) {
-      setTimeout(() => {
-        editInputRef.current?.focus();
-      }, 100);
     }
-  }, [editingUtxoKey]);
+  }, [editingUtxoKey, sortedUtxos]);
 
-  const animatedContainerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: containerTranslateY.value }]
-  }));
-
-  const addressMap = new Map<string, string>([
+  const addressMap = useMemo(() => new Map<string, string>([
     ...(activeWallet?.derivedReceiveAddresses.map(a => [a.address, `${DERIVATION_PARENT_PATH}/0/${a.index}`] as [string, string]) ?? []),
     ...(activeWallet?.derivedChangeAddresses.map(a => [a.address, `${DERIVATION_PARENT_PATH}/1/${a.index}`] as [string, string]) ?? [])
-  ]);
+  ]), [activeWallet]);
 
   const handleOpenExplorer = (txid: string) => {
     const url = `${EXPLORER_UI_URL}/tx/${txid}`;
@@ -138,41 +97,37 @@ const BalanceDetailScreen = () => {
   const stopEditing = async (txid: string, vout: number) => {
     if (!editingUtxoKey) return;
     
-    if (editingLabel.trim().length === 0) {
-      setEditingUtxoKey(null);
-      return;
-    }
-
-    await updateUtxoLabel(txid, vout, editingLabel.trim());
+    const labelToSave = editingLabel.trim();
     setEditingUtxoKey(null);
+    Keyboard.dismiss();
+
+    if (labelToSave.length > 0) {
+      await updateUtxoLabel(txid, vout, labelToSave);
+    }
   };
 
-  const renderItem = (item: UTXO, index: number) => {
+  const renderItem = ({ item, index }: { item: UTXO, index: number }) => {
     const derivationPath = addressMap.get(item.address);
     const key = `${item.txid}:${item.vout}`;
-    const isLastItem = index === sortedUtxos.length - 1;
     const label = getUtxoLabel(item.txid, item.vout) || `UTXO`;
     const isEditing = editingUtxoKey === key;
 
     return (
-      <View 
-        key={key}
-        ref={(ref) => { if (ref) itemRefs.current.set(key, ref); }}
-        style={[styles.row, isLastItem && styles.lastRow]}
-      >
+      <View style={styles.row}>
         <View style={styles.infoContainer}>
           <View style={styles.nameContainer}>
              {isEditing ? (
                  <TextInput
-                    ref={editInputRef}
                     style={styles.nameInput}
                     value={editingLabel}
                     onChangeText={setEditingLabel}
                     onBlur={() => stopEditing(item.txid, item.vout)}
                     onSubmitEditing={() => stopEditing(item.txid, item.vout)}
                     returnKeyType="done"
+                    autoFocus={true}
                     keyboardAppearance={isDark ? 'dark' : 'light'}
                     placeholderTextColor={theme.colors.muted}
+                    underlineColorAndroid="transparent"
                  />
              ) : (
                  <TouchableOpacity 
@@ -216,48 +171,56 @@ const BalanceDetailScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={true}
-        indicatorStyle={isDark ? 'white' : 'black'}
-        scrollIndicatorInsets={{ right: 1 }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        contentInsetAdjustmentBehavior="always"
-        scrollEnabled={true}
-        bounces={true}
+    <View style={styles.container}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardAvoid} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0} 
       >
-        <Animated.View style={[styles.contentContainer, animatedContainerStyle]} pointerEvents="box-none">
-          {sortedUtxos.length === 0 ? (
+        <FlatList
+          ref={flatListRef}
+          data={sortedUtxos}
+          renderItem={renderItem}
+          keyExtractor={(item) => `${item.txid}:${item.vout}`}
+          style={styles.flatList}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          indicatorStyle={isDark ? 'white' : 'black'}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          onScrollToIndexFailed={(info) => {
+            flatListRef.current?.scrollToOffset({
+              offset: info.averageItemLength * info.index,
+              animated: true
+            });
+          }}
+          ListEmptyComponent={
             <View style={styles.centered}>
               <Text style={styles.emptyText}>No spendable coins (UTXOs) found.</Text>
             </View>
-          ) : (
-            sortedUtxos.map((item, index) => renderItem(item, index))
-          )}
-        </Animated.View>
-      </ScrollView>
-    </SafeAreaView>
+          }
+        />
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   container: {
-    flex: 1,
+    flex: 1, 
     backgroundColor: theme.colors.background,
   },
-  contentContainer: {
+  keyboardAvoid: {
+    flex: 1,
   },
-  scrollView: {
+  flatList: {
     flex: 1,
   },
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 200,
+    paddingBottom: 40,
   },
   centered: { 
     flex: 1, 
@@ -265,7 +228,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     alignItems: 'center', 
     padding: 20,
     marginTop: 50,
-    minHeight: 400,
   },
   closeButton: {
     padding: 4,
@@ -309,6 +271,8 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.primary,
     padding: 0,
     margin: 0,
+    minWidth: 150,
+    // borderBottomWidth removed to disable underline
   },
   detailText: { 
     fontSize: 14, 
@@ -333,9 +297,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   orangeSymbol: {
     color: theme.colors.bitcoin,
-  },
-  lastRow: {
-    borderBottomWidth: 0,
   },
 });
 
