@@ -14,6 +14,7 @@ import { EXPLORER_UI_URL, DERIVATION_PARENT_PATH } from '../constants/network';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 
 const QR_SIZE = 220;
+const UNUSED_BUFFER_SIZE = 20;
 
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 
@@ -29,7 +30,7 @@ const formatAddressShort = (address: string) => {
 
 const ReceiveScreen = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { activeWallet, loading: walletLoading } = useWallet();
+  const { activeWallet, loading: walletLoading, getOrCreateNextUnusedReceiveAddress } = useWallet();
   const { theme, isDark } = useTheme(); 
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]); 
   const [copied, setCopied] = useState(false);
@@ -47,27 +48,46 @@ const ReceiveScreen = () => {
   }, [navigation, theme.colors.primary]);
 
   useEffect(() => {
-
     setAddressOffset(0);
   }, [activeWallet?.id]);
 
-  const unusedAddresses = useMemo(() => {
+  // Calculate all currently unused addresses
+  const allUnusedAddresses = useMemo(() => {
     if (!activeWallet) return [];
     
     const infoMap = new Map(activeWallet.derivedAddressInfoCache.map(i => [i.address, i.tx_count]));
     
-    const unused = activeWallet.derivedReceiveAddresses.filter(addr => {
+    return activeWallet.derivedReceiveAddresses
+      .filter(addr => {
         const txCount = infoMap.get(addr.address) ?? 0;
         return txCount === 0;
-    });
-
-
-    return unused.sort((a, b) => a.index - b.index).slice(0, 20);
+      })
+      .sort((a, b) => a.index - b.index);
   }, [activeWallet]);
 
-  const currentDisplayData = useMemo(() => {
-    if (!activeWallet || unusedAddresses.length === 0) {
+  // Buffer Maintenance: Ensure we always have 20 unused addresses
+  useEffect(() => {
+    if (walletLoading || !activeWallet) return;
 
+    if (allUnusedAddresses.length < UNUSED_BUFFER_SIZE) {
+      const lastDerived = activeWallet.derivedReceiveAddresses[activeWallet.derivedReceiveAddresses.length - 1];
+      if (lastDerived) {
+        // Generate the next address. The context update will trigger this effect again 
+        // until the buffer is filled.
+        getOrCreateNextUnusedReceiveAddress(lastDerived.address, lastDerived.index)
+          .catch(err => console.error("Failed to generate buffer address:", err));
+      }
+    }
+  }, [allUnusedAddresses.length, activeWallet, walletLoading, getOrCreateNextUnusedReceiveAddress]);
+
+  // Display only the first 20 unused addresses for the loop
+  const displayableAddresses = useMemo(() => {
+    return allUnusedAddresses.slice(0, UNUSED_BUFFER_SIZE);
+  }, [allUnusedAddresses]);
+
+  const currentDisplayData = useMemo(() => {
+    if (!activeWallet || displayableAddresses.length === 0) {
+        // Fallback if initialization is slow or empty
         return { 
             address: activeWallet?.address || '', 
             index: activeWallet?.receiveAddressIndex || 0, 
@@ -75,14 +95,15 @@ const ReceiveScreen = () => {
         };
     }
     
-    const item = unusedAddresses[addressOffset % unusedAddresses.length];
+    // Cycle through the available buffer
+    const item = displayableAddresses[addressOffset % displayableAddresses.length];
     
     return {
         address: item.address,
         index: item.index,
         path: `${DERIVATION_PARENT_PATH}/0/${item.index}`
     };
-  }, [activeWallet, unusedAddresses, addressOffset]);
+  }, [activeWallet, displayableAddresses, addressOffset]);
 
   const copyToClipboard = () => {
     if (currentDisplayData.address) {
@@ -114,8 +135,8 @@ const ReceiveScreen = () => {
   };
 
   const handleNextAddress = () => {
-    if (unusedAddresses.length > 0) {
-        setAddressOffset(prev => (prev + 1) % unusedAddresses.length);
+    if (displayableAddresses.length > 0) {
+        setAddressOffset(prev => (prev + 1) % displayableAddresses.length);
     }
   };
 
