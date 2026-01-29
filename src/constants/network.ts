@@ -9,6 +9,7 @@ export let EXPLORER_UI_URL = 'https://mempool.space';
 export let EXPLORER_API_URL = 'https://mempool.space/api';
 export let FALLBACK_API_URL = 'https://blockstream.info/api';
 export let GENESIS_HASH = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
+export const CUSTOM_NODE_URL_KEY = '@customNodeUrl'; // <--- Moved here
 
 const MEMPOOL_SPACE_URL = 'https://mempool.space';
 const MEMPOOL_SPACE_TESTNET_URL = 'https://mempool.space/testnet';

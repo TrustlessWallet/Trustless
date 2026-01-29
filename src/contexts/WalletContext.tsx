@@ -1,36 +1,40 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import 'react-native-get-random-values';
 import * as bip39 from 'bip39';
 import * as Keychain from 'react-native-keychain';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { v4 as uuidv4 } from 'uuid';
 import * as secp from '@bitcoinerlab/secp256k1';
 import { BIP32Factory } from 'bip32';
 import * as bitcoin from 'bitcoinjs-lib';
 import { payments } from 'bitcoinjs-lib';
 import { ECPairFactory } from 'ecpair';
+import { useQueryClient } from '@tanstack/react-query'; 
+
 import { Wallet, DerivedAddress, BitcoinAddress, DerivedAddressInfo, UTXO } from '../types';
 import { 
-    fetchAddressBalances, 
-    fetchAddressInfoBatch, 
     calculateTransactionMetrics,
     fetchUTXOs,
 } from '../services/bitcoin';
 import { NETWORK, DERIVATION_PARENT_PATH, NETWORK_NAME } from '../constants/network'; 
+import { 
+    dbGetWallets, dbCreateWallet, dbDeleteWallet, dbUpdateWalletName, 
+    dbGetDerivedAddresses, dbGetAddressCache, dbSaveAddress, 
+    dbUpdateAddressInfoBatch, dbGetUtxoLabels, dbSyncUtxos, dbUpdateUtxoLabel,
+    dbGetSavedAddresses, dbAddSavedAddress, dbRemoveSavedAddress, dbUpdateSavedAddress,
+    dbUpdateChangeIndex
+} from '../services/database';
+// Migration import removed
+import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance'; 
 
 const bip32 = BIP32Factory(secp);
 const ECPair = ECPairFactory(secp);
 bitcoin.initEccLib(secp);
 
-const getStorageKey = (base: string) => `${base}.${NETWORK_NAME}`;
-
 const KEYCHAIN_SERVICE_PREFIX = 'com.btc.trustless.mnemonic';
-const KEYCHAIN_WALLETS_METADATA_KEY_BASE = 'com.btc.trustless.wallets';
 const KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE = 'com.btc.trustless.activeWalletId';
-const KEYCHAIN_SAVED_ADDRESSES_KEY_BASE = 'com.btc.trustless.savedAddresses';
-const KEYCHAIN_TRACKED_ADDRESSES_KEY_BASE = 'com.btc.trustless.trackedAddresses';
-const ASYNC_STORAGE_ONBOARDING_KEY = '@hasCompletedOnboarding';
 const GAP_LIMIT = 20;
+
+const getStorageKey = (base: string) => `${base}.${NETWORK_NAME}`;
 
 interface ActiveWallet extends Wallet {
   address: string;
@@ -45,7 +49,7 @@ interface WalletContextType {
   triggerRefresh: () => void;
   generateMnemonic: (strength?: number) => Promise<string | null>;
   addWallet: (params: { mnemonic: string; name?: string }) => Promise<Wallet | null>;
-  switchWallet: (walletId: string, currentWallets: Wallet[]) => Promise<void>;
+  switchWallet: (walletId: string) => Promise<void>;
   updateWalletName: (walletId: string, newName: string) => Promise<void>;
   removeWallet: (walletId: string) => Promise<void>;
   getMnemonicForWallet: (walletId: string) => Promise<string | null>;
@@ -81,6 +85,7 @@ interface WalletContextType {
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const queryClient = useQueryClient();
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [activeWallet, setActiveWallet] = useState<ActiveWallet | null>(null);
   const [loading, setLoading] = useState(true);
@@ -92,10 +97,119 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [trackedAddresses, setTrackedAddresses] = useState<BitcoinAddress[]>([]);
   const [loadingTrackedAddresses, setLoadingTrackedAddresses] = useState(true);
 
-  const WALLETS_KEY = getStorageKey(KEYCHAIN_WALLETS_METADATA_KEY_BASE);
   const ACTIVE_WALLET_KEY = getStorageKey(KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE);
-  const SAVED_ADDR_KEY = getStorageKey(KEYCHAIN_SAVED_ADDRESSES_KEY_BASE);
-  const TRACKED_ADDR_KEY = getStorageKey(KEYCHAIN_TRACKED_ADDRESSES_KEY_BASE);
+
+  // --- AUTOMATED SYNC HOOKS ---
+
+  const activeWalletAddresses = useMemo(() => {
+    if (!activeWallet) return [];
+    return [
+      ...activeWallet.derivedReceiveAddresses,
+      ...activeWallet.derivedChangeAddresses
+    ].map(a => a.address);
+  }, [
+    activeWallet?.id, 
+    activeWallet?.derivedReceiveAddresses.length, 
+    activeWallet?.derivedChangeAddresses.length
+  ]);
+
+  const { data: syncedWalletData } = useWalletBalanceSync(activeWallet?.id, activeWalletAddresses);
+
+  useEffect(() => {
+    if (syncedWalletData && activeWallet) {
+        // DB Update now accepts the data without index
+        dbUpdateAddressInfoBatch(syncedWalletData);
+        
+        setActiveWallet(prev => {
+            if (!prev || prev.id !== activeWallet.id) return prev;
+            
+            const newCache = prev.derivedAddressInfoCache.map(cachedItem => {
+                const fresh = syncedWalletData.find(f => f.address === cachedItem.address);
+                if (fresh) {
+                    return { ...cachedItem, balance: fresh.balance, tx_count: fresh.tx_count };
+                }
+                return cachedItem;
+            });
+
+            return { ...prev, derivedAddressInfoCache: newCache };
+        });
+        
+        scanAndNameUtxos();
+    }
+  }, [syncedWalletData]);
+
+  const { data: syncedSavedBalances } = useAddressListSync('saved', savedAddresses);
+  
+  useEffect(() => {
+    if (syncedSavedBalances && savedAddresses.length > 0) {
+        const updated = savedAddresses.map((addr, index) => ({
+            ...addr,
+            balance: syncedSavedBalances[index] ?? addr.balance,
+            lastUpdated: new Date()
+        }));
+        const hasChanged = updated.some((u, i) => u.balance !== savedAddresses[i].balance);
+        if (hasChanged) {
+            updated.forEach(u => dbUpdateSavedAddress('saved_addresses', u));
+            setSavedAddresses(updated);
+        }
+    }
+  }, [syncedSavedBalances]);
+
+  const { data: syncedTrackedBalances } = useAddressListSync('tracked', trackedAddresses);
+
+  useEffect(() => {
+    if (syncedTrackedBalances && trackedAddresses.length > 0) {
+        const updated = trackedAddresses.map((addr, index) => ({
+            ...addr,
+            balance: syncedTrackedBalances[index] ?? addr.balance,
+            lastUpdated: new Date()
+        }));
+        const hasChanged = updated.some((u, i) => u.balance !== trackedAddresses[i].balance);
+        if (hasChanged) {
+            updated.forEach(u => dbUpdateSavedAddress('tracked_addresses', u));
+            setTrackedAddresses(updated);
+        }
+    }
+  }, [syncedTrackedBalances]);
+
+  // --- END SYNC HOOKS ---
+
+  const buildActiveWallet = async (walletId: string): Promise<ActiveWallet | null> => {
+      const allWallets = await dbGetWallets(NETWORK_NAME);
+      const basicWallet = allWallets.find(w => w.id === walletId);
+      if (!basicWallet) return null;
+
+      const derivedReceiveAddresses = await dbGetDerivedAddresses(walletId, 0);
+      const derivedChangeAddresses = await dbGetDerivedAddresses(walletId, 1);
+      const derivedAddressInfoCache = await dbGetAddressCache(walletId);
+      const utxoLabels = await dbGetUtxoLabels(walletId);
+
+      const receiveSet = new Set(derivedReceiveAddresses.map(a => a.address));
+      
+      const maxIndex = derivedReceiveAddresses.length > 0 ? derivedReceiveAddresses[derivedReceiveAddresses.length - 1].index : -1;
+      let firstUnusedIndex = -1;
+      
+      for (let i = 0; i <= maxIndex; i++) {
+        const info = derivedAddressInfoCache.find(c => c.index === i && receiveSet.has(c.address));
+        if (!info || info.tx_count === 0) {
+            firstUnusedIndex = i;
+            break;
+        }
+      }
+      if (firstUnusedIndex === -1) firstUnusedIndex = maxIndex + 1;
+
+      const currentReceiveAddress = derivedReceiveAddresses.find(a => a.index === firstUnusedIndex)?.address || '';
+
+      return {
+          ...basicWallet,
+          derivedReceiveAddresses,
+          derivedChangeAddresses,
+          derivedAddressInfoCache,
+          utxoLabels,
+          address: currentReceiveAddress,
+          receiveAddressIndex: firstUnusedIndex
+      };
+  };
 
   const deriveReceiveAddress = (root: any, index: number): DerivedAddress | null => {
     try {
@@ -129,21 +243,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const updateUtxoLabel = async (txid: string, vout: number, label: string) => {
       if (!activeWallet) return;
+      await dbUpdateUtxoLabel(txid, vout, label);
+      
       const key = `${txid}:${vout}`;
       const newLabels = { ...activeWallet.utxoLabels, [key]: label };
-      
-      const updatedWallet = { ...activeWallet, utxoLabels: newLabels };
-      
-      const updatedWallets = wallets.map(w => w.id === activeWallet.id ? { ...w, utxoLabels: newLabels } : w);
-      
-      setActiveWallet(updatedWallet);
-      setWallets(updatedWallets);
-      await Keychain.setGenericPassword('user', JSON.stringify(updatedWallets), { service: WALLETS_KEY });
+      setActiveWallet({ ...activeWallet, utxoLabels: newLabels });
   };
 
   const scanAndNameUtxos = async () => {
     if (!activeWallet) return;
-
     const infoCache = activeWallet.derivedAddressInfoCache ?? [];
     const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
     const changeIndex = activeWallet.changeAddressIndex ?? 0;
@@ -156,44 +264,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     try {
         const fetchedUtxos = await fetchUTXOs(targetAddresses);
-        
-        let labels = { ...activeWallet.utxoLabels };
-        let nextCount = activeWallet.nextUtxoCount;
-        let changed = false;
+        const newCount = await dbSyncUtxos(activeWallet.id, NETWORK_NAME, fetchedUtxos, activeWallet.nextUtxoCount);
+        const updatedLabels = await dbGetUtxoLabels(activeWallet.id);
 
-
-        const newUtxos = fetchedUtxos.filter(u => !labels[`${u.txid}:${u.vout}`]);
-
-        if (newUtxos.length > 0) {
-
-            newUtxos.sort((a, b) => {
-                const heightA = a.status.block_height || Number.MAX_SAFE_INTEGER;
-                const heightB = b.status.block_height || Number.MAX_SAFE_INTEGER;
-                if (heightA !== heightB) return heightA - heightB;
-                if (a.txid !== b.txid) return a.txid.localeCompare(b.txid);
-                return a.vout - b.vout;
-            });
-
-            for (const utxo of newUtxos) {
-                const key = `${utxo.txid}:${utxo.vout}`;
-                labels[key] = `UTXO #${nextCount++}`;
-                changed = true;
-            }
-        }
-
-        if (changed) {
-            const updatedWallet = { ...activeWallet, utxoLabels: labels, nextUtxoCount: nextCount };
-            const updatedWallets = wallets.map(w => w.id === activeWallet.id ? { 
-                ...w, 
-                utxoLabels: labels, 
-                nextUtxoCount: nextCount 
-            } : w);
-
-            setActiveWallet(updatedWallet);
-            setWallets(updatedWallets);
-            await Keychain.setGenericPassword('user', JSON.stringify(updatedWallets), { service: WALLETS_KEY });
-        }
-
+        setActiveWallet(prev => prev ? ({ 
+            ...prev, 
+            utxoLabels: updatedLabels,
+            nextUtxoCount: newCount 
+        }) : null);
     } catch (error) {
         console.error("Failed to scan and name UTXOs:", error);
     }
@@ -201,69 +279,45 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const triggerRefresh = () => {
     setLastRefreshTime(Date.now());
-    scanAndNameUtxos();
+    queryClient.invalidateQueries({ queryKey: ['wallet-balances'] });
+    queryClient.invalidateQueries({ queryKey: ['saved', 'balances'] });
+    queryClient.invalidateQueries({ queryKey: ['tracked', 'balances'] });
   };
 
   useEffect(() => {
-    if (activeWallet) {
-        scanAndNameUtxos();
-    }
-  }, [activeWallet?.id]);
-
-
-  useEffect(() => {
     const bootstrap = async () => {
-      console.log('DEBUG: Starting Wallet Bootstrap...');
       setLoading(true);
       setLoadingSavedAddresses(true);
       setLoadingTrackedAddresses(true);
       try {
-        console.log('DEBUG: Fetching Wallets from Keychain...');
-        const walletsCreds = await Keychain.getGenericPassword({ service: WALLETS_KEY });
-        console.log('DEBUG: Wallets fetched:', walletsCreds ? 'Found' : 'Empty');
-
-        const walletsFromStorage: Wallet[] = walletsCreds ? JSON.parse(walletsCreds.password) : [];
-        let activeId: string | null = null;
+        // Migration call removed
         
-        console.log('DEBUG: Fetching Active Wallet ID...');
-        const activeIdCreds = await Keychain.getGenericPassword({ service: ACTIVE_WALLET_KEY });
-        if (activeIdCreds) {
-            activeId = activeIdCreds.password;
-        }
+        const walletsFromDb = await dbGetWallets(NETWORK_NAME);
+        setWallets(walletsFromDb);
 
-        if (walletsFromStorage.length > 0) {
-            console.log('DEBUG: Loading Active Wallet...');
-            if (!activeId || !walletsFromStorage.find(w => w.id === activeId)) {
-                activeId = walletsFromStorage[0].id;
+        let activeId: string | null = null;
+        const activeIdCreds = await Keychain.getGenericPassword({ service: ACTIVE_WALLET_KEY });
+        if (activeIdCreds) activeId = activeIdCreds.password;
+
+        if (walletsFromDb.length > 0) {
+            if (!activeId || !walletsFromDb.find(w => w.id === activeId)) {
+                activeId = walletsFromDb[0].id;
                 await Keychain.setGenericPassword('user', activeId, { service: ACTIVE_WALLET_KEY });
             }
-            await loadAndSetActiveWallet(activeId, walletsFromStorage);
+            await loadAndSetActiveWallet(activeId);
         } else {
-            console.log('DEBUG: No wallets to load, setting empty state.');
             setWallets([]);
             setActiveWallet(null);
         }
 
-        console.log('DEBUG: Fetching Saved Addresses...');
-        const savedAddressesCreds = await Keychain.getGenericPassword({ service: SAVED_ADDR_KEY });
-        if (savedAddressesCreds) {
-            setSavedAddresses(JSON.parse(savedAddressesCreds.password));
-        } else {
-            setSavedAddresses([]);
-        }
-
-        console.log('DEBUG: Fetching Tracked Addresses...');
-        const trackedAddressesCreds = await Keychain.getGenericPassword({ service: TRACKED_ADDR_KEY });
-        if (trackedAddressesCreds) {
-            setTrackedAddresses(JSON.parse(trackedAddressesCreds.password));
-        } else {
-            setTrackedAddresses([]);
-        }
+        const saved = await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses');
+        setSavedAddresses(saved);
+        const tracked = await dbGetSavedAddresses(NETWORK_NAME, 'tracked_addresses');
+        setTrackedAddresses(tracked);
 
       } catch (error) {
         console.error("DEBUG: Failed to bootstrap wallet:", error);
       } finally {
-        console.log('DEBUG: Bootstrap Finished. Setting Loading = False');
         setLoading(false);
         setLoadingSavedAddresses(false);
         setLoadingTrackedAddresses(false);
@@ -280,217 +334,74 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return bip32.fromSeed(seed, NETWORK);
   }
 
-  const findFirstUnusedIndex = (cache: DerivedAddressInfo[], maxIndex: number): number => {
-    const infoMap = new Map(cache.map(info => [info.index, info.tx_count]));
-    for (let i = 0; i <= maxIndex; i++) {
-        if ((infoMap.get(i) ?? 0) === 0) {
-            return i;
+  const loadAndSetActiveWallet = async (walletId: string) => {
+    let wallet = await buildActiveWallet(walletId);
+    if (!wallet) return;
+
+    const root = await getRootNode(walletId);
+    let derivedNew = false;
+    
+    for (let i = 0; i < GAP_LIMIT; i++) {
+        if (!wallet.derivedChangeAddresses.find(a => a.index === i)) {
+            const derived = deriveChangeAddress(root, i);
+            if (derived) {
+                await dbSaveAddress(walletId, derived, 1, NETWORK_NAME);
+                derivedNew = true;
+            }
         }
     }
-    return maxIndex + 1;
-  }
 
-  const loadAndSetActiveWallet = async (walletId: string, currentWallets: Wallet[]) => {
-    const walletMetadata = currentWallets.find(w => w.id === walletId);
-    if (!walletMetadata) throw new Error("Wallet not found in metadata");
-    const root = await getRootNode(walletId);
-
-    const initialDerivationIndex = walletMetadata.derivedReceiveAddresses.length > 0
-        ? walletMetadata.derivedReceiveAddresses.length - 1
+    const currentMax = wallet.derivedReceiveAddresses.length > 0 
+        ? wallet.derivedReceiveAddresses[wallet.derivedReceiveAddresses.length - 1].index 
         : -1;
     
-    let derivedReceiveAddresses: DerivedAddress[] = walletMetadata.derivedReceiveAddresses;
-    let derivedChangeAddresses: DerivedAddress[] = [];
-    let derivedAddressInfoCache: DerivedAddressInfo[] = walletMetadata.derivedAddressInfoCache || [];
-
-
-    const utxoLabels = walletMetadata.utxoLabels || {};
-    const nextUtxoCount = walletMetadata.nextUtxoCount || 1;
-
-    for (let i = 0; i < GAP_LIMIT; i++) {
-        const derived = deriveChangeAddress(root, i);
-        if (derived) derivedChangeAddresses.push(derived);
-    }
-    
-    if (derivedReceiveAddresses.length < GAP_LIMIT) {
-        const startIndex = derivedReceiveAddresses.length;
-        for (let i = startIndex; i < GAP_LIMIT; i++) {
-            const derived = deriveReceiveAddress(root, i);
-            if (derived) derivedReceiveAddresses.push(derived);
+    if (wallet.derivedReceiveAddresses.length < GAP_LIMIT) {
+        for (let i = currentMax + 1; i < GAP_LIMIT; i++) {
+             const derived = deriveReceiveAddress(root, i);
+             if (derived) {
+                 await dbSaveAddress(walletId, derived, 0, NETWORK_NAME);
+                 derivedNew = true;
+             }
         }
     }
 
-    const refreshCache = derivedAddressInfoCache.length === 0 || new Date().getTime() - lastRefreshTime > 300000;
-
-    if (refreshCache) {
-      try {
-        const allDerivedAddresses = [...derivedReceiveAddresses, ...derivedChangeAddresses];
-        const addressStrings = allDerivedAddresses.map(a => a.address);
-        const addressInfo = await fetchAddressInfoBatch(addressStrings);
-        
-        derivedAddressInfoCache = addressInfo.map(info => {
-            const receiveMatch = derivedReceiveAddresses.find(d => d.address === info.address);
-            const changeMatch = derivedChangeAddresses.find(d => d.address === info.address);
-            const match = receiveMatch || changeMatch;
-            return {
-                address: info.address,
-                index: match?.index ?? -1,
-                balance: info.balance,
-                tx_count: info.tx_count,
-            };
-        }).filter(info => info.index !== -1);
-      } catch (e) {
-        console.error("Failed to fetch address info for cache:", e);
-      }
+    if (derivedNew) {
+        wallet = await buildActiveWallet(walletId);
     }
-
-    const receiveAddressSet = new Set(derivedReceiveAddresses.map(a => a.address));
-    let lastUsedIndex = -1;
-    for (const info of derivedAddressInfoCache) {
-        if (receiveAddressSet.has(info.address) && info.tx_count > 0 && info.index > lastUsedIndex) {
-            lastUsedIndex = info.index;
-        }
-    }
-
-    let targetIndexToDerive = lastUsedIndex + GAP_LIMIT;
-    const currentMaxIndex = derivedReceiveAddresses.length > 0 ? derivedReceiveAddresses[derivedReceiveAddresses.length - 1].index : -1;
     
-    if (targetIndexToDerive < currentMaxIndex) {
-        targetIndexToDerive = currentMaxIndex;
-    }
-
-    for (let i = currentMaxIndex + 1; i <= targetIndexToDerive; i++) {
-        const derived = deriveReceiveAddress(root, i);
-        if (derived) derivedReceiveAddresses.push(derived);
-    }
-
-    const cacheByIndex = new Map(derivedAddressInfoCache.map(ci => [ci.address, ci]));
-    for (const addr of derivedReceiveAddresses) {
-      if (!cacheByIndex.has(addr.address)) {
-        cacheByIndex.set(addr.address, {
-          address: addr.address,
-          index: addr.index,
-          balance: 0,
-          tx_count: 0,
-        });
-      }
-    }
-    derivedAddressInfoCache = Array.from(cacheByIndex.values());
-
-    const receiveCache = derivedAddressInfoCache.filter(info => receiveAddressSet.has(info.address));
-    const firstUnusedIndex = findFirstUnusedIndex(receiveCache, derivedReceiveAddresses[derivedReceiveAddresses.length - 1].index);
-    const currentReceiveAddress = derivedReceiveAddresses.find(a => a.index === firstUnusedIndex)?.address;
-
-    if (currentReceiveAddress) {
-      const fullWalletData: ActiveWallet = { 
-        ...walletMetadata,
-        changeAddressIndex: walletMetadata.changeAddressIndex ?? 0, 
-        derivedReceiveAddresses, 
-        derivedChangeAddresses,
-        derivedAddressInfoCache, 
-        address: currentReceiveAddress,
-        receiveAddressIndex: firstUnusedIndex,
-        utxoLabels,
-        nextUtxoCount,
-      };
-
-      const updatedWallets = currentWallets.map(w => w.id === walletId ? {
-          ...w,
-          changeAddressIndex: w.changeAddressIndex ?? 0,
-          derivedReceiveAddresses, 
-          derivedChangeAddresses, 
-          derivedAddressInfoCache,
-          utxoLabels,
-          nextUtxoCount,
-      } : w);
-
-      setWallets(updatedWallets);
-      setActiveWallet(fullWalletData);
-      
-      await Keychain.setGenericPassword('user', walletId, { service: ACTIVE_WALLET_KEY });
-      await Keychain.setGenericPassword('user', JSON.stringify(updatedWallets), { service: WALLETS_KEY }); 
-      triggerRefresh();
+    if(wallet) {
+        setActiveWallet(wallet);
     }
   };
 
   const getOrCreateNextUnusedReceiveAddress = async (currentAddress: string, currentIndex: number): Promise<{ address: string, index: number } | null> => {
     if (!activeWallet) return null;
     
-    let updatedDerivedAddresses = activeWallet.derivedReceiveAddresses;
-    let updatedCache = activeWallet.derivedAddressInfoCache;
-    let maxDerivedIndex = updatedDerivedAddresses.length - 1;
-
-    const receiveSet = new Set(updatedDerivedAddresses.map(a => a.address));
-    let receiveCache = updatedCache.filter(info => receiveSet.has(info.address));
-
-    let lastUsedIndex = -1;
-    for (const info of receiveCache) {
-      if (info.tx_count > 0 && info.index > lastUsedIndex) lastUsedIndex = info.index;
-    }
-
-    const windowStart = lastUsedIndex + 1;
-    const windowEnd = windowStart + (GAP_LIMIT - 1);
-
-    let nextIndex: number;
-    if (currentIndex < windowStart || currentIndex >= windowEnd) {
-      nextIndex = windowStart;
-    } else {
-      nextIndex = currentIndex + 1;
-      if (nextIndex > windowEnd) nextIndex = windowStart;
-    }
-
-    if (maxDerivedIndex < windowEnd) {
-      const root = await getRootNode(activeWallet.id);
-      const newDerived: DerivedAddress[] = [];
-      for (let i = maxDerivedIndex + 1; i <= windowEnd; i++) {
-        const d = deriveReceiveAddress(root, i);
-        if (d) newDerived.push(d);
-      }
-      if (newDerived.length > 0) {
-        updatedDerivedAddresses = [...updatedDerivedAddresses, ...newDerived];
-        const newInfo: DerivedAddressInfo[] = newDerived.map(d => ({ address: d.address, index: d.index, balance: 0, tx_count: 0 }));
-        updatedCache = [...updatedCache, ...newInfo];
-        receiveCache = [...receiveCache, ...newInfo];
-        newDerived.forEach(d => receiveSet.add(d.address));
-        maxDerivedIndex = updatedDerivedAddresses.length - 1;
-      }
-    }
-
-    const byIndex = new Map(receiveCache.map(c => [c.index, c]));
-    for (let i = windowStart; i <= windowEnd; i++) {
-      if (!byIndex.has(i)) {
-        const addr = updatedDerivedAddresses.find(a => a.index === i)?.address;
-        if (addr) {
-           const info = { address: addr, index: i, balance: 0, tx_count: 0 };
-           updatedCache.push(info);
-        }
-      }
-    }
-
-    const nextAddress = updatedDerivedAddresses.find(a => a.index === nextIndex)?.address;
-    return nextAddress ? { address: nextAddress, index: nextIndex } : null;
-  };
-
-  const createWallet = async (mnemonic: string, name: string, currentWallets: Wallet[]): Promise<{ newWallet: Wallet, updatedWallets: Wallet[] }> => {
-    if (!bip39.validateMnemonic(mnemonic)) throw new Error("Invalid mnemonic provided");
+    const addresses = activeWallet.derivedReceiveAddresses;
+    const currentPos = addresses.findIndex(a => a.index === currentIndex);
     
-    const newWalletId = uuidv4();
-    const newWallet: Wallet = { 
-      id: newWalletId, 
-      name, 
-      changeAddressIndex: 0,
-      derivedReceiveAddresses: [], 
-      derivedChangeAddresses: [],
-      derivedAddressInfoCache: [],
-      utxoLabels: {},
-      nextUtxoCount: 1,
-    };
+    if (currentPos !== -1 && currentPos < addresses.length - 1) {
+        return addresses[currentPos + 1];
+    }
+
+    const root = await getRootNode(activeWallet.id);
+    const nextIndex = addresses[addresses.length - 1].index + 1;
+    const derived = deriveReceiveAddress(root, nextIndex);
     
-    await Keychain.setGenericPassword('user', mnemonic, { service: `${KEYCHAIN_SERVICE_PREFIX}.${newWalletId}` });
-    const updatedWallets = [...currentWallets, newWallet];
-    await Keychain.setGenericPassword('user', JSON.stringify(updatedWallets), { service: WALLETS_KEY });
-    setWallets(updatedWallets);
-    return { newWallet, updatedWallets };
+    if (derived) {
+        await dbSaveAddress(activeWallet.id, derived, 0, NETWORK_NAME);
+        setActiveWallet(prev => {
+             if(!prev) return null;
+             return {
+                 ...prev,
+                 derivedReceiveAddresses: [...prev.derivedReceiveAddresses, derived],
+                 derivedAddressInfoCache: [...prev.derivedAddressInfoCache, { address: derived.address, index: derived.index, balance: 0, tx_count: 0 }]
+             }
+        });
+        return derived;
+    }
+
+    return null;
   };
 
   const generateMnemonic = async (strength: number = 128): Promise<string | null> => {
@@ -506,50 +417,56 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const { mnemonic, name } = params;
     const isFirstWallet = wallets.length === 0;
     const defaultName = `Wallet ${wallets.length + 1}`;
-    
-    const { newWallet, updatedWallets } = await createWallet(mnemonic, name || defaultName, wallets);
+    const newWalletId = uuidv4();
+
+    await Keychain.setGenericPassword('user', mnemonic, { service: `${KEYCHAIN_SERVICE_PREFIX}.${newWalletId}` });
+    await dbCreateWallet(newWalletId, name || defaultName, NETWORK_NAME);
+
+    const newWallets = await dbGetWallets(NETWORK_NAME);
+    setWallets(newWallets);
     
     if (isFirstWallet) {
-        await loadAndSetActiveWallet(newWallet.id, updatedWallets);
+        await Keychain.setGenericPassword('user', newWalletId, { service: ACTIVE_WALLET_KEY });
+        await loadAndSetActiveWallet(newWalletId);
     } else {
-        await switchWallet(newWallet.id, updatedWallets);
+        await switchWallet(newWalletId);
     }
-    return newWallet;
+    return newWallets.find(w => w.id === newWalletId) || null;
   };
 
-  const switchWallet = async (walletId: string, currentWallets: Wallet[]) => {
+  const switchWallet = async (walletId: string) => {
     if (activeWallet?.id === walletId) return;
     try {
-      await loadAndSetActiveWallet(walletId, currentWallets);
+      await Keychain.setGenericPassword('user', walletId, { service: ACTIVE_WALLET_KEY });
+      await loadAndSetActiveWallet(walletId);
     } catch (error) {
         console.error("Failed to switch wallet:", error);
     }
   };
 
   const updateWalletName = async (walletId: string, newName: string) => {
-    const updatedWallets = wallets.map(w => w.id === walletId ? { ...w, name: newName } : w);
-    setWallets(updatedWallets);
-    await Keychain.setGenericPassword('user', JSON.stringify(updatedWallets), { service: WALLETS_KEY });
+    await dbUpdateWalletName(walletId, newName);
+    const newWallets = await dbGetWallets(NETWORK_NAME);
+    setWallets(newWallets);
     if (activeWallet?.id === walletId) {
       setActiveWallet(prev => (prev ? { ...prev, name: newName } : null));
     }
   };
 
   const removeWallet = async (walletId: string) => {
-    const remainingWallets = wallets.filter(w => w.id !== walletId);
+    await dbDeleteWallet(walletId);
     await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
-    await Keychain.setGenericPassword('user', JSON.stringify(remainingWallets), { service: WALLETS_KEY });
+    
+    const remaining = await dbGetWallets(NETWORK_NAME);
+    setWallets(remaining);
     
     if (activeWallet?.id === walletId) {
-        if (remainingWallets.length > 0) {
-            await loadAndSetActiveWallet(remainingWallets[0].id, remainingWallets);
+        if (remaining.length > 0) {
+            await switchWallet(remaining[0].id);
         } else {
             setActiveWallet(null);
-            setWallets([]);
             await Keychain.resetGenericPassword({ service: ACTIVE_WALLET_KEY });
         }
-    } else {
-        setWallets(remainingWallets);
     }
   };
 
@@ -557,26 +474,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
         const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
         return credentials ? credentials.password : null;
-    } catch (error) {
-        console.error("Failed to retrieve mnemonic:", error);
-        return null;
-    }
+    } catch (error) { return null; }
   };
 
   const resetWallet = async () => {
-    for (const wallet of wallets) {
-        await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${wallet.id}` });
+    const d = await dbGetWallets(NETWORK_NAME);
+    for (const w of d) {
+        await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${w.id}` });
+        await dbDeleteWallet(w.id);
     }
-    await Keychain.resetGenericPassword({ service: WALLETS_KEY });
     await Keychain.resetGenericPassword({ service: ACTIVE_WALLET_KEY });
-    await Keychain.resetGenericPassword({ service: SAVED_ADDR_KEY });
-    await Keychain.resetGenericPassword({ service: TRACKED_ADDR_KEY }); 
-    await AsyncStorage.removeItem(ASYNC_STORAGE_ONBOARDING_KEY);
-    
     setWallets([]);
     setActiveWallet(null);
-    setSavedAddresses([]);
-    setTrackedAddresses([]);
   };
 
   const createAndSignTransaction = async (
@@ -585,19 +494,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (!activeWallet) throw new Error("No active wallet.");
 
     const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${activeWallet.id}` });
-    if (!credentials) {
-      throw new Error("Could not retrieve credentials to sign transaction.");
-    }
+    if (!credentials) throw new Error("Could not retrieve credentials.");
     const mnemonic = credentials.password;
     const seed = bip39.mnemonicToSeedSync(mnemonic);
     const root = bip32.fromSeed(seed, NETWORK);
 
     const nextChangeIndex = activeWallet.changeAddressIndex ?? 0;
-    const changeAddress = activeWallet.derivedChangeAddresses.find(a => a.index === nextChangeIndex)?.address;
-
+    
+    let changeAddress = activeWallet.derivedChangeAddresses.find(a => a.index === nextChangeIndex)?.address;
     if (!changeAddress) {
-        throw new Error("Failed to get next change address. Wallet may be out of addresses.");
+        const derived = deriveChangeAddress(root, nextChangeIndex);
+        if (derived) {
+            await dbSaveAddress(activeWallet.id, derived, 1, NETWORK_NAME);
+            changeAddress = derived.address;
+        }
     }
+
+    if (!changeAddress) throw new Error("Failed to get change address.");
 
     try {
       const psbt = new bitcoin.Psbt({ network: NETWORK });
@@ -651,112 +564,76 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const chain = changeInfo ? 1 : 0;
         const indexForPath = changeInfo ? changeInfo.index : recvInfo!.index;
         const derivationPath = `${DERIVATION_PARENT_PATH}/${chain}/${indexForPath}`;
-        
         const child = root.derivePath(derivationPath);
         const keyPair = ECPair.fromPrivateKey(child.privateKey!);
-
         psbt.signInput(index, keyPair);
       });
 
       psbt.finalizeAllInputs();
-      const transaction = psbt.extractTransaction();
-      return { txHex: transaction.toHex(), usedChangeIndex };
+      return { txHex: psbt.extractTransaction().toHex(), usedChangeIndex };
     } catch (error) {
       console.error("Failed to create or sign transaction:", error);
-      if (error instanceof Error) throw error;
-      throw new Error("An unknown error occurred during transaction creation.");
+      throw error;
     }
   };
 
   const incrementChangeIndex = async (walletId: string, lastUsedIndex: number) => {
-    const walletToUpdate = wallets.find(w => w.id === walletId);
-    if (!walletToUpdate) return;
-    
-    const currentIndex = walletToUpdate.changeAddressIndex ?? 0;
-    if (currentIndex === lastUsedIndex) {
-      const nextIndex = lastUsedIndex + 1;
-      const updatedWallets = wallets.map(w => 
-        w.id === walletId ? { ...w, changeAddressIndex: nextIndex } : w
-      );
-      setWallets(updatedWallets);
-      if (activeWallet?.id === walletId) {
-        setActiveWallet(prev => (prev ? { ...prev, changeAddressIndex: nextIndex } : null));
-      }
-      await Keychain.setGenericPassword('user', JSON.stringify(updatedWallets), { service: WALLETS_KEY });
+    if (activeWallet?.changeAddressIndex === lastUsedIndex) {
+        const next = lastUsedIndex + 1;
+        await dbUpdateChangeIndex(walletId, next);
+        
+        if (activeWallet.id === walletId) {
+            setActiveWallet({ ...activeWallet, changeAddressIndex: next });
+        }
+        const newWallets = await dbGetWallets(NETWORK_NAME);
+        setWallets(newWallets);
     }
   };
 
   const addSavedAddress = async (address: Omit<BitcoinAddress, 'id'>) => {
-    const addressWithId = { ...address, id: uuidv4() };
-    const newAddresses = [...savedAddresses, addressWithId];
-    setSavedAddresses(newAddresses);
-    await Keychain.setGenericPassword('user', JSON.stringify(newAddresses), { service: SAVED_ADDR_KEY });
+    const item = { ...address, id: uuidv4() };
+    await dbAddSavedAddress('saved_addresses', item, NETWORK_NAME);
+    setSavedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses'));
   };
 
   const removeSavedAddress = async (addressId: string) => {
-    const newAddresses = savedAddresses.filter(a => a.id !== addressId);
-    setSavedAddresses(newAddresses);
-    await Keychain.setGenericPassword('user', JSON.stringify(newAddresses), { service: SAVED_ADDR_KEY });
+    await dbRemoveSavedAddress('saved_addresses', addressId);
+    setSavedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses'));
   };
 
   const updateSavedAddressName = async (addressId: string, newName: string) => {
-    const newAddresses = savedAddresses.map(a => a.id === addressId ? { ...a, name: newName } : a);
-    setSavedAddresses(newAddresses);
-    await Keychain.setGenericPassword('user', JSON.stringify(newAddresses), { service: SAVED_ADDR_KEY });
+    const item = savedAddresses.find(a => a.id === addressId);
+    if(item) {
+        await dbUpdateSavedAddress('saved_addresses', { ...item, name: newName });
+        setSavedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses'));
+    }
   };
 
   const refreshSavedAddressBalances = async () => {
-    const addressesToRefresh = savedAddresses.map(a => a.address);
-    if (addressesToRefresh.length === 0) return;
-    try {
-      const balances = await fetchAddressBalances(addressesToRefresh);
-      const updatedAddresses = savedAddresses.map((addr, index) => ({
-        ...addr,
-        balance: balances[index] ?? addr.balance,
-        lastUpdated: new Date(),
-      }));
-      setSavedAddresses(updatedAddresses);
-      await Keychain.setGenericPassword('user', JSON.stringify(updatedAddresses), { service: SAVED_ADDR_KEY });
-    } catch (error) {
-      console.error("Failed to refresh saved address balances:", error);
-    }
+    queryClient.invalidateQueries({ queryKey: ['saved', 'balances'] });
   };
 
-
   const addTrackedAddress = async (address: Omit<BitcoinAddress, 'id'>) => {
-    const addressWithId = { ...address, id: uuidv4() };
-    const newAddresses = [...trackedAddresses, addressWithId];
-    setTrackedAddresses(newAddresses);
-    await Keychain.setGenericPassword('user', JSON.stringify(newAddresses), { service: TRACKED_ADDR_KEY });
+    const item = { ...address, id: uuidv4() };
+    await dbAddSavedAddress('tracked_addresses', item, NETWORK_NAME);
+    setTrackedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'tracked_addresses'));
   };
 
   const removeTrackedAddress = async (addressId: string) => {
-    const newAddresses = trackedAddresses.filter(a => a.id !== addressId);
-    setTrackedAddresses(newAddresses);
-    await Keychain.setGenericPassword('user', JSON.stringify(newAddresses), { service: TRACKED_ADDR_KEY });
+    await dbRemoveSavedAddress('tracked_addresses', addressId);
+    setTrackedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'tracked_addresses'));
   };
 
   const updateTrackedAddressName = async (addressId: string, newName: string) => {
-    const newAddresses = trackedAddresses.map(a => a.id === addressId ? { ...a, name: newName } : a);
-    setTrackedAddresses(newAddresses);
-    await Keychain.setGenericPassword('user', JSON.stringify(newAddresses), { service: TRACKED_ADDR_KEY });
+    const item = trackedAddresses.find(a => a.id === addressId);
+    if(item) {
+        await dbUpdateSavedAddress('tracked_addresses', { ...item, name: newName });
+        setTrackedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'tracked_addresses'));
+    }
   };
 
   const refreshTrackedAddressBalances = async () => {
-    const addressesToRefresh = trackedAddresses.map(a => a.address);
-    if (addressesToRefresh.length === 0) return;
-    try {
-      const balances = await fetchAddressBalances(addressesToRefresh);
-      const updatedAddresses = trackedAddresses.map((addr, index) => ({
-        ...addr,
-        balance: balances[index] ?? addr.balance,
-        lastUpdated: new Date(),
-      }));
-      setTrackedAddresses(updatedAddresses);
-      await Keychain.setGenericPassword('user', JSON.stringify(updatedAddresses), { service: TRACKED_ADDR_KEY });
-    } catch (error) {
-      console.error("Failed to refresh tracked address balances:", error);
-    }
+    queryClient.invalidateQueries({ queryKey: ['tracked', 'balances'] });
   };
 
   const value = {
@@ -776,7 +653,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     incrementChangeIndex,
     getOrCreateNextUnusedReceiveAddress,
     
-
     updateUtxoLabel,
     scanAndNameUtxos,
     getUtxoLabel,

@@ -16,6 +16,7 @@ import {
 import 'react-native-get-random-values'; 
 import './shim'; 
 import { registerRootComponent } from 'expo';
+import { initDatabase } from './src/services/database';
 
 LogBox.ignoreLogs([
   'Setting a timer',
@@ -53,6 +54,7 @@ const ThemedAppRoot = () => {
 
 export default function App() {
   const [networkLoaded, setNetworkLoaded] = useState(false);
+  const [dbReady, setDbReady] = useState(false);
   const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>('light');
   const [appKey, setAppKey] = useState(0);
   const systemScheme = useColorScheme();
@@ -61,6 +63,12 @@ export default function App() {
     const prepareApp = async () => {
       try {
         console.log('--- START PREPARE APP ---');
+        
+        // 1. Init Database First
+        await initDatabase();
+        setDbReady(true);
+
+        // 2. Load Network Preferences
         const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
         
         if (savedNetwork === 'testnet') {
@@ -69,6 +77,7 @@ export default function App() {
           setNetwork('mainnet');
         }
 
+        // 3. Load Theme
         const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
         if (savedTheme) {
           setSplashTheme(savedTheme as 'light' | 'dark');
@@ -82,7 +91,6 @@ export default function App() {
         console.log('--- SETTING NETWORK LOADED ---');
         setNetworkLoaded(true);
         
-
         onNetworkChange(() => {
           setAppKey(prev => prev + 1);
         });
@@ -99,7 +107,7 @@ export default function App() {
     'SpaceMono-BoldItalic': SpaceMono_700Bold_Italic,
   });
 
-  if (!fontsLoaded || !networkLoaded) {
+  if (!fontsLoaded || !networkLoaded || !dbReady) {
     const splashBg = splashTheme === 'dark' ? '#000000' : '#ffffff';
     const splashIcon = splashTheme === 'dark' 
       ? require('./assets/splash-icon-black.png') 
