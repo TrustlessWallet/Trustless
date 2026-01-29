@@ -2,7 +2,7 @@
 
 ## Intro
 Hi!
-Trustless is a fully open-source, Bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
+Trustless is a fully open-source, privacy-focused, Bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
 
 ## Main features
 * **Bitcoin wallet:** Import or create new wallets, track balances, send and receive Bitcoin.
@@ -11,7 +11,7 @@ Trustless is a fully open-source, Bitcoin-only mobile wallet. It is very minimal
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 * **Coin control:** Choose which UTXOs to use for a transaction.
 * **BIP44 change address management:** Following best privacy practices, all change addresses are being derived from 1/n chain and are only used once. You can see all your change by clicking on your total wallet balance.
-* **Custom node connection:** Connect to your own node via Esplora API URL.
+* **Custom node connection:** Connect to your own node via Electrum.
 * **Network switch:** Use testnet network for transaction testing / development.
 
 ## Getting Started
