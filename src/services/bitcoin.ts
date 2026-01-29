@@ -109,7 +109,12 @@ export const fetchUTXOs = async (addresses: string[]) => {
             vout: u.tx_pos,
             value: u.value,
             address: addr,
-            status: { confirmed: u.height > 0, block_height: u.height }
+            status: { 
+                confirmed: u.height > 0, 
+                block_height: u.height,
+                block_hash: null, 
+                block_time: null 
+            }
         }));
     });
 
@@ -120,7 +125,6 @@ export const fetchUTXOs = async (addresses: string[]) => {
   }
 };
 
-// --- DATA HYDRATION ---
 const hydrateInputDetails = async (txs: any[]) => {
     const parentIds = new Set<string>();
     txs.forEach(tx => {
@@ -187,7 +191,6 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
     let walletVoutTotal = 0;
     let walletVinTotal = 0; 
 
-    // 1. Process Outputs
     const normalizedVout = tx.vout.map((output: any) => {
         let sats = output.value;
         if (typeof sats === 'number' && sats < 21000000) { 
@@ -210,7 +213,6 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
         };
     });
 
-    // 2. Process Inputs
     const normalizedVin = tx.vin.map((input: any) => {
         const prevout = input.prevout || { 
             scriptpubkey_address: 'Unknown', 
@@ -227,7 +229,6 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
         };
     });
 
-    // 3. Determine Type
     let type: 'send' | 'receive' | 'internal' = 'receive'; 
     let amount = 0;
 
@@ -242,10 +243,7 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
         amount = walletVoutTotal - walletVinTotal;
     }
 
-    // 4. Status & Time Logic (FIXED FOR UNCONFIRMED)
     const isConfirmed = (tx.confirmations || 0) > 0;
-    // If unconfirmed, give it "Current Time" so it sorts to the top.
-    // If confirmed but missing time (rare), give it 0.
     const effectiveTime = isConfirmed 
         ? (tx.time || tx.blocktime || 0) 
         : Math.floor(Date.now() / 1000);
@@ -299,7 +297,6 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
       const walletAddressSet = new Set(addresses);
       const processed = hydratedTxs.map(tx => processTransaction(tx, walletAddressSet));
 
-      // Sort by Time Descending (Unconfirmed 'Now' -> Oldest)
       return processed.sort((a, b) => (b.status.block_time || 0) - (a.status.block_time || 0));
   } catch (err) {
     return [];

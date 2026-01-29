@@ -5,10 +5,6 @@ import { dbGetTransactions, dbSaveTransactions } from '../services/database';
 import { NETWORK_NAME } from '../constants/network';
 import { useState, useEffect } from 'react';
 
-/**
- * useBalance
- * Fetches the balance for a single address.
- */
 export const useBalance = (address: string) => {
   return useQuery({
     queryKey: ['balance', address],
@@ -19,10 +15,6 @@ export const useBalance = (address: string) => {
   });
 };
 
-/**
- * useWalletBalanceSync
- * Batch fetches info for Active Wallet.
- */
 export const useWalletBalanceSync = (
     walletId: string | undefined, 
     addresses: string[]
@@ -40,10 +32,7 @@ export const useWalletBalanceSync = (
     });
 };
 
-/**
- * useAddressListSync
- * Batch fetches balances for Saved/Tracked lists.
- */
+
 export const useAddressListSync = (
     category: 'saved' | 'tracked',
     items: BitcoinAddress[]
@@ -62,15 +51,10 @@ export const useAddressListSync = (
     });
 };
 
-/**
- * useWalletTransactions
- * Hybird Hook: Loads from DB immediately, then syncs with API.
- */
 export const useWalletTransactions = (walletId: string | undefined, addresses: string[]) => {
   const [cachedTxs, setCachedTxs] = useState<Transaction[]>([]);
   const [isDbLoaded, setIsDbLoaded] = useState(false);
 
-  // 1. Load from DB on mount or wallet change
   useEffect(() => {
     if (!walletId) {
         setCachedTxs([]);
@@ -92,13 +76,11 @@ export const useWalletTransactions = (walletId: string | undefined, addresses: s
     return () => { isMounted = false; };
   }, [walletId]);
 
-  // 2. Network Query
   const query = useQuery({
     queryKey: ['wallet-transactions', walletId, addresses.length], 
     queryFn: async () => {
          if (!walletId || addresses.length === 0) return [];
          const newTxs = await fetchAddressTransactions(addresses);
-         // Side-effect: Save to DB
          await dbSaveTransactions(walletId, newTxs, NETWORK_NAME);
          return newTxs;
     },
@@ -107,12 +89,8 @@ export const useWalletTransactions = (walletId: string | undefined, addresses: s
     retry: false,
   });
 
-  // 3. Merge Strategy
-  // If query has data, use it (it's freshest). If not, use cachedTxs.
   const transactions = query.data || cachedTxs;
   
-  // Custom Loading State: We are "loading" only if we have NO data from DB and NO data from Network.
-  // If we have DB data, we are NOT loading (user sees old data).
   const isLoading = !isDbLoaded || (query.isLoading && transactions.length === 0);
 
   return { 
@@ -122,10 +100,6 @@ export const useWalletTransactions = (walletId: string | undefined, addresses: s
   };
 };
 
-/**
- * useWalletUTXOs
- * Fetches UTXOs for the active wallet (for Coin Control)
- */
 export const useWalletUTXOs = (addresses: string[]) => {
   return useQuery({
     queryKey: ['wallet-utxos', addresses.length],

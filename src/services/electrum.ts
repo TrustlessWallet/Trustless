@@ -3,7 +3,6 @@ import { NETWORK, IS_TESTNET } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EventEmitter } from 'events';
 
-// Use require to ensure compatibility
 const TcpSocket = require('react-native-tcp-socket').default || require('react-native-tcp-socket');
 
 const CUSTOM_NODE_KEY = '@customNodeUrl'; 
@@ -187,8 +186,6 @@ class CustomElectrumClient extends EventEmitter {
   }
 }
 
-// --- PEER MANAGEMENT ---
-
 const PEERS = {
   mainnet: [
     { host: 'electrum.blockstream.info', port: 50001, protocol: 'tcp' as const },
@@ -231,18 +228,15 @@ export const getElectrumClient = async () => {
 
         const peerList = IS_TESTNET ? PEERS.testnet : PEERS.mainnet;
         
-        // --- IMPROVED CUSTOM NODE PARSING ---
         try {
             let custom = await AsyncStorage.getItem(CUSTOM_NODE_KEY);
             if (custom) {
-                // 1. Remove http/https protocol prefix if user added it
+
                 custom = custom.replace(/^https?:\/\//, '');
                 
-                // 2. Parse host:port:protocol
                 const parts = custom.split(':');
                 const host = parts[0];
                 
-                // Default port 50001 (tcp) or 50002 (tls)
                 let port = 50001;
                 let protocol: 'tcp' | 'tls' = 'tcp';
 
@@ -302,7 +296,6 @@ export const getElectrumClient = async () => {
   return connectionPromise;
 };
 
-// ... exports below remain exactly the same as previous file ...
 export const electrumGetBalance = async (scriptHash: string) => (await getElectrumClient()).request('blockchain.scripthash.get_balance', [scriptHash]);
 export const electrumGetHistory = async (scriptHash: string) => (await getElectrumClient()).request('blockchain.scripthash.get_history', [scriptHash]);
 export const electrumListUnspent = async (scriptHash: string) => (await getElectrumClient()).request('blockchain.scripthash.listunspent', [scriptHash]);

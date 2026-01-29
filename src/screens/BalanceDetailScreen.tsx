@@ -9,7 +9,8 @@ import {
   TextInput, 
   Keyboard,
   Platform,
-  Dimensions
+  Dimensions,
+  ScrollView 
 } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -23,14 +24,15 @@ import { EXPLORER_UI_URL, DERIVATION_PARENT_PATH } from '../constants/network';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
-  withTiming,
-  runOnJS
+  withTiming
 } from 'react-native-reanimated';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BalanceDetail'>;
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// no-op
 
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 const formatAddressShort = (address: string) => {
@@ -48,11 +50,13 @@ const BalanceDetailScreen = () => {
 
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   
   const editInputRef = useRef<TextInput>(null);
-  const scrollY = useSharedValue(0);
+  
+  // Animation Value
+  const containerTranslateY = useSharedValue(0);
   const itemRefs = useRef<Map<string, View>>(new Map());
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const sortedUtxos = useMemo(() => 
     [...utxos].sort((a, b) => b.value - a.value), 
@@ -73,8 +77,6 @@ const BalanceDetailScreen = () => {
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => {
-        setKeyboardHeight(e.endCoordinates.height);
-        
         if (editingUtxoKey) {
           const itemView = itemRefs.current.get(editingUtxoKey);
           if (itemView) {
@@ -83,8 +85,9 @@ const BalanceDetailScreen = () => {
               const keyboardTop = SCREEN_HEIGHT - e.endCoordinates.height;
               
               if (itemBottom > keyboardTop) {
-                const scrollAmount = itemBottom - keyboardTop + 50;
-                scrollY.value = withTiming(scrollY.value + scrollAmount, { duration: 250 });
+                // Slide up just enough to show the input + buffer
+                const offset = keyboardTop - itemBottom - 60; 
+                containerTranslateY.value = withTiming(offset, { duration: 250 });
               }
             });
           }
@@ -95,8 +98,7 @@ const BalanceDetailScreen = () => {
     const hideSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
-        setKeyboardHeight(0);
-        scrollY.value = withTiming(0, { duration: 250 });
+        containerTranslateY.value = withTiming(0, { duration: 250 });
       }
     );
 
@@ -114,8 +116,8 @@ const BalanceDetailScreen = () => {
     }
   }, [editingUtxoKey]);
 
-  const animatedScrollStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -scrollY.value }]
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: containerTranslateY.value }]
   }));
 
   const addressMap = new Map<string, string>([
@@ -155,18 +157,10 @@ const BalanceDetailScreen = () => {
     return (
       <View 
         key={key}
-        ref={(ref) => {
-          if (ref) {
-            itemRefs.current.set(key, ref);
-          }
-        }}
-        style={[
-          styles.row,
-          isLastItem && styles.lastRow
-        ]}
+        ref={(ref) => { if (ref) itemRefs.current.set(key, ref); }}
+        style={[styles.row, isLastItem && styles.lastRow]}
       >
         <View style={styles.infoContainer}>
-          
           <View style={styles.nameContainer}>
              {isEditing ? (
                  <TextInput
@@ -223,28 +217,29 @@ const BalanceDetailScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.container}>
-        <Animated.ScrollView
-          style={[styles.scrollView, animatedScrollStyle]}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={true}
-          keyboardShouldPersistTaps="handled"
-          scrollEventThrottle={16}
-          contentInset={{ bottom: 100 }}
-          contentOffset={{ x: 0, y: 0 }}
-        >
-          <View style={styles.contentWrapper}>
-            {sortedUtxos.length === 0 ? (
-              <View style={styles.centered}>
-                <Text style={styles.emptyText}>No spendable coins (UTXOs) found.</Text>
-              </View>
-            ) : (
-              sortedUtxos.map((item, index) => renderItem(item, index))
-            )}
-          </View>
-        </Animated.ScrollView>
-        <SafeAreaView style={styles.bottomSafeArea} />
-      </View>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+        indicatorStyle={isDark ? 'white' : 'black'}
+        scrollIndicatorInsets={{ right: 1 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        contentInsetAdjustmentBehavior="always"
+        scrollEnabled={true}
+        bounces={true}
+      >
+        <Animated.View style={[styles.contentContainer, animatedContainerStyle]} pointerEvents="box-none">
+          {sortedUtxos.length === 0 ? (
+            <View style={styles.centered}>
+              <Text style={styles.emptyText}>No spendable coins (UTXOs) found.</Text>
+            </View>
+          ) : (
+            sortedUtxos.map((item, index) => renderItem(item, index))
+          )}
+        </Animated.View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -254,19 +249,15 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  contentContainer: {
+  },
   scrollView: {
     flex: 1,
   },
-  contentWrapper: {
-    paddingBottom: 100, // Add padding to ensure content is scrollable above the bottom safe area
-  },
   scrollContent: {
-    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
-  },
-  bottomSafeArea: {
-    backgroundColor: theme.colors.background,
+    paddingBottom: 200,
   },
   centered: { 
     flex: 1, 

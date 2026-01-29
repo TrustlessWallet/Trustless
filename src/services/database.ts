@@ -6,10 +6,8 @@ let db: SQLite.SQLiteDatabase | null = null;
 export const initDatabase = async () => {
   db = await SQLite.openDatabaseAsync('trustless_wallet.db');
 
-  // Enable foreign keys for data integrity
   await db.execAsync('PRAGMA foreign_keys = ON;');
 
-  // WAL mode for better performance
   await db.execAsync('PRAGMA journal_mode = WAL;');
 
   await db.execAsync(`
@@ -84,8 +82,6 @@ export const getDB = () => {
   return db;
 };
 
-// --- Wallet Helpers ---
-
 export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(
@@ -128,8 +124,6 @@ export const dbUpdateChangeIndex = async (id: string, index: number) => {
   await d.runAsync('UPDATE wallets SET changeAddressIndex = ? WHERE id = ?', [index, id]);
 };
 
-// --- Address Helpers ---
-
 export const dbSaveAddress = async (walletId: string, addr: { address: string, index: number }, chain: number, network: string) => {
   const d = getDB();
   await d.runAsync(
@@ -170,8 +164,6 @@ export const dbUpdateAddressInfoBatch = async (updates: { address: string; balan
     );
   }
 };
-
-// --- UTXO Helpers ---
 
 export const dbGetUtxoLabels = async (walletId: string): Promise<Record<string, string>> => {
   const d = getDB();
@@ -222,13 +214,9 @@ export const dbSyncUtxos = async (walletId: string, network: string, utxos: UTXO
   return nextUtxoCount;
 };
 
-// --- Transaction Helpers (NEW) ---
 
 export const dbGetTransactions = async (walletId: string): Promise<Transaction[]> => {
   const d = getDB();
-  // Sort by block_time desc (newest first). Unconfirmed (null block_time) usually comes first or last depending on need, 
-  // but here we just grab them and let the UI sort if needed, though SQL sort is faster.
-  // We'll sort by block_time DESC. Nulls (pending) usually should be at top. 
   const rows = await d.getAllAsync<any>(
     'SELECT json_content FROM transactions WHERE wallet_id = ? ORDER BY block_time DESC',
     [walletId]
@@ -240,7 +228,6 @@ export const dbGetTransactions = async (walletId: string): Promise<Transaction[]
 export const dbSaveTransactions = async (walletId: string, transactions: Transaction[], network: string) => {
   const d = getDB();
   for (const tx of transactions) {
-     // For sorting: if confirmed, use block_time. If pending, use a future timestamp or max int to keep at top.
      const blockTime = tx.status.block_time || Date.now() / 1000 + 100000; 
      
      await d.runAsync(
@@ -251,8 +238,6 @@ export const dbSaveTransactions = async (walletId: string, transactions: Transac
   }
 };
 
-
-// --- Saved / Tracked Helpers ---
 
 export const dbGetSavedAddresses = async (network: string, table: 'saved_addresses' | 'tracked_addresses') => {
     const d = getDB();

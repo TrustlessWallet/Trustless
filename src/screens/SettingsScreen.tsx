@@ -10,9 +10,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-// FIX: Remove CUSTOM_NODE_URL_KEY from import to prevent TS error
 import { testNodeConnection } from '../services/bitcoin';
-import { EXPLORER_API_URL, NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network'; 
+import { NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network'; 
 import { setAppIsAuthenticated } from '../services/authState';
 import { StyledInput } from '../components/StyledInput'; 
 
@@ -27,7 +26,6 @@ const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_SCREEN_KEY = '@defaultScreen';
 const NETWORK_PREF_KEY = '@network_preference';
 
-// FIX: Define key locally to match electrum.ts and avoid circular imports
 const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
 
 const autoLockOptions = ['Off', 0, 1, 5, 30, 60];
@@ -223,9 +221,7 @@ const SettingsScreen = () => {
     );
   };
 
-  // --- NEW LOGIC FOR TCP/TLS CONNECTION ---
   const handleSaveNodeUrl = async () => {
-    // 1. Remove http/https (Electrum uses TCP)
     const trimmed = customNodeUrl.trim().replace(/^https?:\/\//, '');
     
     if (trimmed.length === 0) {
@@ -237,7 +233,6 @@ const SettingsScreen = () => {
       return;
     }
 
-    // 2. Validate Format (Host:Port)
     const parts = trimmed.split(':');
     if (parts.length < 2) {
       Alert.alert(
@@ -249,7 +244,6 @@ const SettingsScreen = () => {
 
     setConnectionStatus('testing');
     
-    // We try to connect using the trimmed string
     const isConnected = await testNodeConnection(trimmed);
     
     if (isConnected) {
@@ -348,7 +342,6 @@ const SettingsScreen = () => {
               />
             </TouchableOpacity>
             
-            {/* --- UPDATED UI FOR HOST:PORT INPUT --- */}
             {isEditingNode && (
               <View style={styles.nodeInputContainer}>
                 <Text style={styles.helperText}>
@@ -365,7 +358,6 @@ const SettingsScreen = () => {
                     setCustomNodeUrl(text);
                     if (connectionStatus === 'failed') setConnectionStatus('idle');
                   }}
-                  // Updated Placeholder
                   placeholder="e.g. 192.168.1.50:50001:tcp"
                   placeholderTextColor={theme.colors.muted}
                   autoCapitalize="none"
