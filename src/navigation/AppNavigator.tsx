@@ -61,7 +61,6 @@ const AppNavigator = () => {
   
   const splashOpacity = useRef(new Animated.Value(1)).current;
 
-  // Helper to check platform
   const isAndroid = Platform.OS === 'android';
 
   const splashIcon = isDark 
@@ -215,9 +214,6 @@ const AppNavigator = () => {
 
   const screenOptions: NativeStackNavigationOptions = {
     contentStyle: { backgroundColor: theme.colors.background },
-    
-    // ANDROID ONLY: Default to slide_from_right for standard stack screens.
-    // We will override this for sheets/modals below.
     animation: isAndroid ? 'slide_from_right' : undefined,
     gestureEnabled: true,
     gestureDirection: 'horizontal',
@@ -284,10 +280,8 @@ const AppNavigator = () => {
     </TouchableOpacity>
   );
 
-  // ANDROID ONLY: Custom sheet settings
-  // includes 'presentation: formSheet' to ensure detents work on Android
   const androidSheetOptions: Partial<NativeStackNavigationOptions> = isAndroid ? {
-    presentation: 'formSheet', // Override 'modal' to 'formSheet' on Android
+    presentation: 'formSheet',
     sheetAllowedDetents: [0.92],
     sheetCornerRadius: 24,
     sheetGrabberVisible: true,
