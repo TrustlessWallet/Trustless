@@ -361,7 +361,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   balanceText: {
     fontSize: 16,
-    fontWeight: 'bold', 
     color: theme.colors.primary 
   },
   orangeSymbol: {

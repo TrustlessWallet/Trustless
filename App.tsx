@@ -13,6 +13,8 @@ import {
   SpaceMono_700Bold,
   SpaceMono_700Bold_Italic,
 } from '@expo-google-fonts/space-mono';
+import * as Font from 'expo-font';
+import { Feather } from '@expo/vector-icons';
 import 'react-native-get-random-values'; 
 import './shim'; 
 import { registerRootComponent } from 'expo';
@@ -68,7 +70,16 @@ export default function App() {
         await initDatabase();
         setDbReady(true);
 
-        // 2. Load Network Preferences
+        // 2. Load Feather Font Manually
+        // We load this imperatively to avoid the useFonts hook hanging if the asset fails on Android
+        try {
+          await Font.loadAsync(Feather.font);
+          console.log('Feather font loaded');
+        } catch (fontError) {
+          console.error('Error loading Feather font:', fontError);
+        }
+
+        // 3. Load Network Preferences
         const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
         
         if (savedNetwork === 'testnet') {
@@ -77,7 +88,7 @@ export default function App() {
           setNetwork('mainnet');
         }
 
-        // 3. Load Theme
+        // 4. Load Theme
         const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
         if (savedTheme) {
           setSplashTheme(savedTheme as 'light' | 'dark');

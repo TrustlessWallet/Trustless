@@ -347,7 +347,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     txType: { 
         fontSize: 16, 
-        fontWeight: '500',
         color: theme.colors.primary 
     },
     txAddress: { 
@@ -364,7 +363,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     txAmount: { 
         fontSize: 16, 
-        fontWeight: '600',
         color: theme.colors.primary 
     },
     txStatus: { 
@@ -377,7 +375,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     showMoreText: { 
         color: theme.colors.primary, 
-        fontWeight: '600', 
         fontSize: 16 
     },
 });

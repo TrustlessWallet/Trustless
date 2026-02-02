@@ -287,7 +287,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   balanceText: { 
     fontSize: 16, 
-    fontWeight: '600', 
     color: theme.colors.primary
   },
   emptyText: { 

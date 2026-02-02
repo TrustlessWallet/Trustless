@@ -205,7 +205,7 @@ const CoinControlScreen = () => {
         </View>
         <View style={styles.amountBox}>
             <Text style={styles.amountLabel}>Selected Amount</Text>
-            <Text style={[styles.amountText, totalSelected > 0 && styles.selectedAmountText]}>{formatBtc(totalSelected)} <Text style={styles.orangeSymbol}>₿</Text></Text>
+            <Text style={[styles.amountText, totalSelected > 0 ? styles.selectedAmountText : {}]}>{formatBtc(totalSelected)} <Text style={styles.orangeSymbol}>₿</Text></Text>
         </View>
       </View>
       <FlatList
@@ -270,7 +270,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   amountText: {
     fontSize: 18,
-    fontWeight: '600',
     color: theme.colors.primary, 
   },
   selectedAmountText: {
@@ -347,7 +346,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   balanceText: { 
     fontSize: 16, 
-    fontWeight: '600', 
     color: theme.colors.primary 
   },
   emptyContainer: {
