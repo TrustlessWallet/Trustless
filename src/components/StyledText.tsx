@@ -1,32 +1,55 @@
 import React from 'react';
-import { Text as DefaultText, StyleSheet } from 'react-native';
-type TextProps = DefaultText['props'];
+import { Text as DefaultText, TextStyle, StyleSheet, Platform } from 'react-native';
+import { useTheme } from '../contexts/ThemeContext';
+
+interface TextProps extends React.ComponentProps<typeof DefaultText> {
+  style?: TextStyle | TextStyle[];
+}
+
 export function Text(props: TextProps) {
-  const style = StyleSheet.flatten(props.style);
-  let fontFamily = 'SpaceMono-Regular';
-  if (style && style.fontWeight) {
-    const weight = style.fontWeight;
-    let isBold = false;
-    if (typeof weight === 'string') {
-      isBold = weight === 'bold' || parseInt(weight, 10) >= 700;
-    } else if (typeof weight === 'number') {
-      isBold = weight >= 700;
-    }
-    if (isBold) {
-      fontFamily = style.fontStyle === 'italic' ? 'SpaceMono-BoldItalic' : 'SpaceMono-Bold';
-    } else if (style.fontStyle === 'italic') {
-      fontFamily = 'SpaceMono-Italic';
-    }
+  const { theme } = useTheme();
+  const { style, ...otherProps } = props;
+
+  // Flatten styles to check for fontWeight
+  const flatStyle = StyleSheet.flatten(style || {});
+  
+  // Check for bold weights (including numeric values like "700")
+  const fontWeight = flatStyle?.fontWeight;
+  let isBold = false;
+  if (fontWeight === 'bold') {
+    isBold = true;
+  } else if (typeof fontWeight === 'string' && parseInt(fontWeight, 10) >= 700) {
+    isBold = true;
+  } else if (typeof fontWeight === 'number' && fontWeight >= 700) {
+    isBold = true;
   }
+
+  const isItalic = flatStyle?.fontStyle === 'italic';
+
+  // LOGIC: Explicitly select the font file based on stylze
+  let fontFamily = 'SpaceMono-Regular';
+
+  if (isBold && isItalic) {
+    fontFamily = 'SpaceMono-BoldItalic';
+  } else if (isBold) {
+    fontFamily = 'SpaceMono-Bold';
+  } else if (isItalic) {
+    fontFamily = 'SpaceMono-Italic';
+  }
+
+  const androidStyleFix = Platform.OS === 'android' ? { fontWeight: undefined } : {};
+
   return (
     <DefaultText
-      {...props}
-      style={[styles.defaultStyle, props.style, { fontFamily }]}
+      style={[
+        { 
+          color: theme.colors.primary, 
+          fontFamily 
+        }, 
+        style,
+        androidStyleFix
+      ]}
+      {...otherProps}
     />
   );
 }
-const styles = StyleSheet.create({
-  defaultStyle: {
-    fontFamily: 'SpaceMono-Regular',
-  },
-});

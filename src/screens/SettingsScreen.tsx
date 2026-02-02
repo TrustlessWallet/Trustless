@@ -140,7 +140,7 @@ const SettingsScreen = () => {
     }
   };
 
-  const handleReset = () => {
+const handleReset = () => {
     Alert.alert(
       "Reset App",
       "This will erase all wallets and saved addresses. Are you sure?",
@@ -151,18 +151,28 @@ const SettingsScreen = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              await resetWallet();
+              // 1. Clear all storage keys FIRST
               await AsyncStorage.multiRemove([
+                '@hasCompletedOnboarding', // <--- THIS WAS MISSING
                 DEFAULT_SCREEN_KEY,
                 BIOMETRICS_ENABLED_KEY,
                 AUTO_LOCK_TIME_KEY, 
                 HIDE_TRACKER_BALANCE_KEY,
                 HIDE_WALLET_BALANCE_KEY,
                 CUSTOM_NODE_URL_KEY,
-                NETWORK_PREF_KEY
+                NETWORK_PREF_KEY,
+                '@lastActiveTime' // Good practice to clear this too
               ]);
+
+              // 2. Reset local state
               setCustomNodeUrl('');
               setConnectionStatus('idle');
+
+              // 3. FINALLY reset the wallet context. 
+              // This triggers the AppNavigator to re-check status. 
+              // Since keys are now gone, it will detect "Needs Onboarding".
+              await resetWallet();
+              
               Alert.alert("App Reset", "All data has been deleted.");
             } catch (error) {
               Alert.alert("Error", "Could not complete the reset process.");
