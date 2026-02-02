@@ -38,11 +38,12 @@
       [
         "expo-font",
         {
-          "fonts": [
+"fonts": [
             "./assets/fonts/SpaceMono-Regular.ttf",
             "./assets/fonts/SpaceMono-Italic.ttf",
             "./assets/fonts/SpaceMono-Bold.ttf",
-            "./assets/fonts/SpaceMono-BoldItalic.ttf"
+            "./assets/fonts/SpaceMono-BoldItalic.ttf",
+            "./assets/fonts/Feather.ttf" 
           ]
         }
       ],

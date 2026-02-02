@@ -12,7 +12,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme'; 
 
 const { width } = Dimensions.get('window');
-
 const REPO_URL = 'https://github.com/pechen987/Trustless';
 
 const slides = [
@@ -68,6 +67,79 @@ const slides = [
   },
 ];
 
+const SlideItem = React.memo(({ item, index, currentIndex, isScreenFocused, theme, isDark, styles, handleLinkPress, handleCopyLink, copied, videoRef }: any) => {
+
+  const shouldRenderVideo = Math.abs(currentIndex - index) <= 1;
+
+  return (
+    <View style={styles.slide}>
+      <View style={styles.phoneContainer}>
+        <View style={[
+            styles.videoWrapper, 
+            item.type === 'qr' && styles.qrWrapperBackground 
+          ]}>
+          {item.type === 'video' ? (
+            shouldRenderVideo ? (
+              <Video
+                ref={videoRef}
+                source={item.video}
+                style={styles.videoFill}
+                muted={true}
+                repeat={true}
+                resizeMode="cover"
+                paused={!isScreenFocused || currentIndex !== index}
+              />
+            ) : null
+          ) : (
+            <View style={styles.qrContainer}>
+              <TouchableOpacity 
+                style={styles.qrBox} 
+                onPress={handleCopyLink}
+                activeOpacity={0.8}
+              >
+                {copied && (
+                  <View style={styles.copiedOverlay}>
+                    <Feather name="copy" size={24} color={theme.colors.primary} />
+                    <Text style={styles.copiedText}>Copied!</Text>
+                  </View>
+                )}
+                <QRCode 
+                  value={REPO_URL}
+                  size={150} 
+                  color={theme.colors.primary}
+                  backgroundColor={theme.colors.background}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        <Image
+          source={require('../../assets/iPhone16Plus.png')}
+          style={styles.frameOverlay}
+          resizeMode="contain"
+          resizeMethod="resize"
+        />
+      </View>
+
+      <View style={styles.textContainer}>
+        <Text style={styles.headline}>{item.headline}</Text>
+        <Text style={styles.bodyText}>
+          {item.body}
+          {item.linkText && item.link && (
+            <Text 
+              style={styles.linkText} 
+              onPress={() => handleLinkPress(item.link!)}
+            >
+              {item.linkText}
+            </Text>
+          )}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
 const OnboardingWalletScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingWallet'>>();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -113,13 +185,6 @@ const OnboardingWalletScreen = () => {
   };
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
-    });
-    return unsubscribe;
-  }, [navigation]);
-
-  useEffect(() => {
     if (isScreenFocused && videoRefs.current[currentIndex]) {
       videoRefs.current[currentIndex]?.seek(0);
     }
@@ -132,6 +197,22 @@ const OnboardingWalletScreen = () => {
     }
   }).current;
 
+  const renderItem = ({ item, index }: any) => (
+    <SlideItem 
+      item={item}
+      index={index}
+      currentIndex={currentIndex}
+      isScreenFocused={isScreenFocused}
+      theme={theme}
+      isDark={isDark}
+      styles={styles}
+      handleLinkPress={handleLinkPress}
+      handleCopyLink={handleCopyLink}
+      copied={copied}
+      videoRef={(ref: VideoRef | null) => { videoRefs.current[index] = ref; }}
+    />
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
@@ -143,72 +224,11 @@ const OnboardingWalletScreen = () => {
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         keyExtractor={(item) => item.key}
-        renderItem={({ item, index }) => (
-          <View style={styles.slide}>
-            <View style={styles.phoneContainer}>
-              <View style={[
-                  styles.videoWrapper, 
-                  item.type === 'qr' && styles.qrWrapperBackground 
-                ]}>
-                {item.type === 'video' ? (
-                  <Video
-                    ref={(ref: VideoRef | null) => {
-                      videoRefs.current[index] = ref;
-                    }}
-                    source={item.video}
-                    style={styles.videoFill}
-                    muted={true}
-                    repeat={true}
-                    resizeMode="cover"
-                    paused={!isScreenFocused || currentIndex !== index}
-                  />
-                ) : (
-                  <View style={styles.qrContainer}>
-                    <TouchableOpacity 
-                      style={styles.qrBox} 
-                      onPress={handleCopyLink}
-                      activeOpacity={0.8}
-                    >
-                      {copied && (
-                        <View style={styles.copiedOverlay}>
-                          <Feather name="copy" size={24} color={theme.colors.primary} />
-                          <Text style={styles.copiedText}>Copied!</Text>
-                        </View>
-                      )}
-                      <QRCode 
-                        value={REPO_URL}
-                        size={150} 
-                        color={theme.colors.primary}
-                        backgroundColor={theme.colors.background}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-
-              <Image
-                source={require('../../assets/iPhone16Plus.png')}
-                style={styles.frameOverlay}
-                resizeMode="contain"
-              />
-            </View>
-
-            <View style={styles.textContainer}>
-              <Text style={styles.headline}>{item.headline}</Text>
-              <Text style={styles.bodyText}>
-                {item.body}
-                {item.linkText && item.link && (
-                  <Text 
-                    style={styles.linkText} 
-                    onPress={() => handleLinkPress(item.link!)}
-                  >
-                    {item.linkText}
-                  </Text>
-                )}
-              </Text>
-            </View>
-          </View>
-        )}
+        renderItem={renderItem}
+        removeClippedSubviews={true} 
+        initialNumToRender={1}
+        maxToRenderPerBatch={1}
+        windowSize={3}
       />
       
       <View style={styles.footer}>

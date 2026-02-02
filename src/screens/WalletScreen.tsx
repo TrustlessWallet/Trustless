@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context'; 
 import { Text } from '../components/StyledText';
@@ -16,12 +16,14 @@ const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
+const btcFormatter = new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 8,
+    minimumFractionDigits: 8,
+});
+
 const formatBalance = (sats: number) => {
     const btc = (sats || 0) / 100000000;
-    return new Intl.NumberFormat('en-US', {
-      maximumFractionDigits: 8,
-      minimumFractionDigits: 8,
-    }).format(btc).replace(/,/g, ' ');
+    return btcFormatter.format(btc).replace(/,/g, ' ');
 };
 
 const formatAddress = (address: string) => {
@@ -37,23 +39,27 @@ const WalletScreen = () => {
     const [hideBalance, setHideBalance] = useState(false);
     const isFocused = useIsFocused();
 
-    // 1. Calculate Balance directly from Context (Instant)
     const balance = useMemo(() => {
         if (!activeWallet) return 0;
         return activeWallet.derivedAddressInfoCache.reduce((acc, curr) => acc + curr.balance, 0);
     }, [activeWallet]);
 
-    // 2. Prepare addresses for History/UTXO fetching
     const queryAddresses = useMemo(() => {
         if (!activeWallet) return [];
         const changeAddresses = activeWallet.derivedChangeAddresses.map(a => a.address);
         const infoCache = activeWallet.derivedAddressInfoCache;
-        // Only check addresses that have been used to save bandwidth
         const usedAddresses = infoCache.filter(i => i.tx_count > 0 || i.balance > 0).map(i => i.address);
         return [...new Set([...usedAddresses, ...changeAddresses])];
     }, [activeWallet]);
 
-    // 3. Use Hybrid Hook (Instant Load from DB + Background Sync)
+    const walletAddressesSet = useMemo(() => {
+        if (!activeWallet) return new Set<string>();
+        return new Set([
+          ...(activeWallet.derivedReceiveAddresses.map(a => a.address) ?? []),
+          ...(activeWallet.derivedChangeAddresses.map(a => a.address) ?? [])
+        ]);
+    }, [activeWallet]);
+
     const { 
         data: transactions, 
         isLoading: loadingTxs, 
@@ -77,25 +83,20 @@ const WalletScreen = () => {
     }, [isFocused]);
 
     const onRefresh = () => {
-        triggerRefresh(); // Syncs balance
-        refetchTxs();     // Syncs history
-        refetchUtxos();   // Syncs UTXOs
+        triggerRefresh();
+        refetchTxs();
+        refetchUtxos();
     };
 
-    const renderTransactionItem = ({ item }: { item: Transaction }) => {
-      const walletAddresses = new Set([
-        ...(activeWallet?.derivedReceiveAddresses.map(a => a.address) ?? []),
-        ...(activeWallet?.derivedChangeAddresses.map(a => a.address) ?? [])
-      ]);
-      
+    const renderTransactionItem = useCallback(({ item }: { item: Transaction }) => {
       const isSend = item.type === 'send';
       let otherAddress = 'Multiple';
       
       if (isSend) {
-        const externalOutputs = item.vout.filter(o => !walletAddresses.has(o.scriptpubkey_address));
+        const externalOutputs = item.vout.filter(o => !walletAddressesSet.has(o.scriptpubkey_address));
         if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
       } else {
-        const externalInputs = item.vin.filter(i => !walletAddresses.has(i.prevout?.scriptpubkey_address));
+        const externalInputs = item.vin.filter(i => !walletAddressesSet.has(i.prevout?.scriptpubkey_address));
         if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
       }
 
@@ -104,7 +105,11 @@ const WalletScreen = () => {
         : 'Pending confirmation';
 
       return (
-        <TouchableOpacity style={styles.txRow} onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}>
+        <TouchableOpacity 
+            key={item.txid} 
+            style={styles.txRow} 
+            onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}
+        >
             <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
             <View style={styles.txDetails}>
                 <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
@@ -121,7 +126,7 @@ const WalletScreen = () => {
             </View>
         </TouchableOpacity>
       );
-    };
+    }, [walletAddressesSet, hideBalance, theme, navigation, styles]);
 
     const txList = transactions || [];
     const recentTxs = txList.slice(0, 3);
@@ -139,9 +144,7 @@ const WalletScreen = () => {
                         <Feather name="plus-circle" size={18} color={theme.colors.inversePrimary} />
                         <Text style={styles.createButtonText}>Create a new wallet</Text>
                     </TouchableOpacity>
-                    
                     <Text style={styles.orText}>Or</Text>
-                    
                     <TouchableOpacity style={styles.importButton} onPress={() => navigation.navigate('RecoverWallet')}>
                         <Feather name="refresh-ccw" size={18} color={theme.colors.primary} />
                         <Text style={styles.importButtonText}>Import existing wallet</Text>
@@ -185,9 +188,7 @@ const WalletScreen = () => {
                 {loadingTxs ? <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : (
                     hasTransactions ? (
                         <View style={styles.historyContainer}>
-                            {recentTxs.map((tx) => (
-                                <View key={tx.txid}>{renderTransactionItem({ item: tx })}</View>
-                            ))}
+                            {recentTxs.map((tx) => renderTransactionItem({ item: tx }))}
                             {txList.length > 5 && (
                                 <TouchableOpacity style={styles.showMoreButton} onPress={() => navigation.navigate('TransactionHistory')}>
                                     <Text style={styles.showMoreText}>Show full history</Text>
@@ -285,8 +286,11 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     balanceText: { 
         fontSize: 36, 
+        fontFamily: 'SpaceMono-Bold', 
         fontWeight: 'bold', 
-        color: theme.colors.primary 
+        color: theme.colors.primary,
+        includeFontPadding: false, 
+        textAlignVertical: 'center'
     },
     orangeSymbol: { 
         color: theme.colors.bitcoin 

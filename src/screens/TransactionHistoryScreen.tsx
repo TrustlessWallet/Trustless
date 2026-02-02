@@ -10,21 +10,28 @@ import { fetchAddressTransactions } from '../services/bitcoin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
+
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const TX_CACHE_PREFIX = '@txCache:';
 const TX_CACHE_STALE_MS = 240000; 
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'TransactionHistory'>;
+
+const btcFormatter = new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 8,
+    minimumFractionDigits: 8,
+});
+
 const formatBalance = (sats: number) => {
     const btc = (sats || 0) / 100000000;
-    return new Intl.NumberFormat('en-US', {
-      maximumFractionDigits: 8,
-      minimumFractionDigits: 8,
-    }).format(btc).replace(/,/g, ' ');
+    return btcFormatter.format(btc).replace(/,/g, ' ');
 };
+
 const formatAddress = (address: string) => {
   if (!address || address.length <= 10) return address;
   return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
 };
+
 const TransactionHistoryScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const { activeWallet, loading: walletLoading, lastRefreshTime } = useWallet();
@@ -35,16 +42,27 @@ const TransactionHistoryScreen = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [hideBalance, setHideBalance] = useState(false);
     const isFocused = useIsFocused();
+
+    const walletAddressesSet = useMemo(() => {
+        if (!activeWallet) return new Set<string>();
+        return new Set([
+            ...(activeWallet.derivedReceiveAddresses.map(a => a.address) ?? []),
+            ...(activeWallet.derivedChangeAddresses.map(a => a.address) ?? [])
+        ]);
+    }, [activeWallet]);
+
     const fetchData = useCallback(async (options: { showSpinner?: boolean; bypassCache?: boolean } = {}) => {
       const { showSpinner = false, bypassCache = false } = options;
       const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
       const receiveWithTxs = infoCache.filter(i => i.tx_count > 0).map(i => i.address);
       const changeAddresses = activeWallet?.derivedChangeAddresses.map(a => a.address) ?? [];
       const allAddresses = [...new Set([...receiveWithTxs, ...changeAddresses])];
+      
       if (allAddresses.length === 0) {
         setLoadingData(false);
         return;
       }
+
       const cacheKey = `${TX_CACHE_PREFIX}${activeWallet?.id || 'no-wallet'}`;
       try {
         if (showSpinner) {
@@ -81,14 +99,17 @@ const TransactionHistoryScreen = () => {
         setLoadingData(false);
       }
     }, [activeWallet]);
+
     useEffect(() => {
         fetchData({ showSpinner: false, bypassCache: false });
     }, [fetchData]);
+
     useEffect(() => {
       if (activeWallet) {
         fetchData({ showSpinner: false, bypassCache: true });
       }
     }, [lastRefreshTime, activeWallet?.id]);
+
     useEffect(() => {
       const loadPreference = async () => {
         const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
@@ -98,24 +119,25 @@ const TransactionHistoryScreen = () => {
         loadPreference();
       }
     }, [isFocused]);
+
     const onRefresh = () => fetchData({ showSpinner: true, bypassCache: true });
-    const renderTransactionItem = ({ item }: { item: Transaction }) => {
-      const walletAddresses = new Set([
-        ...(activeWallet?.derivedReceiveAddresses.map(a => a.address) ?? []),
-        ...(activeWallet?.derivedChangeAddresses.map(a => a.address) ?? [])
-      ]);
+
+    const renderTransactionItem = useCallback(({ item }: { item: Transaction }) => {
       const isSend = item.type === 'send';
       let otherAddress = 'Multiple';
+      
       if (isSend) {
-        const externalOutputs = item.vout.filter(o => !walletAddresses.has(o.scriptpubkey_address));
+        const externalOutputs = item.vout.filter(o => !walletAddressesSet.has(o.scriptpubkey_address));
         if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
       } else {
-        const externalInputs = item.vin.filter(i => !walletAddresses.has(i.prevout?.scriptpubkey_address));
+        const externalInputs = item.vin.filter(i => !walletAddressesSet.has(i.prevout?.scriptpubkey_address));
         if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
       }
+
       const txDate = item.status.block_time
         ? new Date(item.status.block_time * 1000).toLocaleString()
         : 'Pending confirmation';
+
       return (
         <TouchableOpacity style={styles.txRow} onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}>
             <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
@@ -125,21 +147,21 @@ const TransactionHistoryScreen = () => {
                 <Text style={styles.txDate}>{txDate}</Text>
             </View>
             <View style={styles.txAmountContainer}>
-                {}
                 <Text style={styles.txAmount}>
                     {hideBalance ? '*******' : (
                         <>{isSend ? '-' : '+'} {formatBalance(item.amount)} <Text style={styles.orangeSymbol}>₿</Text></>
                     )}
                 </Text>
-                {}
                 <Text style={styles.txStatus}>{item.status.confirmed ? 'Confirmed' : 'Pending'}</Text>
             </View>
         </TouchableOpacity>
       );
-    };
+    }, [walletAddressesSet, hideBalance, theme, navigation, styles]);
+
     if (walletLoading || (loadingData && !refreshing)) {
         return <View style={styles.centeredContainer}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
     }
+
     if (!activeWallet) {
         return (
             <SafeAreaView style={styles.centeredContainer}>
@@ -147,6 +169,7 @@ const TransactionHistoryScreen = () => {
             </SafeAreaView>
         );
     }
+
     return (
         <View style={styles.container}>
             <FlatList
@@ -168,10 +191,16 @@ const TransactionHistoryScreen = () => {
                         <Text style={styles.emptyText}>No transactions yet.</Text>
                     </View>
                 }
+                removeClippedSubviews={true}
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                windowSize={5}
+                updateCellsBatchingPeriod={50}
             />
         </View>
     );
 };
+
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: {
         flex: 1,
@@ -249,4 +278,5 @@ const getStyles = (theme: Theme) => StyleSheet.create({
       color: theme.colors.bitcoin, 
     },
 });
+
 export default TransactionHistoryScreen;

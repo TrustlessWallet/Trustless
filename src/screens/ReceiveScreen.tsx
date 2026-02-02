@@ -51,7 +51,6 @@ const ReceiveScreen = () => {
     setAddressOffset(0);
   }, [activeWallet?.id]);
 
-  // Calculate all currently unused addresses
   const allUnusedAddresses = useMemo(() => {
     if (!activeWallet) return [];
     
@@ -65,39 +64,31 @@ const ReceiveScreen = () => {
       .sort((a, b) => a.index - b.index);
   }, [activeWallet]);
 
-  // Buffer Maintenance: Ensure we always have 20 unused addresses
   useEffect(() => {
     if (walletLoading || !activeWallet) return;
 
     if (allUnusedAddresses.length < UNUSED_BUFFER_SIZE) {
       const lastDerived = activeWallet.derivedReceiveAddresses[activeWallet.derivedReceiveAddresses.length - 1];
       if (lastDerived) {
-        // Generate the next address. The context update will trigger this effect again 
-        // until the buffer is filled.
         getOrCreateNextUnusedReceiveAddress(lastDerived.address, lastDerived.index)
           .catch(err => console.error("Failed to generate buffer address:", err));
       }
     }
   }, [allUnusedAddresses.length, activeWallet, walletLoading, getOrCreateNextUnusedReceiveAddress]);
 
-  // Display only the first 20 unused addresses for the loop
   const displayableAddresses = useMemo(() => {
     return allUnusedAddresses.slice(0, UNUSED_BUFFER_SIZE);
   }, [allUnusedAddresses]);
 
   const currentDisplayData = useMemo(() => {
     if (!activeWallet || displayableAddresses.length === 0) {
-        // Fallback if initialization is slow or empty
         return { 
             address: activeWallet?.address || '', 
             index: activeWallet?.receiveAddressIndex || 0, 
             path: `${DERIVATION_PARENT_PATH}/0/${activeWallet?.receiveAddressIndex || 0}` 
         };
     }
-    
-    // Cycle through the available buffer
     const item = displayableAddresses[addressOffset % displayableAddresses.length];
-    
     return {
         address: item.address,
         index: item.index,
@@ -274,7 +265,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     marginBottom: 16,
   },
   addressText: { 
-    fontFamily: 'monospace', 
     fontSize: 14,
     textAlign: 'center', 
     color: theme.colors.primary, 
@@ -282,7 +272,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingHorizontal: 72,
   },
   derivationPathDisplay: {
-    fontFamily: 'monospace',
     fontSize: 14,
     color: theme.colors.muted, 
     marginBottom: 8
@@ -357,14 +346,11 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   addressShortText: {
     fontSize: 14,
-    color: theme.colors.muted,
-    fontFamily: 'monospace',
-    fontWeight: '600'
+    color: theme.colors.primary,
   },
   derivationPath: {
     fontSize: 14,
     color: theme.colors.muted,
-    fontFamily: 'monospace'
   },
   balanceContainer: {
     flex: 2,
@@ -374,8 +360,8 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     gap: 12,
   },
   balanceText: {
-    fontFamily: 'monospace',
     fontSize: 16,
+    fontWeight: 'bold', 
     color: theme.colors.primary 
   },
   orangeSymbol: {
