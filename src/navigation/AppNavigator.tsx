@@ -1,11 +1,10 @@
-//
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer, useNavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import { RootStackParamList, TabParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { View, TouchableOpacity, AppState, Text, Image, Animated } from 'react-native';
+import { View, TouchableOpacity, AppState, Text, Image, Animated, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -59,6 +58,8 @@ const AppNavigator = () => {
   const appState = useRef(AppState.currentState);
   
   const splashOpacity = useRef(new Animated.Value(1)).current;
+
+  const isAndroid = Platform.OS === 'android';
 
   const splashIcon = isDark 
     ? require('../../assets/splash-icon-black.png') 
@@ -144,25 +145,19 @@ const AppNavigator = () => {
 
   useEffect(() => {
     const checkInitialStatus = async () => {
-      console.log('DEBUG: AppNavigator -> checkInitialStatus STARTED');
       try {
-        console.log('DEBUG: AppNavigator -> Checking AsyncStorage...');
         const hasCompletedOnboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
         const savedDefaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
         setInitialTab(savedDefaultScreen === 'Tracker' ? 'Tracker' : 'Wallet');
 
         if (hasCompletedOnboarding === null) {
-          console.log('DEBUG: AppNavigator -> User needs onboarding');
           setNeedsOnboarding(true);
           setIsLoading(false);
           return;
         }
 
-        console.log('DEBUG: AppNavigator -> Checking Biometrics...');
         const isBiometricsEnabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
-        
         const isEnrolled = await LocalAuthentication.isEnrolledAsync(); 
-        console.log('DEBUG: AppNavigator -> Biometrics Enrolled:', isEnrolled); 
         
         if (isBiometricsEnabled === 'true' && isEnrolled) {
           setInitialRoute('AuthCheck');
@@ -170,16 +165,12 @@ const AppNavigator = () => {
       } catch (e) {
         console.error("Failed to check app status", e);
       } finally {
-        console.log('DEBUG: AppNavigator -> checkInitialStatus FINISHED. Setting isLoading = false');
         setIsLoading(false);
       }
     };
 
     if (!walletLoading) {
-        console.log('DEBUG: AppNavigator -> Wallet Loaded. Starting Status Check...');
       checkInitialStatus();
-    } else {
-        console.log('DEBUG: AppNavigator -> Waiting for Wallet Loading...');
     }
   }, [walletLoading]);
 
@@ -221,6 +212,10 @@ const AppNavigator = () => {
 
   const screenOptions: NativeStackNavigationOptions = {
     contentStyle: { backgroundColor: theme.colors.background },
+    animation: isAndroid ? 'slide_from_right' : undefined,
+    gestureEnabled: true,
+    gestureDirection: 'horizontal',
+
     headerStyle: {
       backgroundColor: isDark ? theme.colors.surface : theme.colors.background,
     },
@@ -283,6 +278,14 @@ const AppNavigator = () => {
     </TouchableOpacity>
   );
 
+  const androidSheetOptions: Partial<NativeStackNavigationOptions> = isAndroid ? {
+    presentation: 'formSheet',
+    sheetAllowedDetents: [0.92],
+    sheetCornerRadius: 24,
+    sheetGrabberVisible: true,
+    animation: 'slide_from_bottom', 
+  } : {};
+
   if (walletLoading || isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: splashBg, justifyContent: 'center', alignItems: 'center' }}>
@@ -320,7 +323,10 @@ const AppNavigator = () => {
           />
           <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
           
-          <Stack.Group screenOptions={{ presentation: 'formSheet' }}>
+          <Stack.Group screenOptions={{ 
+            presentation: 'formSheet',
+            ...androidSheetOptions, 
+          }}>
             <Stack.Screen name="AddAddress" component={AddAddressScreen} options={{ title: 'Add bitcoin address' }} />
             <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
             <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
@@ -336,7 +342,7 @@ const AppNavigator = () => {
             <Stack.Screen name="CoinControl" component={CoinControlScreen} options={{ title: 'Select coins to spend' }} />
           </Stack.Group>
 
-          <Stack.Group screenOptions={{ presentation: 'modal' }}>
+          <Stack.Group screenOptions={{ presentation: 'modal', ...androidSheetOptions }}>
 
             <Stack.Screen
               name="BalanceDetail"
@@ -354,7 +360,7 @@ const AppNavigator = () => {
             />
           </Stack.Group>
 
-          <Stack.Group screenOptions={{ presentation: 'modal' }}>
+          <Stack.Group screenOptions={{ presentation: 'modal', ...androidSheetOptions }}>
             <Stack.Screen
               name="Receive"
               component={ReceiveScreen}
