@@ -1,5 +1,3 @@
-// src/navigation/AppNavigator.tsx
-
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer, useNavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
