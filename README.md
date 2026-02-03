@@ -59,7 +59,7 @@ To build the APK from source exactly matching the official release (for Wallet S
     ```bash
     git clone [https://github.com/TrustlessWallet/Trustless.git](https://github.com/TrustlessWallet/Trustless.git)
     cd Trustless
-    git checkout v1.0.0  # Replace with the release tag you are verifying
+    git checkout 1.0.0  # Replace with the release tag you are verifying
     ```
 
 2.  **Install dependencies:**
