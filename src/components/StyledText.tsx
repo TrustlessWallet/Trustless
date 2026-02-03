@@ -10,10 +10,8 @@ export function Text(props: TextProps) {
   const { theme } = useTheme();
   const { style, ...otherProps } = props;
 
-  // Flatten styles to check for fontWeight
   const flatStyle = StyleSheet.flatten(style || {});
   
-  // Check for bold weights (including numeric values like "700")
   const fontWeight = flatStyle?.fontWeight;
   let isBold = false;
   if (fontWeight === 'bold') {
@@ -26,7 +24,6 @@ export function Text(props: TextProps) {
 
   const isItalic = flatStyle?.fontStyle === 'italic';
 
-  // LOGIC: Explicitly select the font file based on stylze
   let fontFamily = 'SpaceMono-Regular';
 
   if (isBold && isItalic) {
@@ -41,6 +38,7 @@ export function Text(props: TextProps) {
 
   return (
     <DefaultText
+      allowFontScaling={false}
       style={[
         { 
           color: theme.colors.primary, 

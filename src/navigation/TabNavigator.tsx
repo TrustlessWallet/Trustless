@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { View, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { TabParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
@@ -33,11 +33,18 @@ const TabNavigator = () => {
             borderTopWidth: 1,
             borderTopColor: theme.colors.border,
             elevation: 0,
+            ...(Platform.OS === 'android' ? {
+              height: 75,
+              paddingBottom: 12
+            } : {}),
           },
           tabBarLabelStyle: {
             fontSize: 12,
             fontWeight: '600',
             fontFamily: 'SpaceMono-Bold',
+            ...(Platform.OS === 'android' ? {
+              marginBottom: 4 
+            } : {}),
           }
         }}
       >
