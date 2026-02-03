@@ -70,6 +70,7 @@ export const StyledInput: React.FC<StyledInputProps> = ({
       />
       
       <TextInput
+        allowFontScaling={false}
         onFocus={handleFocus}
         onBlur={handleBlur}
         multiline={multiline}

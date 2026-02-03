@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StatusBar, LogBox, View, Image, useColorScheme } from 'react-native';
+import { StatusBar, LogBox, View, Image, useColorScheme, Text, TextInput } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppNavigator from './src/navigation/AppNavigator';
 import { WalletProvider } from './src/contexts/WalletContext';
@@ -19,6 +19,22 @@ import 'react-native-get-random-values';
 import './shim'; 
 import { registerRootComponent } from 'expo';
 import { initDatabase } from './src/services/database';
+
+interface TextWithDefaultProps extends Text {
+  defaultProps?: { allowFontScaling?: boolean };
+}
+
+interface TextInputWithDefaultProps extends TextInput {
+  defaultProps?: { allowFontScaling?: boolean };
+}
+
+((Text as unknown) as TextWithDefaultProps).defaultProps =
+  ((Text as unknown) as TextWithDefaultProps).defaultProps || {};
+((Text as unknown) as TextWithDefaultProps).defaultProps!.allowFontScaling = false;
+
+((TextInput as unknown) as TextInputWithDefaultProps).defaultProps =
+  ((TextInput as unknown) as TextInputWithDefaultProps).defaultProps || {};
+((TextInput as unknown) as TextInputWithDefaultProps).defaultProps!.allowFontScaling = false;
 
 LogBox.ignoreLogs([
   'Setting a timer',
@@ -66,12 +82,9 @@ export default function App() {
       try {
         console.log('--- START PREPARE APP ---');
         
-        // 1. Init Database First
         await initDatabase();
         setDbReady(true);
 
-        // 2. Load Feather Font Manually
-        // We load this imperatively to avoid the useFonts hook hanging if the asset fails on Android
         try {
           await Font.loadAsync(Feather.font);
           console.log('Feather font loaded');
@@ -79,7 +92,6 @@ export default function App() {
           console.error('Error loading Feather font:', fontError);
         }
 
-        // 3. Load Network Preferences
         const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
         
         if (savedNetwork === 'testnet') {
@@ -88,7 +100,6 @@ export default function App() {
           setNetwork('mainnet');
         }
 
-        // 4. Load Theme
         const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
         if (savedTheme) {
           setSplashTheme(savedTheme as 'light' | 'dark');

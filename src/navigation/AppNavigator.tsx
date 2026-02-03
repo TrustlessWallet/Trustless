@@ -4,7 +4,7 @@ import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react
 import { RootStackParamList, TabParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { View, TouchableOpacity, AppState, Text, Image, Animated, Platform } from 'react-native';
+import { View, TouchableOpacity, AppState, Text, Image, Animated, Platform, Modal } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -56,6 +56,8 @@ const AppNavigator = () => {
   const [initialTab, setInitialTab] = useState<keyof TabParamList>('Wallet'); 
   const [currentRouteName, setCurrentRouteName] = useState<string | undefined>(undefined);
   const appState = useRef(AppState.currentState);
+
+  const [splashVisible, setSplashVisible] = useState(true);
   
   const splashOpacity = useRef(new Animated.Value(1)).current;
 
@@ -202,13 +204,25 @@ const AppNavigator = () => {
 
   const shouldShowSplash = walletLoading || isLoading || showSplash || (isBackgrounded && !getBiometricPromptShown());
 
-  useEffect(() => {
+useEffect(() => {
+  if (shouldShowSplash) {
+    // Show modal immediately, then fade in (if needed)
+    setSplashVisible(true);
     Animated.timing(splashOpacity, {
-      toValue: shouldShowSplash ? 1 : 0,
-      duration: 200, 
+      toValue: 1,
+      duration: 200,
       useNativeDriver: true,
     }).start();
-  }, [shouldShowSplash]);
+  } else {
+    Animated.timing(splashOpacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setSplashVisible(false);
+    });
+  }
+}, [shouldShowSplash]);
 
   const screenOptions: NativeStackNavigationOptions = {
     contentStyle: { backgroundColor: theme.colors.background },
@@ -250,7 +264,9 @@ const AppNavigator = () => {
         }}>
           <View style={{ width: 48, height: 24 }} />
           
-          <Text style={{ 
+          <Text 
+          allowFontScaling={false}
+          style={{ 
             flex: 1, 
             textAlign: 'center',
             fontFamily: 'SpaceMono-Bold', 
@@ -280,7 +296,7 @@ const AppNavigator = () => {
 
   const androidSheetOptions: Partial<NativeStackNavigationOptions> = isAndroid ? {
     presentation: 'formSheet',
-    sheetAllowedDetents: [0.92],
+    sheetAllowedDetents: [0.95],
     sheetCornerRadius: 24,
     sheetGrabberVisible: true,
     animation: 'slide_from_bottom', 
@@ -433,25 +449,26 @@ const AppNavigator = () => {
         </Stack.Navigator>
       </NavigationContainer>
       
-      <Animated.View style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: splashBg,
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 9999,
-        opacity: splashOpacity,
-      }}
-      pointerEvents={shouldShowSplash ? 'auto' : 'none'}
+<Modal
+        visible={splashVisible}
+        transparent={true}
+        animationType="none"
+        statusBarTranslucent={true}
+        onRequestClose={() => {}}
       >
-        <Image 
-          source={splashIcon}
-          style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
-        />
-      </Animated.View>
+        <Animated.View style={{
+          flex: 1,
+          backgroundColor: splashBg,
+          justifyContent: 'center',
+          alignItems: 'center',
+          opacity: splashOpacity,
+        }}>
+          <Image 
+            source={splashIcon}
+            style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
+          />
+        </Animated.View>
+      </Modal>
     </>
   );
 };
