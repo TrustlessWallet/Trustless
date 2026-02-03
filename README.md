@@ -20,7 +20,7 @@ To run the project in development mode, you need Node.js and a setup for iOS (Xc
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/pechen987/Trustless.git](https://github.com/pechen987/Trustless.git)
+    git clone [https://github.com/TrustlessWallet/Trustless.git](https://github.com/TrustlessWallet/Trustless.git)
     cd Trustless
     ```
 
@@ -57,7 +57,7 @@ To build the APK from source exactly matching the official release (for Wallet S
 
 1.  **Clone the repository and checkout the specific tag:**
     ```bash
-    git clone [https://github.com/pechen987/Trustless.git](https://github.com/pechen987/Trustless.git)
+    git clone [https://github.com/TrustlessWallet/Trustless.git](https://github.com/TrustlessWallet/Trustless.git)
     cd Trustless
     git checkout v1.0.0  # Replace with the release tag you are verifying
     ```
