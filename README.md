@@ -14,9 +14,9 @@ Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-only m
 * **Custom node connection:** Connect to your own node via Electrum.
 * **Network switch:** Use testnet network for transaction testing / development.
 
-## Getting Started
+## Getting Started (Development)
 
-To run the project, you need Node.js and a setup for iOS (Xcode) or Android (Android Studio).
+To run the project in development mode, you need Node.js and a setup for iOS (Xcode) or Android (Android Studio).
 
 1.  **Clone the repository:**
     ```bash
@@ -37,27 +37,60 @@ To run the project, you need Node.js and a setup for iOS (Xcode) or Android (And
         ```
         *To run on a physical device, add the `-- --device` flag and ensure your iPhone is connected.*
 
-    * **Manual Build (Advanced):**
-        If the automated commands fail, you can generate the native directories and build manually:
-        ```bash
-        npx expo prebuild --clean
-        cd ios && pod install && cd ..
-        ```
-        Then open a Trustless.xcworkspace file in your ios folder to open the project in xCode. From there you can install the app manually.
-
     * **Android:**
         ```bash
         npm run android
         ```
         *Make sure you have an Android Emulator running or a physical device connected.*
 
+    * **Manual Build (Advanced):**
+        If the automated commands fail, you can generate the native directories and build manually:
+        ```bash
+        npx expo prebuild --clean
+        cd ios && pod install && cd ..
+        ```
+        Then open a Trustless.xcworkspace file in your ios folder to open the project in Xcode. From there you can install the app manually.
 
+## Reproducible Build Instructions
+
+To build the APK from source exactly matching the official release (for Wallet Scrutiny verification):
+
+1.  **Clone the repository and checkout the specific tag:**
+    ```bash
+    git clone [https://github.com/pechen987/Trustless.git](https://github.com/pechen987/Trustless.git)
+    cd Trustless
+    git checkout v1.0.0  # Replace with the release tag you are verifying
+    ```
+
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+
+3.  **Generate build metadata:**
+    *This step is critical. It generates the `src/constants/build.json` file required for the app to compile.*
+    ```bash
+    node src/scripts/write-version.js
+    ```
+
+4.  **Generate native files:**
+    ```bash
+    npx expo prebuild --clean
+    ```
+
+5.  **Build the Release APK:**
+    ```bash
+    cd android
+    ./gradlew assembleRelease
+    ```
+
+6.  **Locate the Output:**
+    The output APK will be located at:
+    `android/app/build/outputs/apk/release/app-release.apk`
 
 ## Contributing
 
 We welcome contributions to Trustless! Please follow the standard fork-and-pull request workflow.
-
-### Issues
 
 ### Contribution Process
 
@@ -71,7 +104,7 @@ We welcome contributions to Trustless! Please follow the standard fork-and-pull 
 ### Guidelines
 
 * **Code Style:** Keep code clean and consistent.
-* **Testing:** Ensure the app builds and runs via `npm run:ios` before submitting.
+* **Testing:** Ensure the app builds and runs via `npm run ios` or `npm run android` before submitting.
 * **Issues:** Open an issue to discuss major changes before starting work.
 
 ## License
