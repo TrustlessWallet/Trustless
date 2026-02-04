@@ -399,9 +399,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     marginLeft: 8,
   },
   itemTitle: {
-    fontFamily: 'SpaceMono-Bold',
     fontSize: 16,
-    fontWeight: '600',
     color: theme.colors.primary,
   },
   itemTxid: {
@@ -411,7 +409,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   itemAmount: {
     fontSize: 16,
-    fontWeight: '600',
     color: theme.colors.primary,
     marginLeft: 12,
   },
@@ -435,7 +432,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   txType: {
     fontSize: 16,
-    fontWeight: '500',
     color: theme.colors.primary
   },
   txAddress: {
@@ -449,7 +445,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   txAmount: {
     fontSize: 16,
-    fontWeight: '600',
     color: theme.colors.primary,
     marginBottom: 2,
   },

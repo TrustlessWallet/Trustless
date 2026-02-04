@@ -320,9 +320,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     textAlignVertical: 'center',
   },
   utxoLabelText: {
-    fontFamily: 'SpaceMono-Bold',
     fontSize: 16, 
-    fontWeight: '600', 
     color: theme.colors.primary, 
   },
   editIcon: {
@@ -340,7 +338,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   txidText: { 
     fontFamily: 'monospace', 
-    fontSize: 12, 
+    fontSize: 14, 
     color: theme.colors.muted, 
     marginTop: 0 
   },

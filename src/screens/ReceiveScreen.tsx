@@ -313,7 +313,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   actionButtonText: { 
     color: theme.colors.primary, 
     fontSize: 14, 
-    fontWeight: '600', 
     marginTop: 8 
   },
   listHeaderContainer: {
@@ -326,6 +325,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   listHeader: {
     fontSize: 16,
+    fontWeight: 'bold',
     color: theme.colors.primary, 
   },
   row: {

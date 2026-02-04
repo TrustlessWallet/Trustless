@@ -186,7 +186,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     walletName: {
         fontSize: 16,
-        fontWeight: '600',
         color: theme.colors.primary,
     },
     editButton: {
@@ -198,9 +197,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.primary,
     },
     walletNameInput: {
-        fontFamily: 'SpaceMono-Bold',
         fontSize: 16,
-        fontWeight: '600',
         color: theme.colors.primary,
     },
     actionsContainer: {
@@ -221,7 +218,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     backupButtonText: {
         color: theme.colors.primary,
-        fontWeight: '600',
         fontSize: 14,
     },
     footer: {
@@ -242,7 +238,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     addButtonText: {
         color: theme.colors.inversePrimary,
         fontSize: 16,
-        fontWeight: '600',
     },
 });
 export default WalletSwitcherScreen;

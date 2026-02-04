@@ -592,7 +592,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   switcherText: {
     fontSize: 16,
-    fontWeight: '600',
+
     minWidth: 90,
     textAlign: 'center',
     color: theme.colors.primary,
@@ -645,8 +645,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   saveButtonText: {
     color: theme.colors.inversePrimary,
-    fontWeight: '600',
     fontSize: 14,
+    fontWeight: '600',
   },
   rowHeaderGroup: {
     flexDirection: 'row',
