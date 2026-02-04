@@ -138,10 +138,10 @@ const TransactionConfirmModal = () => {
                             onPress={() => handleFeeSelection(key, feeOptions[key])}
                             style={[styles.feeOption, selectedKey === key && styles.feeOptionActive]}
                         >
-                            <Text style={[styles.feeOptionText, selectedKey === key && styles.feeOptionTextActive]}>
+                            <Text style={[styles.feeOptionText, selectedKey === key ? styles.feeOptionTextActive : {}]}>
                                 {key.charAt(0).toUpperCase() + key.slice(1)}
                             </Text>
-                            <Text style={[styles.feeOptionRate, selectedKey === key && styles.feeOptionRateActive]}>
+                            <Text style={[styles.feeOptionRate, selectedKey === key ? styles.feeOptionRateActive : {}]}>
                                 {feeOptions[key]} s/vB
                             </Text>
                         </TouchableOpacity>
@@ -150,8 +150,8 @@ const TransactionConfirmModal = () => {
                         onPress={() => handleFeeSelection('custom', parseInt(customRate, 10) || 1)}
                         style={[styles.feeOption, selectedKey === 'custom' && styles.feeOptionActive]}
                     >
-                        <Text style={[styles.feeOptionText, selectedKey === 'custom' && styles.feeOptionTextActive]}>Custom</Text>
-                        <Text style={[styles.feeOptionRate, selectedKey === 'custom' && styles.feeOptionRateActive]}>Edit</Text>
+                        <Text style={[styles.feeOptionText, selectedKey === 'custom' ? styles.feeOptionTextActive : {}]}>Custom</Text>
+                        <Text style={[styles.feeOptionRate, selectedKey === 'custom' ? styles.feeOptionRateActive : {}]}>Edit</Text>
                     </TouchableOpacity>
                 </View>
                 {selectedKey === 'custom' && (
@@ -193,7 +193,7 @@ const TransactionConfirmModal = () => {
                 <View style={styles.detailRow}>
                     <Text style={styles.label}>Change</Text>
                     <View style={styles.valueContainer}>
-                        <Text style={[styles.value, isDust && styles.valueDust]}>
+                        <Text style={[styles.value, isDust ? styles.valueDust : {}]}>
                             {formatBtc(estimatedChange)} <Text style={[styles.orangeSymbol]}>₿</Text>
                         </Text>
                         <Text style={[styles.subValue]}>
@@ -259,24 +259,21 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     label: {
         fontSize: 16,
-        color: theme.colors.muted, 
-        fontWeight: '500',
+        color: theme.colors.primary, 
     },
     valueMain: {
         fontSize: 16,
-        fontWeight: '600',
         color: theme.colors.primary, 
         fontFamily: 'monospace',
     },
     inputValue: {
         fontSize: 14,
-        color: theme.colors.primary, 
+        color: theme.colors.muted, 
         fontFamily: 'monospace',
     },
     amountValue: {
         fontSize: 14,
         color: theme.colors.primary, 
-        fontWeight: '600',
     },
     pathBadge: {
         fontSize: 10,
@@ -296,7 +293,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     value: {
         fontSize: 16,
-        fontWeight: '500',
         color: theme.colors.primary, 
         fontFamily: 'monospace',
     },
@@ -372,7 +368,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     customFeeLabel: {
         fontSize: 14,
-        fontWeight: '600',
         marginRight: 12,
         color: theme.colors.primary, 
     },
@@ -399,16 +394,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     warningText: {
         flex: 1,
         color: theme.colors.primary, 
-        fontWeight: '500',
     },
     totalLabel: {
         fontSize: 18,
         color: theme.colors.primary, 
-        fontWeight: 'bold',
     },
     totalValue: {
         fontSize: 18,
-        fontWeight: 'bold',
         color: theme.colors.primary, 
     },
     orangeSymbol: {

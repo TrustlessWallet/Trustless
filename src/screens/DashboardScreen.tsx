@@ -272,7 +272,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   addressName: {
     fontSize: 16,
-    fontWeight: '600',
     color: theme.colors.primary,
   },
   editIcon: {
@@ -299,7 +298,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   balanceText: {
     fontSize: 16,
-    fontWeight: '600',
     color: theme.colors.primary,
   },
   deleteButton: {

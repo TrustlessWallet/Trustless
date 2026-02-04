@@ -142,17 +142,17 @@ const BalanceDetailScreen = () => {
              )}
           </View>
 
-          <TouchableOpacity onPress={() => handleOpenExplorer(item.txid)}>
+          <View>
              <Text style={styles.detailText} selectable>
                 {item.txid.substring(0, 4)}...{item.txid.substring(item.txid.length - 4)}:{item.vout}
              </Text>
-          </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity onPress={() => navigation.navigate('AddressDetails', { address: item.address })}>
+          <View>
             <Text style={styles.detailText}>
                 {formatAddressShort(item.address)}
             </Text>
-          </TouchableOpacity>
+          </View>
 
           {derivationPath && (
             <Text style={styles.detailText}>
@@ -165,6 +165,9 @@ const BalanceDetailScreen = () => {
           <Text style={styles.balanceText}>
             {formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text>
           </Text>
+          <TouchableOpacity onPress={() => handleOpenExplorer(item.txid)}>
+            <Feather name="external-link" size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -256,7 +259,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   utxoNameText: {
     fontSize: 16,
-    fontWeight: '600',
     color: theme.colors.primary,
     marginRight: 8,
   },
@@ -272,7 +274,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     padding: 0,
     margin: 0,
     minWidth: 150,
-    // borderBottomWidth removed to disable underline
   },
   detailText: { 
     fontSize: 14, 
@@ -284,9 +285,10 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center', 
     justifyContent: 'flex-end',
+    gap: 12,
   },
   balanceText: { 
-    fontSize: 16, 
+    fontSize: 16,
     color: theme.colors.primary
   },
   emptyText: { 
@@ -296,6 +298,9 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   orangeSymbol: {
     color: theme.colors.bitcoin,
+  },
+  lastRow: {
+    borderBottomWidth: 0,
   },
 });
 

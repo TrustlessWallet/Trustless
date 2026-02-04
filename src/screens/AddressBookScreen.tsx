@@ -216,7 +216,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   itemName: { 
     fontSize: 16, 
-    fontWeight: '600', 
     color: theme.colors.primary 
   },
   editButton: {
