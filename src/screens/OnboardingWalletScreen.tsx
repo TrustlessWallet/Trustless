@@ -150,21 +150,27 @@ const OnboardingWalletScreen = () => {
   const { theme, isDark } = useTheme(); 
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]); 
 
-  const handleCompleteOnboarding = async () => {
+  const markOnboardingComplete = async () => {
     try {
       await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'MainTabs' }],
-      });
     } catch (e) {
       console.error('Failed to save onboarding status', e);
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'MainTabs' }],
-      });
     }
   };
+
+  const handleCompleteOnboarding = async () => {
+    await markOnboardingComplete();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'MainTabs' }],
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      markOnboardingComplete();
+    };
+  }, []);
 
   const handleNext = () => {
     if (currentIndex < slides.length - 1) {

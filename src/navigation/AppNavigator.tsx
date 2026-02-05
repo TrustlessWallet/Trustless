@@ -4,7 +4,7 @@ import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react
 import { RootStackParamList, TabParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { View, TouchableOpacity, AppState, Text, Image, Animated, Platform, Modal } from 'react-native';
+import { View, TouchableOpacity, AppState, Text, Image, Animated, Platform, Modal, Dimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -204,25 +204,24 @@ const AppNavigator = () => {
 
   const shouldShowSplash = walletLoading || isLoading || showSplash || (isBackgrounded && !getBiometricPromptShown());
 
-useEffect(() => {
-  if (shouldShowSplash) {
-    // Show modal immediately, then fade in (if needed)
-    setSplashVisible(true);
-    Animated.timing(splashOpacity, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  } else {
-    Animated.timing(splashOpacity, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
-      setSplashVisible(false);
-    });
-  }
-}, [shouldShowSplash]);
+  useEffect(() => {
+    if (shouldShowSplash) {
+      setSplashVisible(true);
+      Animated.timing(splashOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(splashOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => {
+        setSplashVisible(false);
+      });
+    }
+  }, [shouldShowSplash]);
 
   const screenOptions: NativeStackNavigationOptions = {
     contentStyle: { backgroundColor: theme.colors.background },
@@ -302,16 +301,18 @@ useEffect(() => {
     animation: 'slide_from_bottom', 
   } : {};
 
+  // For initial loading state (before navigation is ready)
   if (walletLoading || isLoading) {
+    const { width, height } = Dimensions.get('screen');
     return (
-      <View style={{ flex: 1, backgroundColor: splashBg, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: splashBg }}>
         <Image 
           source={splashIcon}
-          style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
+          style={{ width: width, height: height, resizeMode: 'cover', position: 'absolute' }}
         />
-        <Text style={{ marginTop: 20, color: isDark ? 'white' : 'black' }}>
-            {walletLoading ? "Loading Wallet..." : "Checking App Status..."}
-        </Text>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+             {/* Optional: Add spinner here if desired, otherwise just the splash image */}
+        </View>
       </View>
     );
   }
@@ -449,7 +450,7 @@ useEffect(() => {
         </Stack.Navigator>
       </NavigationContainer>
       
-<Modal
+      <Modal
         visible={splashVisible}
         transparent={true}
         animationType="none"
@@ -457,7 +458,11 @@ useEffect(() => {
         onRequestClose={() => {}}
       >
         <Animated.View style={{
-          flex: 1,
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: Dimensions.get('screen').width,
+          height: Dimensions.get('screen').height,
           backgroundColor: splashBg,
           justifyContent: 'center',
           alignItems: 'center',
@@ -465,7 +470,11 @@ useEffect(() => {
         }}>
           <Image 
             source={splashIcon}
-            style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
+            style={{ 
+              width: '100%', 
+              height: '100%', 
+              resizeMode: 'cover' 
+            }}
           />
         </Animated.View>
       </Modal>
