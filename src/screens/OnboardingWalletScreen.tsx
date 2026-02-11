@@ -12,13 +12,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme'; 
 
 const { width } = Dimensions.get('window');
-const REPO_URL = 'https://github.com/pechen987/Trustless';
+const REPO_URL = 'https://github.com/TrustlessWallet/Trustless';
 
 const slides = [
   {
     key: '1',
     headline: 'Create your wallet',
-    body: 'Generate new, non-custodial wallet in seconds. Your keys, your Bitcoin.',
+    body: 'Generate non-custodial wallet in seconds. Your keys, your Bitcoin.',
     video: require('../../assets/CreateWalletOnboardingFinal.mov'),
     type: 'video',
   },
@@ -31,7 +31,7 @@ const slides = [
   },
   {
     key: '3',
-    headline: 'Change receive addresses',
+    headline: 'Address rotation',
     body: 'Have 20 unused addresses at all times. Privacy above all else.',
     video: require('../../assets/ChangeReceiveAddressOnboardingFinal.mov'),
     type: 'video',
@@ -46,7 +46,7 @@ const slides = [
   {
     key: '5',
     headline: 'Connect your node',
-    body: 'Connect to your own Electrum or Esplora node for maximum privacy.',
+    body: 'Connect to your own Electrum node for maximum privacy.',
     video: require('../../assets/CustomNodeOnboardingFinal.mov'),
     type: 'video',
   },
@@ -279,8 +279,8 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     position: 'relative',
   },
   videoWrapper: {
-    width: '103%', 
-    height: '102%',
+    width: '104%', 
+    height: '102.2%',
     borderRadius: 30, 
     overflow: 'hidden', 
     position: 'absolute',
@@ -336,13 +336,13 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     height: '100%',
   },
   frameOverlay: {
-    width: '115%',
+    width: '116%',
     height: '105%',
     zIndex: 1, 
   },
   textContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 0,
   },
   headline: {
     fontSize: 24,

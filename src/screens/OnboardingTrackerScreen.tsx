@@ -74,8 +74,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     position: 'relative',
   },
   videoWrapper: {
-    width: '104%', 
-    height: '103%',
+    width: '103%', 
+    height: '101.5%',
     borderRadius: 30, 
     overflow: 'hidden', 
     position: 'absolute',
@@ -87,8 +87,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     height: '100%',
   },
   frameOverlay: {
-    width: '114.5%',
-    height: '105.5%',
+    width: '114%',
+    height: '104.5%',
     zIndex: 1, 
   },
   textContainer: {
@@ -115,7 +115,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     paddingVertical: 16,
     width: '100%',
     alignItems: 'center',
-    marginBottom: 16,
   },
   buttonText: {
     color: theme.colors.inversePrimary,
