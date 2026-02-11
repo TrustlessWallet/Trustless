@@ -17,6 +17,11 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
 import { Theme } from '../constants/theme';
+import { NETWORK, NETWORK_NAME } from '../constants/network';
+
+import { BIP32Factory } from 'bip32';
+import * as secp from '@bitcoinerlab/secp256k1';
+const bip32 = BIP32Factory(secp);
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ImportWatchOnly'>;
 
@@ -43,9 +48,20 @@ const ImportWatchOnlyScreen = () => {
         const trimmedXpub = xpub.trim();
         if (!trimmedXpub) return;
         
-        const validPrefixes = ['xpub', 'zpub', 'ypub', 'vpub', 'tpub'];
+        const validPrefixes = ['xpub', 'zpub', 'ypub', 'vpub', 'tpub', 'upub'];
         if (!validPrefixes.some(p => trimmedXpub.startsWith(p))) {
-            Alert.alert("Invalid Key", "Please enter a valid extended public key (xpub, zpub, etc).");
+            Alert.alert("Invalid Key", "Please enter a valid extended public key.");
+            return;
+        }
+
+        try {
+            bip32.fromBase58(trimmedXpub, NETWORK); 
+        } catch (e) {
+            console.warn(e);
+            Alert.alert(
+                "Network Mismatch", 
+                `This key is not valid for ${NETWORK_NAME}. Please switch networks or use a compatible key.`
+            );
             return;
         }
 
@@ -116,7 +132,7 @@ const ImportWatchOnlyScreen = () => {
                         <ActivityIndicator color={theme.colors.inversePrimary} />
                     ) : (
                         <View style={styles.buttonContent}>
-                            <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
+                            <Feather name="download-cloud" size={18} color={theme.colors.inversePrimary} />
                             <Text style={styles.buttonText}>Import Wallet</Text>
                         </View>
                     )}

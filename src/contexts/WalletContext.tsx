@@ -99,8 +99,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const ACTIVE_WALLET_KEY = getStorageKey(KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE);
 
-  // --- AUTOMATED SYNC HOOKS ---
-
   const activeWalletAddresses = useMemo(() => {
     if (!activeWallet) return [];
     return [
@@ -170,8 +168,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }
   }, [syncedTrackedBalances]);
-
-  // --- END SYNC HOOKS ---
 
   const buildActiveWallet = async (walletId: string): Promise<ActiveWallet | null> => {
       const allWallets = await dbGetWallets(NETWORK_NAME);
@@ -283,6 +279,72 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     queryClient.invalidateQueries({ queryKey: ['tracked', 'balances'] });
   };
 
+  const getRootNode = async (wallet: Wallet) => {
+    if (wallet.type === 'watch-only') {
+      if (!wallet.xpub) throw new Error("Watch-only wallet missing xpub");
+      try {
+          return bip32.fromBase58(wallet.xpub, NETWORK);
+      } catch (e) {
+          throw new Error("Invalid Network Key");
+      }
+    } else {
+      const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${wallet.id}` });
+      if (!credentials) throw new Error(`Mnemonic not found for wallet ${wallet.id}`);
+      const mnemonic = credentials.password;
+      const seed = bip39.mnemonicToSeedSync(mnemonic);
+      return bip32.fromSeed(seed, NETWORK);
+    }
+  };
+
+  const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
+    let wallet = await buildActiveWallet(walletId);
+    if (!wallet) return false;
+
+    try {
+        const root = await getRootNode(wallet);
+        const isWatchOnly = wallet.type === 'watch-only';
+        let derivedNew = false;
+        
+        for (let i = 0; i < GAP_LIMIT; i++) {
+            if (!wallet.derivedChangeAddresses.find(a => a.index === i)) {
+                const derived = deriveChangeAddress(root, i, isWatchOnly);
+                if (derived) {
+                    await dbSaveAddress(walletId, derived, 1, NETWORK_NAME);
+                    derivedNew = true;
+                }
+            }
+        }
+
+        const currentMax = wallet.derivedReceiveAddresses.length > 0 
+            ? wallet.derivedReceiveAddresses[wallet.derivedReceiveAddresses.length - 1].index 
+            : -1;
+        
+        if (wallet.derivedReceiveAddresses.length < GAP_LIMIT) {
+            for (let i = currentMax + 1; i < GAP_LIMIT; i++) {
+                 const derived = deriveReceiveAddress(root, i, isWatchOnly);
+                 if (derived) {
+                     await dbSaveAddress(walletId, derived, 0, NETWORK_NAME);
+                     derivedNew = true;
+                 }
+            }
+        }
+
+        if (derivedNew) {
+            wallet = await buildActiveWallet(walletId);
+        }
+        
+        if(wallet) {
+            setActiveWallet(wallet);
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.warn(`Failed to load wallet ${wallet?.name}:`, e);
+        setActiveWallet(null);
+        return false;
+    }
+  };
+
   useEffect(() => {
     const bootstrap = async () => {
       setLoading(true);
@@ -297,11 +359,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (activeIdCreds) activeId = activeIdCreds.password;
 
         if (walletsFromDb.length > 0) {
-            if (!activeId || !walletsFromDb.find(w => w.id === activeId)) {
-                activeId = walletsFromDb[0].id;
-                await Keychain.setGenericPassword('user', activeId, { service: ACTIVE_WALLET_KEY });
+            let currentId = activeId;
+            if (!currentId || !walletsFromDb.find(w => w.id === currentId)) {
+                currentId = walletsFromDb[0].id;
             }
-            await loadAndSetActiveWallet(activeId);
+
+            let success = await loadAndSetActiveWallet(currentId);
+            
+            if (!success) {
+                console.warn("Active wallet failed to load. Attempting fallback...");
+                for (const w of walletsFromDb) {
+                    if (w.id === currentId) continue;
+                    success = await loadAndSetActiveWallet(w.id);
+                    if (success) {
+                        await Keychain.setGenericPassword('user', w.id, { service: ACTIVE_WALLET_KEY });
+                        break;
+                    }
+                }
+            }
         } else {
             setWallets([]);
             setActiveWallet(null);
@@ -323,60 +398,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     bootstrap();
   }, []);
 
-  const getRootNode = async (wallet: Wallet) => {
-    if (wallet.type === 'watch-only') {
-      if (!wallet.xpub) throw new Error("Watch-only wallet missing xpub");
-      return bip32.fromBase58(wallet.xpub, NETWORK);
-    } else {
-      const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${wallet.id}` });
-      if (!credentials) throw new Error(`Mnemonic not found for wallet ${wallet.id}`);
-      const mnemonic = credentials.password;
-      const seed = bip39.mnemonicToSeedSync(mnemonic);
-      return bip32.fromSeed(seed, NETWORK);
-    }
-  }
-
-  const loadAndSetActiveWallet = async (walletId: string) => {
-    let wallet = await buildActiveWallet(walletId);
-    if (!wallet) return;
-
-    const root = await getRootNode(wallet);
-    const isWatchOnly = wallet.type === 'watch-only';
-    let derivedNew = false;
-    
-    for (let i = 0; i < GAP_LIMIT; i++) {
-        if (!wallet.derivedChangeAddresses.find(a => a.index === i)) {
-            const derived = deriveChangeAddress(root, i, isWatchOnly);
-            if (derived) {
-                await dbSaveAddress(walletId, derived, 1, NETWORK_NAME);
-                derivedNew = true;
-            }
-        }
-    }
-
-    const currentMax = wallet.derivedReceiveAddresses.length > 0 
-        ? wallet.derivedReceiveAddresses[wallet.derivedReceiveAddresses.length - 1].index 
-        : -1;
-    
-    if (wallet.derivedReceiveAddresses.length < GAP_LIMIT) {
-        for (let i = currentMax + 1; i < GAP_LIMIT; i++) {
-             const derived = deriveReceiveAddress(root, i, isWatchOnly);
-             if (derived) {
-                 await dbSaveAddress(walletId, derived, 0, NETWORK_NAME);
-                 derivedNew = true;
-             }
-        }
-    }
-
-    if (derivedNew) {
-        wallet = await buildActiveWallet(walletId);
-    }
-    
-    if(wallet) {
-        setActiveWallet(wallet);
-    }
-  };
-
   const getOrCreateNextUnusedReceiveAddress = async (currentAddress: string, currentIndex: number): Promise<{ address: string, index: number } | null> => {
     if (!activeWallet) return null;
     
@@ -387,22 +408,26 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return addresses[currentPos + 1];
     }
 
-    const root = await getRootNode(activeWallet);
-    const isWatchOnly = activeWallet.type === 'watch-only';
-    const nextIndex = addresses[addresses.length - 1].index + 1;
-    const derived = deriveReceiveAddress(root, nextIndex, isWatchOnly);
-    
-    if (derived) {
-        await dbSaveAddress(activeWallet.id, derived, 0, NETWORK_NAME);
-        setActiveWallet(prev => {
-             if(!prev) return null;
-             return {
-                 ...prev,
-                 derivedReceiveAddresses: [...prev.derivedReceiveAddresses, derived],
-                 derivedAddressInfoCache: [...prev.derivedAddressInfoCache, { address: derived.address, index: derived.index, balance: 0, tx_count: 0 }]
-             }
-        });
-        return derived;
+    try {
+        const root = await getRootNode(activeWallet);
+        const isWatchOnly = activeWallet.type === 'watch-only';
+        const nextIndex = addresses[addresses.length - 1].index + 1;
+        const derived = deriveReceiveAddress(root, nextIndex, isWatchOnly);
+        
+        if (derived) {
+            await dbSaveAddress(activeWallet.id, derived, 0, NETWORK_NAME);
+            setActiveWallet(prev => {
+                 if(!prev) return null;
+                 return {
+                     ...prev,
+                     derivedReceiveAddresses: [...prev.derivedReceiveAddresses, derived],
+                     derivedAddressInfoCache: [...prev.derivedAddressInfoCache, { address: derived.address, index: derived.index, balance: 0, tx_count: 0 }]
+                 }
+            });
+            return derived;
+        }
+    } catch (e) {
+        console.error("Failed to get next unused address", e);
     }
 
     return null;
