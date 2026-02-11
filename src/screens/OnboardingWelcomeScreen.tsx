@@ -24,7 +24,7 @@ const OnboardingWelcomeScreen = () => {
         </View>
         <View style={styles.bottomContainer}>
           <Text style={styles.welcomeText}>
-            Welcome to <Text style={styles.orangeSymbol}>Bitcoin</Text>
+            That's <Text style={styles.orangeSymbol}>Bitcoin</Text>
           </Text>
           <TouchableOpacity style={styles.button} onPress={handleNext}>
             <Text style={styles.buttonText}>Continue</Text>

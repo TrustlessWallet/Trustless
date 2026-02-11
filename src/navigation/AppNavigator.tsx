@@ -301,7 +301,6 @@ const AppNavigator = () => {
     animation: 'slide_from_bottom', 
   } : {};
 
-  // For initial loading state (before navigation is ready)
   if (walletLoading || isLoading) {
     const { width, height } = Dimensions.get('screen');
     return (
@@ -311,7 +310,6 @@ const AppNavigator = () => {
           style={{ width: width, height: height, resizeMode: 'cover', position: 'absolute' }}
         />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-             {/* Optional: Add spinner here if desired, otherwise just the splash image */}
         </View>
       </View>
     );
