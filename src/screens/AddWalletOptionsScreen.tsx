@@ -18,11 +18,20 @@ const AddWalletOptionsScreen = () => {
                 <Feather name="plus-circle" size={18} color={theme.colors.inversePrimary} />
                 <Text style={styles.buttonText}>Create a new wallet</Text>
             </TouchableOpacity>
-            <Text style={styles.orText}>Or</Text>
-            <TouchableOpacity style={styles.recoverButton} onPress={() => navigation.navigate('RecoverWallet')}>
-                <Feather name="refresh-ccw" size={18} color={theme.colors.primary} />
-                <Text style={styles.recoverButtonText}>Import existing wallet</Text>
-            </TouchableOpacity>
+            
+            <View style={{ width: '100%', gap: 12 }}>
+                <Text style={styles.orText}>Or</Text>
+                
+                <TouchableOpacity style={styles.recoverButton} onPress={() => navigation.navigate('RecoverWallet')}>
+                    <Feather name="refresh-ccw" size={18} color={theme.colors.primary} />
+                    <Text style={styles.recoverButtonText}>Import existing wallet</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.recoverButton} onPress={() => navigation.navigate('ImportWatchOnly')}>
+                    <Feather name="eye" size={18} color={theme.colors.primary} />
+                    <Text style={styles.recoverButtonText}>Import watch-only wallet</Text>
+                </TouchableOpacity>
+            </View>
         </View>
     );
 };
@@ -32,7 +41,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
       backgroundColor: theme.colors.background,
       alignItems: 'center', 
       justifyContent: 'center', 
-      padding: 24 
+      padding: 24,
+      gap: 24
     },
     button: { 
       flexDirection: 'row', 
@@ -52,7 +62,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     orText: { 
       fontSize: 16, 
       color: theme.colors.muted,
-      marginVertical: 16 
+      textAlign: 'center',
+      marginBottom: 4
     },
     recoverButton: { 
       flexDirection: 'row', 

@@ -16,6 +16,7 @@ import BackupIntroScreen from '../screens/BackupIntroScreen';
 import ShowMnemonicScreen from '../screens/ShowMnemonicScreen';
 import VerifyMnemonicScreen from '../screens/VerifyMnemonicScreen';
 import RecoverWalletScreen from '../screens/RecoverWalletScreen';
+import ImportWatchOnlyScreen from '../screens/ImportWatchOnlyScreen';
 import ReceiveScreen from '../screens/ReceiveScreen';
 import SendScreen from '../screens/SendScreen';
 import TransactionConfirmScreen from '../screens/TransactionConfirmScreen';
@@ -347,6 +348,7 @@ const AppNavigator = () => {
             <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
             <Stack.Screen name="VerifyMnemonic" component={VerifyMnemonicScreen} options={{ title: 'Verify phrase' }} />
             <Stack.Screen name="RecoverWallet" component={RecoverWalletScreen} options={{ title: 'Recover wallet' }} />
+            <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
             <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
             <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
             <Stack.Screen name="WalletSwitcher" component={WalletSwitcherScreen} options={{ title: 'Wallets' }} />

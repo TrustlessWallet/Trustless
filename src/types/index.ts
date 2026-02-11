@@ -70,6 +70,8 @@ export type Transaction = {
 export interface Wallet {
   id: string;
   name: string;
+  type: 'standard' | 'watch-only';
+  xpub?: string;
   changeAddressIndex: number;
   derivedReceiveAddresses: DerivedAddress[];
   derivedChangeAddresses: DerivedAddress[];
@@ -90,6 +92,7 @@ export type RootStackParamList = {
   ShowMnemonic: { mnemonic: string; mode: 'create' | 'backup' };
   VerifyMnemonic: { mnemonic: string };
   RecoverWallet: undefined;
+  ImportWatchOnly: undefined;
   Receive: undefined;
   Send: { selectedAddress?: string } | undefined;
   TransactionConfirm: {

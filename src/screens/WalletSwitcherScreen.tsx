@@ -31,7 +31,7 @@ const WalletSwitcherScreen = () => {
         }
         setSwitchingToWalletId(walletId);
         try {
-            await switchWallet(walletId, wallets);
+            await switchWallet(walletId);
             setTimeout(() => {
                 navigation.goBack();
                 setSwitchingToWalletId(null);
@@ -156,7 +156,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         maxHeight: 500,
     },
     listContent: {
-        padding: 16,
+        padding: 24,
         paddingBottom: 20,
         gap: 8,
     },
@@ -238,6 +238,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     addButtonText: {
         color: theme.colors.inversePrimary,
         fontSize: 16,
+        fontWeight: '600',
     },
 });
 export default WalletSwitcherScreen;

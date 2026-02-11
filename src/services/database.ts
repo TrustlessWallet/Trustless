@@ -7,13 +7,14 @@ export const initDatabase = async () => {
   db = await SQLite.openDatabaseAsync('trustless_wallet.db');
 
   await db.execAsync('PRAGMA foreign_keys = ON;');
-
   await db.execAsync('PRAGMA journal_mode = WAL;');
 
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS wallets (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT,
+      type TEXT DEFAULT 'standard',
+      xpub TEXT,
       network TEXT NOT NULL,
       changeAddressIndex INTEGER DEFAULT 0,
       nextUtxoCount INTEGER DEFAULT 1,
@@ -44,7 +45,6 @@ export const initDatabase = async () => {
       FOREIGN KEY (wallet_id) REFERENCES wallets (id) ON DELETE CASCADE
     );
 
-    -- NEW: Transactions Table
     CREATE TABLE IF NOT EXISTS transactions (
       txid TEXT NOT NULL,
       wallet_id TEXT NOT NULL,
@@ -73,6 +73,17 @@ export const initDatabase = async () => {
       network TEXT NOT NULL
     );
   `);
+
+  try {
+    const tableInfo = await db.getAllAsync<any>('PRAGMA table_info(wallets)');
+    const hasType = tableInfo.some(col => col.name === 'type');
+    if (!hasType) {
+        await db.execAsync('ALTER TABLE wallets ADD COLUMN type TEXT DEFAULT "standard"');
+        await db.execAsync('ALTER TABLE wallets ADD COLUMN xpub TEXT');
+    }
+  } catch (e) {
+    console.warn("Migration check failed", e);
+  }
 };
 
 export const getDB = () => {
@@ -92,6 +103,8 @@ export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
   return rows.map((row: any) => ({
     id: row.id,
     name: row.name,
+    type: row.type || 'standard',
+    xpub: row.xpub,
     changeAddressIndex: row.changeAddressIndex,
     nextUtxoCount: row.nextUtxoCount,
     derivedReceiveAddresses: [],
@@ -101,11 +114,11 @@ export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
   }));
 };
 
-export const dbCreateWallet = async (id: string, name: string, network: string) => {
+export const dbCreateWallet = async (id: string, name: string, network: string, type: string = 'standard', xpub: string | null = null) => {
   const d = getDB();
   await d.runAsync(
-    'INSERT INTO wallets (id, name, network, changeAddressIndex, nextUtxoCount) VALUES (?, ?, ?, ?, ?)',
-    [id, name, network, 0, 1]
+    'INSERT INTO wallets (id, name, network, changeAddressIndex, nextUtxoCount, type, xpub) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, name, network, 0, 1, type, xpub]
   );
 };
 
@@ -214,7 +227,6 @@ export const dbSyncUtxos = async (walletId: string, network: string, utxos: UTXO
   return nextUtxoCount;
 };
 
-
 export const dbGetTransactions = async (walletId: string): Promise<Transaction[]> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(
@@ -237,7 +249,6 @@ export const dbSaveTransactions = async (walletId: string, transactions: Transac
      );
   }
 };
-
 
 export const dbGetSavedAddresses = async (network: string, table: 'saved_addresses' | 'tracked_addresses') => {
     const d = getDB();

@@ -23,7 +23,7 @@ import {
     dbGetSavedAddresses, dbAddSavedAddress, dbRemoveSavedAddress, dbUpdateSavedAddress,
     dbUpdateChangeIndex
 } from '../services/database';
-// Migration import removed
+
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance'; 
 
 const bip32 = BIP32Factory(secp);
@@ -48,7 +48,7 @@ interface WalletContextType {
   lastRefreshTime: number;
   triggerRefresh: () => void;
   generateMnemonic: (strength?: number) => Promise<string | null>;
-  addWallet: (params: { mnemonic: string; name?: string }) => Promise<Wallet | null>;
+  addWallet: (params: { mnemonic?: string; xpub?: string; type: 'standard' | 'watch-only'; name?: string }) => Promise<Wallet | null>;
   switchWallet: (walletId: string) => Promise<void>;
   updateWalletName: (walletId: string, newName: string) => Promise<void>;
   removeWallet: (walletId: string) => Promise<void>;
@@ -117,7 +117,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   useEffect(() => {
     if (syncedWalletData && activeWallet) {
-        // DB Update now accepts the data without index
         dbUpdateAddressInfoBatch(syncedWalletData);
         
         setActiveWallet(prev => {
@@ -211,9 +210,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       };
   };
 
-  const deriveReceiveAddress = (root: any, index: number): DerivedAddress | null => {
+  const deriveReceiveAddress = (root: any, index: number, isWatchOnly: boolean): DerivedAddress | null => {
     try {
-      const derivationPath = `${DERIVATION_PARENT_PATH}/0/${index}`;
+      const derivationPath = isWatchOnly ? `0/${index}` : `${DERIVATION_PARENT_PATH}/0/${index}`;
       const child = root.derivePath(derivationPath);
       const { address } = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
       return address ? { address, index } : null;
@@ -223,9 +222,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const deriveChangeAddress = (root: any, index: number): DerivedAddress | null => {
+  const deriveChangeAddress = (root: any, index: number, isWatchOnly: boolean): DerivedAddress | null => {
     try {
-      const derivationPath = `${DERIVATION_PARENT_PATH}/1/${index}`; 
+      const derivationPath = isWatchOnly ? `1/${index}` : `${DERIVATION_PARENT_PATH}/1/${index}`;
       const child = root.derivePath(derivationPath);
       const { address } = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
       return address ? { address, index } : null;
@@ -290,8 +289,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setLoadingSavedAddresses(true);
       setLoadingTrackedAddresses(true);
       try {
-        // Migration call removed
-        
         const walletsFromDb = await dbGetWallets(NETWORK_NAME);
         setWallets(walletsFromDb);
 
@@ -326,24 +323,30 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     bootstrap();
   }, []);
 
-  const getRootNode = async (walletId: string) => {
-    const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
-    if (!credentials) throw new Error(`Mnemonic not found for wallet ${walletId}`);
-    const mnemonic = credentials.password;
-    const seed = bip39.mnemonicToSeedSync(mnemonic);
-    return bip32.fromSeed(seed, NETWORK);
+  const getRootNode = async (wallet: Wallet) => {
+    if (wallet.type === 'watch-only') {
+      if (!wallet.xpub) throw new Error("Watch-only wallet missing xpub");
+      return bip32.fromBase58(wallet.xpub, NETWORK);
+    } else {
+      const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${wallet.id}` });
+      if (!credentials) throw new Error(`Mnemonic not found for wallet ${wallet.id}`);
+      const mnemonic = credentials.password;
+      const seed = bip39.mnemonicToSeedSync(mnemonic);
+      return bip32.fromSeed(seed, NETWORK);
+    }
   }
 
   const loadAndSetActiveWallet = async (walletId: string) => {
     let wallet = await buildActiveWallet(walletId);
     if (!wallet) return;
 
-    const root = await getRootNode(walletId);
+    const root = await getRootNode(wallet);
+    const isWatchOnly = wallet.type === 'watch-only';
     let derivedNew = false;
     
     for (let i = 0; i < GAP_LIMIT; i++) {
         if (!wallet.derivedChangeAddresses.find(a => a.index === i)) {
-            const derived = deriveChangeAddress(root, i);
+            const derived = deriveChangeAddress(root, i, isWatchOnly);
             if (derived) {
                 await dbSaveAddress(walletId, derived, 1, NETWORK_NAME);
                 derivedNew = true;
@@ -357,7 +360,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     
     if (wallet.derivedReceiveAddresses.length < GAP_LIMIT) {
         for (let i = currentMax + 1; i < GAP_LIMIT; i++) {
-             const derived = deriveReceiveAddress(root, i);
+             const derived = deriveReceiveAddress(root, i, isWatchOnly);
              if (derived) {
                  await dbSaveAddress(walletId, derived, 0, NETWORK_NAME);
                  derivedNew = true;
@@ -384,9 +387,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return addresses[currentPos + 1];
     }
 
-    const root = await getRootNode(activeWallet.id);
+    const root = await getRootNode(activeWallet);
+    const isWatchOnly = activeWallet.type === 'watch-only';
     const nextIndex = addresses[addresses.length - 1].index + 1;
-    const derived = deriveReceiveAddress(root, nextIndex);
+    const derived = deriveReceiveAddress(root, nextIndex, isWatchOnly);
     
     if (derived) {
         await dbSaveAddress(activeWallet.id, derived, 0, NETWORK_NAME);
@@ -413,14 +417,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const addWallet = async (params: { mnemonic: string; name?: string }): Promise<Wallet | null> => {
-    const { mnemonic, name } = params;
+  const addWallet = async (params: { mnemonic?: string; xpub?: string; type: 'standard' | 'watch-only'; name?: string }): Promise<Wallet | null> => {
+    const { mnemonic, xpub, type, name } = params;
     const isFirstWallet = wallets.length === 0;
-    const defaultName = `Wallet ${wallets.length + 1}`;
+    const defaultName = name || `Wallet ${wallets.length + 1}`;
     const newWalletId = uuidv4();
 
-    await Keychain.setGenericPassword('user', mnemonic, { service: `${KEYCHAIN_SERVICE_PREFIX}.${newWalletId}` });
-    await dbCreateWallet(newWalletId, name || defaultName, NETWORK_NAME);
+    if (type === 'standard' && mnemonic) {
+        await Keychain.setGenericPassword('user', mnemonic, { service: `${KEYCHAIN_SERVICE_PREFIX}.${newWalletId}` });
+    }
+    
+    await dbCreateWallet(newWalletId, defaultName, NETWORK_NAME, type, xpub);
 
     const newWallets = await dbGetWallets(NETWORK_NAME);
     setWallets(newWallets);
@@ -492,6 +499,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     recipient: string, amount: number, utxos: any[], feeRate: number
   ): Promise<{ txHex: string | null; usedChangeIndex: number | null }> => {
     if (!activeWallet) throw new Error("No active wallet.");
+    if (activeWallet.type === 'watch-only') throw new Error("Watch-only wallets cannot sign transactions.");
 
     const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${activeWallet.id}` });
     if (!credentials) throw new Error("Could not retrieve credentials.");
@@ -503,7 +511,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     
     let changeAddress = activeWallet.derivedChangeAddresses.find(a => a.index === nextChangeIndex)?.address;
     if (!changeAddress) {
-        const derived = deriveChangeAddress(root, nextChangeIndex);
+        const derived = deriveChangeAddress(root, nextChangeIndex, false);
         if (derived) {
             await dbSaveAddress(activeWallet.id, derived, 1, NETWORK_NAME);
             changeAddress = derived.address;
