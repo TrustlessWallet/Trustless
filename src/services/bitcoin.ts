@@ -1,6 +1,8 @@
 import { Transaction } from '../types';
 import { NETWORK, CUSTOM_NODE_URL_KEY } from '../constants/network';
-import { address as btcAddress } from 'bitcoinjs-lib';
+import { address as btcAddress, networks } from 'bitcoinjs-lib';
+import { BIP32Factory } from 'bip32';
+import * as secp from '@bitcoinerlab/secp256k1';
 import { 
     getElectrumClient, 
     addressToScriptHash, 
@@ -14,7 +16,47 @@ import {
     electrumGetHeader
 } from './electrum';
 
+const bip32 = BIP32Factory(secp);
+
 export const DUST_THRESHOLD = 546;
+
+const ALT_NETWORKS = {
+  bitcoin: [
+    { ...networks.bitcoin, bip32: { public: 0x04b24746, private: 0x04b2430c } }, // zpub
+    { ...networks.bitcoin, bip32: { public: 0x049d7cb2, private: 0x049d7878 } }, // ypub
+  ],
+  testnet: [
+    { ...networks.testnet, bip32: { public: 0x045f1cf6, private: 0x045f18bc } }, // vpub
+    { ...networks.testnet, bip32: { public: 0x044a5262, private: 0x044a4e28 } }, // upub
+  ]
+};
+
+export const getBip32Node = (key: string, network: any) => {
+  try {
+    return bip32.fromBase58(key, network);
+  } catch (e) {}
+
+  const isMainnet = network.bech32 === 'bc';
+  const alts = isMainnet ? ALT_NETWORKS.bitcoin : ALT_NETWORKS.testnet;
+
+  for (const altNet of alts) {
+    try {
+      return bip32.fromBase58(key, altNet);
+    } catch (e) {}
+  }
+
+  throw new Error("Invalid Network Key or Format");
+};
+
+export const inferScriptType = (key: string): 'p2wpkh' | 'p2sh-p2wpkh' => {
+
+  if (key.startsWith('ypub') || key.startsWith('upub')) {
+      return 'p2sh-p2wpkh';
+  }
+
+  return 'p2wpkh'; 
+};
+
 
 const chunkArray = <T>(array: T[], size: number): T[][] => {
   const chunked: T[][] = [];

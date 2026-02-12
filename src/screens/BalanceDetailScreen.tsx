@@ -19,7 +19,7 @@ import { RootStackParamList, UTXO } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { EXPLORER_UI_URL, DERIVATION_PARENT_PATH } from '../constants/network';
+import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BalanceDetail'>;
@@ -58,7 +58,6 @@ const BalanceDetailScreen = () => {
     });
   }, [navigation, theme.colors.primary]);
 
-  // Scroll to the active item when editing starts
   useEffect(() => {
     if (editingUtxoKey && sortedUtxos.length > 0) {
       const index = sortedUtxos.findIndex(
@@ -66,7 +65,7 @@ const BalanceDetailScreen = () => {
       );
       
       if (index !== -1) {
-        // Wait for keyboard animation
+
         const timer = setTimeout(() => {
           flatListRef.current?.scrollToIndex({
             index,
@@ -79,10 +78,17 @@ const BalanceDetailScreen = () => {
     }
   }, [editingUtxoKey, sortedUtxos]);
 
-  const addressMap = useMemo(() => new Map<string, string>([
-    ...(activeWallet?.derivedReceiveAddresses.map(a => [a.address, `${DERIVATION_PARENT_PATH}/0/${a.index}`] as [string, string]) ?? []),
-    ...(activeWallet?.derivedChangeAddresses.map(a => [a.address, `${DERIVATION_PARENT_PATH}/1/${a.index}`] as [string, string]) ?? [])
-  ]), [activeWallet]);
+  const path_prefix = useMemo(() => {
+    if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
+      return `m/49'/${COIN_TYPE}/0'`;
+    }
+    return `m/84'/${COIN_TYPE}/0'`;
+  }, [activeWallet?.scriptType]);
+
+  const address_map = useMemo(() => new Map<string, string>([
+    ...(activeWallet?.derivedReceiveAddresses.map(a => [a.address, `${path_prefix}/0/${a.index}`] as [string, string]) ?? []),
+    ...(activeWallet?.derivedChangeAddresses.map(a => [a.address, `${path_prefix}/1/${a.index}`] as [string, string]) ?? [])
+  ]), [activeWallet, path_prefix]);
 
   const handleOpenExplorer = (txid: string) => {
     const url = `${EXPLORER_UI_URL}/tx/${txid}`;
@@ -107,7 +113,7 @@ const BalanceDetailScreen = () => {
   };
 
   const renderItem = ({ item, index }: { item: UTXO, index: number }) => {
-    const derivationPath = addressMap.get(item.address);
+    const derivationPath = address_map.get(item.address);
     const key = `${item.txid}:${item.vout}`;
     const label = getUtxoLabel(item.txid, item.vout) || `UTXO`;
     const isEditing = editingUtxoKey === key;

@@ -15,6 +15,7 @@ export const initDatabase = async () => {
       name TEXT,
       type TEXT DEFAULT 'standard',
       xpub TEXT,
+      scriptType TEXT DEFAULT 'p2wpkh',
       network TEXT NOT NULL,
       changeAddressIndex INTEGER DEFAULT 0,
       nextUtxoCount INTEGER DEFAULT 1,
@@ -76,10 +77,15 @@ export const initDatabase = async () => {
 
   try {
     const tableInfo = await db.getAllAsync<any>('PRAGMA table_info(wallets)');
-    const hasType = tableInfo.some(col => col.name === 'type');
-    if (!hasType) {
+    
+    if (!tableInfo.some(col => col.name === 'type')) {
         await db.execAsync('ALTER TABLE wallets ADD COLUMN type TEXT DEFAULT "standard"');
+    }
+    if (!tableInfo.some(col => col.name === 'xpub')) {
         await db.execAsync('ALTER TABLE wallets ADD COLUMN xpub TEXT');
+    }
+    if (!tableInfo.some(col => col.name === 'scriptType')) {
+        await db.execAsync('ALTER TABLE wallets ADD COLUMN scriptType TEXT DEFAULT "p2wpkh"');
     }
   } catch (e) {
     console.warn("Migration check failed", e);
@@ -105,6 +111,7 @@ export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
     name: row.name,
     type: row.type || 'standard',
     xpub: row.xpub,
+    scriptType: row.scriptType || 'p2wpkh',
     changeAddressIndex: row.changeAddressIndex,
     nextUtxoCount: row.nextUtxoCount,
     derivedReceiveAddresses: [],
@@ -114,11 +121,18 @@ export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
   }));
 };
 
-export const dbCreateWallet = async (id: string, name: string, network: string, type: string = 'standard', xpub: string | null = null) => {
+export const dbCreateWallet = async (
+    id: string, 
+    name: string, 
+    network: string, 
+    type: string = 'standard', 
+    xpub: string | null = null,
+    scriptType: string = 'p2wpkh'
+) => {
   const d = getDB();
   await d.runAsync(
-    'INSERT INTO wallets (id, name, network, changeAddressIndex, nextUtxoCount, type, xpub) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, name, network, 0, 1, type, xpub]
+    'INSERT INTO wallets (id, name, network, changeAddressIndex, nextUtxoCount, type, xpub, scriptType) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, name, network, 0, 1, type, xpub, scriptType]
   );
 };
 
@@ -143,6 +157,24 @@ export const dbSaveAddress = async (walletId: string, addr: { address: string, i
     'INSERT OR IGNORE INTO addresses (address, wallet_id, chain, idx, network) VALUES (?, ?, ?, ?, ?)',
     [addr.address, walletId, chain, addr.index, network]
   );
+};
+
+export const dbFindWalletByAddress = async (address: string): Promise<string | null> => {
+  const d = getDB();
+  const rows = await d.getAllAsync<any>(
+    'SELECT wallet_id FROM addresses WHERE address = ? LIMIT 1',
+    [address]
+  );
+  return rows.length > 0 ? rows[0].wallet_id : null;
+};
+
+export const dbFindWalletByXpub = async (xpub: string): Promise<string | null> => {
+  const d = getDB();
+  const rows = await d.getAllAsync<any>(
+    'SELECT id FROM wallets WHERE xpub = ? LIMIT 1',
+    [xpub]
+  );
+  return rows.length > 0 ? rows[0].id : null;
 };
 
 export const dbGetDerivedAddresses = async (walletId: string, chain: number): Promise<DerivedAddress[]> => {

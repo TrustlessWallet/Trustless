@@ -9,33 +9,33 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { EXPLORER_UI_URL, DERIVATION_PARENT_PATH } from '../constants/network';
+import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 
 const QR_SIZE = 220;
 const UNUSED_BUFFER_SIZE = 20;
 
-const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
+const format_btc = (sats: number) => (sats / 100000000).toFixed(8);
 
-const formatAddressInChunks = (address: string | undefined) => {
+const format_address_in_chunks = (address: string | undefined) => {
   if (!address) return '';
   return address.match(/.{1,4}/g)?.join(' ') || '';
 };
 
-const formatAddressShort = (address: string) => {
+const format_address_short = (address: string) => {
   if (!address || address.length <= 8) return address;
   return `${address.substring(0, 4)}...${address.substring(address.length - 4)}`;
 };
 
 const ReceiveScreen = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { activeWallet, loading: walletLoading, getOrCreateNextUnusedReceiveAddress } = useWallet();
+  const { activeWallet, loading: wallet_loading, getOrCreateNextUnusedReceiveAddress } = useWallet();
   const { theme, isDark } = useTheme(); 
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]); 
-  const [copied, setCopied] = useState(false);
-  const [addressOffset, setAddressOffset] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const [copied, set_copied] = useState(false);
+  const [address_offset, set_address_offset] = useState(0);
+  const scroll_ref = useRef<ScrollView>(null);
 
   useEffect(() => {
     navigation.setOptions({
@@ -48,104 +48,111 @@ const ReceiveScreen = () => {
   }, [navigation, theme.colors.primary]);
 
   useEffect(() => {
-    setAddressOffset(0);
+    set_address_offset(0);
   }, [activeWallet?.id]);
 
-  const allUnusedAddresses = useMemo(() => {
+  const path_prefix = useMemo(() => {
+    if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
+      return `m/49'/${COIN_TYPE}/0'`;
+    }
+    return `m/84'/${COIN_TYPE}/0'`;
+  }, [activeWallet?.scriptType]);
+
+  const all_unused_addresses = useMemo(() => {
     if (!activeWallet) return [];
     
-    const infoMap = new Map(activeWallet.derivedAddressInfoCache.map(i => [i.address, i.tx_count]));
+    const info_map = new Map(activeWallet.derivedAddressInfoCache.map(i => [i.address, i.tx_count]));
     
     return activeWallet.derivedReceiveAddresses
       .filter(addr => {
-        const txCount = infoMap.get(addr.address) ?? 0;
-        return txCount === 0;
+        const tx_count = info_map.get(addr.address) ?? 0;
+        return tx_count === 0;
       })
       .sort((a, b) => a.index - b.index);
   }, [activeWallet]);
 
   useEffect(() => {
-    if (walletLoading || !activeWallet) return;
+    if (wallet_loading || !activeWallet) return;
 
-    if (allUnusedAddresses.length < UNUSED_BUFFER_SIZE) {
-      const lastDerived = activeWallet.derivedReceiveAddresses[activeWallet.derivedReceiveAddresses.length - 1];
-      if (lastDerived) {
-        getOrCreateNextUnusedReceiveAddress(lastDerived.address, lastDerived.index)
+    if (all_unused_addresses.length < UNUSED_BUFFER_SIZE) {
+      const last_derived = activeWallet.derivedReceiveAddresses[activeWallet.derivedReceiveAddresses.length - 1];
+      if (last_derived) {
+        getOrCreateNextUnusedReceiveAddress(last_derived.address, last_derived.index)
           .catch(err => console.error("Failed to generate buffer address:", err));
       }
     }
-  }, [allUnusedAddresses.length, activeWallet, walletLoading, getOrCreateNextUnusedReceiveAddress]);
+  }, [all_unused_addresses.length, activeWallet, wallet_loading, getOrCreateNextUnusedReceiveAddress]);
 
-  const displayableAddresses = useMemo(() => {
-    return allUnusedAddresses.slice(0, UNUSED_BUFFER_SIZE);
-  }, [allUnusedAddresses]);
+  const displayable_addresses = useMemo(() => {
+    return all_unused_addresses.slice(0, UNUSED_BUFFER_SIZE);
+  }, [all_unused_addresses]);
 
-  const currentDisplayData = useMemo(() => {
-    if (!activeWallet || displayableAddresses.length === 0) {
+  const current_display_data = useMemo(() => {
+    if (!activeWallet || displayable_addresses.length === 0) {
         return { 
             address: activeWallet?.address || '', 
             index: activeWallet?.receiveAddressIndex || 0, 
-            path: `${DERIVATION_PARENT_PATH}/0/${activeWallet?.receiveAddressIndex || 0}` 
+            path: `${path_prefix}/0/${activeWallet?.receiveAddressIndex || 0}` 
         };
     }
-    const item = displayableAddresses[addressOffset % displayableAddresses.length];
+    const item = displayable_addresses[address_offset % displayable_addresses.length];
     return {
         address: item.address,
         index: item.index,
-        path: `${DERIVATION_PARENT_PATH}/0/${item.index}`
+        path: `${path_prefix}/0/${item.index}`
     };
-  }, [activeWallet, displayableAddresses, addressOffset]);
+  }, [activeWallet, displayable_addresses, address_offset, path_prefix]);
 
-  const copyToClipboard = () => {
-    if (currentDisplayData.address) {
-      Clipboard.setString(currentDisplayData.address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+  const copy_to_clipboard = () => {
+    if (current_display_data.address) {
+      Clipboard.setString(current_display_data.address);
+      set_copied(true);
+      setTimeout(() => set_copied(false), 1500);
     }
   };
 
-  const onShare = async () => {
-    if (currentDisplayData.address) {
+  const on_share = async () => {
+    if (current_display_data.address) {
       try {
-        await Share.share({ message: currentDisplayData.address });
+        await Share.share({ message: current_display_data.address });
       } catch (error) {
         Alert.alert("Error", "Could not share the address.");
       }
     }
   };
 
-  const handleViewDetails = (address: string) => {
+  const handle_view_details = (address: string) => {
     if (address) {
       navigation.navigate('AddressDetails', { address });
     }
   };
 
-  const handleOpenExplorer = (address: string) => {
+  const handle_open_explorer = (address: string) => {
     const url = `${EXPLORER_UI_URL}/address/${address}`;
     Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open block explorer.'));
   };
 
-  const handleNextAddress = () => {
-    if (displayableAddresses.length > 0) {
-        setAddressOffset(prev => (prev + 1) % displayableAddresses.length);
+  const handle_next_address = () => {
+    if (displayable_addresses.length > 0) {
+        set_address_offset(prev => (prev + 1) % displayable_addresses.length);
     }
   };
 
-  const usedAddresses = useMemo(() => {
+  const used_addresses = useMemo(() => {
     if (!activeWallet) return [];
-    const changeAddressSet = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
+    const change_address_set = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
     return activeWallet.derivedAddressInfoCache
         .filter(item => {
             if (item.tx_count === 0) return false;
-            if (changeAddressSet.has(item.address)) return false;
+            if (change_address_set.has(item.address)) return false;
             return true;
         })
         .sort((a, b) => a.index - b.index); 
   }, [activeWallet]);
 
-  const loadingInfo = walletLoading || !activeWallet;
+  const loading_info = wallet_loading || !activeWallet;
 
-  if (loadingInfo) {
+  if (loading_info) {
     return (
         <View style={styles.centeredContainer}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -155,43 +162,43 @@ const ReceiveScreen = () => {
 
   return (
     <ScrollView 
-      ref={scrollRef}
+      ref={scroll_ref}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={true}
     >
       <View style={styles.qrContainer}>
-        <Text style={styles.derivationPathDisplay}>{currentDisplayData.path}</Text>
+        <Text style={styles.derivationPathDisplay}>{current_display_data.path}</Text>
         {copied && (
           <View style={styles.copiedOverlay}>
             <Feather name="copy" size={32} color={theme.colors.primary} />
             <Text style={styles.copiedText}>Copied!</Text>
           </View>
         )}
-        <TouchableOpacity style={styles.qrCodeWrapper} onPress={copyToClipboard} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.qrCodeWrapper} onPress={copy_to_clipboard} activeOpacity={0.8}>
           <QRCode 
-            value={currentDisplayData.address} 
+            value={current_display_data.address} 
             size={QR_SIZE} 
             backgroundColor={theme.colors.background} 
             color={theme.colors.primary} 
           />
         </TouchableOpacity>
-        <Text style={styles.addressText} selectable>{formatAddressInChunks(currentDisplayData.address)}</Text>
+        <Text style={styles.addressText} selectable>{format_address_in_chunks(current_display_data.address)}</Text>
       </View>
 
       <View style={styles.actionsContainer}>
-        <TouchableOpacity style={styles.actionButton} onPress={copyToClipboard}>
+        <TouchableOpacity style={styles.actionButton} onPress={copy_to_clipboard}>
           <Feather name="copy" size={24} color={theme.colors.primary} />
           <Text style={styles.actionButtonText}>Copy</Text>
         </TouchableOpacity>
         <TouchableOpacity 
-          style={[styles.actionButton, loadingInfo && styles.actionButtonDisabled]} 
-          onPress={handleNextAddress}
-          disabled={loadingInfo}
+          style={[styles.actionButton, loading_info && styles.actionButtonDisabled]} 
+          onPress={handle_next_address}
+          disabled={loading_info}
         >
           <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
           <Text style={styles.actionButtonText}>New Address</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={onShare}>
+        <TouchableOpacity style={styles.actionButton} onPress={on_share}>
           <Feather name="share-2" size={24} color={theme.colors.primary} />
           <Text style={styles.actionButtonText}>Share</Text>
         </TouchableOpacity>
@@ -199,27 +206,27 @@ const ReceiveScreen = () => {
 
       <View style={styles.listHeaderContainer}>
         <Text style={styles.listHeader}>Used Addresses</Text>
-        {walletLoading && <ActivityIndicator color={theme.colors.primary} />}
+        {wallet_loading && <ActivityIndicator color={theme.colors.primary} />}
       </View>
 
-      {usedAddresses.length === 0 ? (
+      {used_addresses.length === 0 ? (
           <Text style={styles.emptyText}>No used receive addresses yet.</Text>
       ) : (
-          usedAddresses.map((item) => {
+          used_addresses.map((item) => {
             const balance = item.balance;
             return (
               <TouchableOpacity 
                 key={item.index.toString()}
                 style={styles.row}
-                onPress={() => handleViewDetails(item.address)}
+                onPress={() => handle_view_details(item.address)}
               >
                 <View style={styles.addressContainer}>
-                  <Text style={styles.addressShortText}>{formatAddressShort(item.address)}</Text>
-                  <Text style={styles.derivationPath}>{DERIVATION_PARENT_PATH}/0/{item.index}</Text>
+                  <Text style={styles.addressShortText}>{format_address_short(item.address)}</Text>
+                  <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
                 </View>
                 <View style={styles.balanceContainer}>
-                  <Text style={styles.balanceText}>{formatBtc(balance)} <Text style={styles.orangeSymbol}>₿</Text></Text>
-                  <TouchableOpacity onPress={() => handleOpenExplorer(item.address)}>
+                  <Text style={styles.balanceText}>{format_btc(balance)} <Text style={styles.orangeSymbol}>₿</Text></Text>
+                  <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
                     <Feather name="external-link" size={20} color={theme.colors.primary} />
                   </TouchableOpacity>
                 </View>

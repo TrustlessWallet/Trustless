@@ -18,10 +18,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
 import { Theme } from '../constants/theme';
 import { NETWORK, NETWORK_NAME } from '../constants/network';
-
-import { BIP32Factory } from 'bip32';
-import * as secp from '@bitcoinerlab/secp256k1';
-const bip32 = BIP32Factory(secp);
+import { getBip32Node } from '../services/bitcoin';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ImportWatchOnly'>;
 
@@ -31,31 +28,31 @@ const ImportWatchOnlyScreen = () => {
     const { addWallet } = useWallet();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
-    const [name, setName] = useState('');
-    const [xpub, setXpub] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [name, set_name] = useState('');
+    const [xpub, set_xpub] = useState('');
+    const [loading, set_loading] = useState(false);
 
-    const handleScan = () => {
+    const handle_scan = () => {
         navigation.navigate('QRScanner', {
             onScanSuccess: (data) => {
-                setXpub(data);
+                set_xpub(data);
                 navigation.goBack();
             }
         });
     };
 
-    const handleImport = async () => {
-        const trimmedXpub = xpub.trim();
-        if (!trimmedXpub) return;
+    const handle_import = async () => {
+        const trimmed_xpub = xpub.trim();
+        if (!trimmed_xpub) return;
         
-        const validPrefixes = ['xpub', 'zpub', 'ypub', 'vpub', 'tpub', 'upub'];
-        if (!validPrefixes.some(p => trimmedXpub.startsWith(p))) {
+        const valid_prefixes = ['xpub', 'zpub', 'ypub', 'vpub', 'tpub', 'upub'];
+        if (!valid_prefixes.some(p => trimmed_xpub.startsWith(p))) {
             Alert.alert("Invalid Key", "Please enter a valid extended public key.");
             return;
         }
 
         try {
-            bip32.fromBase58(trimmedXpub, NETWORK); 
+            getBip32Node(trimmed_xpub, NETWORK);
         } catch (e) {
             console.warn(e);
             Alert.alert(
@@ -65,11 +62,11 @@ const ImportWatchOnlyScreen = () => {
             return;
         }
 
-        setLoading(true);
+        set_loading(true);
         try {
             const wallet = await addWallet({
                 type: 'watch-only',
-                xpub: trimmedXpub,
+                xpub: trimmed_xpub,
                 name: name.trim() || undefined
             });
 
@@ -78,14 +75,12 @@ const ImportWatchOnlyScreen = () => {
                     index: 0,
                     routes: [{ name: 'MainTabs' }]
                 });
-            } else {
-                Alert.alert("Error", "Failed to import wallet.");
             }
         } catch (e) {
             console.error(e);
             Alert.alert("Error", "Could not import this key. Please check format.");
         } finally {
-            setLoading(false);
+            set_loading(false);
         }
     };
 
@@ -96,7 +91,7 @@ const ImportWatchOnlyScreen = () => {
                 <StyledInput 
                     placeholder="e.g. Cold Storage"
                     value={name}
-                    onChangeText={setName}
+                    onChangeText={set_name}
                     containerStyle={styles.inputSpacing}
                     editable={!loading}
                     keyboardAppearance={isDark ? 'dark' : 'light'}
@@ -104,16 +99,16 @@ const ImportWatchOnlyScreen = () => {
 
                 <Text style={styles.label}>Extended Public Key</Text>
                 <StyledInput 
-                    placeholder="xpub..."
+                    placeholder="xpub..., zpub..., ypub..."
                     value={xpub}
-                    onChangeText={setXpub}
+                    onChangeText={set_xpub}
                     autoCapitalize="none"
                     autoCorrect={false}
                     containerStyle={styles.inputSpacing}
                     editable={!loading}
                     keyboardAppearance={isDark ? 'dark' : 'light'}
                     rightElement={
-                        <TouchableOpacity style={styles.scanButton} onPress={handleScan}>
+                        <TouchableOpacity style={styles.scanButton} onPress={handle_scan}>
                             <Feather name="camera" size={20} color={theme.colors.primary} />
                         </TouchableOpacity>
                     }
@@ -125,7 +120,7 @@ const ImportWatchOnlyScreen = () => {
 
                 <TouchableOpacity 
                     style={[styles.button, (!xpub || loading) && styles.buttonDisabled]} 
-                    onPress={handleImport}
+                    onPress={handle_import}
                     disabled={!xpub || loading}
                 >
                     {loading ? (

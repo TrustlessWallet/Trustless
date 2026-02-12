@@ -144,11 +144,18 @@ const WalletScreen = () => {
                         <Feather name="plus-circle" size={18} color={theme.colors.inversePrimary} />
                         <Text style={styles.createButtonText}>Create a new wallet</Text>
                     </TouchableOpacity>
-                    <Text style={styles.orText}>Or</Text>
-                    <TouchableOpacity style={styles.importButton} onPress={() => navigation.navigate('RecoverWallet')}>
-                        <Feather name="refresh-ccw" size={18} color={theme.colors.primary} />
-                        <Text style={styles.importButtonText}>Import existing wallet</Text>
-                    </TouchableOpacity>
+                    <View style={{ width: '100%' }}>
+                        <Text style={styles.orText}>Or</Text>
+                        <TouchableOpacity style={styles.importButton} onPress={() => navigation.navigate('RecoverWallet')}>
+                            <Feather name="refresh-ccw" size={18} color={theme.colors.primary} />
+                            <Text style={styles.importButtonText}>Import existing wallet</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.importButton} onPress={() => navigation.navigate('ImportWatchOnly')}>
+                            <Feather name="eye" size={18} color={theme.colors.primary} />
+                            <Text style={styles.importButtonText}>Import watch-only wallet</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </SafeAreaView>
         );
@@ -227,7 +234,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         justifyContent: 'center', 
         gap: 8, 
         backgroundColor: theme.colors.primary,
-        paddingVertical: 16, 
+        paddingVertical: 16,
+        marginVertical: 6,
         borderRadius: 8, 
         width: '100%' 
     },
@@ -239,6 +247,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     orText: { 
         fontSize: 16, 
         color: theme.colors.muted,
+        textAlign: 'center',
         marginVertical: 16 
     },
     importButton: { 
@@ -248,6 +257,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         gap: 8, 
         backgroundColor: theme.colors.background,
         paddingVertical: 16, 
+        marginVertical: 6,
         borderRadius: 8, 
         borderWidth: 1, 
         borderColor: theme.colors.primary,

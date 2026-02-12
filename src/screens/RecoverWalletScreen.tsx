@@ -10,7 +10,9 @@ import * as bip39 from 'bip39';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { StyledInput } from '../components/StyledInput';
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'RecoverWallet'>;
+
 const RecoverWalletScreen = () => {
     const [phrase, setPhrase] = useState('');
     const [loading, setLoading] = useState(false);
@@ -18,21 +20,23 @@ const RecoverWalletScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
-    const handleRecover = async () => {
-        const trimmedPhrase = phrase.trim().toLowerCase();
-        if (!bip39.validateMnemonic(trimmedPhrase)) {
+
+    const handle_recover = async () => {
+        const trimmed_phrase = phrase.trim().toLowerCase();
+        
+        if (!bip39.validateMnemonic(trimmed_phrase)) {
             Alert.alert("Error", "Invalid recovery phrase. Please check the words and try again.");
             return;
         }
+
         setLoading(true);
         try {
-            const newWallet = await addWallet({ mnemonic: trimmedPhrase });
-            if (newWallet) {
+            const new_wallet = await addWallet({ mnemonic: trimmed_phrase });
+            
+            if (new_wallet) {
                 Alert.alert("Success", "Your wallet has been recovered and set as active.", [
                     { text: "OK", onPress: () => navigation.popToTop() }
                 ]);
-            } else {
-                throw new Error("Could not add the wallet.");
             }
         } catch (error) {
             Alert.alert("Error", error instanceof Error ? error.message : "An unexpected error occurred.");
@@ -40,6 +44,7 @@ const RecoverWalletScreen = () => {
             setLoading(false);
         }
     };
+
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
             <Text style={styles.subtitle}>
@@ -58,7 +63,7 @@ const RecoverWalletScreen = () => {
                 keyboardAppearance={isDark ? 'dark' : 'light'}
                 placeholderTextColor={theme.colors.muted}
             />
-            <TouchableOpacity style={styles.button} onPress={handleRecover} disabled={loading}>
+            <TouchableOpacity style={styles.button} onPress={handle_recover} disabled={loading}>
                 {loading ? (
                     <ActivityIndicator color={theme.colors.inversePrimary} />
                 ) : (
@@ -71,6 +76,7 @@ const RecoverWalletScreen = () => {
         </KeyboardAvoidingView>
     );
 };
+
 const getStyles = (theme: Theme) => StyleSheet.create({
   container: { 
     flex: 1, 
@@ -105,4 +111,5 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     gap: 8 
   },
 });
+
 export default RecoverWalletScreen;
