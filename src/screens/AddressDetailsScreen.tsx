@@ -10,7 +10,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { EXPLORER_UI_URL, DERIVATION_PARENT_PATH } from '../constants/network';
+import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 
 const QR_SIZE = 220;
 
@@ -55,11 +55,19 @@ const AddressDetailsScreen = () => {
 
   const receiveData = activeWallet?.derivedReceiveAddresses.find(a => a.address === address);
   const changeData = activeWallet?.derivedChangeAddresses.find(a => a.address === address);
-  const derivationPath = receiveData
-    ? `${DERIVATION_PARENT_PATH}/0/${receiveData.index}`
-    : changeData
-      ? `${DERIVATION_PARENT_PATH}/1/${changeData.index}`
-      : null;
+
+  const path_prefix = useMemo(() => {
+    if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
+      return `m/49'/${COIN_TYPE}/0'`;
+    }
+    return `m/84'/${COIN_TYPE}/0'`;
+  }, [activeWallet?.scriptType]);
+
+  const derivation_path = useMemo(() => {
+      if (receiveData) return `${path_prefix}/0/${receiveData.index}`;
+      if (changeData) return `${path_prefix}/1/${changeData.index}`;
+      return null;
+  }, [receiveData, changeData, path_prefix]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -139,8 +147,8 @@ const AddressDetailsScreen = () => {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.header}>
-        {derivationPath && (
-          <Text style={styles.derivationPathDisplay}>{derivationPath}</Text>
+        {derivation_path && (
+          <Text style={styles.derivationPathDisplay}>{derivation_path}</Text>
         )}
         <View style={styles.qrWrapper}>
           <QRCode 
@@ -391,7 +399,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     margin: 0,
     height: 32,
     marginBottom: 2,
-    textAlignVertical: 'center', // Helps align text vertically on Android
+    textAlignVertical: 'center',
   },
   editIcon: {
     fontSize: 16,

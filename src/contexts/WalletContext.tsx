@@ -9,11 +9,14 @@ import * as bitcoin from 'bitcoinjs-lib';
 import { payments } from 'bitcoinjs-lib';
 import { ECPairFactory } from 'ecpair';
 import { useQueryClient } from '@tanstack/react-query'; 
+import { Alert } from 'react-native';
 
 import { Wallet, DerivedAddress, BitcoinAddress, DerivedAddressInfo, UTXO } from '../types';
 import { 
     calculateTransactionMetrics,
     fetchUTXOs,
+    getBip32Node,
+    inferScriptType
 } from '../services/bitcoin';
 import { NETWORK, DERIVATION_PARENT_PATH, NETWORK_NAME } from '../constants/network'; 
 import { 
@@ -21,7 +24,9 @@ import {
     dbGetDerivedAddresses, dbGetAddressCache, dbSaveAddress, 
     dbUpdateAddressInfoBatch, dbGetUtxoLabels, dbSyncUtxos, dbUpdateUtxoLabel,
     dbGetSavedAddresses, dbAddSavedAddress, dbRemoveSavedAddress, dbUpdateSavedAddress,
-    dbUpdateChangeIndex
+    dbUpdateChangeIndex,
+    dbFindWalletByAddress,
+    dbFindWalletByXpub
 } from '../services/database';
 
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance'; 
@@ -48,7 +53,7 @@ interface WalletContextType {
   lastRefreshTime: number;
   triggerRefresh: () => void;
   generateMnemonic: (strength?: number) => Promise<string | null>;
-  addWallet: (params: { mnemonic?: string; xpub?: string; type: 'standard' | 'watch-only'; name?: string }) => Promise<Wallet | null>;
+  addWallet: (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string }) => Promise<Wallet | null>;
   switchWallet: (walletId: string) => Promise<void>;
   updateWalletName: (walletId: string, newName: string) => Promise<void>;
   removeWallet: (walletId: string) => Promise<void>;
@@ -206,11 +211,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       };
   };
 
-  const deriveReceiveAddress = (root: any, index: number, isWatchOnly: boolean): DerivedAddress | null => {
+  const deriveReceiveAddress = (root: any, index: number, isWatchOnly: boolean, scriptType: string = 'p2wpkh'): DerivedAddress | null => {
     try {
       const derivationPath = isWatchOnly ? `0/${index}` : `${DERIVATION_PARENT_PATH}/0/${index}`;
       const child = root.derivePath(derivationPath);
-      const { address } = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+      
+      let address;
+      if (scriptType === 'p2sh-p2wpkh') {
+          const p2wpkh = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+          const p2sh = payments.p2sh({ redeem: p2wpkh, network: NETWORK });
+          address = p2sh.address;
+      } else {
+          const p2wpkh = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+          address = p2wpkh.address;
+      }
+
       return address ? { address, index } : null;
     } catch (error) {
       console.error(`Failed to derive receive address at index ${index}:`, error);
@@ -218,11 +233,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const deriveChangeAddress = (root: any, index: number, isWatchOnly: boolean): DerivedAddress | null => {
+  const deriveChangeAddress = (root: any, index: number, isWatchOnly: boolean, scriptType: string = 'p2wpkh'): DerivedAddress | null => {
     try {
       const derivationPath = isWatchOnly ? `1/${index}` : `${DERIVATION_PARENT_PATH}/1/${index}`;
       const child = root.derivePath(derivationPath);
-      const { address } = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+      
+      let address;
+      if (scriptType === 'p2sh-p2wpkh') {
+          const p2wpkh = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+          const p2sh = payments.p2sh({ redeem: p2wpkh, network: NETWORK });
+          address = p2sh.address;
+      } else {
+          const p2wpkh = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+          address = p2wpkh.address;
+      }
+      
       return address ? { address, index } : null;
     } catch (error) {
       console.error(`Failed to derive change address at index ${index}:`, error);
@@ -283,7 +308,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (wallet.type === 'watch-only') {
       if (!wallet.xpub) throw new Error("Watch-only wallet missing xpub");
       try {
-          return bip32.fromBase58(wallet.xpub, NETWORK);
+          return getBip32Node(wallet.xpub, NETWORK);
       } catch (e) {
           throw new Error("Invalid Network Key");
       }
@@ -303,11 +328,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
         const root = await getRootNode(wallet);
         const isWatchOnly = wallet.type === 'watch-only';
+        const scriptType = wallet.scriptType || 'p2wpkh'; 
         let derivedNew = false;
         
         for (let i = 0; i < GAP_LIMIT; i++) {
             if (!wallet.derivedChangeAddresses.find(a => a.index === i)) {
-                const derived = deriveChangeAddress(root, i, isWatchOnly);
+                const derived = deriveChangeAddress(root, i, isWatchOnly, scriptType);
                 if (derived) {
                     await dbSaveAddress(walletId, derived, 1, NETWORK_NAME);
                     derivedNew = true;
@@ -321,7 +347,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         
         if (wallet.derivedReceiveAddresses.length < GAP_LIMIT) {
             for (let i = currentMax + 1; i < GAP_LIMIT; i++) {
-                 const derived = deriveReceiveAddress(root, i, isWatchOnly);
+                 const derived = deriveReceiveAddress(root, i, isWatchOnly, scriptType);
                  if (derived) {
                      await dbSaveAddress(walletId, derived, 0, NETWORK_NAME);
                      derivedNew = true;
@@ -411,8 +437,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
         const root = await getRootNode(activeWallet);
         const isWatchOnly = activeWallet.type === 'watch-only';
+        const scriptType = activeWallet.scriptType || 'p2wpkh';
         const nextIndex = addresses[addresses.length - 1].index + 1;
-        const derived = deriveReceiveAddress(root, nextIndex, isWatchOnly);
+        const derived = deriveReceiveAddress(root, nextIndex, isWatchOnly, scriptType);
         
         if (derived) {
             await dbSaveAddress(activeWallet.id, derived, 0, NETWORK_NAME);
@@ -442,8 +469,63 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const addWallet = async (params: { mnemonic?: string; xpub?: string; type: 'standard' | 'watch-only'; name?: string }): Promise<Wallet | null> => {
-    const { mnemonic, xpub, type, name } = params;
+  const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string }): Promise<Wallet | null> => {
+    const { mnemonic, name } = params;
+    const type = params.type || 'standard';
+    let walletXpub = params.xpub;
+    
+    let scriptType: 'p2wpkh' | 'p2sh-p2wpkh' = 'p2wpkh';
+
+    try {
+        if (walletXpub) {
+             scriptType = inferScriptType(walletXpub);
+        }
+
+        if (type === 'standard' && mnemonic) {
+             const seed = bip39.mnemonicToSeedSync(mnemonic);
+             const root = bip32.fromSeed(seed, NETWORK);
+             try {
+                const accountNode = root.derivePath(DERIVATION_PARENT_PATH);
+                walletXpub = accountNode.neutered().toBase58();
+                scriptType = 'p2wpkh'; 
+             } catch(err) {
+                console.warn("Could not derive account xpub for standard wallet check", err);
+             }
+        }
+
+        if (walletXpub) {
+             const existingId = await dbFindWalletByXpub(walletXpub);
+             if (existingId) {
+                 Alert.alert("Wallet Exists", "This wallet has already been added.");
+                 return null;
+             }
+        }
+        
+        let root;
+        if (type === 'watch-only' && walletXpub) {
+             root = getBip32Node(walletXpub, NETWORK);
+        } else if (type === 'standard' && mnemonic) {
+             const seed = bip39.mnemonicToSeedSync(mnemonic);
+             root = bip32.fromSeed(seed, NETWORK);
+        }
+
+        if (root) {
+             const isWatchOnly = type === 'watch-only';
+             // Check duplications using the derived address
+             const firstAddressObj = deriveReceiveAddress(root, 0, isWatchOnly, scriptType);
+             
+             if (firstAddressObj) {
+                 const existingId = await dbFindWalletByAddress(firstAddressObj.address);
+                 if (existingId) {
+                     Alert.alert("Wallet Exists", "This wallet has already been added.");
+                     return null;
+                 }
+             }
+        }
+    } catch (e) {
+        console.warn("Duplicate check failed", e);
+    }
+
     const isFirstWallet = wallets.length === 0;
     const defaultName = name || `Wallet ${wallets.length + 1}`;
     const newWalletId = uuidv4();
@@ -452,7 +534,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await Keychain.setGenericPassword('user', mnemonic, { service: `${KEYCHAIN_SERVICE_PREFIX}.${newWalletId}` });
     }
     
-    await dbCreateWallet(newWalletId, defaultName, NETWORK_NAME, type, xpub);
+    await dbCreateWallet(newWalletId, defaultName, NETWORK_NAME, type, walletXpub, scriptType);
 
     const newWallets = await dbGetWallets(NETWORK_NAME);
     setWallets(newWallets);
@@ -534,9 +616,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const nextChangeIndex = activeWallet.changeAddressIndex ?? 0;
     
+    const scriptType = activeWallet.scriptType || 'p2wpkh'; // Use saved type
+    
     let changeAddress = activeWallet.derivedChangeAddresses.find(a => a.index === nextChangeIndex)?.address;
     if (!changeAddress) {
-        const derived = deriveChangeAddress(root, nextChangeIndex, false);
+        const derived = deriveChangeAddress(root, nextChangeIndex, false, scriptType);
         if (derived) {
             await dbSaveAddress(activeWallet.id, derived, 1, NETWORK_NAME);
             changeAddress = derived.address;
@@ -563,13 +647,26 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const derivationPath = `${DERIVATION_PARENT_PATH}/${chain}/${indexForPath}`;
         
         const child = root.derivePath(derivationPath);
-        const p2wpkh = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+        
+        if (scriptType === 'p2sh-p2wpkh') {
+            const p2wpkh = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+            const p2sh = payments.p2sh({ redeem: p2wpkh, network: NETWORK });
+            
+            psbt.addInput({
+              hash: utxo.txid,
+              index: utxo.vout,
+              witnessUtxo: { script: p2sh.output!, value: utxo.value },
+              redeemScript: p2wpkh.output,
+            });
+        } else {
 
-        psbt.addInput({
-          hash: utxo.txid,
-          index: utxo.vout,
-          witnessUtxo: { script: p2wpkh.output!, value: utxo.value, },
-        });
+            const p2wpkh = payments.p2wpkh({ pubkey: child.publicKey, network: NETWORK });
+            psbt.addInput({
+              hash: utxo.txid,
+              index: utxo.vout,
+              witnessUtxo: { script: p2wpkh.output!, value: utxo.value },
+            });
+        }
       };
 
       const { vsize, fee, change, numOutputs } = calculateTransactionMetrics(
