@@ -161,6 +161,8 @@ const WalletScreen = () => {
         );
     }
 
+    const isWatchOnly = activeWallet.type === 'watch-only';
+
     return (
         <SafeAreaView style={styles.container} edges={['right', 'left']}>
             <View style={styles.topSection}>
@@ -181,9 +183,13 @@ const WalletScreen = () => {
                         <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />
                         <Text style={styles.actionButtonText}>Receive</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Send')}>
-                        <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
-                        <Text style={styles.actionButtonText}>Send</Text>
+                    <TouchableOpacity 
+                        style={[styles.actionButton, isWatchOnly ? styles.disabledActionButton : {}]} 
+                        onPress={() => !isWatchOnly && navigation.navigate('Send')}
+                        disabled={isWatchOnly}
+                    >
+                        <Feather name="arrow-up-circle" size={18} color={isWatchOnly ? theme.colors.muted : theme.colors.inversePrimary} />
+                        <Text style={[styles.actionButtonText, isWatchOnly ? styles.disabledActionButtonText : {}]}>Send</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -327,6 +333,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.inversePrimary, 
         fontSize: 16, 
         fontWeight: '600' 
+    },
+    disabledActionButton: {
+        backgroundColor: theme.colors.border,
+        opacity: 0.6
+    },
+    disabledActionButtonText: {
+        color: theme.colors.muted
     },
     historyContainer: { 
         paddingHorizontal: 20, 
