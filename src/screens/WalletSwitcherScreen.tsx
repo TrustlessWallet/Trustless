@@ -8,7 +8,9 @@ import { RootStackParamList, Wallet } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'WalletSwitcher'>;
+
 const WalletSwitcherScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const { wallets, activeWallet, switchWallet, updateWalletName, removeWallet } = useWallet();
@@ -18,11 +20,13 @@ const WalletSwitcherScreen = () => {
     const [editingName, setEditingName] = useState('');
     const [switchingToWalletId, setSwitchingToWalletId] = useState<string | null>(null);
     const editInputRef = useRef<TextInput>(null);
+
     useEffect(() => {
         if (editingWalletId) {
             editInputRef.current?.focus();
         }
     }, [editingWalletId]);
+
     const handleSwitchWallet = async (walletId: string) => {
         if (switchingToWalletId || editingWalletId === walletId) return;
         if (walletId === activeWallet?.id) {
@@ -41,15 +45,18 @@ const WalletSwitcherScreen = () => {
             setSwitchingToWalletId(null);
         }
     };
+
     const handleStartEditing = (wallet: Wallet) => {
         setEditingWalletId(wallet.id);
         setEditingName(wallet.name || '');
     };
+
     const handleEndEditing = () => {
         if (!editingWalletId) return;
         updateWalletName(editingWalletId, editingName.trim());
         setEditingWalletId(null);
     };
+
     const handleRemoveWallet = (wallet: Wallet) => {
         Alert.alert(
             "Remove Wallet",
@@ -73,10 +80,13 @@ const WalletSwitcherScreen = () => {
             ]
         );
     };
+
     const renderWalletItem = ({ item }: { item: Wallet }) => {
         const isEditing = editingWalletId === item.id;
         const isActive = activeWallet?.id === item.id;
         const isSwitching = switchingToWalletId === item.id;
+        const isWatchOnly = item.type === 'watch-only';
+
         return (
             <TouchableOpacity
                 style={[styles.walletItem, isActive && styles.activeItem]}
@@ -110,21 +120,29 @@ const WalletSwitcherScreen = () => {
                     <ActivityIndicator color={theme.colors.primary} />
                 ) : (
                     <View style={styles.actionsContainer}>
-                        <TouchableOpacity
-                            style={styles.backupButton}
-                            onPress={() => navigation.navigate('BackupDisclaimer', { walletId: item.id })}
-                        >
-                            <Feather name="shield" size={16} color={theme.colors.primary} />
-                            <Text style={styles.backupButtonText}>Backup</Text>
-                        </TouchableOpacity>
+                        {isWatchOnly ? (
+                            <View style={styles.watchOnlyContainer}>
+                                <Feather name="eye" size={16} color={theme.colors.primary} />
+                                <Text style={styles.watchOnlyText}>Watch-only</Text>
+                            </View>
+                        ) : (
+                            <TouchableOpacity
+                                style={styles.backupButton}
+                                onPress={() => navigation.navigate('BackupDisclaimer', { walletId: item.id })}
+                            >
+                                <Feather name="shield" size={16} color={theme.colors.primary} />
+                                <Text style={styles.backupButtonText}>Backup</Text>
+                            </TouchableOpacity>
+                        )}
                         <TouchableOpacity style={styles.actionButton} onPress={() => handleRemoveWallet(item)}>
-                            <Feather name="trash-2" size={18} color={theme.colors.primary} />
+                            <Feather name="trash-2" size={16} color={theme.colors.primary} />
                         </TouchableOpacity>
                     </View>
                 )}
             </TouchableOpacity>
         );
     };
+
     return (
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
             <SafeAreaView style={styles.container}>
@@ -146,6 +164,7 @@ const WalletSwitcherScreen = () => {
         </TouchableWithoutFeedback>
     );
 };
+
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: {
         flex: 1,
@@ -153,7 +172,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     list: {
         flex: 1,
-        maxHeight: 500,
     },
     listContent: {
         padding: 24,
@@ -220,6 +238,17 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.primary,
         fontSize: 14,
     },
+    watchOnlyContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 7,
+        paddingHorizontal: 10,
+    },
+    watchOnlyText: {
+        color: theme.colors.primary,
+        fontSize: 14,
+    },
     footer: {
         padding: 24,
         backgroundColor: theme.colors.background,
@@ -241,4 +270,5 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontWeight: '600',
     },
 });
+
 export default WalletSwitcherScreen;
