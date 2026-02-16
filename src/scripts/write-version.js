@@ -14,14 +14,16 @@ try {
   let commitHash = execSync('git rev-parse --short HEAD').toString().trim();
   
   // 2. DIRTY CHECK: Check for uncommitted changes
-  // This protects you from releasing a binary that doesn't match the commit
   const status = execSync('git status --porcelain').toString().trim();
   if (status) {
     commitHash += '-dirty';
-    console.warn('⚠️  WARNING: You are building with uncommitted changes!');
+    console.warn('⚠️  WARNING: You are building with uncommitted changes! This will break reproducibility.');
   }
 
-  const buildDate = new Date().toISOString();
+  // 3. Get the commit date (Fixed timestamp for reproducibility)
+  // Using %cI (ISO 8601 committer date) ensures every builder gets the same string
+  const buildDate = execSync('git log -1 --format=%cI').toString().trim();
+  
   writeBuildFile(commitHash, buildDate);
 
 } catch (error) {
@@ -30,11 +32,7 @@ try {
   // ---------------------------------------------------------
   
   try {
-    // Read the template file which might have been modified by 'export-subst'
     const template = require(TEMPLATE_PATH);
-    
-    // Check if Git actually replaced the placeholder
-    // If the file still says "$Format:%h$", it means we are in a weird state (not a zip, not a repo)
     const isReplaced = !template.commitHash.startsWith('$Format:');
 
     if (isReplaced) {
@@ -48,8 +46,10 @@ try {
     // ---------------------------------------------------------
     // SCENARIO 3: Total Failure (Raw download, no git)
     // ---------------------------------------------------------
+    
+    // Note: This will still break reproducibility but allows the app to compile locally.
     console.error('❌ Failed to verify build version. Defaulting to DEV-BUILD.');
-    writeBuildFile('DEV-BUILD', new Date().toISOString());
+    writeBuildFile('DEV-BUILD', "1970-01-01T00:00:00Z"); 
   }
 }
 
@@ -59,5 +59,5 @@ function writeBuildFile(commitHash, buildDate) {
     BUILD_PATH, 
     JSON.stringify(buildInfo, null, 2)
   );
-  console.log(`✅ Build info updated: ${commitHash}`);
+  console.log(`✅ Build info updated: ${commitHash} (${buildDate})`);
 }
