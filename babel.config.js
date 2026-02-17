@@ -7,10 +7,8 @@ module.exports = function(api) {
         'module-resolver',
         {
           alias: {
-            // Force 'net' and 'tls' to point to the React Native library
             'net': 'react-native-tcp-socket',
             'tls': 'react-native-tcp-socket',
-            // Ensure other node core modules resolve correctly
             'crypto': 'react-native-crypto',
             'stream': 'stream-browserify',
             'buffer': 'buffer',

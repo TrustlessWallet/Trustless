@@ -16,10 +16,26 @@ import {
     electrumGetHeader
 } from './electrum';
 
+// Initialize the BIP32 factory with the secp256k1 curve library.
+// This is required for hierarchical deterministic (HD) key derivation.
 const bip32 = BIP32Factory(secp);
 
+/**
+ * DUST_THRESHOLD
+ * The minimum output value (in satoshis) that is generally accepted by the network.
+ * Outputs smaller than this are considered "dust" and are often rejected by nodes
+ * to prevent UTXO set bloat. 546 sats is the standard dust limit for P2PKH/P2WPKH.
+ */
 export const DUST_THRESHOLD = 546;
 
+/**
+ * Extended Public Key (xpub) Magic Bytes
+ * Standard xpubs start with 'xpub' (mainnet) or 'tpub' (testnet).
+ * However, Electrum and other wallets use different prefixes to denote script types:
+ * - zpub/vpub: Native SegWit (P2WPKH)
+ * - ypub/upub: Nested SegWit (P2SH-P2WPKH)
+ * We define these alternate network objects so bitcoinjs-lib can parse them.
+ */
 const ALT_NETWORKS = {
   bitcoin: [
     { ...networks.bitcoin, bip32: { public: 0x04b24746, private: 0x04b2430c } }, // zpub
@@ -31,6 +47,12 @@ const ALT_NETWORKS = {
   ]
 };
 
+/**
+ * Parse an Extended Public Key (xpub/ypub/zpub).
+ * Since bitcoinjs-lib is strict about network magic bytes, we attempt to parse
+ * against the standard network first, then fall back to the alternate "SLIP-132" networks
+ * if the key uses a different prefix (like zpub).
+ */
 export const getBip32Node = (key: string, network: any) => {
   try {
     return bip32.fromBase58(key, network);
@@ -48,16 +70,20 @@ export const getBip32Node = (key: string, network: any) => {
   throw new Error("Invalid Network Key or Format");
 };
 
+/**
+ * Determines the script type based on the key prefix.
+ * This is crucial for deriving addresses correctly.
+ * - ypub/upub -> p2sh-p2wpkh (Wrapped SegWit)
+ * - xpub/zpub -> p2wpkh (Native SegWit) - Defaulting standard xpub to Native SegWit for this app.
+ */
 export const inferScriptType = (key: string): 'p2wpkh' | 'p2sh-p2wpkh' => {
-
   if (key.startsWith('ypub') || key.startsWith('upub')) {
       return 'p2sh-p2wpkh';
   }
-
   return 'p2wpkh'; 
 };
 
-
+// Helper: Splits a large array into smaller chunks for batching requests.
 const chunkArray = <T>(array: T[], size: number): T[][] => {
   const chunked: T[][] = [];
   for (let i = 0; i < array.length; i += size) {
@@ -66,10 +92,27 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
   return chunked;
 };
 
+/**
+ * Estimates the transaction size in virtual bytes (vbytes).
+ * - Input (P2WPKH): ~68 vbytes
+ * - Output (P2WPKH): ~31 vbytes
+ * - Overhead: ~10.5 vbytes
+ * This is an approximation used for fee calculation before signing.
+ */
 export const calculateVSize = (nInputs: number, nOutputs: number): number => {
   return Math.ceil((nInputs * 68) + (nOutputs * 31) + 10.5);
 };
 
+/**
+ * Calculates fee, change, and final transaction metrics.
+ * Logic:
+ * 1. Calculate size/fee assuming 1 output (Destination only).
+ * 2. Calculate remainder (Total Input - Amount - Fee).
+ * 3. If remainder > DUST_THRESHOLD, we add a Change Output.
+ * 4. Recalculate size/fee with 2 outputs.
+ * 5. If the new remainder is still > DUST, we include the change output.
+ * Otherwise, the remainder is dropped to fee (it's too small to spend later).
+ */
 export const calculateTransactionMetrics = (
   nInputs: number,
   amount: number,
@@ -81,10 +124,13 @@ export const calculateTransactionMetrics = (
   let fee = Math.ceil(vsize * feeRate);
   let change = totalInputValue - amount - fee;
 
+  // If we have enough left over for a change output...
   if (change > DUST_THRESHOLD) {
     const vsizeTwo = calculateVSize(nInputs, 2);
     const feeTwo = Math.ceil(vsizeTwo * feeRate);
     const changeTwo = totalInputValue - amount - feeTwo;
+    
+    // Check if adding the change output makes the change amount drop below dust
     if (changeTwo > DUST_THRESHOLD) {
        numOutputs = 2;
        vsize = vsizeTwo;
@@ -99,6 +145,10 @@ export const testNodeConnection = async (customUrl: string): Promise<boolean> =>
     try { return true; } catch (error) { return false; }
 };
 
+/**
+ * Batched fetch of address balances and transaction counts.
+ * Uses addressToScriptHash to convert human-readable addresses to the format Electrum expects.
+ */
 export const fetchAddressInfoBatch = async (
   addresses: string[]
 ): Promise<{ address: string; balance: number; tx_count: number }[]> => {
@@ -108,6 +158,7 @@ export const fetchAddressInfoBatch = async (
     const map = addresses.map(addr => ({ addr, hash: addressToScriptHash(addr) }));
     const hashes = map.map(m => m.hash);
 
+    // Parallel execution of batch requests
     const balances = await electrumBatchGetBalance(hashes) as any[];
     const histories = await electrumBatchGetHistory(hashes) as any[];
 
@@ -139,6 +190,12 @@ export const fetchBitcoinBalance = async (address: string): Promise<number> => {
     return info ? info.balance : 0;
 };
 
+/**
+ * Fetches UTXOs (Unspent Transaction Outputs) for a list of addresses.
+ * Note: Electrum's `listunspent` returns simple data. It does NOT include the full
+ * input transaction details, which are needed safely for some signing operations.
+ * (See hydrateInputDetails below).
+ */
 export const fetchUTXOs = async (addresses: string[]) => {
   if (addresses.length === 0) return [];
 
@@ -167,6 +224,17 @@ export const fetchUTXOs = async (addresses: string[]) => {
   }
 };
 
+/**
+ * UTXO Hydration (Critical Security Step)
+ * When dealing with transaction history, we often only get the TXID of the inputs (`vin`).
+ * We do not know the value (amount) or the address of those inputs unless we fetch the
+ * parent transaction.
+ * * This function:
+ * 1. Identifies all unique parent TXIDs from the inputs.
+ * 2. Fetches the full content of those parent transactions.
+ * 3. Maps the output of the parent (prevout) to the input of the current transaction.
+ * * Result: We know exactly how much value was spent and from which address.
+ */
 const hydrateInputDetails = async (txs: any[]) => {
     const parentIds = new Set<string>();
     txs.forEach(tx => {
@@ -182,6 +250,7 @@ const hydrateInputDetails = async (txs: any[]) => {
     const uniqueParents = Array.from(parentIds);
     if (uniqueParents.length === 0) return txs;
 
+    // Batch fetch parent transactions in chunks of 10
     const batches = chunkArray(uniqueParents, 10);
     const parentMap = new Map<string, any>();
 
@@ -198,6 +267,7 @@ const hydrateInputDetails = async (txs: any[]) => {
         }
     }
 
+    // Attach prevout data to inputs
     return txs.map(tx => {
         const hydratedVin = tx.vin.map((input: any) => {
             if (input.coinbase) return input;
@@ -207,6 +277,7 @@ const hydrateInputDetails = async (txs: any[]) => {
                 const sourceOutput = parent.vout[input.vout];
                 
                 let val = sourceOutput.value;
+                // Normalize BTC decimal values to Satoshis (integer)
                 if (typeof val === 'number' && val < 21000000) val = Math.round(val * 100000000);
                 
                 const addr = sourceOutput.scriptPubKey?.address || 
@@ -227,12 +298,18 @@ const hydrateInputDetails = async (txs: any[]) => {
     });
 };
 
-
+/**
+ * Transforms raw Electrum transaction data into a clean, internal `Transaction` object.
+ * It determines:
+ * - Direction: 'send', 'receive', or 'internal' (self-transfer).
+ * - Net Amount: based on wallet-owned inputs vs outputs.
+ */
 const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction => {
     let voutTotal = 0;
     let walletVoutTotal = 0;
     let walletVinTotal = 0; 
 
+    // Sum up outputs (funds leaving the tx)
     const normalizedVout = tx.vout.map((output: any) => {
         let sats = output.value;
         if (typeof sats === 'number' && sats < 21000000) { 
@@ -255,6 +332,7 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
         };
     });
 
+    // Sum up inputs (funds entering the tx)
     const normalizedVin = tx.vin.map((input: any) => {
         const prevout = input.prevout || { 
             scriptpubkey_address: 'Unknown', 
@@ -274,13 +352,17 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
     let type: 'send' | 'receive' | 'internal' = 'receive'; 
     let amount = 0;
 
+    // Logic to determine transaction type and net effect on wallet balance
     if (walletVinTotal > 0 && walletVoutTotal === 0) {
+        // We spent funds, received nothing back (e.g. sent to external)
         type = 'send';
         amount = walletVinTotal; 
     } else if (walletVinTotal > walletVoutTotal) {
+        // We spent more than we got back (e.g. sent part, got change)
         type = 'send';
         amount = walletVinTotal - walletVoutTotal; 
     } else {
+        // We received more than we spent (or spent nothing)
         type = 'receive';
         amount = walletVoutTotal - walletVinTotal;
     }
@@ -296,7 +378,7 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
         locktime: tx.locktime,
         size: tx.size,
         weight: tx.weight,
-        fee: 0, 
+        fee: 0, // Fee calculation requires knowing total input value vs total output
         vin: normalizedVin,
         vout: normalizedVout,
         status: { 
@@ -310,6 +392,14 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
     };
 };
 
+/**
+ * Fetches full transaction history for a set of addresses.
+ * 1. Get history (TXIDs) for all addresses.
+ * 2. Deduplicate TXIDs (addresses often share transactions).
+ * 3. Fetch full transaction hex/json for unique IDs.
+ * 4. Hydrate inputs (fetch parents).
+ * 5. Process and sort by time.
+ */
 export const fetchAddressTransactions = async (addresses: string[]): Promise<Transaction[]> => {
   if (addresses.length === 0) return [];
 
@@ -353,6 +443,13 @@ export const broadcastTransaction = async (txHex: string) => {
   }
 };
 
+/**
+ * Fetches network fee estimates for different confirmation targets.
+ * - Fast: 1 block
+ * - Normal: 5 blocks
+ * - Slow: 25 blocks
+ * Returns values in satoshis per vbyte (sats/vB).
+ */
 export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: number; slow: number; }> => {
   try {
     const [fast, normal, slow] = await Promise.all([
@@ -361,6 +458,7 @@ export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: numbe
         electrumEstimateFee(25)
     ]) as [any, any, any];
 
+    // Helper to convert BTC/kB -> sats/vB
     const toSatsVB = (btcPerKb: any) => {
         const val = Number(btcPerKb);
         if (isNaN(val) || val < 0) return 1;
@@ -373,7 +471,8 @@ export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: numbe
         slow: toSatsVB(slow),
     };
   } catch (err) {
-    return { fast: 20, normal: 10, slow: 5 };
+    // Fallback defaults if estimation fails
+    return { fast: 10, normal: 5, slow: 2 };
   }
 };
 
