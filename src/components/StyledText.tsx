@@ -1,16 +1,16 @@
 import React from 'react';
-import { Text as DefaultText, TextStyle, StyleSheet, Platform } from 'react-native';
+import { Text as DefaultText, TextStyle, StyleSheet, Platform, StyleProp } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface TextProps extends React.ComponentProps<typeof DefaultText> {
-  style?: TextStyle | TextStyle[];
+  style?: StyleProp<TextStyle>;
 }
 
 export function Text(props: TextProps) {
   const { theme } = useTheme();
   const { style, ...otherProps } = props;
 
-  const flatStyle = StyleSheet.flatten(style || {});
+  const flatStyle = StyleSheet.flatten(style);
   
   const fontWeight = flatStyle?.fontWeight;
   let isBold = false;

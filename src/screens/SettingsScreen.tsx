@@ -357,9 +357,6 @@ const handleReset = () => {
                 <Text style={styles.helperText}>
                   Connect to your own Electrum Server or a public node.
                 </Text>
-                <Text style={[styles.helperText, { color: theme.colors.primary, marginBottom: 8 }]}>
-                  Format: Host:Port:Protocol
-                </Text>
 
                 <StyledInput
                   containerStyle={styles.inputSpacing}
@@ -368,7 +365,7 @@ const handleReset = () => {
                     setCustomNodeUrl(text);
                     if (connectionStatus === 'failed') setConnectionStatus('idle');
                   }}
-                  placeholder="e.g. 192.168.1.50:50001:tcp"
+                  placeholder="Format: Host:Port:Protocol"
                   placeholderTextColor={theme.colors.muted}
                   autoCapitalize="none"
                   autoComplete="off"
@@ -380,7 +377,7 @@ const handleReset = () => {
                 
                 <Text style={[styles.helperText, { fontSize: 11, opacity: 0.7, marginBottom: 16 }]}>
                    Examples:{'\n'}
-                   • 192.168.1.50:50001:tcp (Local){'\n'}
+                   • 192.168.1.50:50001:tcp (local){'\n'}
                    • electrum.blockstream.info:60001:tcp
                 </Text>
 
@@ -463,7 +460,7 @@ const handleReset = () => {
               style={styles.row}
               onPress={() => Linking.openURL('https://github.com/pechen987/Trustless')}
             >
-              <Text style={styles.rowLabel}>Github</Text>
+              <Text style={styles.rowLabel}>GitHub</Text>
               <Feather name="chevron-right" size={24} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
