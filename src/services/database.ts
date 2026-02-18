@@ -1,15 +1,33 @@
 import * as SQLite from 'expo-sqlite';
 import { BitcoinAddress, UTXO, Wallet, DerivedAddress, DerivedAddressInfo, Transaction } from '../types';
 
+// Singleton database instance
 let db: SQLite.SQLiteDatabase | null = null;
 
+/**
+ * INITIALIZATION & SCHEMA DEFINITION
+ * This function creates the relational tables if they don't exist.
+ * * Architecture Note:
+ * We use a relational SQLite setup with Foreign Keys enabled.
+ * - 'wallets' is the parent table.
+ * - 'addresses', 'utxos', and 'transactions' are children.
+ * - ON DELETE CASCADE is used: deleting a wallet automatically wipes its 
+ * addresses, UTXOs, and history, keeping the DB clean.
+ */
 export const initDatabase = async () => {
   db = await SQLite.openDatabaseAsync('trustless_wallet.db');
 
+  // Critical: SQLite does not enforce foreign keys by default. We must enable it.
   await db.execAsync('PRAGMA foreign_keys = ON;');
+  // Write-Ahead Logging (WAL) improves concurrency and performance.
   await db.execAsync('PRAGMA journal_mode = WAL;');
 
   await db.execAsync(`
+    -- TABLE: WALLETS
+    -- The core identity of a wallet.
+    -- 'type': 'standard' (BIP39 mnemonic) or 'watch-only' (xpub/zpub).
+    -- 'scriptType': Determines address format (p2wpkh = bc1q, p2sh-p2wpkh = 3...).
+    -- 'nextUtxoCount': An incrementing integer used to label UTXOs strictly for UI ordering.
     CREATE TABLE IF NOT EXISTS wallets (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT,
@@ -19,13 +37,17 @@ export const initDatabase = async () => {
       network TEXT NOT NULL,
       changeAddressIndex INTEGER DEFAULT 0,
       nextUtxoCount INTEGER DEFAULT 1,
-      mnemonic_enc TEXT 
+      mnemonic_enc TEXT -- Note: We rarely store mnemonic here (usually Keychain), this is a legacy/backup field.
     );
 
+    -- TABLE: ADDRESSES
+    -- Stores all derived addresses (both Receive and Change chains).
+    -- 'chain': 0 = External/Receive, 1 = Internal/Change.
+    -- 'idx': The BIP32 derivation index (e.g., m/84'/0'/0'/0/5 -> idx 5).
     CREATE TABLE IF NOT EXISTS addresses (
       address TEXT PRIMARY KEY NOT NULL,
       wallet_id TEXT NOT NULL,
-      chain INTEGER NOT NULL, -- 0 = Receive, 1 = Change
+      chain INTEGER NOT NULL, 
       idx INTEGER NOT NULL,
       balance INTEGER DEFAULT 0,
       tx_count INTEGER DEFAULT 0,
@@ -33,6 +55,10 @@ export const initDatabase = async () => {
       FOREIGN KEY (wallet_id) REFERENCES wallets (id) ON DELETE CASCADE
     );
 
+    -- TABLE: UTXOS (Unspent Transaction Outputs)
+    -- Represents the actual "money" the wallet owns.
+    -- Composite Primary Key (txid + vout) ensures uniqueness.
+    -- 'status_json': Stores block height/hash as a JSON string to avoid complex join tables.
     CREATE TABLE IF NOT EXISTS utxos (
       txid TEXT NOT NULL,
       vout INTEGER NOT NULL,
@@ -46,6 +72,10 @@ export const initDatabase = async () => {
       FOREIGN KEY (wallet_id) REFERENCES wallets (id) ON DELETE CASCADE
     );
 
+    -- TABLE: TRANSACTIONS
+    -- Stores the full history. 
+    -- 'json_content': We store the full Transaction object as a JSON blob. 
+    -- This is a "NoSQL in SQL" approach, allowing flexible data structure without 20 columns.
     CREATE TABLE IF NOT EXISTS transactions (
       txid TEXT NOT NULL,
       wallet_id TEXT NOT NULL,
@@ -56,6 +86,8 @@ export const initDatabase = async () => {
       FOREIGN KEY (wallet_id) REFERENCES wallets (id) ON DELETE CASCADE
     );
 
+    -- TABLE: ADDRESS BOOK (Saved Addresses)
+    -- Contacts the user manually saves.
     CREATE TABLE IF NOT EXISTS saved_addresses (
       id TEXT PRIMARY KEY NOT NULL,
       address TEXT NOT NULL,
@@ -65,6 +97,9 @@ export const initDatabase = async () => {
       network TEXT NOT NULL
     );
 
+    -- TABLE: TRACKED ADDRESSES (Watchlist)
+    -- Similar to address book, but separated logically for "Watch Only" single addresses
+    -- that don't belong to a full HD wallet.
     CREATE TABLE IF NOT EXISTS tracked_addresses (
       id TEXT PRIMARY KEY NOT NULL,
       address TEXT NOT NULL,
@@ -75,15 +110,23 @@ export const initDatabase = async () => {
     );
   `);
 
+  /**
+   * MIGRATIONS
+   * This block checks for missing columns that might exist if a user updates
+   * from an older version of the app.
+   */
   try {
     const tableInfo = await db.getAllAsync<any>('PRAGMA table_info(wallets)');
     
+    // Migration: Add 'type' for watch-only support
     if (!tableInfo.some(col => col.name === 'type')) {
         await db.execAsync('ALTER TABLE wallets ADD COLUMN type TEXT DEFAULT "standard"');
     }
+    // Migration: Add 'xpub' for watch-only support
     if (!tableInfo.some(col => col.name === 'xpub')) {
         await db.execAsync('ALTER TABLE wallets ADD COLUMN xpub TEXT');
     }
+    // Migration: Add 'scriptType' to support Nested Segwit (3-addresses)
     if (!tableInfo.some(col => col.name === 'scriptType')) {
         await db.execAsync('ALTER TABLE wallets ADD COLUMN scriptType TEXT DEFAULT "p2wpkh"');
     }
@@ -92,6 +135,7 @@ export const initDatabase = async () => {
   }
 };
 
+// Helper: access the DB instance safely
 export const getDB = () => {
   if (!db) {
     throw new Error("Database not initialized");
@@ -99,6 +143,14 @@ export const getDB = () => {
   return db;
 };
 
+// ------------------------------------------------------------------
+// WALLET OPERATIONS
+// ------------------------------------------------------------------
+
+/**
+ * Fetch all wallets for the current network.
+ * We hydrate the basic object; derived addresses are fetched separately for performance.
+ */
 export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(
@@ -114,6 +166,7 @@ export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
     scriptType: row.scriptType || 'p2wpkh',
     changeAddressIndex: row.changeAddressIndex,
     nextUtxoCount: row.nextUtxoCount,
+    // These arrays are populated in memory by the Context, not strictly from this query
     derivedReceiveAddresses: [],
     derivedChangeAddresses: [],
     derivedAddressInfoCache: [],
@@ -121,6 +174,10 @@ export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
   }));
 };
 
+/**
+ * Creates a new wallet entry.
+ * 'scriptType' defaults to 'p2wpkh' (Native SegWit / bc1q) if not specified.
+ */
 export const dbCreateWallet = async (
     id: string, 
     name: string, 
@@ -136,6 +193,8 @@ export const dbCreateWallet = async (
   );
 };
 
+// Deletes a wallet. Because of ON DELETE CASCADE defined in schema, 
+// this single command wipes all related addresses, UTXOs, and transactions.
 export const dbDeleteWallet = async (id: string) => {
   const d = getDB();
   await d.runAsync('DELETE FROM wallets WHERE id = ?', [id]);
@@ -146,11 +205,21 @@ export const dbUpdateWalletName = async (id: string, name: string) => {
   await d.runAsync('UPDATE wallets SET name = ? WHERE id = ?', [name, id]);
 };
 
+// Updates the pointer for the next change address to prevent address reuse.
 export const dbUpdateChangeIndex = async (id: string, index: number) => {
   const d = getDB();
   await d.runAsync('UPDATE wallets SET changeAddressIndex = ? WHERE id = ?', [index, id]);
 };
 
+// ------------------------------------------------------------------
+// ADDRESS OPERATIONS
+// ------------------------------------------------------------------
+
+/**
+ * Saves a derived address (e.g., m/84'/0'/0'/0/5).
+ * We use INSERT OR IGNORE because generating the same address twice is harmless,
+ * but crashing on duplicate key is bad.
+ */
 export const dbSaveAddress = async (walletId: string, addr: { address: string, index: number }, chain: number, network: string) => {
   const d = getDB();
   await d.runAsync(
@@ -159,6 +228,8 @@ export const dbSaveAddress = async (walletId: string, addr: { address: string, i
   );
 };
 
+// Reverse lookup: Given an address, find which wallet owns it.
+// Used during import to prevent duplicate wallets.
 export const dbFindWalletByAddress = async (address: string): Promise<string | null> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(
@@ -177,6 +248,7 @@ export const dbFindWalletByXpub = async (xpub: string): Promise<string | null> =
   return rows.length > 0 ? rows[0].id : null;
 };
 
+// Fetches addresses sorted by derivation index (0, 1, 2...)
 export const dbGetDerivedAddresses = async (walletId: string, chain: number): Promise<DerivedAddress[]> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(
@@ -186,6 +258,7 @@ export const dbGetDerivedAddresses = async (walletId: string, chain: number): Pr
   return rows.map((r: any) => ({ address: r.address, index: r.idx }));
 };
 
+// Fetches the cached balance/tx_count for addresses to display instantly on load.
 export const dbGetAddressCache = async (walletId: string): Promise<DerivedAddressInfo[]> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(
@@ -200,8 +273,10 @@ export const dbGetAddressCache = async (walletId: string): Promise<DerivedAddres
   }));
 };
 
+// Bulk update of address balances after a network sync.
 export const dbUpdateAddressInfoBatch = async (updates: { address: string; balance: number; tx_count: number }[]) => {
   const d = getDB();
+  // Note: For very large batches (1000+), this should be wrapped in a transaction.
   for (const update of updates) {
     await d.runAsync(
       'UPDATE addresses SET balance = ?, tx_count = ? WHERE address = ?',
@@ -209,6 +284,10 @@ export const dbUpdateAddressInfoBatch = async (updates: { address: string; balan
     );
   }
 };
+
+// ------------------------------------------------------------------
+// UTXO OPERATIONS
+// ------------------------------------------------------------------
 
 export const dbGetUtxoLabels = async (walletId: string): Promise<Record<string, string>> => {
   const d = getDB();
@@ -231,17 +310,27 @@ export const dbUpdateUtxoLabel = async (txid: string, vout: number, label: strin
     );
 }
 
+/**
+ * Full UTXO Sync
+ * This is a "Resync" operation:
+ * 1. Fetch user's existing custom labels (so we don't lose them).
+ * 2. Delete ALL existing UTXOs for this wallet.
+ * 3. Insert the fresh UTXO set from the network.
+ * 4. Re-apply labels if the UTXO still exists.
+ */
 export const dbSyncUtxos = async (walletId: string, network: string, utxos: UTXO[], nextUtxoCount: number) => {
   const d = getDB();
   
   const existingLabels = await dbGetUtxoLabels(walletId);
   
+  // Clear old state
   await d.runAsync('DELETE FROM utxos WHERE wallet_id = ?', [walletId]);
 
   for (const u of utxos) {
     const key = `${u.txid}:${u.vout}`;
     let label = existingLabels[key] || null;
     
+    // Auto-labeling: If it's a new UTXO, give it a sequential ID (e.g., "UTXO #5")
     if (!label) {
        label = `UTXO #${nextUtxoCount}`;
        nextUtxoCount++; 
@@ -254,10 +343,15 @@ export const dbSyncUtxos = async (walletId: string, network: string, utxos: UTXO
     );
   }
 
+  // Save the counter so the next UTXO gets the next number
   await d.runAsync('UPDATE wallets SET nextUtxoCount = ? WHERE id = ?', [nextUtxoCount, walletId]);
   
   return nextUtxoCount;
 };
+
+// ------------------------------------------------------------------
+// TRANSACTION HISTORY
+// ------------------------------------------------------------------
 
 export const dbGetTransactions = async (walletId: string): Promise<Transaction[]> => {
   const d = getDB();
@@ -266,12 +360,14 @@ export const dbGetTransactions = async (walletId: string): Promise<Transaction[]
     [walletId]
   );
   
+  // Rehydrate the JSON string back into a Transaction object
   return rows.map(r => JSON.parse(r.json_content));
 };
 
 export const dbSaveTransactions = async (walletId: string, transactions: Transaction[], network: string) => {
   const d = getDB();
   for (const tx of transactions) {
+     // If unconfirmed, place it at the top of the list (future timestamp)
      const blockTime = tx.status.block_time || Date.now() / 1000 + 100000; 
      
      await d.runAsync(
@@ -281,6 +377,10 @@ export const dbSaveTransactions = async (walletId: string, transactions: Transac
      );
   }
 };
+
+// ------------------------------------------------------------------
+// ADDRESS BOOK & WATCHLIST
+// ------------------------------------------------------------------
 
 export const dbGetSavedAddresses = async (network: string, table: 'saved_addresses' | 'tracked_addresses') => {
     const d = getDB();
