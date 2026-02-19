@@ -34,3 +34,11 @@ yarn-error.*
 src/constants/build.json
 android/
 ios/
+
+
+# keystore files
+*.keystore
+
+# build artifacts
+*.apk
+*.idsig
