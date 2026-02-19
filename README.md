@@ -20,7 +20,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/trustlesswallet/trustless.git
+    git clone [https://github.com/trustlesswallet/trustless.git](https://github.com/trustlesswallet/trustless.git)
     cd trustless
     ```
 
@@ -58,26 +58,31 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 > 2. Create and push the new tag: 
 >    `git tag -a 1.0.1 -m "release 1.0.1"`
 >    `git push origin 1.0.1`
-> 3. Generate the unsigned package: 
+> 3. Navigate into the repository directory to ensure all generated files stay in the correct folder:
+>    `cd Trustless`
+> 4. Generate the unsigned package: 
 >    `bash reproducibility.sh`
-> 4. Sign the package using the production keystore: 
->    `apksigner sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v1.0.1-release.apk android/app/build/outputs/apk/release/app-release-unsigned.apk`
-> 5. Generate the official hash: 
+> 5. If the keystore is missing, generate a new one in the current directory:
+>    `keytool -genkey -v -keystore trustless-release.keystore -alias trustless-alias -keyalg RSA -keysize 2048 -validity 10000`
+> 6. Locate the signing tool and sign the package using the keystore: 
+>    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1)`
+>    `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v1.0.1-release.apk android/app/build/outputs/apk/release/app-release-unsigned.apk`
+> 7. Generate the official hash: 
 >    `shasum -a 256 trustless-v1.0.1-release.apk`
-> 6. Create the github release. Upload the signed package and paste the hash into the release notes.
+> 8. Create the github release. Upload the signed package and paste the hash into the release notes.
 
 To verify that the official binary was built exactly from the published source code, follow these steps. This process compares the internal contents of the official signed package against a locally built unsigned package.
 
 1.  **Download the signed release:**
     Download the official signed file from the github releases page into a new testing directory. *(Replace the URL with the specific version you are testing)*.
     ```bash
-    curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/1.0.1/trustless-v1.0.1-release.apk
+    curl -L -o trustless-release.apk [https://github.com/trustlesswallet/trustless/releases/download/1.0.1/trustless-v1.0.1-release.apk](https://github.com/trustlesswallet/trustless/releases/download/1.0.1/trustless-v1.0.1-release.apk)
     ```
 
 2.  **Clone the repository:**
     Clone the source code and check out the exact release tag matching the downloaded file.
     ```bash
-    git clone https://github.com/trustlesswallet/trustless.git
+    git clone [https://github.com/trustlesswallet/trustless.git](https://github.com/trustlesswallet/trustless.git)
     cd trustless
     git checkout 1.0.1
     ```
