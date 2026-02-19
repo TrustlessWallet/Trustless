@@ -1,6 +1,6 @@
 {
   "name": "trustless",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.ts",
   "scripts": {
     "prestart": "node src/scripts/write-version.js",
