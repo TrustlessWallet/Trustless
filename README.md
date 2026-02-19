@@ -20,7 +20,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/trustlesswallet/trustless.git](https://github.com/trustlesswallet/trustless.git)
+    git clone https://github.com/trustlesswallet/trustless.git
     cd trustless
     ```
 
@@ -71,13 +71,13 @@ To verify that the official binary was built exactly from the published source c
 1.  **Download the signed release:**
     Download the official signed file from the github releases page into a new testing directory. *(Replace the URL with the specific version you are testing)*.
     ```bash
-    curl -L -o trustless-release.apk [https://github.com/trustlesswallet/trustless/releases/download/1.0.1/trustless-v1.0.1-release.apk](https://github.com/trustlesswallet/trustless/releases/download/1.0.1/trustless-v1.0.1-release.apk)
+    curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/1.0.1/trustless-v1.0.1-release.apk
     ```
 
 2.  **Clone the repository:**
     Clone the source code and check out the exact release tag matching the downloaded file.
     ```bash
-    git clone [https://github.com/trustlesswallet/trustless.git](https://github.com/trustlesswallet/trustless.git)
+    git clone https://github.com/trustlesswallet/trustless.git
     cd trustless
     git checkout 1.0.1
     ```
