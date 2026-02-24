@@ -79,9 +79,10 @@ To verify that the official binary was built exactly from the published source c
     curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/1.0.1/trustless-v1.0.1-release.apk
     ```
 2. **Verify that hash matches the one listed on Github by running:**
-    ```shasum -a 256 trustless-release.apk```
-
-3.  **Clone the repository:**
+    ```bash
+    shasum -a 256 trustless-release.apk
+    ```
+4.  **Clone the repository:**
     Clone the source code and check out the exact release tag matching the downloaded file.
     ```bash
     git clone https://github.com/trustlesswallet/trustless.git
@@ -89,13 +90,13 @@ To verify that the official binary was built exactly from the published source c
     git checkout 1.0.1
     ```
 
-4.  **Build the local unsigned package:**
+5.  **Build the local unsigned package:**
     Execute the automated build script. This will install dependencies, enforce reproducible file sorting, disable automated signing, and compile the application.
     ```bash
     bash reproducibility.sh
     ```
 
-5.  **Unpack both packages:**
+6.  **Unpack both packages:**
     Android packages are zip archives. Extract both the downloaded signed package and the newly built local package into separate directories for comparison.
     ```bash
     cd ..
@@ -104,7 +105,7 @@ To verify that the official binary was built exactly from the published source c
     unzip -q -o trustless/android/app/build/outputs/apk/release/app-release-unsigned.apk -d unpacked-unsigned
     ```
 
-6.  **Strip metadata and compare:**
+7.  **Strip metadata and compare:**
     Remove the `META-INF` directory from both folders. This directory contains the unique cryptographic developer signature and timestamps that will never match. Compare the remaining raw files.
     ```bash
     rm -rf unpacked-signed/META-INF unpacked-unsigned/META-INF
