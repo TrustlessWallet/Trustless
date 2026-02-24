@@ -408,9 +408,15 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
 
       const histories = await electrumBatchGetHistory(hashes) as any[];
       const txIds = new Set<string>();
+      const heightMap = new Map<string, number>();
       
       histories.forEach((h: any) => {
-          (h.result as any[]).forEach((item: any) => txIds.add(item.tx_hash));
+          (h.result as any[]).forEach((item: any) => {
+              txIds.add(item.tx_hash);
+              if (item.height > 0) {
+                  heightMap.set(item.tx_hash, item.height);
+              }
+          });
       });
 
       const uniqueIds = Array.from(txIds);
@@ -421,7 +427,14 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
       
       for (const batch of batches) {
           const results = await electrumBatchGetTransactions(batch) as any[];
-          results.forEach((r: any) => fullTxs.push(r.result));
+          results.forEach((r: any) => {
+              if (r.result) {
+                  const tx = r.result;
+                  const height = heightMap.get(tx.txid || tx.hash);
+                  if (height) tx.blockheight = height;
+                  fullTxs.push(tx);
+              }
+          });
       }
 
       const hydratedTxs = await hydrateInputDetails(fullTxs);
@@ -482,7 +495,13 @@ export const fetchBalanceDetails = async (addresses: string[]): Promise<{ totalB
 };
 
 export const getTransactionDetails = async (txid: string, walletAddresses: string[]): Promise<Transaction> => {
-    const tx = await electrumGetTransaction(txid);
+    const tx: any = await electrumGetTransaction(txid);
+    
+    if (tx.confirmations && tx.confirmations > 0) {
+        const tipHeight = await getTipHeight();
+        tx.blockheight = tipHeight - tx.confirmations + 1;
+    }
+    
     const [hydrated] = await hydrateInputDetails([tx]);
     return processTransaction(hydrated, new Set(walletAddresses));
 };
