@@ -307,9 +307,9 @@ const hydrateInputDetails = async (txs: any[]) => {
 const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction => {
     let voutTotal = 0;
     let walletVoutTotal = 0;
-    let walletVinTotal = 0; 
+    let walletVinTotal = 0;
+    let vin_total = 0; 
 
-    // Sum up outputs (funds leaving the tx)
     const normalizedVout = tx.vout.map((output: any) => {
         let sats = output.value;
         if (typeof sats === 'number' && sats < 21000000) { 
@@ -332,12 +332,13 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
         };
     });
 
-    // Sum up inputs (funds entering the tx)
     const normalizedVin = tx.vin.map((input: any) => {
         const prevout = input.prevout || { 
             scriptpubkey_address: 'Unknown', 
             value: 0 
         };
+
+        vin_total += prevout.value || 0; 
 
         if (prevout.scriptpubkey_address && walletAddresses.has(prevout.scriptpubkey_address)) {
             walletVinTotal += prevout.value;
@@ -352,17 +353,13 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
     let type: 'send' | 'receive' | 'internal' = 'receive'; 
     let amount = 0;
 
-    // Logic to determine transaction type and net effect on wallet balance
     if (walletVinTotal > 0 && walletVoutTotal === 0) {
-        // We spent funds, received nothing back (e.g. sent to external)
         type = 'send';
         amount = walletVinTotal; 
     } else if (walletVinTotal > walletVoutTotal) {
-        // We spent more than we got back (e.g. sent part, got change)
         type = 'send';
         amount = walletVinTotal - walletVoutTotal; 
     } else {
-        // We received more than we spent (or spent nothing)
         type = 'receive';
         amount = walletVoutTotal - walletVinTotal;
     }
@@ -372,13 +369,15 @@ const processTransaction = (tx: any, walletAddresses: Set<string>): Transaction 
         ? (tx.time || tx.blocktime || 0) 
         : Math.floor(Date.now() / 1000);
 
+    const tx_fee = Math.max(0, vin_total - voutTotal);
+
     return { 
         txid: tx.txid || tx.hash,
         version: tx.version,
         locktime: tx.locktime,
         size: tx.size,
         weight: tx.weight,
-        fee: 0, // Fee calculation requires knowing total input value vs total output
+        fee: tx_fee, 
         vin: normalizedVin,
         vout: normalizedVout,
         status: { 
