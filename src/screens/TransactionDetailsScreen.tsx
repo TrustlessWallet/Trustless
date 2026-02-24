@@ -88,12 +88,16 @@ const TransactionDetailsScreen = () => {
         <Text style={styles.amountText}>
           {isSend ? '-' : '+'} {formatBtc(tx.amount)} <Text style={styles.orangeSymbol}>₿</Text>
         </Text>
-        <Text style={styles.statusText}>{tx.status.confirmed ? 'Confirmed' : 'Pending'}</Text>
       </View>
       <View style={styles.detailsContainer}>
         <DetailRow 
           label="Date" 
           value={tx.status.block_time ? new Date(tx.status.block_time * 1000).toLocaleString() : 'Pending'} 
+          styles={styles} 
+        />
+        <DetailRow 
+          label="Status" 
+          value={tx.status.confirmed ? 'Confirmed' : 'Pending'} 
           styles={styles} 
         />
         <DetailRow 
