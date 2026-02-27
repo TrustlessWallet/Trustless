@@ -9,6 +9,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { 
     validateBitcoinAddress, 
     fetchUTXOs, 
+    broadcastTransaction, 
     fetchFeeEstimates,
     calculateTransactionMetrics,
     calculateVSize,
@@ -26,20 +27,16 @@ type Unit = 'BTC' | 'sats';
 const UTXO_CACHE_PREFIX = '@utxoCache:';
 const UTXO_CACHE_STALE_MS = 240000; 
 
-const select_utxos_for_amount = (utxos: UTXO[], target_amount: number, fee_rate: number) => {
-    const sorted_utxos = [...utxos].sort((a, b) => b.value - a.value); 
+const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number) => {
+    const sortedUtxos = [...utxos].sort((a, b) => b.value - a.value); 
     let selected = [];
-    let total_value = 0;
-    for (const utxo of sorted_utxos) {
+    let totalValue = 0;
+    for (const utxo of sortedUtxos) {
         selected.push(utxo);
-        total_value += utxo.value;
-        const fee = calculateVSize(selected.length, 2) * fee_rate;
-        if (total_value >= target_amount + fee) {
+        totalValue += utxo.value;
+        if (totalValue >= targetAmount) {
             return selected;
         }
-    }
-    if (total_value >= target_amount) {
-        return selected;
     }
     return null;
 };
@@ -49,7 +46,7 @@ const SendScreen = () => {
     const route = useRoute<SendScreenRouteProp>();
     const isFocused = useIsFocused(); 
     
-    const { activeWallet, lastRefreshTime } = useWallet();
+    const { activeWallet, createAndSignTransaction, triggerRefresh, incrementChangeIndex, lastRefreshTime } = useWallet();
     const [recipientAddress, setRecipientAddress] = useState('');
     const [amount, setAmount] = useState('');
     const [unit, setUnit] = useState<Unit>('BTC');
@@ -58,8 +55,9 @@ const SendScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [selectedUtxos, setSelectedUtxos] = useState<UTXO[] | null>(null);
-    const [network_rates, set_network_rates] = useState<{fast: number; normal: number; slow: number} | null>(null);
-    
+    const [feeRate, setFeeRate] = useState<number>(15);
+    const [estimatedFee, setEstimatedFee] = useState<number>(0);
+
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
@@ -71,22 +69,41 @@ const SendScreen = () => {
     }, [route.params?.selectedAddress, navigation]);
 
     useEffect(() => {
-        fetchFeeEstimates().then(set_network_rates).catch(() => {});
+        fetchFeeEstimates().then(estimates => setFeeRate(estimates.normal)).catch(() => setFeeRate(15));
     }, []);
 
+    useEffect(() => {
+        const clean_amount = amount.replace(',', '.');
+        const amount_num = parseFloat(clean_amount);
+        if (isNaN(amount_num) || amount_num <= 0) {
+            setEstimatedFee(0);
+            return;
+        }
+        const amount_satoshis = unit === 'BTC' ? Math.round(amount_num * 100000000) : parseInt(clean_amount, 10);
+        
+        let selected = selectedUtxos;
+        if (!selected || selected.length === 0) {
+            selected = selectUtxosForAmount(utxos, amount_satoshis);
+        }
+        
+        const num_inputs = selected ? selected.length : 1; 
+        const estimated_vsize = calculateVSize(num_inputs, 2);
+        setEstimatedFee(estimated_vsize * feeRate);
+    }, [amount, unit, utxos, selectedUtxos, feeRate]);
+
     const getBalance = React.useCallback(async (bypassCache: boolean = false) => {
-            const info_cache = activeWallet?.derivedAddressInfoCache ?? [];
-            const receive_for_utxos = info_cache.filter(i => i.balance > 0).map(i => i.address);
-            const change_addresses = (activeWallet?.derivedChangeAddresses ?? []).map(a => a.address);
-            const target_addresses = [...new Set([...receive_for_utxos, ...change_addresses])];
-            const cache_key = `${UTXO_CACHE_PREFIX}${activeWallet?.id || 'no-wallet'}`;
+            const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
+            const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
+            const changeAddresses = (activeWallet?.derivedChangeAddresses ?? []).map(a => a.address);
+            const targetAddresses = [...new Set([...receiveForUtxos, ...changeAddresses])];
+            const cacheKey = `${UTXO_CACHE_PREFIX}${activeWallet?.id || 'no-wallet'}`;
             if (!bypassCache) {
                 try {
-                    const cached_str = await AsyncStorage.getItem(cache_key);
-                    if (cached_str) {
-                        const cached = JSON.parse(cached_str) as { utxos: UTXO[]; balance: number; timestamp: number };
-                        const is_fresh = Date.now() - cached.timestamp < UTXO_CACHE_STALE_MS;
-                        if (is_fresh) {
+                    const cachedStr = await AsyncStorage.getItem(cacheKey);
+                    if (cachedStr) {
+                        const cached = JSON.parse(cachedStr) as { utxos: UTXO[]; balance: number; timestamp: number };
+                        const isFresh = Date.now() - cached.timestamp < UTXO_CACHE_STALE_MS;
+                        if (isFresh) {
                             setUtxos(cached.utxos);
                             setBalance(cached.balance);
                             setLoadingBalance(false);
@@ -98,7 +115,7 @@ const SendScreen = () => {
                     }
                 } catch {}
             }
-            if (target_addresses.length === 0) {
+            if (targetAddresses.length === 0) {
                 setLoadingBalance(false);
                 setUtxos([]);
                 setBalance(0);
@@ -106,11 +123,11 @@ const SendScreen = () => {
             }
             try {
                 setLoadingBalance(true);
-                const fetched_utxos = await fetchUTXOs(target_addresses);
-                const available_to_send = fetched_utxos.reduce((sum, u) => sum + u.value, 0);
-                setBalance(available_to_send);
-                setUtxos(fetched_utxos);
-                await AsyncStorage.setItem(cache_key, JSON.stringify({ utxos: fetched_utxos, balance: available_to_send, timestamp: Date.now() }));
+                const fetchedUtxos = await fetchUTXOs(targetAddresses);
+                const availableToSend = fetchedUtxos.reduce((sum, u) => sum + u.value, 0);
+                setBalance(availableToSend);
+                setUtxos(fetchedUtxos);
+                await AsyncStorage.setItem(cacheKey, JSON.stringify({ utxos: fetchedUtxos, balance: availableToSend, timestamp: Date.now() }));
             } catch (e) {
                 console.error('Error fetching balance:', e);
                 Alert.alert('Error', 'Could not fetch wallet balance.');
@@ -129,98 +146,129 @@ const SendScreen = () => {
         }
     }, [lastRefreshTime, activeWallet, getBalance]);
 
-    const handle_confirm_press = async () => {
-        const trimmed_recipient = recipientAddress.trim();
-        if (!validateBitcoinAddress(trimmed_recipient)) {
+    const handleTransaction = async (finalFeeRate: number, utxosToUse: UTXO[]) => {
+        setLoading(true);
+        if (!utxosToUse || utxosToUse.length === 0) {
+            Alert.alert('Error', 'No UTXOs available for the transaction.');
+            setLoading(false);
+            return;
+        }
+        try {
+            const cleanAmount = amount.replace(',', '.');
+            const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
+            
+            const { txHex, usedChangeIndex } = await createAndSignTransaction(recipientAddress.trim(), amountSatoshis, utxosToUse, finalFeeRate);
+            if (!txHex) throw new Error("Failed to sign the transaction.");
+
+            if (usedChangeIndex !== null && activeWallet) {
+              await incrementChangeIndex(activeWallet.id, usedChangeIndex);
+            }
+
+            const txid = await broadcastTransaction(txHex);
+            
+            Alert.alert(
+                'Transaction Sent!',
+                `Your transaction has been broadcasted.`,
+                [{ 
+                    text: 'OK', 
+                    onPress: () => {
+                        triggerRefresh();
+                        navigation.popToTop();
+                    }
+                }]
+            );
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Transaction Error', error instanceof Error ? error.message : 'An unexpected error occurred.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleConfirmPress = async () => {
+        const trimmedRecipient = recipientAddress.trim();
+        if (!validateBitcoinAddress(trimmedRecipient)) {
             Alert.alert('Invalid Address', 'Please enter a valid bitcoin address.');
             return;
         }
-        const clean_amount = amount.replace(',', '.');
-        const amount_num = parseFloat(clean_amount);
-        if (isNaN(amount_num) || amount_num <= 0) {
+        const cleanAmount = amount.replace(',', '.');
+        const amountNum = parseFloat(cleanAmount);
+        if (isNaN(amountNum) || amountNum <= 0) {
             Alert.alert('Invalid Amount', 'Please enter a valid amount.');
             return;
         }
-        const amount_satoshis = unit === 'BTC' ? Math.round(amount_num * 100000000) : parseInt(clean_amount, 10);
+        const amountSatoshis = unit === 'BTC' ? Math.round(amountNum * 100000000) : parseInt(cleanAmount, 10);
         
-        if (amount_satoshis < DUST_THRESHOLD) {
+        if (amountSatoshis < DUST_THRESHOLD) {
             Alert.alert('Amount Too Low', `The amount is too small. Please enter an amount greater than ${DUST_THRESHOLD} sats.`);
+            return;
+        }
+
+        if (amountSatoshis > balance) {
+            Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
             return;
         }
 
         try {
             setLoading(true);
-            let utxos_for_tx: UTXO[];
-            let rate = network_rates?.normal || 15;
-            let estimates = network_rates;
-            
-            if (!estimates) {
-                try {
-                    estimates = await fetchFeeEstimates();
-                    rate = estimates.normal;
-                    set_network_rates(estimates);
-                } catch (e) { console.warn('Failed to fetch fee estimates, using default rate'); }
-            }
+            let utxosForTx: UTXO[];
+            let rate = 15;
+            let estimates: { fast: number; normal: number; slow: number; } | null = null;
+            try {
+                estimates = await fetchFeeEstimates();
+                rate = estimates.normal;
+            } catch (e) { console.warn('Failed to fetch fee estimates, using default rate'); }
             
             if (selectedUtxos && selectedUtxos.length > 0) {
-                utxos_for_tx = selectedUtxos;
+                utxosForTx = selectedUtxos;
             } else {
-                let candidate_utxos: UTXO[] = utxos;
-                if (!candidate_utxos || candidate_utxos.length === 0) {
-                    const info_cache = activeWallet?.derivedAddressInfoCache ?? [];
-                    const receive_for_utxos = info_cache.filter(i => i.balance > 0).map(i => i.address);
-                    const change_addresses = (activeWallet?.derivedChangeAddresses ?? []).map(a => a.address);
-                    const target_addresses = [...new Set([...receive_for_utxos, ...change_addresses])];
-                    if (target_addresses.length === 0) throw new Error('Wallet not ready');
-                    candidate_utxos = await fetchUTXOs(target_addresses);
+                let candidateUtxos: UTXO[] = utxos;
+                if (!candidateUtxos || candidateUtxos.length === 0) {
+                    const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
+                    const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
+                    const changeAddresses = (activeWallet?.derivedChangeAddresses ?? []).map(a => a.address);
+                    const targetAddresses = [...new Set([...receiveForUtxos, ...changeAddresses])];
+                    if (targetAddresses.length === 0) throw new Error('Wallet not ready');
+                    candidateUtxos = await fetchUTXOs(targetAddresses);
                 }
-                const auto_selected = select_utxos_for_amount(candidate_utxos, amount_satoshis, rate);
-                if (!auto_selected) {
-                    Alert.alert('Insufficient Funds', 'You do not have enough funds to cover the amount.');
+                const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis);
+                if (!autoSelected) {
+                    Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
                     setLoading(false);
                     return;
                 }
-                utxos_for_tx = auto_selected;
+                utxosForTx = autoSelected;
             }
 
-            const total_selected_value = utxos_for_tx.reduce((sum, u) => sum + u.value, 0);
+            const totalSelectedValue = utxosForTx.reduce((sum, u) => sum + u.value, 0);
             
-            if (total_selected_value < amount_satoshis) {
-                Alert.alert('Insufficient Funds', 'The selected coins do not cover the amount you wish to send.');
-                setLoading(false);
-                return;
-            }
-            
-            let { vsize, fee, change, numOutputs } = calculateTransactionMetrics(
-                utxos_for_tx.length,
-                amount_satoshis,
-                total_selected_value,
+            const { vsize, fee, change, numOutputs } = calculateTransactionMetrics(
+                utxosForTx.length,
+                amountSatoshis,
+                totalSelectedValue,
                 rate
             );
 
-            if (change < 0) {
-                fee = total_selected_value - amount_satoshis;
-                change = 0;
-                rate = Math.max(1, Math.floor(fee / vsize));
-            }
-
-            const proceed_to_confirm = () => {
-                const fee_options = {
+            const proceedToConfirm = () => {
+                const feeOptions = {
                     fast: estimates?.fast ?? rate * 1.5,
                     normal: estimates?.normal ?? rate,
                     slow: Math.max(1, estimates?.slow ?? rate * 0.8),
                 };
                 setLoading(false);
                 navigation.navigate('TransactionConfirm', {
-                    recipientAddress: trimmed_recipient,
+                    recipientAddress: trimmedRecipient,
                     amount,
                     unit,
+                    onConfirm: (finalFeeRate) => handleTransaction(finalFeeRate, utxosForTx),
+                    loading: false,
                     fee,
                     feeVSize: vsize,
                     selectedRate: rate,
-                    feeOptions: fee_options,
-                    utxos: utxos_for_tx,
-                } as any);
+                    feeOptions,
+                    onSelectFeeOption: (rate, fee) => {},
+                    utxos: utxosForTx,
+                });
             };
 
             if (numOutputs === 1 && change > 0 && change <= DUST_THRESHOLD) {
@@ -234,7 +282,7 @@ const SendScreen = () => {
                             text: 'Continue (Burn)', 
                             onPress: () => {
                                 setLoading(true);
-                                proceed_to_confirm(); 
+                                proceedToConfirm(); 
                             }
                         }
                     ]
@@ -242,7 +290,7 @@ const SendScreen = () => {
                 return;
             }
 
-            proceed_to_confirm();
+            proceedToConfirm();
 
         } catch (err) {
             setLoading(false);
@@ -250,35 +298,32 @@ const SendScreen = () => {
             Alert.alert('Error', err instanceof Error ? err.message : 'Failed to prepare transaction.');
         }
     };
-
-    const handle_open_coin_control = () => {
-        const clean_amount = amount.replace(',', '.');
-        const amount_satoshis = unit === 'BTC' ? Math.round(parseFloat(clean_amount) * 100000000) : parseInt(clean_amount, 10);
+    const handleOpenCoinControl = () => {
+        const cleanAmount = amount.replace(',', '.');
+        const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
         navigation.navigate('CoinControl', {
-            targetAmount: amount_satoshis,
-            onSelect: (selected: UTXO[]) => {
-                setSelectedUtxos(selected);
+            targetAmount: amountSatoshis,
+            onSelect: (utxos: UTXO[]) => {
+                setSelectedUtxos(utxos);
             }
         });
     };
-
-    const handle_scan_press = () => {
+    const handleScanPress = () => {
         navigation.navigate('QRScanner', {
-          onScanSuccess: (scanned_data) => {
-            const address = scanned_data.replace(/^(bitcoin:)/, '');
+          onScanSuccess: (scannedData) => {
+            const address = scannedData.replace(/^(bitcoin:)/, '');
             setRecipientAddress(address);
           },
         });
     };
-
-    const format_balance = (sats: number) => {
+    const formatBalance = (sats: number) => {
         if (unit === 'BTC') {
             return (sats / 100000000).toFixed(8);
         }
         return new Intl.NumberFormat('en-US').format(sats);
     };
-
-    const is_coin_control_active = selectedUtxos && selectedUtxos.length > 0;
+    const isCoinControlActive = selectedUtxos && selectedUtxos.length > 0;
+    
     const clean_amount_check = amount.replace(',', '.');
     const is_amount_entered = !isNaN(parseFloat(clean_amount_check)) && parseFloat(clean_amount_check) > 0;
 
@@ -296,7 +341,7 @@ const SendScreen = () => {
                             <ActivityIndicator color={theme.colors.primary} />
                         ) : (
                             <Text style={styles.balanceText}>
-                                {format_balance(balance)} {unit === 'sats' ? 'sats' : <Text style={styles.orangeSymbol}>₿</Text>}
+                                {formatBalance(balance)} {unit === 'sats' ? 'sats' : <Text style={styles.orangeSymbol}>₿</Text>}
                             </Text>
                         )}
                     </TouchableOpacity>
@@ -321,7 +366,7 @@ const SendScreen = () => {
                             >
                                 <Feather name="book-open" size={20} color={theme.colors.primary} />
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={handle_scan_press} style={styles.iconButton}>
+                            <TouchableOpacity onPress={handleScanPress} style={styles.iconButton}>
                                 <Feather name="camera" size={20} color={theme.colors.primary} />
                             </TouchableOpacity>
                         </View>
@@ -338,7 +383,7 @@ const SendScreen = () => {
                     autoCorrect={false}
                     keyboardType="numeric"
                     keyboardAppearance={isDark ? 'dark' : 'light'}
-                    containerStyle={styles.inputSpacing}
+                    containerStyle={estimatedFee > 0 ? styles.inputSpacingSmall : styles.inputSpacing}
                     rightElement={
                         <View style={styles.unitSelector}>
                             <TouchableOpacity onPress={() => setUnit('BTC')} style={[styles.unitButton, unit === 'BTC' && styles.unitButtonActive]}>
@@ -350,27 +395,23 @@ const SendScreen = () => {
                         </View>
                     }
                 />
-                
-                {is_amount_entered && network_rates && (
-                    <Text style={styles.feeEstimateText}>
-                        Est. network fee: ~{Math.ceil(calculateVSize(1, 2) * network_rates.normal)} sats ({network_rates.normal} s/vB)
-                    </Text>
+                {estimatedFee > 0 && (
+                    <Text style={styles.feeText}>Estimated fee: {estimatedFee} sats ({feeRate} s/vB)</Text>
                 )}
-
                 <View style={styles.coinControlContainer}>
                     <View>
                         <Text style={styles.coinControlLabel}>Coin Control</Text>
-                        <Text style={styles.coinControlSubText}>{is_coin_control_active ? `${selectedUtxos.length} UTXO(s) selected` : 'Automatic selection'}</Text>
+                        <Text style={styles.coinControlSubText}>{isCoinControlActive ? `${selectedUtxos.length} UTXO(s) selected` : 'Automatic selection'}</Text>
                     </View>
                     <TouchableOpacity 
-                        onPress={handle_open_coin_control} 
+                        onPress={handleOpenCoinControl} 
                         style={[styles.coinControlButton, !is_amount_entered && styles.buttonDisabled]}
                         disabled={!is_amount_entered}
                     >
-                        <Text style={styles.coinControlButtonText}>{is_coin_control_active ? 'Change' : 'Select'}</Text>
+                        <Text style={styles.coinControlButtonText}>{isCoinControlActive ? 'Change' : 'Select'}</Text>
                     </TouchableOpacity>
                 </View>
-                <TouchableOpacity onPress={handle_confirm_press} style={[styles.sendButton, loading && styles.buttonDisabled]} disabled={loading}>
+                <TouchableOpacity onPress={handleConfirmPress} style={[styles.sendButton, loading && styles.buttonDisabled]} disabled={loading}>
                     {loading ? <ActivityIndicator color={theme.colors.inversePrimary} /> : (
                         <View style={styles.buttonContentRowCentered}>
                             <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
@@ -383,30 +424,127 @@ const SendScreen = () => {
     );
 };
 const getStyles = (theme: Theme) => StyleSheet.create({
-    container: { flex: 1, backgroundColor: theme.colors.background },
-    scrollContent: { padding: 24, flexGrow: 1 },
-    balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
-    balanceLabel: { fontSize: 16, color: theme.colors.muted },
-    balanceText: { fontSize: 32, fontWeight: 'bold', color: theme.colors.primary, padding: 8 },
-    label: { fontSize: 16, fontWeight: '500', marginBottom: 8, color: theme.colors.primary },
-    row: { flexDirection: 'row', alignItems: 'center' },
-    inputSpacing: { marginBottom: 16 },
-    iconButton: { padding: 10 },
-    unitSelector: { flexDirection: 'row', backgroundColor: theme.colors.border, borderRadius: 6, marginRight: 8, padding: 2 },
-    unitButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
-    unitButtonActive: { backgroundColor: theme.colors.primary },
-    unitText: { fontWeight: '600', color: theme.colors.muted },
-    unitTextActive: { color: theme.colors.inversePrimary },
-    feeEstimateText: { fontSize: 12, color: theme.colors.muted, marginTop: -8, marginBottom: 16 },
-    coinControlContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: theme.colors.surface, borderRadius: 8, marginBottom: 24 },
-    coinControlLabel: { fontSize: 16, fontWeight: 'bold', color: theme.colors.primary },
-    coinControlSubText: { fontSize: 14, color: theme.colors.muted, marginTop: 2 },
-    coinControlButton: { backgroundColor: theme.colors.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6 },
-    coinControlButtonText: { color: theme.colors.inversePrimary, fontWeight: '600' },
-    sendButton: { backgroundColor: theme.colors.primary, paddingVertical: 16, borderRadius: 8, alignItems: 'center' },
-    buttonDisabled: { opacity: 0.5 },
-    sendButtonText: { color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '600' },
-    buttonContentRowCentered: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-    orangeSymbol: { color: theme.colors.bitcoin },
+    container: { 
+        flex: 1, 
+        backgroundColor: theme.colors.background
+    },
+    scrollContent: { 
+        padding: 24, 
+        flexGrow: 1 
+    },
+    balanceContainer: { 
+        alignItems: 'center', 
+        marginBottom: 24, 
+        paddingVertical: 8 
+    },
+    balanceLabel: { 
+        fontSize: 16, 
+        color: theme.colors.muted
+    },
+    balanceText: { 
+        fontSize: 32, 
+        fontWeight: 'bold', 
+        color: theme.colors.primary,
+        padding: 8 
+    },
+    label: { 
+        fontSize: 16, 
+        fontWeight: '500', 
+        marginBottom: 8, 
+        color: theme.colors.primary
+    },
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    inputSpacing: {
+        marginBottom: 16,
+    },
+    inputSpacingSmall: {
+        marginBottom: 4,
+    },
+    feeText: {
+        fontSize: 14,
+        color: theme.colors.muted,
+        marginBottom: 16,
+        paddingLeft: 4,
+    },
+    iconButton: { 
+        padding: 10,
+    },
+    unitSelector: { 
+        flexDirection: 'row', 
+        backgroundColor: theme.colors.border,
+        borderRadius: 6, 
+        marginRight: 8, 
+        padding: 2 
+    },
+    unitButton: { 
+        paddingVertical: 6, 
+        paddingHorizontal: 12, 
+        borderRadius: 5 
+    },
+    unitButtonActive: { 
+        backgroundColor: theme.colors.primary
+    },
+    unitText: { 
+        fontWeight: '600', 
+        color: theme.colors.muted
+    },
+    unitTextActive: { 
+        color: theme.colors.inversePrimary
+    },
+    coinControlContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 8,
+        marginBottom: 24,
+    },
+    coinControlLabel: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: theme.colors.primary,
+    },
+    coinControlSubText: {
+        fontSize: 14,
+        color: theme.colors.muted,
+        marginTop: 2,
+    },
+    coinControlButton: {
+        backgroundColor: theme.colors.primary,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 6,
+    },
+    coinControlButtonText: {
+        color: theme.colors.inversePrimary,
+        fontWeight: '600',
+    },
+    sendButton: { 
+        backgroundColor: theme.colors.primary,
+        paddingVertical: 16, 
+        borderRadius: 8, 
+        alignItems: 'center' 
+    },
+    buttonDisabled: { 
+        opacity: 0.5,
+    },
+    sendButtonText: { 
+        color: theme.colors.inversePrimary,
+        fontSize: 16, 
+        fontWeight: '600' 
+    },
+    buttonContentRowCentered: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        gap: 8 
+    },
+    orangeSymbol: {
+        color: theme.colors.bitcoin,
+    },
 });
 export default SendScreen;
