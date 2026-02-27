@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, ScrollView, Alert } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useRoute, RouteProp } from '@react-navigation/native';
@@ -59,8 +59,8 @@ const TransactionConfirmModal = () => {
     const isDust = estimatedChange > 0 && estimatedChange <= DUST_LIMIT;
 
     useEffect(() => {
-        const isHighFee = feePercentage > 25 && amountInSatoshis > 0;
-        setShowHighFeeWarning(isHighFee);
+        const is_high_fee = feePercentage > 10 && amountInSatoshis > 0;
+        setShowHighFeeWarning(is_high_fee);
     }, [feePercentage, amountInSatoshis]);
 
     const handleFeeSelection = (key: 'slow' | 'normal' | 'fast' | 'custom', rate: number) => {
@@ -104,6 +104,21 @@ const TransactionConfirmModal = () => {
             return { address, value: val, pathSuffix };
         });
     }, [utxos, activeWallet]);
+
+    const handle_sign_and_send = () => {
+        if (feePercentage > 10 && amountInSatoshis > 0) {
+            Alert.alert(
+                'High fee warning',
+                'You are about to pay a very high fee. Please reconsider and wait for better network fees.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Send anyway', onPress: () => onConfirm(currentRate) }
+                ]
+            );
+        } else {
+            onConfirm(currentRate);
+        }
+    };
 
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
@@ -210,7 +225,7 @@ const TransactionConfirmModal = () => {
             </View>
             <TouchableOpacity 
                 style={[styles.confirmButton, loading && styles.buttonDisabled]} 
-                onPress={() => onConfirm(currentRate)} 
+                onPress={handle_sign_and_send} 
                 disabled={loading}
             >
                 {loading ? (
