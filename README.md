@@ -129,7 +129,8 @@ We welcome contributions to trustless! Please follow the standard fork-and-pull 
 
 ### Guidelines
 
-* **Code Style:** Keep code clean and consistent.
+* **Minimal PRs:** One feature/fix - one PR please.
+* **Code style:** Keep code clean and consistent.
 * **Testing:** Ensure the app builds and runs via `npm run ios` or `npm run android` before submitting.
 * **Issues:** Open an issue to discuss major changes before starting work.
 
