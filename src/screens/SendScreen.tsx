@@ -247,7 +247,6 @@ const SendScreen = () => {
                 });
             };
 
-            // Dust Warning (Option A)
             if (numOutputs === 1 && change > 0 && change <= DUST_THRESHOLD) {
                 setLoading(false);
                 Alert.alert(
@@ -300,7 +299,10 @@ const SendScreen = () => {
         return new Intl.NumberFormat('en-US').format(sats);
     };
     const isCoinControlActive = selectedUtxos && selectedUtxos.length > 0;
-    const isAmountEntered = !isNaN(parseFloat(amount)) && parseFloat(amount) > 0;
+    
+    const clean_amount_check = amount.replace(',', '.');
+    const is_amount_entered = !isNaN(parseFloat(clean_amount_check)) && parseFloat(clean_amount_check) > 0;
+
     return (
         <KeyboardAvoidingView 
             behavior={Platform.OS === "ios" ? "padding" : "height"} 
@@ -376,8 +378,8 @@ const SendScreen = () => {
                     </View>
                     <TouchableOpacity 
                         onPress={handleOpenCoinControl} 
-                        style={[styles.coinControlButton, !isAmountEntered && styles.buttonDisabled]}
-                        disabled={!isAmountEntered}
+                        style={[styles.coinControlButton, !is_amount_entered && styles.buttonDisabled]}
+                        disabled={!is_amount_entered}
                     >
                         <Text style={styles.coinControlButtonText}>{isCoinControlActive ? 'Change' : 'Select'}</Text>
                     </TouchableOpacity>
