@@ -12,7 +12,6 @@ import {
     broadcastTransaction, 
     fetchFeeEstimates,
     calculateTransactionMetrics,
-    calculateVSize,
     DUST_THRESHOLD 
 } from '../services/bitcoin';
 import { Feather } from '@expo/vector-icons';
@@ -27,15 +26,14 @@ type Unit = 'BTC' | 'sats';
 const UTXO_CACHE_PREFIX = '@utxoCache:';
 const UTXO_CACHE_STALE_MS = 240000; 
 
-const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number, feeRate: number) => {
+const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number) => {
     const sortedUtxos = [...utxos].sort((a, b) => b.value - a.value); 
     let selected = [];
     let totalValue = 0;
     for (const utxo of sortedUtxos) {
         selected.push(utxo);
         totalValue += utxo.value;
-        const fee = calculateVSize(selected.length, 2) * feeRate;
-        if (totalValue >= targetAmount + fee) {
+        if (totalValue >= targetAmount) {
             return selected;
         }
     }
@@ -56,6 +54,7 @@ const SendScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [selectedUtxos, setSelectedUtxos] = useState<UTXO[] | null>(null);
+
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
@@ -179,6 +178,11 @@ const SendScreen = () => {
             return;
         }
 
+        if (amountSatoshis > balance) {
+            Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
+            return;
+        }
+
         try {
             setLoading(true);
             let utxosForTx: UTXO[];
@@ -201,9 +205,9 @@ const SendScreen = () => {
                     if (targetAddresses.length === 0) throw new Error('Wallet not ready');
                     candidateUtxos = await fetchUTXOs(targetAddresses);
                 }
-                const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis, rate);
+                const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis);
                 if (!autoSelected) {
-                    Alert.alert('Insufficient Funds', 'You do not have enough funds to cover the amount and network fee.');
+                    Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
                     setLoading(false);
                     return;
                 }
@@ -218,12 +222,6 @@ const SendScreen = () => {
                 totalSelectedValue,
                 rate
             );
-
-            if (change < 0) {
-                Alert.alert('Insufficient Funds', 'The selected coins do not cover the amount and estimated fee. Please select more coins.');
-                setLoading(false);
-                return;
-            }
 
             const proceedToConfirm = () => {
                 const feeOptions = {
@@ -274,6 +272,7 @@ const SendScreen = () => {
             Alert.alert('Error', err instanceof Error ? err.message : 'Failed to prepare transaction.');
         }
     };
+
     const handleOpenCoinControl = () => {
         const cleanAmount = amount.replace(',', '.');
         const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
@@ -284,6 +283,7 @@ const SendScreen = () => {
             }
         });
     };
+
     const handleScanPress = () => {
         navigation.navigate('QRScanner', {
           onScanSuccess: (scannedData) => {
@@ -292,12 +292,14 @@ const SendScreen = () => {
           },
         });
     };
+
     const formatBalance = (sats: number) => {
         if (unit === 'BTC') {
             return (sats / 100000000).toFixed(8);
         }
         return new Intl.NumberFormat('en-US').format(sats);
     };
+
     const isCoinControlActive = selectedUtxos && selectedUtxos.length > 0;
     
     const clean_amount_check = amount.replace(',', '.');
@@ -371,6 +373,7 @@ const SendScreen = () => {
                         </View>
                     }
                 />
+
                 <View style={styles.coinControlContainer}>
                     <View>
                         <Text style={styles.coinControlLabel}>Coin Control</Text>
@@ -396,6 +399,7 @@ const SendScreen = () => {
         </KeyboardAvoidingView>
     );
 };
+
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: { 
         flex: 1, 
@@ -511,4 +515,5 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.bitcoin,
     },
 });
+
 export default SendScreen;
