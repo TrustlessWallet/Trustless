@@ -27,15 +27,14 @@ type Unit = 'BTC' | 'sats';
 const UTXO_CACHE_PREFIX = '@utxoCache:';
 const UTXO_CACHE_STALE_MS = 240000; 
 
-const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number, feeRate: number) => {
+const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number) => {
     const sortedUtxos = [...utxos].sort((a, b) => b.value - a.value); 
     let selected = [];
     let totalValue = 0;
     for (const utxo of sortedUtxos) {
         selected.push(utxo);
         totalValue += utxo.value;
-        const fee = calculateVSize(selected.length, 2) * feeRate;
-        if (totalValue >= targetAmount + fee) {
+        if (totalValue >= targetAmount) {
             return selected;
         }
     }
@@ -56,6 +55,9 @@ const SendScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [selectedUtxos, setSelectedUtxos] = useState<UTXO[] | null>(null);
+    const [feeRate, setFeeRate] = useState<number>(15);
+    const [estimatedFee, setEstimatedFee] = useState<number>(0);
+
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
@@ -65,6 +67,29 @@ const SendScreen = () => {
             navigation.setParams({ selectedAddress: undefined });
         }
     }, [route.params?.selectedAddress, navigation]);
+
+    useEffect(() => {
+        fetchFeeEstimates().then(estimates => setFeeRate(estimates.normal)).catch(() => setFeeRate(15));
+    }, []);
+
+    useEffect(() => {
+        const clean_amount = amount.replace(',', '.');
+        const amount_num = parseFloat(clean_amount);
+        if (isNaN(amount_num) || amount_num <= 0) {
+            setEstimatedFee(0);
+            return;
+        }
+        const amount_satoshis = unit === 'BTC' ? Math.round(amount_num * 100000000) : parseInt(clean_amount, 10);
+        
+        let selected = selectedUtxos;
+        if (!selected || selected.length === 0) {
+            selected = selectUtxosForAmount(utxos, amount_satoshis);
+        }
+        
+        const num_inputs = selected ? selected.length : 1; 
+        const estimated_vsize = calculateVSize(num_inputs, 2);
+        setEstimatedFee(estimated_vsize * feeRate);
+    }, [amount, unit, utxos, selectedUtxos, feeRate]);
 
     const getBalance = React.useCallback(async (bypassCache: boolean = false) => {
             const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
@@ -179,6 +204,11 @@ const SendScreen = () => {
             return;
         }
 
+        if (amountSatoshis > balance) {
+            Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
+            return;
+        }
+
         try {
             setLoading(true);
             let utxosForTx: UTXO[];
@@ -201,9 +231,9 @@ const SendScreen = () => {
                     if (targetAddresses.length === 0) throw new Error('Wallet not ready');
                     candidateUtxos = await fetchUTXOs(targetAddresses);
                 }
-                const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis, rate);
+                const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis);
                 if (!autoSelected) {
-                    Alert.alert('Insufficient Funds', 'You do not have enough funds to cover the amount and network fee.');
+                    Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
                     setLoading(false);
                     return;
                 }
@@ -218,12 +248,6 @@ const SendScreen = () => {
                 totalSelectedValue,
                 rate
             );
-
-            if (change < 0) {
-                Alert.alert('Insufficient Funds', 'The selected coins do not cover the amount and estimated fee. Please select more coins.');
-                setLoading(false);
-                return;
-            }
 
             const proceedToConfirm = () => {
                 const feeOptions = {
@@ -359,7 +383,7 @@ const SendScreen = () => {
                     autoCorrect={false}
                     keyboardType="numeric"
                     keyboardAppearance={isDark ? 'dark' : 'light'}
-                    containerStyle={styles.inputSpacing}
+                    containerStyle={estimatedFee > 0 ? styles.inputSpacingSmall : styles.inputSpacing}
                     rightElement={
                         <View style={styles.unitSelector}>
                             <TouchableOpacity onPress={() => setUnit('BTC')} style={[styles.unitButton, unit === 'BTC' && styles.unitButtonActive]}>
@@ -371,6 +395,9 @@ const SendScreen = () => {
                         </View>
                     }
                 />
+                {estimatedFee > 0 && (
+                    <Text style={styles.feeText}>Estimated fee: {estimatedFee} sats ({feeRate} s/vB)</Text>
+                )}
                 <View style={styles.coinControlContainer}>
                     <View>
                         <Text style={styles.coinControlLabel}>Coin Control</Text>
@@ -432,6 +459,15 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     inputSpacing: {
         marginBottom: 16,
+    },
+    inputSpacingSmall: {
+        marginBottom: 4,
+    },
+    feeText: {
+        fontSize: 14,
+        color: theme.colors.muted,
+        marginBottom: 16,
+        paddingLeft: 4,
     },
     iconButton: { 
         padding: 10,
