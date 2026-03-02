@@ -8,9 +8,10 @@ Trustless is a fully open-source, non-custodial, privacy-focused, bitcoin-only m
 * **Bitcoin wallet:** Import or create new wallets, track balances, send and receive bitcoin.
 * **Address tracker:** Track any bitcoin address balance just by entering it. No private keys required.
 * **Receive address change:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together. <img width="1920" height="1080" alt="Receive" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
+* **BIP44 change address management:**  To protect user's privacy even more, all change addresses are derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC. <img width="1920" height="1080" alt="Change (1)" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 * **Coin control:** Choose which UTXOs to use for a transaction.
-* **BIP44 change address management:** Following best privacy practices, all change addresses are being derived from 1/n chain and are only used once. You can see all your change by clicking on your total wallet balance.
+
 * **Custom node connection:** Connect to your own node via electrum.
 * **Network switch:** Use testnet network for transaction testing / development.
 
