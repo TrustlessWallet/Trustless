@@ -76,7 +76,7 @@ To verify that the official binary was built exactly from the published source c
 1.  **Download the signed release:**
     Download the official signed file from the github releases page into a new testing directory. *(Replace the URL with the specific version you are testing)*.
     ```bash
-    curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/1.0.1/trustless-v1.0.1-release.apk
+    curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/1.0.2/trustless-v1.0.2-release.apk
     ```
 2. **Verify that hash matches the one listed on Github by running:**
     ```bash
@@ -87,7 +87,7 @@ To verify that the official binary was built exactly from the published source c
     ```bash
     git clone https://github.com/trustlesswallet/trustless.git
     cd trustless
-    git checkout 1.0.1
+    git checkout 1.0.2
     ```
 
 5.  **Build the local unsigned package:**
