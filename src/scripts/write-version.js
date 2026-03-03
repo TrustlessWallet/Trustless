@@ -14,8 +14,10 @@ try {
   let commitHash = execSync('git rev-parse --short HEAD').toString().trim();
   
   // 2. DIRTY CHECK: Check for uncommitted changes
+  const isEasBuild = process.env.EAS_BUILD === 'true';
   const status = execSync('git status --porcelain').toString().trim();
-  if (status) {
+  
+  if (status && !isEasBuild) {
     commitHash += '-dirty';
     console.warn('⚠️  WARNING: You are building with uncommitted changes! This will break reproducibility.');
   }
