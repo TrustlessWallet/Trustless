@@ -3,7 +3,7 @@
   "version": "1.0.2",
   "main": "index.ts",
   "scripts": {
-    "eas-build-pre-build": "node src/scripts/write-version.js",
+    "eas-build-post-install": "node src/scripts/write-version.js",
     "prestart": "node src/scripts/write-version.js",
     "preios": "node src/scripts/write-version.js",
     "preandroid": "node src/scripts/write-version.js",
