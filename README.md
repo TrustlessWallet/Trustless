@@ -5,13 +5,21 @@ Hi!
 Trustless is a fully open-source, non-custodial, privacy-focused, bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
 
 ## Main features
-* **Bitcoin wallet:** Import or create new wallets, track balances, send and receive bitcoin.
-* **Address tracker:** Track any bitcoin address balance just by entering it. No private keys required.
-* **Receive address change:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together. <img width="1920" height="1080" alt="Receive" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
-* **BIP44 change address management:**  To protect user's privacy even more, all change addresses are derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC. <img width="1920" height="1080" alt="Change (1)" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
+* **Bitcoin wallet:** Import or create new wallets, track balances, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets.
+
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/c4b1f8de-e08a-4336-a5ff-8139ed797a80" />
+* **Receive address change:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
+
+  <img width="1080" alt="Receive" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
+* **BIP44 change address management:**  To protect user's privacy even more, all change addresses are derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC.
+
+  <img width="1080" alt="Change (1)" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
+
+  <img width="250" alt="Balance details" src="https://github.com/user-attachments/assets/750c5fa2-805a-4e63-8624-2553446a4fa7" />
 * **Coin control:** Choose which UTXOs to use for a transaction.
 
+  <img width="250" alt="Coin control" src="https://github.com/user-attachments/assets/60111ad7-f238-4bb7-b28f-eb61288d7a22" />
 * **Custom node connection:** Connect to your own node via electrum.
 * **Network switch:** Use testnet network for transaction testing / development.
 
