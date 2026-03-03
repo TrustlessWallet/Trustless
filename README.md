@@ -1,6 +1,16 @@
 ## Intro
 Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
 
+## Table of Contents
+* [Intro](#intro)
+* [Main features](#main-features)
+* [Getting started (development)](#getting-started-development)
+* [Reproducible build instructions](#reproducible-build-instructions)
+* [Contributing](#contributing)
+  * [Contribution process](#contribution-process)
+  * [Guidelines](#guidelines)
+* [License](#license)
+
 ## Main features
 * **Bitcoin wallet:** Import or create new wallets, track balances, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets.
 
@@ -30,7 +40,7 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
   <img width="800" alt="Change" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
 
 
-## Getting started (Development)
+## Getting started (development)
 
 To run the project in development mode, you need node-js and a setup for ios (xcode) or android (android studio).
 
