@@ -7,8 +7,6 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 * [Getting started (development)](#getting-started-development)
 * [Reproducible build instructions](#reproducible-build-instructions)
 * [Contributing](#contributing)
-  * [Contribution process](#contribution-process)
-  * [Guidelines](#guidelines)
 * [License](#license)
 
 ## Main features
