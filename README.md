@@ -57,8 +57,8 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 > **Maintainer release checklist:**
 > 1. Ensure the working tree is completely clean to avoid the dirty flag.
 > 2. Create and push the new tag: 
->    `git tag -a 1.0.1 -m "release 1.0.1"`
->    `git push origin 1.0.1`
+>    `git tag -a 1.0.2 -m "release 1.0.2"`
+>    `git push origin 1.0.2`
 > 3. Navigate into the repository directory to ensure all generated files stay in the correct folder:
 >    `cd Trustless`
 > 4. Generate the unsigned package: 
@@ -68,7 +68,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 > 6. Locate the signing tool and sign the package using the keystore: 
 >    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1); $apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out  trustless-v1.0.2-release.apk trustless/android/app/build/outputs/apk/release/app-release-unsigned.apk`
 > 8. Generate the official hash: 
->    `shasum -a 256 trustless-v1.0.1-release.apk`
+>    `shasum -a 256 trustless-v1.0.2-release.apk`
 > 9. Create the github release. Upload the signed package and paste the hash into the release notes.
 
 To verify that the official binary was built exactly from the published source code, follow these steps. This process compares the internal contents of the official signed package against a locally built unsigned package.
