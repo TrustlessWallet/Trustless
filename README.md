@@ -8,20 +8,30 @@ Trustless is a fully open-source, non-custodial, privacy-focused, bitcoin-only m
 * **Bitcoin wallet:** Import or create new wallets, track balances, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets.
 
   <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/c4b1f8de-e08a-4336-a5ff-8139ed797a80" />
-* **Receive address change:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/2fb1f615-290c-4f97-8573-8e0e1633f301" />
 
-  <img width="1080" alt="Receive" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
-* **BIP44 change address management:**  To protect user's privacy even more, all change addresses are derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC.
-
-  <img width="1080" alt="Change (1)" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 
   <img width="250" alt="Balance details" src="https://github.com/user-attachments/assets/750c5fa2-805a-4e63-8624-2553446a4fa7" />
+  <img width="250" alt="Balance details" src="https://github.com/user-attachments/assets/81bb9375-4e1a-42cb-a64e-398be5574015" />
+
 * **Coin control:** Choose which UTXOs to use for a transaction.
 
   <img width="250" alt="Coin control" src="https://github.com/user-attachments/assets/60111ad7-f238-4bb7-b28f-eb61288d7a22" />
-* **Custom node connection:** Connect to your own node via electrum.
-* **Network switch:** Use testnet network for transaction testing / development.
+  <img width="250" alt="Coin control" src="https://github.com/user-attachments/assets/68b149fc-02f1-410e-a9ce-be3d30e0f3af" />
+
+* **Custom node and network:** Connect to your own node via Electrum and use testnet network for transaction testing / development.
+
+  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/199ceec6-9f0c-4332-bdac-213736bfc0da" />
+  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/b4c09a63-ef1f-41e2-9d52-a20b82633e3b" />
+
+* **Receive address change:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
+
+  <img width="800" alt="Receive" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
+* **BIP44 change address management:**  To protect user's privacy even more, all change addresses are derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC.
+
+  <img width="800" alt="Change" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
+
 
 ## Getting Started (Development)
 
