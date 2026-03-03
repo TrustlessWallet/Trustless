@@ -1,5 +1,3 @@
-# Trustless
-
 ## Intro
 Hi!
 Trustless is a fully open-source, non-custodial, privacy-focused, bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
