@@ -1,6 +1,5 @@
 ## Intro
-Hi!
-Trustless is a fully open-source, non-custodial, privacy-focused, bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
+Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
 
 ## Main features
 * **Bitcoin wallet:** Import or create new wallets, track balances, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets.
@@ -23,15 +22,15 @@ Trustless is a fully open-source, non-custodial, privacy-focused, bitcoin-only m
   <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/199ceec6-9f0c-4332-bdac-213736bfc0da" />
   <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/b4c09a63-ef1f-41e2-9d52-a20b82633e3b" />
 
-* **Receive address change:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
+* **Receive address switching:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
 
   <img width="800" alt="Receive" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
-* **BIP44 change address management:**  To protect user's privacy even more, all change addresses are derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC.
+* **Change address management:**  To protect user's privacy even more, all change addresses are automatically derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC.
 
   <img width="800" alt="Change" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
 
 
-## Getting Started (Development)
+## Getting started (Development)
 
 To run the project in development mode, you need node-js and a setup for ios (xcode) or android (android studio).
 
@@ -46,7 +45,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
     npm install
     ```
 
-3.  **Run on Device / Simulator:**
+3.  **Run on device / simulator:**
 
     * **ios (mac only):**
         ```bash
@@ -60,7 +59,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
         ```
         *Make sure you have an android emulator running or a physical device connected.*
 
-    * **Manual Build (Advanced):**
+    * **Manual build (advanced):**
         If the automated commands fail, you can generate the native directories and build manually:
         ```bash
         npx expo prebuild --clean
@@ -68,7 +67,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
         ```
         Then open a trustless workspace file in your ios folder to open the project in xcode. From there you can install the app manually.
 
-## Reproducible Build Instructions
+## Reproducible build instructions
 
 > **Maintainer release checklist:**
 > 1. Ensure the working tree is completely clean to avoid the dirty flag.
@@ -134,7 +133,7 @@ To verify that the official binary was built exactly from the published source c
 
 We welcome contributions to trustless! Please follow the standard fork-and-pull request workflow.
 
-### Contribution Process
+### Contribution process
 
 1.  **Fork the repository** to your own github account.
 2.  **Clone your fork** to your local machine.
