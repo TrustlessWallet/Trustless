@@ -217,6 +217,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     walletNameInput: {
         fontSize: 16,
         color: theme.colors.primary,
+        fontFamily: 'SpaceMono-Regular',
     },
     actionsContainer: {
         flexDirection: 'row',
