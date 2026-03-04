@@ -53,7 +53,6 @@
     "react-native-svg": "15.11.2",
     "react-native-tcp-socket": "^6.4.1",
     "react-native-url-polyfill": "^2.0.0",
-    "react-native-video": "^6.17.0",
     "readable-stream": "^4.7.0",
     "rn-electrum-client": "^0.0.22",
     "stream-browserify": "^3.0.0",

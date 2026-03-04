@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, SafeAreaView, FlatList, Dimensions, Image, Linking, Clipboard } from 'react-native';
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { View, StyleSheet, TouchableOpacity, SafeAreaView, FlatList, Dimensions, Image, Linking } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Video, { VideoRef } from 'react-native-video';
-import QRCode from 'react-native-qrcode-svg';
-import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
@@ -19,119 +16,69 @@ const slides = [
     key: '1',
     headline: 'Create your wallet',
     body: 'Generate non-custodial wallet in seconds. Your keys, your Bitcoin.',
-    video: require('../../assets/CreateWalletOnboardingFinal.mov'),
-    type: 'video',
+    image: require('../../assets/Wallet onboarding.png'),
   },
   {
     key: '2',
     headline: 'Manage multiple wallets',
     body: 'Create, import, and switch between several wallets.',
-    video: require('../../assets/ManageMultipleWalletsOnboardingFinal.mov'),
-    type: 'video',
+    image: require('../../assets/Wallets onboarding.png'),
   },
   {
     key: '3',
-    headline: 'Address rotation',
+    headline: 'Rotate addresses',
     body: 'Have 20 unused addresses at all times. Privacy above all else.',
-    video: require('../../assets/ChangeReceiveAddressOnboardingFinal.mov'),
-    type: 'video',
+    image: require('../../assets/Receive onboarding.png'),
   },
    {
     key: '4',
-    headline: 'Coin control',
+    headline: 'Control your coins',
     body: 'Manually select which UTXOs to spend. You are in charge.',
-    video: require('../../assets/CoinControlOnboardingFinal.mov'),
-    type: 'video',
+    image: require('../../assets/Coin control onboarding.png'),
   },
   {
     key: '5',
-    headline: 'Connect your node',
-    body: 'Connect to your own Electrum node for maximum privacy.',
-    video: require('../../assets/CustomNodeOnboardingFinal.mov'),
-    type: 'video',
+    headline: 'Send Bitcoin',
+    body: 'Adjust fees and review all details before broadcasting.',
+    image: require('../../assets/Transaction onboarding.png'),
   },
   {
     key: '6',
-    headline: 'Switch networks',
-    body: 'Toggle between Mainnet and Testnet for development or testing.',
-    video: require('../../assets/NetworkSwitcherOnboardingFinal.mov'),
-    type: 'video',
+    headline: 'Connect your node',
+    body: 'Connect to your own Electrum node for maximum privacy.',
+    image: require('../../assets/Node onboarding.png'),
   },
   {
     key: '7',
-    headline: 'Fully open source',
-    body: 'Trustless is built for transparency. ',
-    linkText: 'Audit the code yourself.',
+    headline: "Don't trust, verify",
+    body: 'Trustless is fully open source.\n',
+    link_text: 'Audit the code yourself.',
     link: REPO_URL,
-    type: 'qr',
+    image: require('../../assets/Open source onboarding.png'),
   },
 ];
 
-const SlideItem = React.memo(({ item, index, currentIndex, isScreenFocused, theme, isDark, styles, handleLinkPress, handleCopyLink, copied, videoRef }: any) => {
-
-  const shouldRenderVideo = Math.abs(currentIndex - index) <= 1;
-
+const SlideItem = React.memo(({ item, styles, handle_link_press }: any) => {
   return (
     <View style={styles.slide}>
-      <View style={styles.phoneContainer}>
-        <View style={[
-            styles.videoWrapper, 
-            item.type === 'qr' && styles.qrWrapperBackground 
-          ]}>
-          {item.type === 'video' ? (
-            shouldRenderVideo ? (
-              <Video
-                ref={videoRef}
-                source={item.video}
-                style={styles.videoFill}
-                muted={true}
-                repeat={true}
-                resizeMode="cover"
-                paused={!isScreenFocused || currentIndex !== index}
-              />
-            ) : null
-          ) : (
-            <View style={styles.qrContainer}>
-              <TouchableOpacity 
-                style={styles.qrBox} 
-                onPress={handleCopyLink}
-                activeOpacity={0.8}
-              >
-                {copied && (
-                  <View style={styles.copiedOverlay}>
-                    <Feather name="copy" size={24} color={theme.colors.primary} />
-                    <Text style={styles.copiedText}>Copied!</Text>
-                  </View>
-                )}
-                <QRCode 
-                  value={REPO_URL}
-                  size={150} 
-                  color={theme.colors.primary}
-                  backgroundColor={theme.colors.background}
-                />
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
+      <View style={styles.phone_container}>
         <Image
-          source={require('../../assets/iPhone16Plus.png')}
-          style={styles.frameOverlay}
+          source={item.image}
+          style={styles.image_fill}
           resizeMode="contain"
-          resizeMethod="resize"
         />
       </View>
 
-      <View style={styles.textContainer}>
+      <View style={styles.text_container}>
         <Text style={styles.headline}>{item.headline}</Text>
-        <Text style={styles.bodyText}>
+        <Text style={styles.body_text}>
           {item.body}
-          {item.linkText && item.link && (
+          {item.link_text && item.link && (
             <Text 
-              style={styles.linkText} 
-              onPress={() => handleLinkPress(item.link!)}
+              style={styles.link_text} 
+              onPress={() => handle_link_press(item.link)}
             >
-              {item.linkText}
+              {item.link_text}
             </Text>
           )}
         </Text>
@@ -142,15 +89,12 @@ const SlideItem = React.memo(({ item, index, currentIndex, isScreenFocused, them
 
 const OnboardingWalletScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingWallet'>>();
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
-  const videoRefs = useRef<(VideoRef | null)[]>([]);
-  const isScreenFocused = useIsFocused();
+  const [current_index, set_current_index] = useState(0);
+  const flat_list_ref = useRef<FlatList>(null);
   const { theme, isDark } = useTheme(); 
-  const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]); 
+  const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]); 
 
-  const markOnboardingComplete = async () => {
+  const mark_onboarding_complete = async () => {
     try {
       await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
     } catch (e) {
@@ -158,8 +102,8 @@ const OnboardingWalletScreen = () => {
     }
   };
 
-  const handleCompleteOnboarding = async () => {
-    await markOnboardingComplete();
+  const handle_complete_onboarding = async () => {
+    await mark_onboarding_complete();
     navigation.reset({
       index: 0,
       routes: [{ name: 'MainTabs' }],
@@ -168,69 +112,49 @@ const OnboardingWalletScreen = () => {
 
   useEffect(() => {
     return () => {
-      markOnboardingComplete();
+      mark_onboarding_complete();
     };
   }, []);
 
-  const handleNext = () => {
-    if (currentIndex < slides.length - 1) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
+  const handle_next = () => {
+    if (current_index < slides.length - 1) {
+      flat_list_ref.current?.scrollToIndex({ index: current_index + 1 });
     } else {
-      handleCompleteOnboarding();
+      handle_complete_onboarding();
     }
   };
 
-  const handleLinkPress = (url: string) => {
+  const handle_link_press = (url: string) => {
     Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
   };
 
-  const handleCopyLink = () => {
-    Clipboard.setString(REPO_URL);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  useEffect(() => {
-    if (isScreenFocused && videoRefs.current[currentIndex]) {
-      videoRefs.current[currentIndex]?.seek(0);
-    }
-  }, [currentIndex, isScreenFocused]);
-
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+  const on_viewable_items_changed = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
-      const newIndex = viewableItems[0].index;
-      setCurrentIndex(newIndex);
+      const new_index = viewableItems[0].index;
+      set_current_index(new_index);
     }
   }).current;
 
-  const renderItem = ({ item, index }: any) => (
+  const render_item = ({ item }: any) => (
     <SlideItem 
       item={item}
-      index={index}
-      currentIndex={currentIndex}
-      isScreenFocused={isScreenFocused}
-      theme={theme}
-      isDark={isDark}
       styles={styles}
-      handleLinkPress={handleLinkPress}
-      handleCopyLink={handleCopyLink}
-      copied={copied}
-      videoRef={(ref: VideoRef | null) => { videoRefs.current[index] = ref; }}
+      handle_link_press={handle_link_press}
     />
   );
 
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
-        ref={flatListRef}
+        ref={flat_list_ref}
         data={slides}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
+        onViewableItemsChanged={on_viewable_items_changed}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         keyExtractor={(item) => item.key}
-        renderItem={renderItem}
+        renderItem={render_item}
         removeClippedSubviews={true} 
         initialNumToRender={1}
         maxToRenderPerBatch={1}
@@ -238,17 +162,17 @@ const OnboardingWalletScreen = () => {
       />
       
       <View style={styles.footer}>
-        <View style={styles.dotsContainer}>
+        <View style={styles.dots_container}>
           {slides.map((_, index) => (
             <View
               key={index}
-              style={[styles.dot, index === currentIndex && styles.dotActive]}
+              style={[styles.dot, index === current_index && styles.dot_active]}
             />
           ))}
         </View>
-        <TouchableOpacity style={styles.button} onPress={handleNext}>
-          <Text style={styles.buttonText}>
-            {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
+        <TouchableOpacity style={styles.button} onPress={handle_next}>
+          <Text style={styles.button_text}>
+            {current_index === slides.length - 1 ? 'Get Started' : 'Next'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -256,7 +180,7 @@ const OnboardingWalletScreen = () => {
   );
 };
 
-const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
+const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -267,98 +191,35 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingTop: 8,
     backgroundColor: theme.colors.background,
   },
-  phoneContainer: {
-    height: '70%',
+  phone_container: {
+    height: '80%',
     aspectRatio: 9 / 19.5, 
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
-    position: 'relative',
   },
-  videoWrapper: {
-    width: '104%', 
-    height: '102.2%',
-    borderRadius: 30, 
-    overflow: 'hidden', 
-    position: 'absolute',
-    zIndex: 20, 
-    backgroundColor: 'black', 
-  },
-  qrWrapperBackground: {
-    backgroundColor: theme.colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  qrContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+  image_fill: {
     width: '100%',
     height: '100%',
   },
-  qrBox: {
-    padding: 16,
-    backgroundColor: theme.colors.background,
-    borderRadius: 8,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: isDark ? 0.3 : 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    justifyContent: 'center',
+  text_container: {
     alignItems: 'center',
-    overflow: 'hidden', 
-  },
-  copiedOverlay: { 
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.95)' : 'rgba(255, 255, 255, 0.95)', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    gap: 8,
-    zIndex: 10,
-  },
-  copiedText: { 
-    fontSize: 16, 
-    fontWeight: 'bold', 
-    color: theme.colors.primary 
-  },
-  videoFill: {
-    width: '100%',
-    height: '100%',
-  },
-  frameOverlay: {
-    width: '116%',
-    height: '105%',
-    zIndex: 1, 
-  },
-  textContainer: {
-    alignItems: 'center',
-    marginBottom: 0,
   },
   headline: {
     fontSize: 24,
     fontWeight: 'bold',
     color: theme.colors.primary,
     textAlign: 'center',
-    marginTop: 4,
   },
-  bodyText: {
+  body_text: {
     fontSize: 16,
     color: theme.colors.muted,
     textAlign: 'center',
     lineHeight: 24,
     marginTop: 8,
   },
-  linkText: {
+  link_text: {
     color: theme.colors.bitcoin,
     textDecorationLine: 'underline',
     fontWeight: '600',
@@ -367,7 +228,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingBottom: 32,
     paddingHorizontal: 24,
   },
-  dotsContainer: {
+  dots_container: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -381,7 +242,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     backgroundColor: theme.colors.border,
     marginHorizontal: 4,
   },
-  dotActive: {
+  dot_active: {
     backgroundColor: theme.colors.primary,
   },
   button: {
@@ -391,7 +252,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
-  buttonText: {
+  button_text: {
     color: theme.colors.inversePrimary,
     fontSize: 16,
     fontWeight: '600',
