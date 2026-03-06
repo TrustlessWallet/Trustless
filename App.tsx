@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StatusBar, LogBox, View, Image, useColorScheme, Text, TextInput } from 'react-native';
+import { StatusBar, LogBox, View, Image, Text, TextInput } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppNavigator from './src/navigation/AppNavigator';
 import { WalletProvider } from './src/contexts/WalletContext';
@@ -43,7 +43,7 @@ LogBox.ignoreLogs([
 
 const queryClient = new QueryClient();
 const NETWORK_PREF_KEY = '@network_preference';
-const THEME_PREF_KEY = '@theme_preference';
+const THEME_PREF_KEY = '@app_theme_preference';
 
 const ThemedStatusBar = () => {
   const { isDark, theme } = useTheme();
@@ -75,7 +75,6 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false);
   const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>('light');
   const [appKey, setAppKey] = useState(0);
-  const systemScheme = useColorScheme();
 
   useEffect(() => {
     const prepareApp = async () => {
@@ -104,7 +103,7 @@ export default function App() {
         if (savedTheme) {
           setSplashTheme(savedTheme as 'light' | 'dark');
         } else {
-          setSplashTheme(systemScheme === 'dark' ? 'dark' : 'light');
+          setSplashTheme('light');
         }
 
       } catch (e) {
