@@ -5,16 +5,22 @@ import { useRoute, RouteProp } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { RootStackParamList, Transaction } from '../types';
 import { getTransactionDetails, getTipHeight } from '../services/bitcoin';
+import { validateBitcoinAddress } from '../services/bitcoin';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL } from '../constants/network'; 
+import { AddressText } from '../components/AddressText';
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionDetails'>;
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
-const DetailRow = ({ label, value, isAddress, styles }: { label: string, value: string, isAddress?: boolean, styles: ReturnType<typeof getStyles> }) => (
+const DetailRow = ({ label, value, isAddress, styles, valueStyle }: { label: string, value: string, isAddress?: boolean, styles: ReturnType<typeof getStyles>, valueStyle?: any }) => (
   <View style={styles.detailRow}>
     <Text style={styles.label}>{label}</Text>
-    <Text style={[styles.value, isAddress && styles.addressValue]} selectable>{value}</Text>
+    {isAddress ? (
+      <AddressText style={[styles.value, styles.addressValue]} selectable address={value} />
+    ) : (
+      <Text style={[styles.value, valueStyle]} selectable>{value}</Text>
+    )}
   </View>
 );
 const TransactionDetailsScreen = () => {
@@ -79,6 +85,7 @@ const TransactionDetailsScreen = () => {
     const externalInputs = tx.vin.filter(i => !walletAddresses.has(i.prevout?.scriptpubkey_address));
     if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
   }
+  const isOtherAddressValid = validateBitcoinAddress(otherAddress || '');
   const confirmations = tx?.status?.confirmed && typeof tx.status.block_height === 'number' && tipHeight !== null
     ? Math.max(0, tipHeight - tx.status.block_height + 1)
     : 0;
@@ -103,7 +110,7 @@ const TransactionDetailsScreen = () => {
         <DetailRow 
           label={isSend ? "To" : "From"} 
           value={otherAddress || 'Unknown'} 
-          isAddress 
+          isAddress={isOtherAddressValid} 
           styles={styles} 
         />
         <DetailRow 
@@ -119,7 +126,7 @@ const TransactionDetailsScreen = () => {
         <DetailRow 
           label="Transaction ID" 
           value={tx.txid} 
-          isAddress 
+          valueStyle={styles.addressValue}
           styles={styles} 
         />
       </View>

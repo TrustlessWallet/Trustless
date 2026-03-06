@@ -7,14 +7,11 @@ import { RootStackParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
+import { formatBitcoinAddressShort } from '../constants/format';
 
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionConfirm'>;
 const DUST_LIMIT = 546;
 
-const formatAddress = (address: string) => {
-  if (!address || address.length <= 12) return address;
-  return `${address.substring(0, 6)}...${address.substring(address.length - 6)}`;
-};
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 
 const TransactionConfirmModal = () => {
@@ -35,6 +32,7 @@ const TransactionConfirmModal = () => {
     const { theme, isDark } = useTheme(); 
     const styles = useMemo(() => getStyles(theme), [theme]); 
     const { activeWallet } = useWallet();
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [currentRate, setCurrentRate] = useState<number>(selectedRate);
     const [currentFee, setCurrentFee] = useState<number>(fee);
     const [customRate, setCustomRate] = useState<string>(selectedRate.toString());
@@ -105,6 +103,16 @@ const TransactionConfirmModal = () => {
         });
     }, [utxos, activeWallet]);
 
+    const submitConfirm = async () => {
+        if (isSubmitting) return;
+        try {
+            setIsSubmitting(true);
+            await onConfirm(currentRate);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const handle_sign_and_send = () => {
         if (feePercentage > 10 && amountInSatoshis > 0) {
             Alert.alert(
@@ -112,11 +120,11 @@ const TransactionConfirmModal = () => {
                 'You are about to pay a very high fee. Please reconsider and wait for better network fees.',
                 [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Send anyway', onPress: () => onConfirm(currentRate) }
+                    { text: 'Send anyway', onPress: () => { void submitConfirm(); } }
                 ]
             );
         } else {
-            onConfirm(currentRate);
+            void submitConfirm();
         }
     };
 
@@ -125,7 +133,7 @@ const TransactionConfirmModal = () => {
             <View style={styles.section}>
                 <View style={styles.rowItem}>
                     <Text style={styles.label}>Sending to</Text>
-                    <Text style={styles.valueMain} selectable>{formatAddress(recipientAddress)}</Text>
+                    <Text style={styles.valueMain} selectable>{formatBitcoinAddressShort(recipientAddress)}</Text>
                 </View>
             </View>
             <View style={styles.section}>
@@ -134,7 +142,7 @@ const TransactionConfirmModal = () => {
                     <View key={item.address} style={styles.inputRow}>
                         <View>
                             <View style={styles.addressRow}>
-                                <Text style={styles.inputValue} selectable>{formatAddress(item.address)}</Text>
+                                <Text style={styles.inputValue} selectable>{formatBitcoinAddressShort(item.address)}</Text>
                                 {!!item.pathSuffix && (
                                     <Text style={styles.pathBadge}>{item.pathSuffix}</Text>
                                 )}
@@ -224,11 +232,11 @@ const TransactionConfirmModal = () => {
                 </View>
             </View>
             <TouchableOpacity 
-                style={[styles.confirmButton, loading && styles.buttonDisabled]} 
+                style={[styles.confirmButton, (loading || isSubmitting) && styles.buttonDisabled]} 
                 onPress={handle_sign_and_send} 
-                disabled={loading}
+                disabled={loading || isSubmitting}
             >
-                {loading ? (
+                {loading || isSubmitting ? (
                     <ActivityIndicator color={theme.colors.inversePrimary} />
                 ) : (
                     <View style={styles.buttonContentRowCentered}>
@@ -426,6 +434,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         paddingVertical: 16,
         borderRadius: 8,
         alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 56,
         marginTop: 24,
     },
     buttonDisabled: {

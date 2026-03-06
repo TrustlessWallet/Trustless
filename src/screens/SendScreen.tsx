@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput'; 
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
@@ -18,6 +18,7 @@ import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AddressText } from '../components/AddressText';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Send'>;
 type SendScreenRouteProp = RouteProp<RootStackParamList, 'Send'>;
@@ -47,6 +48,7 @@ const SendScreen = () => {
     
     const { activeWallet, createAndSignTransaction, triggerRefresh, incrementChangeIndex, lastRefreshTime } = useWallet();
     const [recipientAddress, setRecipientAddress] = useState('');
+    const [recipientAddressPreview, setRecipientAddressPreview] = useState('');
     const [amount, setAmount] = useState('');
     const [unit, setUnit] = useState<Unit>('BTC');
     const [balance, setBalance] = useState(0);
@@ -64,6 +66,13 @@ const SendScreen = () => {
             navigation.setParams({ selectedAddress: undefined });
         }
     }, [route.params?.selectedAddress, navigation]);
+
+    useEffect(() => {
+        const t = setTimeout(() => {
+            setRecipientAddressPreview(recipientAddress.trim());
+        }, 200);
+        return () => clearTimeout(t);
+    }, [recipientAddress]);
 
     const getBalance = React.useCallback(async (bypassCache: boolean = false) => {
             const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
@@ -306,12 +315,7 @@ const SendScreen = () => {
     const is_amount_entered = !isNaN(parseFloat(clean_amount_check)) && parseFloat(clean_amount_check) > 0;
 
     return (
-        <KeyboardAvoidingView 
-            behavior={Platform.OS === "ios" ? "padding" : "height"} 
-            style={styles.container}
-            enabled={isFocused}
-        >
-            <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
                 <View style={styles.balanceContainer}>
                     <Text style={styles.balanceLabel}>Available to Send</Text>
                     <TouchableOpacity onPress={() => navigation.navigate('BalanceDetail', { utxos: utxos })}>
@@ -350,6 +354,12 @@ const SendScreen = () => {
                         </View>
                     }
                 />
+                {!!recipientAddressPreview && (
+                    <AddressText
+                        style={styles.addressPreview}
+                        address={recipientAddressPreview}
+                    />
+                )}
                 <Text style={styles.label}>Amount</Text>
                 <StyledInput
                     placeholder="0.00"
@@ -395,8 +405,7 @@ const SendScreen = () => {
                         </View>
                     )}
                 </TouchableOpacity>
-            </ScrollView>
-        </KeyboardAvoidingView>
+        </ScrollView>
     );
 };
 
@@ -436,6 +445,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     inputSpacing: {
         marginBottom: 16,
+    },
+    addressPreview: {
+        fontSize: 14,
+        fontFamily: 'monospace',
+        marginBottom: 16,
+        color: theme.colors.muted,
     },
     iconButton: { 
         padding: 10,
@@ -495,7 +510,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         backgroundColor: theme.colors.primary,
         paddingVertical: 16, 
         borderRadius: 8, 
-        alignItems: 'center' 
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 56,
     },
     buttonDisabled: { 
         opacity: 0.5,

@@ -11,6 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
+import { formatBitcoinAddressShort } from '../constants/format';
 
 const HIDE_TRACKER_BALANCE_KEY = '@hideTrackerBalance';
 
@@ -20,11 +21,6 @@ const formatBalance = (sats: number) => {
     maximumFractionDigits: 8,
     minimumFractionDigits: 8,
   }).format(btc).replace(/,/g, ' ');
-};
-
-const formatAddress = (address: string) => {
-  if (!address || address.length <= 10) return address;
-  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
 };
 
 type DashboardScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -136,7 +132,7 @@ const DashboardScreen = () => {
               <Feather name="edit" style={styles.editIcon} />
             </TouchableOpacity>
           )}
-           <Text style={styles.addressText}>{formatAddress(item.address)}</Text>
+           <Text style={styles.addressText}>{formatBitcoinAddressShort(item.address)}</Text>
         </View>
         <View style={styles.balanceInfo}>
           <Text style={styles.balanceText}>

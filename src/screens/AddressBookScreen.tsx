@@ -8,14 +8,10 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { RootStackParamList, BitcoinAddress } from '../types';
+import { formatBitcoinAddressShort } from '../constants/format';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList, 'AddressBook'>;
 type RoutePropType = RouteProp<RootStackParamList, 'AddressBook'>;
-
-const formatAddress = (address: string) => {
-  if (!address || address.length <= 10) return address;
-  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-};
 
 const AddressBookScreen = () => {
   const navigation = useNavigation<NavProp>();
@@ -137,7 +133,7 @@ const AddressBookScreen = () => {
               </TouchableOpacity>
             </View>
           )}
-          <Text style={styles.itemAddress}>{formatAddress(item.address)}</Text>
+          <Text style={styles.itemAddress}>{formatBitcoinAddressShort(item.address)}</Text>
         </View>
         <View style={styles.actionsContainer}>
             <TouchableOpacity style={styles.actionButton} onPress={() => handleDelete(item)}>
@@ -270,7 +266,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     flex: 1, 
     alignItems: 'center', 
     justifyContent: 'center',
-    paddingTop: 40,
+    paddingVertical: 30,
   },
   emptyText: { 
     fontSize: 16, 

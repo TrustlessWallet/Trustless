@@ -20,15 +20,12 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
+import { formatBitcoinAddressShort } from '../constants/format';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BalanceDetail'>;
 
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
-const formatAddressShort = (address: string) => {
-  if (!address || address.length <= 8) return address;
-  return `${address.substring(0, 4)}...${address.substring(address.length - 4)}`;
-};
 
 const BalanceDetailScreen = () => {
   const route = useRoute<RoutePropType>();
@@ -156,7 +153,7 @@ const BalanceDetailScreen = () => {
 
           <View>
             <Text style={styles.detailText}>
-                {formatAddressShort(item.address)}
+                {formatBitcoinAddressShort(item.address)}
             </Text>
           </View>
 
