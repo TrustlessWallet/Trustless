@@ -191,7 +191,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         minHeight: 64,
     },
     activeItem: {
-        borderColor: theme.colors.primary,
+        borderColor: theme.colors.bitcoin,
     },
     walletInfo: {
         flex: 1,
