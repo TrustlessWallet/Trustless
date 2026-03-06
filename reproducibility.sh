@@ -1,13 +1,16 @@
 set -e
 
-echo "1. Installing dependencies..."
+echo "1. Generating version metadata..."
+node src/scripts/write-version.js
+
+echo "2. Installing dependencies..."
 npm install
 
-echo "2. Generating android and ios directories..."
+echo "3. Generating android and ios directories..."
 export CI=1
 npx expo prebuild --clean
 
-echo "3. Injecting reproducibility settings..."
+echo "4. Injecting reproducibility settings..."
 cat <<EOF >> android/app/build.gradle
 
 android {
@@ -23,9 +26,6 @@ tasks.withType(AbstractArchiveTask).configureEach {
     reproducibleFileOrder = true
 }
 EOF
-
-echo "4. Generating version metadata..."
-node src/scripts/write-version.js
 
 echo "5. Compiling APK..."
 export MAX_WORKERS=1
