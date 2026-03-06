@@ -523,7 +523,7 @@ const handleReset = () => {
 
         <View style={styles.versionContainer}>
           <Text style={styles.versionText}>
-            Version 1.1.0
+            Version 1.1.1
           </Text>
           <Text style={styles.commitText}>
             Commit: {buildInfo?.commitHash || 'Unknown'}

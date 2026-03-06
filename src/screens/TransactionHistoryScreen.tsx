@@ -10,6 +10,7 @@ import { fetchAddressTransactions } from '../services/bitcoin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
+import { formatBitcoinAddressShort } from '../constants/format';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const TX_CACHE_PREFIX = '@txCache:';
@@ -25,11 +26,6 @@ const btcFormatter = new Intl.NumberFormat('en-US', {
 const formatBalance = (sats: number) => {
     const btc = (sats || 0) / 100000000;
     return btcFormatter.format(btc).replace(/,/g, ' ');
-};
-
-const formatAddress = (address: string) => {
-  if (!address || address.length <= 10) return address;
-  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
 };
 
 const TransactionHistoryScreen = () => {
@@ -143,7 +139,7 @@ const TransactionHistoryScreen = () => {
             <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
             <View style={styles.txDetails}>
                 <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
-                <Text style={styles.txAddress}>{isSend ? "To" : "From"} {formatAddress(otherAddress || 'Unknown')}</Text>
+                <Text style={styles.txAddress}>{isSend ? "To" : "From"} {formatBitcoinAddressShort(otherAddress || 'Unknown')}</Text>
                 <Text style={styles.txDate}>{txDate}</Text>
             </View>
             <View style={styles.txAmountContainer}>

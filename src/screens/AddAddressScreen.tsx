@@ -10,6 +10,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { validateBitcoinAddress, fetchBitcoinBalance } from '../services/bitcoin';
+import { AddressText } from '../components/AddressText';
 
 type AddAddressScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'AddAddress'>;
 
@@ -102,6 +103,12 @@ const AddAddressScreen = () => {
           </TouchableOpacity>
         }
       />
+      {!!address.trim() && (
+        <AddressText
+          style={styles.addressPreview}
+          address={address.trim()}
+        />
+      )}
       
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
@@ -135,6 +142,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   inputSpacing: {
     marginBottom: 24,
+  },
+  addressPreview: {
+    fontSize: 14,
+    fontFamily: 'monospace',
+    marginTop: -12,
+    marginBottom: 24,
+    color: theme.colors.muted,
   },
   scanButton: { 
     padding: 10, 

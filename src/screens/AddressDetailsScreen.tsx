@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Linking, Alert, ScrollView, TextInput } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Linking, Alert, ScrollView, TextInput, Clipboard, Share } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -11,6 +11,8 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
+import { formatBitcoinAddressShort } from '../constants/format';
+import { AddressText } from '../components/AddressText';
 
 const QR_SIZE = 220;
 
@@ -26,16 +28,6 @@ const formatBalance = (sats: number) => {
     }).format(btc).replace(/,/g, ' ');
 };
 
-const formatAddress = (address: string) => {
-  if (!address || address.length <= 10) return address;
-  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-};
-
-const formatAddressInChunks = (address: string | undefined) => {
-  if (!address) return '';
-  return address.match(/.{1,4}/g)?.join(' ') || '';
-};
-
 const AddressDetailsScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
@@ -44,6 +36,7 @@ const AddressDetailsScreen = () => {
   const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
+  const [copied, set_copied] = useState(false);
   const [balance, setBalance] = useState(0);
   const [utxos, setUtxos] = useState<UTXO[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -126,6 +119,24 @@ const AddressDetailsScreen = () => {
     setEditingUtxoKey(null);
   };
 
+  const copy_to_clipboard = () => {
+    if (address) {
+      Clipboard.setString(address);
+      set_copied(true);
+      setTimeout(() => set_copied(false), 1500);
+    }
+  };
+
+  const on_share = async () => {
+    if (address) {
+      try {
+        await Share.share({ message: address });
+      } catch (error) {
+        Alert.alert('Error', 'Could not share the address.');
+      }
+    }
+  };
+
   const handleOpenExplorer = () => {
     const url = `${EXPLORER_UI_URL}/address/${address}`;
     Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open block explorer."));
@@ -150,23 +161,47 @@ const AddressDetailsScreen = () => {
         {derivation_path && (
           <Text style={styles.derivationPathDisplay}>{derivation_path}</Text>
         )}
-        <View style={styles.qrWrapper}>
+        <TouchableOpacity style={styles.qrWrapper} onPress={copy_to_clipboard} activeOpacity={0.8}>
+          {copied && (
+            <View style={styles.copiedOverlay}>
+              <Feather name="copy" size={32} color={theme.colors.primary} />
+              <Text style={styles.copiedText}>Copied!</Text>
+            </View>
+          )}
           <QRCode 
             value={address} 
             size={QR_SIZE} 
             backgroundColor={theme.colors.background}
             color={theme.colors.primary}
           />
-        </View>
-        <Text style={styles.addressText} selectable>{formatAddressInChunks(address)}</Text>
+        </TouchableOpacity>
+        <AddressText
+          style={styles.addressText}
+          selectable
+          address={address}
+          groupSize={6}
+          padLastLine
+        />
         <Text style={styles.balanceText}>
           {formatBtc(balance)} <Text style={styles.orangeSymbol}>₿</Text>
         </Text>
-        
-        <TouchableOpacity style={styles.explorerButton} onPress={handleOpenExplorer}>
-          <Feather name="external-link" size={18} color={theme.colors.inversePrimary} />
-          <Text style={styles.explorerButtonText}>View on Explorer</Text>
-        </TouchableOpacity>
+
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity style={styles.actionButton} onPress={copy_to_clipboard}>
+            <Feather name="copy" size={24} color={theme.colors.primary} />
+            <Text style={styles.actionButtonText}>Copy</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton} onPress={handleOpenExplorer}>
+            <Feather name="external-link" size={24} color={theme.colors.primary} />
+            <Text style={styles.actionButtonText}>View</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton} onPress={on_share}>
+            <Feather name="share-2" size={24} color={theme.colors.primary} />
+            <Text style={styles.actionButtonText}>Share</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -260,7 +295,7 @@ const AddressDetailsScreen = () => {
                   <View style={styles.txDetails}>
                     <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
                     <Text style={styles.txAddress}>
-                      {isSend ? "To" : "From"} {formatAddress(otherAddress || 'Unknown')}
+                      {isSend ? "To" : "From"} {formatBitcoinAddressShort(otherAddress || 'Unknown')}
                     </Text>
                     <Text style={styles.txDate}>{txDate}</Text>
                   </View>
@@ -340,21 +375,39 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   orangeSymbol: {
     color: theme.colors.bitcoin,
   },
-  explorerButton: {
+  actionsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: theme.colors.primary,
-    marginHorizontal: 24,
-    marginBottom: 8,
-    padding: 12,
-    borderRadius: 8,
+    gap: 24,
+    marginTop: 8,
   },
-  explorerButtonText: {
-    color: theme.colors.inversePrimary,
-    fontSize: 16,
-    fontWeight: '600',
+  actionButton: {
+    alignItems: 'center',
+    padding: 12,
+    minWidth: 80,
+  },
+  actionButtonText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    marginTop: 8,
+  },
+  copiedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background + 'CC',
+    borderRadius: 8,
+    gap: 8,
+    zIndex: 10,
+  },
+  copiedText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
   },
   section: {
     paddingTop: 24,

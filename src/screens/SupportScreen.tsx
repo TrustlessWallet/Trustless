@@ -5,6 +5,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
+import { AddressText } from '../components/AddressText';
 
 const DONATION_ADDRESS = 'bc1q835gw6aqf6jmgs5pja5xf5xzcp76w75cqfvek6';
 const QR_SIZE = 220;
@@ -18,10 +19,6 @@ const SupportScreen = () => {
     Clipboard.setString(DONATION_ADDRESS);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  };
-
-  const formatAddressInChunks = (address: string) => {
-    return address.match(/.{1,4}/g)?.join(' ') || address;
   };
 
   return (
@@ -74,7 +71,7 @@ const SupportScreen = () => {
         </TouchableOpacity>
         
         <TouchableOpacity onPress={copyToClipboard}>
-            <Text style={styles.addressText}>{formatAddressInChunks(DONATION_ADDRESS)}</Text>
+            <AddressText style={styles.addressText} address={DONATION_ADDRESS} />
         </TouchableOpacity>
       </View>
 

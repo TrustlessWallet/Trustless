@@ -10,6 +10,7 @@ import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { StyledInput } from '../components/StyledInput';
+import { AddressText } from '../components/AddressText';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'AddSavedAddress'>;
 
@@ -97,6 +98,12 @@ const AddSavedAddressScreen = () => {
           </TouchableOpacity>
         }
       />
+      {!!address.trim() && (
+        <AddressText
+          style={styles.addressPreview}
+          address={address.trim()}
+        />
+      )}
       
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
@@ -130,6 +137,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   inputSpacing: {
     marginBottom: 24
+  },
+  addressPreview: {
+    fontSize: 14,
+    fontFamily: 'monospace',
+    marginTop: -12,
+    marginBottom: 24,
+    color: theme.colors.muted,
   },
   scanButton: { 
     padding: 10 

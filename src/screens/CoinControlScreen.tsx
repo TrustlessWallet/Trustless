@@ -9,14 +9,11 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
+import { formatBitcoinAddressShort } from '../constants/format';
 
 type RoutePropType = RouteProp<RootStackParamList, 'CoinControl'>;
 
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
-const formatAddress = (address: string) => {
-  if (!address || address.length <= 10) return address;
-  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-};
 const formatTxidShort = (txid: string) => {
   if (!txid || txid.length <= 8) return txid;
   return `${txid.substring(0, 4)}...${txid.substring(txid.length - 4)}`;
@@ -182,7 +179,7 @@ const CoinControlScreen = () => {
               </TouchableOpacity>
             )}
 
-            <Text style={styles.addressText}>{formatAddress(item.address)}</Text>
+            <Text style={styles.addressText}>{formatBitcoinAddressShort(item.address)}</Text>
             <Text style={styles.txidText}>{formatTxidShort(item.txid)}:{item.vout}</Text>
         </View>
         <Text style={styles.balanceText}>

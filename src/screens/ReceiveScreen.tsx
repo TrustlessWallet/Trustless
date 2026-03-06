@@ -10,6 +10,8 @@ import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
+import { formatBitcoinAddressShort } from '../constants/format';
+import { AddressText } from '../components/AddressText';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 
@@ -17,16 +19,6 @@ const QR_SIZE = 220;
 const UNUSED_BUFFER_SIZE = 20;
 
 const format_btc = (sats: number) => (sats / 100000000).toFixed(8);
-
-const format_address_in_chunks = (address: string | undefined) => {
-  if (!address) return '';
-  return address.match(/.{1,4}/g)?.join(' ') || '';
-};
-
-const format_address_short = (address: string) => {
-  if (!address || address.length <= 8) return address;
-  return `${address.substring(0, 4)}...${address.substring(address.length - 4)}`;
-};
 
 const ReceiveScreen = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -168,13 +160,13 @@ const ReceiveScreen = () => {
     >
       <View style={styles.qrContainer}>
         <Text style={styles.derivationPathDisplay}>{current_display_data.path}</Text>
-        {copied && (
-          <View style={styles.copiedOverlay}>
-            <Feather name="copy" size={32} color={theme.colors.primary} />
-            <Text style={styles.copiedText}>Copied!</Text>
-          </View>
-        )}
         <TouchableOpacity style={styles.qrCodeWrapper} onPress={copy_to_clipboard} activeOpacity={0.8}>
+          {copied && (
+            <View style={styles.copiedOverlay}>
+              <Feather name="copy" size={32} color={theme.colors.primary} />
+              <Text style={styles.copiedText}>Copied!</Text>
+            </View>
+          )}
           <QRCode 
             value={current_display_data.address} 
             size={QR_SIZE} 
@@ -182,7 +174,13 @@ const ReceiveScreen = () => {
             color={theme.colors.primary} 
           />
         </TouchableOpacity>
-        <Text style={styles.addressText} selectable>{format_address_in_chunks(current_display_data.address)}</Text>
+        <AddressText
+          style={styles.addressText}
+          selectable
+          address={current_display_data.address}
+          groupSize={6}
+          padLastLine
+        />
       </View>
 
       <View style={styles.actionsContainer}>
@@ -221,7 +219,7 @@ const ReceiveScreen = () => {
                 onPress={() => handle_view_details(item.address)}
               >
                 <View style={styles.addressContainer}>
-                  <Text style={styles.addressShortText}>{format_address_short(item.address)}</Text>
+                  <Text style={styles.addressShortText}>{formatBitcoinAddressShort(item.address)}</Text>
                   <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
                 </View>
                 <View style={styles.balanceContainer}>
@@ -289,9 +287,10 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.95)' : 'rgba(255, 255, 255, 0.95)', 
     justifyContent: 'center', 
     alignItems: 'center', 
+    backgroundColor: theme.colors.background + 'CC',
+    borderRadius: 8,
     gap: 8,
     zIndex: 10,
   },
