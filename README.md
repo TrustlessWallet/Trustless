@@ -82,7 +82,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 
 1. Ensure the working tree is completely clean to avoid the dirty flag.
 2. Create and push the new tag: 
-   `git tag -a 1.1.1 -m "release 1.1.1"`
+   `git tag -s 1.1.1 -m "release 1.1.1"`
    `git push origin 1.1.1`
 3. Navigate into the repository directory to ensure all generated files stay in the correct folder:
    `cd Trustless`
