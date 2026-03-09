@@ -10,7 +10,7 @@
             --text: #ffffff;
             --muted: #888888;
             --border: #333333;
-            --accent: #f7931a; /* Bitcoin Orange */
+            --accent: #f7931a;
             --link: #ffffff;
         }
 
@@ -35,10 +35,9 @@
             box-sizing: border-box;
             transition: background-color 0.3s, color 0.3s;
             gap: 60px;
-            overflow-x: hidden; /* Prevent horizontal scrollbars */
+            overflow-x: hidden;
         }
 
-        /* LAYOUT CONTAINERS */
         .container-limited {
             max-width: 1100px;
             margin-left: auto;
@@ -46,29 +45,25 @@
             width: 100%;
         }
 
-        /* HEADER */
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap; /* Allows wrapping on very small screens */
-            gap: 20px; /* Space between Logo and Theme Button on mobile */
+            flex-wrap: wrap;
+            gap: 20px;
         }
 
-        /* MAIN GRID LAYOUT (DESKTOP) */
         main {
             flex: 1;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 0 60px; /* 0px row gap (handled by margin), 60px col gap */
-            /* Explicit Areas ensure the 'device' column is exactly as tall as intro + features */
+            gap: 0 60px;
             grid-template-areas: 
                 "intro device"
                 "features device";
-            align-items: start; /* Default align */
+            align-items: start;
         }
 
-        /* GRID AREAS & STICKY LOGIC */
         .intro {
             grid-area: intro;
             margin-bottom: 40px;
@@ -76,17 +71,14 @@
 
         .features-list {
             grid-area: features;
-            /* No margin needed */
         }
 
         .device-wrapper {
             grid-area: device;
-            /* STICKY MAGIC */
             position: -webkit-sticky;
             position: sticky;
-            top: 40px; /* Distance from top of viewport */
-            align-self: start; /* Prevents wrapper from stretching to full height of column */
-            
+            top: 40px;
+            align-self: start;
             width: 70%; 
             margin: 0 auto;
             position: relative; 
@@ -94,18 +86,28 @@
         }
 
         .scrutiny-link {
-            display: block;
-            margin-top: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 60px;
             text-align: center;
+            text-decoration: none;
         }
 
         .scrutiny-link img {
             max-width: 100%;
             height: auto;
             border-radius: 8px;
+            border: 2px solid var(--accent);
         }
 
-        /* BRANDING */
+        .scrutiny-text {
+            margin-top: 15px;
+            color: var(--link);
+            text-decoration: underline;
+            font-size: 1rem;
+        }
+
         .brand {
             display: flex;
             align-items: center;
@@ -144,7 +146,6 @@
             border-color: var(--text);
         }
 
-        /* CONTENT STYLES */
         .intro-text {
             font-size: 1.1rem;
             line-height: 1.6;
@@ -180,7 +181,6 @@
             font-size: 0.95rem;
         }
 
-        /* CAROUSEL */
         .carousel-track {
             display: flex;
             overflow-x: auto;
@@ -207,7 +207,6 @@
             border-radius: 40px;
         }
 
-        /* NAVIGATION CHEVRONS */
         .nav-btn {
             position: absolute;
             top: 50%;
@@ -240,7 +239,6 @@
         .prev { left: -60px; }
         .next { right: -60px; }
 
-        /* LINKS & FOOTER */
         a {
             color: var(--link);
             text-decoration: underline;
@@ -262,23 +260,19 @@
             color: var(--text);
         }
 
-        /* RESPONSIVE DESIGN (MOBILE) */
         @media (max-width: 850px) {
             main {
                 display: flex; 
                 flex-direction: column;
                 gap: 40px;
-                /* Reset Grid properties */
                 grid-template-areas: none;
                 grid-template-columns: none;
             }
             
-            /* Order is naturally handled by HTML structure: Intro -> Device -> Features */
-            
             .device-wrapper {
                 width: 100%;
                 max-width: 350px;
-                position: static; /* No sticky on mobile */
+                position: static;
                 margin-bottom: 20px;
             }
 
@@ -315,8 +309,9 @@
 
             <button class="nav-btn next" onclick="scrollCarousel(1)" aria-label="Next Image">&rsaquo;</button>
             
-            <a href="https://walletscrutiny.com/android/com.btc.trustless/" class="scrutiny-link">
+            <a href="https://walletscrutiny.com/android/com.btc.trustless/" class="scrutiny-link" target="_blank" rel="noopener noreferrer">
                 <img src="assets/Walletscrutiny.png" alt="Wallet Scrutiny verification link">
+                <span class="scrutiny-text">Trustless on WalletScrutiny.com</span>
             </a>
         </div>
 
