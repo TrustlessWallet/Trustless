@@ -93,6 +93,18 @@
             z-index: 10;
         }
 
+        .scrutiny-link {
+            display: block;
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .scrutiny-link img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+
         /* BRANDING */
         .brand {
             display: flex;
@@ -299,9 +311,13 @@
             <button class="nav-btn prev" onclick="scrollCarousel(-1)" aria-label="Previous Image">&lsaquo;</button>
             
             <div class="carousel-track" id="carousel">
-                </div>
+            </div>
 
             <button class="nav-btn next" onclick="scrollCarousel(1)" aria-label="Next Image">&rsaquo;</button>
+            
+            <a href="https://walletscrutiny.com/android/com.btc.trustless/" class="scrutiny-link">
+                <img src="assets/Walletscrutiny.png" alt="Wallet Scrutiny verification link">
+            </a>
         </div>
 
         <ul class="features-list">
