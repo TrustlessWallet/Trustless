@@ -422,15 +422,13 @@ const handleReset = () => {
           <View style={styles.rowWrapper}>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Enable Biometrics</Text>
-              <View style={styles.switcher}>
-                <TouchableOpacity onPress={toggleBiometrics}>
+              <TouchableOpacity onPress={toggleBiometrics}>
+                <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                </TouchableOpacity>
-                <Text style={styles.switcherText}>{isBiometricsEnabled ? 'On' : 'Off'}</Text>
-                <TouchableOpacity onPress={toggleBiometrics}>
+                  <Text style={styles.switcherText}>{isBiometricsEnabled ? 'On' : 'Off'}</Text>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-                </TouchableOpacity>
-              </View>
+                </View>
+              </TouchableOpacity>
             </View>
           </View>
 
