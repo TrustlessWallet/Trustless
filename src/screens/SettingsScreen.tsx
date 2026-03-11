@@ -10,14 +10,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { testNodeConnection } from '../services/bitcoin';
 import { NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network'; 
 import { setAppIsAuthenticated } from '../services/authState';
 import { StyledInput } from '../components/StyledInput'; 
+import { getElectrumClient, resetActiveConnection, getActiveHostName, test_custom_node_connection } from '../services/electrum';
 
-import buildInfo from '../constants/build.json';
+import build_info from '../constants/build.json';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+type navigation_prop = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 const AUTO_LOCK_TIME_KEY = '@autoLockTime';
@@ -25,12 +25,12 @@ const HIDE_TRACKER_BALANCE_KEY = '@hideTrackerBalance';
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_SCREEN_KEY = '@defaultScreen';
 const NETWORK_PREF_KEY = '@network_preference';
-
 const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
+const ALLOW_SELF_SIGNED_KEY = '@allowSelfSigned';
 
-const autoLockOptions = ['Off', 0, 1, 5, 30, 60];
+const auto_lock_options = ['Off', 0, 1, 5, 30, 60];
 
-const getAutoLockLabel = (value: string | number): string => {
+const get_auto_lock_label = (value: string | number): string => {
   if (value === 'Off') return 'Off';
   const minutes = typeof value === 'string' ? parseInt(value, 10) : value;
   if (minutes === 0) return 'Immediate';
@@ -41,106 +41,117 @@ const getAutoLockLabel = (value: string | number): string => {
 const SettingsScreen = () => {
   const { resetWallet, triggerRefresh } = useWallet();
   const { theme, isDark, toggleTheme } = useTheme();
-  const styles = useMemo(() => getStyles(theme), [theme]);
-  const navigation = useNavigation<NavigationProp>();
+  const styles = useMemo(() => get_styles(theme), [theme]);
+  const navigation = useNavigation<navigation_prop>();
   
-  const [isBiometricsEnabled, setIsBiometricsEnabled] = useState(false);
-  const [autoLockTimeIndex, setAutoLockTimeIndex] = useState(3);
-  const [hideTrackerBalance, setHideTrackerBalance] = useState(false);
-  const [hideWalletBalance, setHideWalletBalance] = useState(false);
-  const [defaultScreen, setDefaultScreen] = useState<'Wallet' | 'Tracker'>('Wallet');
+  const [is_biometrics_enabled, set_is_biometrics_enabled] = useState(false);
+  const [auto_lock_time_index, set_auto_lock_time_index] = useState(3);
+  const [hide_tracker_balance, set_hide_tracker_balance] = useState(false);
+  const [hide_wallet_balance, set_hide_wallet_balance] = useState(false);
+  const [default_screen, set_default_screen] = useState<'Wallet' | 'Tracker'>('Wallet');
   
-  const [customNodeUrl, setCustomNodeUrl] = useState('');
-  const [isEditingNode, setIsEditingNode] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'connected' | 'failed'>('idle');
+  const [custom_node_url, set_custom_node_url] = useState('');
+  const [allow_self_signed, set_allow_self_signed] = useState(false);
+  const [is_editing_node, set_is_editing_node] = useState(false);
+  const [connection_status, set_connection_status] = useState<'idle' | 'testing' | 'connected' | 'failed'>('idle');
+  const [active_host, set_active_host] = useState<string | null>(null);
   
-  const isFocused = useIsFocused();
-  const isTogglingRef = useRef(false);
+  const is_focused = useIsFocused();
+  const is_toggling_ref = useRef(false);
 
-  const checkBiometricStatus = useCallback(async () => {
-    if (isTogglingRef.current) return;
-    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-    const savedSetting = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
+  const check_biometric_status = useCallback(async () => {
+    if (is_toggling_ref.current) return;
+    const is_enrolled = await LocalAuthentication.isEnrolledAsync();
+    const saved_setting = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
     
-    if (!isEnrolled && savedSetting === 'true') {
+    if (!is_enrolled && saved_setting === 'true') {
       await AsyncStorage.setItem(BIOMETRICS_ENABLED_KEY, 'false');
-      setIsBiometricsEnabled(false);
+      set_is_biometrics_enabled(false);
     } else {
-      setIsBiometricsEnabled(savedSetting === 'true' && isEnrolled);
+      set_is_biometrics_enabled(saved_setting === 'true' && is_enrolled);
     }
   }, []);
 
   useEffect(() => {
-    const loadSettings = async () => {
-      const savedLockTime = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
-      if (savedLockTime !== null) {
-        const index = autoLockOptions.findIndex(opt => opt.toString() === savedLockTime);
-        if (index !== -1) setAutoLockTimeIndex(index);
+    const load_settings = async () => {
+      const saved_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
+      if (saved_lock_time !== null) {
+        const index = auto_lock_options.findIndex(opt => opt.toString() === saved_lock_time);
+        if (index !== -1) set_auto_lock_time_index(index);
       }
       
-      const savedTrackerPref = await AsyncStorage.getItem(HIDE_TRACKER_BALANCE_KEY);
-      setHideTrackerBalance(savedTrackerPref === 'true');
+      const saved_tracker_pref = await AsyncStorage.getItem(HIDE_TRACKER_BALANCE_KEY);
+      set_hide_tracker_balance(saved_tracker_pref === 'true');
       
-      const savedWalletPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
-      setHideWalletBalance(savedWalletPref === 'true');
+      const saved_wallet_pref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
+      set_hide_wallet_balance(saved_wallet_pref === 'true');
       
-      const savedDefaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-      if (savedDefaultScreen === 'Tracker') {
-        setDefaultScreen('Tracker');
+      const saved_default_screen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
+      if (saved_default_screen === 'Tracker') {
+        set_default_screen('Tracker');
       } else {
-        setDefaultScreen('Wallet');
+        set_default_screen('Wallet');
       }
 
-      const savedNode = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY);
-      if (savedNode) {
-        setCustomNodeUrl(savedNode);
-        setConnectionStatus('connected');
+      const saved_node = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY);
+      const saved_self_signed = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_KEY);
+      
+      if (saved_node) {
+        set_custom_node_url(saved_node);
+        set_connection_status('connected');
       }
+      
+      if (saved_self_signed === 'true') {
+        set_allow_self_signed(true);
+      }
+
+      set_active_host(getActiveHostName());
     };
-    loadSettings();
+    load_settings();
   }, []);
 
   useEffect(() => {
-    if (isFocused) {
-      checkBiometricStatus();
+    if (is_focused) {
+      check_biometric_status();
+      set_active_host(getActiveHostName());
     }
-  }, [isFocused, checkBiometricStatus]);
+  }, [is_focused, check_biometric_status]);
 
-  const toggleBiometrics = async () => {
-    if (isTogglingRef.current) return;
-    isTogglingRef.current = true;
+  const toggle_biometrics = async () => {
+    if (is_toggling_ref.current) return;
+    is_toggling_ref.current = true;
     try {
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      if (!isEnrolled) {
+      const is_enrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!is_enrolled) {
         Alert.alert(
           "Biometrics Not Available",
           "Biometric authentication is currently not available on this device.",
           [{ text: "OK" }]
         );
-        isTogglingRef.current = false;
+        is_toggling_ref.current = false;
         return;
       }
       
-      const promptMessage = isBiometricsEnabled 
+      const prompt_message = is_biometrics_enabled 
         ? 'Confirm your identity to disable biometric authentication'
         : 'Confirm your identity to enable biometric authentication';
         
-      const result = await LocalAuthentication.authenticateAsync({ promptMessage });
+      const result = await LocalAuthentication.authenticateAsync({ promptMessage: prompt_message });
       
       if (result.success) {
-        const newValue = !isBiometricsEnabled;
-        await AsyncStorage.setItem(BIOMETRICS_ENABLED_KEY, newValue.toString());
-        if (newValue) setAppIsAuthenticated(true);
-        setIsBiometricsEnabled(newValue);
+        const new_value = !is_biometrics_enabled;
+        await AsyncStorage.setItem(BIOMETRICS_ENABLED_KEY, new_value.toString());
+        if (new_value) setAppIsAuthenticated(true);
+        set_is_biometrics_enabled(new_value);
       }
     } catch (error) {
       Alert.alert("Error", "An unexpected error occurred.");
     } finally {
-      isTogglingRef.current = false;
+      is_toggling_ref.current = false;
     }
   };
 
-const handleReset = () => {
+  const handle_reset = () => {
     Alert.alert(
       "Reset App",
       "This will erase all wallets and saved addresses. Are you sure?",
@@ -151,26 +162,24 @@ const handleReset = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              // 1. Clear all storage keys FIRST
               await AsyncStorage.multiRemove([
-                '@hasCompletedOnboarding', // <--- THIS WAS MISSING
+                '@hasCompletedOnboarding',
                 DEFAULT_SCREEN_KEY,
                 BIOMETRICS_ENABLED_KEY,
                 AUTO_LOCK_TIME_KEY, 
                 HIDE_TRACKER_BALANCE_KEY,
                 HIDE_WALLET_BALANCE_KEY,
                 CUSTOM_NODE_URL_KEY,
+                ALLOW_SELF_SIGNED_KEY,
                 NETWORK_PREF_KEY,
-                '@lastActiveTime' // Good practice to clear this too
+                '@lastActiveTime'
               ]);
 
-              // 2. Reset local state
-              setCustomNodeUrl('');
-              setConnectionStatus('idle');
+              set_custom_node_url('');
+              set_allow_self_signed(false);
+              set_connection_status('idle');
+              resetActiveConnection();
 
-              // 3. FINALLY reset the wallet context. 
-              // This triggers the AppNavigator to re-check status. 
-              // Since keys are now gone, it will detect "Needs Onboarding".
               await resetWallet();
               
               Alert.alert("App Reset", "All data has been deleted.");
@@ -183,125 +192,134 @@ const handleReset = () => {
     );
   };
 
-  const handleAutoLockChange = async (direction: 'next' | 'prev') => {
-    const newIndex = direction === 'next' 
-      ? (autoLockTimeIndex + 1) % autoLockOptions.length
-      : (autoLockTimeIndex - 1 + autoLockOptions.length) % autoLockOptions.length;
+  const handle_auto_lock_change = async (direction: 'next' | 'prev') => {
+    const new_index = direction === 'next' 
+      ? (auto_lock_time_index + 1) % auto_lock_options.length
+      : (auto_lock_time_index - 1 + auto_lock_options.length) % auto_lock_options.length;
     
-    setAutoLockTimeIndex(newIndex);
-    await AsyncStorage.setItem(AUTO_LOCK_TIME_KEY, autoLockOptions[newIndex].toString());
+    set_auto_lock_time_index(new_index);
+    await AsyncStorage.setItem(AUTO_LOCK_TIME_KEY, auto_lock_options[new_index].toString());
     await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
   };
 
-  const toggleHideTrackerBalance = async () => {
-    const newValue = !hideTrackerBalance;
-    setHideTrackerBalance(newValue);
-    await AsyncStorage.setItem(HIDE_TRACKER_BALANCE_KEY, newValue.toString());
+  const toggle_hide_tracker_balance = async () => {
+    const new_value = !hide_tracker_balance;
+    set_hide_tracker_balance(new_value);
+    await AsyncStorage.setItem(HIDE_TRACKER_BALANCE_KEY, new_value.toString());
   };
 
-  const toggleHideWalletBalance = async () => {
-    const newValue = !hideWalletBalance;
-    setHideWalletBalance(newValue);
-    await AsyncStorage.setItem(HIDE_WALLET_BALANCE_KEY, newValue.toString());
+  const toggle_hide_wallet_balance = async () => {
+    const new_value = !hide_wallet_balance;
+    set_hide_wallet_balance(new_value);
+    await AsyncStorage.setItem(HIDE_WALLET_BALANCE_KEY, new_value.toString());
   };
 
-  const handleDefaultScreenChange = async () => {
-    const newValue = defaultScreen === 'Wallet' ? 'Tracker' : 'Wallet';
-    setDefaultScreen(newValue);
-    await AsyncStorage.setItem(DEFAULT_SCREEN_KEY, newValue);
+  const handle_default_screen_change = async () => {
+    const new_value = default_screen === 'Wallet' ? 'Tracker' : 'Wallet';
+    set_default_screen(new_value);
+    await AsyncStorage.setItem(DEFAULT_SCREEN_KEY, new_value);
   };
 
-  const handleNetworkChange = async () => {
-    const newNetwork = IS_TESTNET ? 'mainnet' : 'testnet';
-    const newNetworkName = IS_TESTNET ? 'Mainnet' : 'Testnet';
+  const handle_network_change = async () => {
+    const new_network = IS_TESTNET ? 'mainnet' : 'testnet';
+    const new_network_name = IS_TESTNET ? 'Mainnet' : 'Testnet';
     
     Alert.alert(
       "Switch Network",
-      `Switch to ${newNetworkName}? The app will reload and your ${newNetworkName} wallets will be loaded.`,
+      `Switch to ${new_network_name}? The app will reload and your ${new_network_name} wallets will be loaded.`,
       [
         { text: "Cancel", style: "cancel" },
         { 
           text: "Switch", 
           onPress: async () => {
-            await AsyncStorage.setItem(NETWORK_PREF_KEY, newNetwork);
-            setNetwork(newNetwork); 
+            await AsyncStorage.setItem(NETWORK_PREF_KEY, new_network);
+            setNetwork(new_network); 
           }
         }
       ]
     );
   };
 
-  const handleSaveNodeUrl = async () => {
-    const trimmed = customNodeUrl.trim().replace(/^https?:\/\//, '');
-    
-    if (trimmed.length === 0) {
-      await AsyncStorage.removeItem(CUSTOM_NODE_URL_KEY);
-      setConnectionStatus('idle');
-      Alert.alert("Reset", "Custom node removed. Reverted to default providers.");
-      setIsEditingNode(false);
-      triggerRefresh();
-      return;
-    }
+const handle_save_node_url = async () => {
+  const trimmed = custom_node_url.trim().replace(/^https?:\/\//, '');
+  
+  if (trimmed.length === 0) {
+    await AsyncStorage.removeItem(CUSTOM_NODE_URL_KEY);
+    await AsyncStorage.removeItem(ALLOW_SELF_SIGNED_KEY);
+    set_connection_status('idle');
+    set_is_editing_node(false);
+    resetActiveConnection();
+    triggerRefresh();
+    setTimeout(() => set_active_host(getActiveHostName()), 1500);
+    Alert.alert("Reset", "Custom node removed. Reverted to default providers.");
+    return;
+  }
 
-    const parts = trimmed.split(':');
-    if (parts.length < 2) {
-      Alert.alert(
-        "Invalid Format", 
-        "Please use the format: Host:Port:Protocol\n\nExample:\n192.168.1.50:50001:tcp"
-      );
-      return;
-    }
+  const parts = trimmed.split(':');
+  if (parts.length < 2) {
+    Alert.alert(
+      "Invalid Format", 
+      "Please use the format: Host:Port:Protocol\n\nExample:\n192.168.1.50:50001:tcp"
+    );
+    return;
+  }
 
-    setConnectionStatus('testing');
+  set_connection_status('testing');
+  
+  const is_connected = await test_custom_node_connection(trimmed, allow_self_signed);
+
+  if (is_connected) {
+    await AsyncStorage.setItem(CUSTOM_NODE_URL_KEY, trimmed);
+    await AsyncStorage.setItem(ALLOW_SELF_SIGNED_KEY, allow_self_signed ? 'true' : 'false');
     
-    const isConnected = await testNodeConnection(trimmed);
+    resetActiveConnection();
+    await getElectrumClient(); 
     
-    if (isConnected) {
-      setConnectionStatus('connected');
-      await AsyncStorage.setItem(CUSTOM_NODE_URL_KEY, trimmed);
-      setIsEditingNode(false);
-      Keyboard.dismiss();
-      triggerRefresh();
-      Alert.alert("Success", "Connected to custom node successfully.");
-    } else {
-      setConnectionStatus('failed');
-      Alert.alert(
-        "Connection Failed", 
-        `Could not connect to ${trimmed}.\nCheck your firewall and ensure the node is reachable.`
-      );
-    }
-  };
+    set_connection_status('connected');
+    set_is_editing_node(false);
+    Keyboard.dismiss();
+    triggerRefresh();
+    set_active_host(getActiveHostName());
+    Alert.alert("Success", "Connected to custom node successfully.");
+  } else {
+    set_connection_status('failed');
+    Alert.alert(
+      "Connection Failed", 
+      `Could not connect to ${trimmed}.\n\nThe node might be offline, or you have a typo. The app will continue using the active node.`
+    );
+  }
+};
 
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.container} contentContainerStyle={styles.content_container} keyboardShouldPersistTaps="handled">
         
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>App Settings</Text>
+          <Text style={styles.section_title}>App Settings</Text>
           
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Theme</Text>
+              <Text style={styles.row_label}>Theme</Text>
               <TouchableOpacity onPress={toggleTheme}>
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={styles.switcherText}>{isDark ? 'Dark' : 'Light'}</Text>
+                  <Text style={styles.switcher_text}>{isDark ? 'Dark' : 'Light'}</Text>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
                 </View>
               </TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Bitcoin Network</Text>
-              <TouchableOpacity onPress={handleNetworkChange}>
+              <Text style={styles.row_label}>Bitcoin Network</Text>
+              <TouchableOpacity onPress={handle_network_change}>
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={[styles.switcherText, { color: IS_TESTNET ? theme.colors.bitcoin : theme.colors.primary }]}>
+                  <Text style={[styles.switcher_text, { color: IS_TESTNET ? theme.colors.bitcoin : theme.colors.primary }]}>
                     {NETWORK_NAME}
                   </Text>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
@@ -310,13 +328,13 @@ const handleReset = () => {
             </View>
           </View>
 
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Default Screen</Text>
-              <TouchableOpacity onPress={handleDefaultScreenChange}>
+              <Text style={styles.row_label}>Default Screen</Text>
+              <TouchableOpacity onPress={handle_default_screen_change}>
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={styles.switcherText}>{defaultScreen}</Text>
+                  <Text style={styles.switcher_text}>{default_screen}</Text>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
                 </View>
               </TouchableOpacity>
@@ -325,45 +343,46 @@ const handleReset = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Security</Text>
+          <Text style={styles.section_title}>Security & Network</Text>
 
           <View style={styles.col}>
             <TouchableOpacity 
-              style={styles.rowNoBorder} 
-              onPress={() => setIsEditingNode(!isEditingNode)}
+              style={styles.row_no_border} 
+              onPress={() => set_is_editing_node(!is_editing_node)}
             >
-              <View style={styles.rowHeaderGroup}>
-                <Text style={styles.rowLabel}>Custom Node URL</Text>
-                <View style={styles.statusRow}>
-                  {connectionStatus === 'testing' && (
-                    <View style={styles.testingContainer}>
+              <View style={styles.row_header_group}>
+                <Text style={styles.row_label}>Custom Node URL</Text>
+                <View style={styles.status_row}>
+                  {connection_status === 'testing' && (
+                    <View style={styles.testing_container}>
                       <ActivityIndicator size="small" color={theme.colors.primary} />
-                      <Text style={styles.statusText}>Testing...</Text>
+                      <Text style={styles.status_text}>Testing...</Text>
                     </View>
                   )}
-                  {connectionStatus === 'connected' && <Text style={[styles.statusText, { color: theme.colors.bitcoin }]}>● Connected</Text>}
-                  {connectionStatus === 'failed' && <Text style={[styles.statusText, { color: theme.colors.error }]}>● Failed</Text>}
+                  {connection_status === 'connected' && <Text style={[styles.status_text, { color: theme.colors.bitcoin }]}>● Connected</Text>}
+                  {connection_status === 'failed' && <Text style={[styles.status_text, { color: theme.colors.error }]}>● Failed</Text>}
                 </View>
               </View>
               <Feather 
-                name={isEditingNode ? "chevron-up" : "chevron-down"} 
+                name={is_editing_node ? "chevron-up" : "chevron-down"} 
                 size={24} 
                 color={theme.colors.primary} 
               />
             </TouchableOpacity>
             
-            {isEditingNode && (
-              <View style={styles.nodeInputContainer}>
-                <Text style={styles.helperText}>
-                  Connect to your own Electrum Server or a public node.
+            {is_editing_node && (
+              <View style={styles.node_input_container}>
+
+                <Text style={styles.helper_text}>
+                  Connect to your own Electrum server or a public node.
                 </Text>
 
                 <StyledInput
-                  containerStyle={styles.inputSpacing}
-                  value={customNodeUrl}
+                  containerStyle={styles.input_spacing}
+                  value={custom_node_url}
                   onChangeText={(text) => {
-                    setCustomNodeUrl(text);
-                    if (connectionStatus === 'failed') setConnectionStatus('idle');
+                    set_custom_node_url(text);
+                    if (connection_status === 'failed') set_connection_status('idle');
                   }}
                   placeholder="Format: Host:Port:Protocol"
                   placeholderTextColor={theme.colors.muted}
@@ -374,74 +393,86 @@ const handleReset = () => {
                   autoCorrect={false}
                   keyboardAppearance={isDark ? 'dark' : 'light'}
                 />
-                
-                <Text style={[styles.helperText, { fontSize: 11, opacity: 0.7, marginBottom: 16 }]}>
-                   Examples:{'\n'}
-                   • 192.168.1.50:50001:tcp (local){'\n'}
-                   • electrum.blockstream.info:60001:tcp
-                </Text>
+
+                <View style={styles.status_banner}>
+                  <Text style={styles.banner_text}>Active node: {active_host || 'Disconnected'}</Text>
+                </View>
 
                 <TouchableOpacity 
-                  style={[styles.saveButton, connectionStatus === 'testing' && styles.disabledButton]}
-                  onPress={handleSaveNodeUrl}
-                  disabled={connectionStatus === 'testing'}
+                  style={styles.checkbox_row}
+                  onPress={() => set_allow_self_signed(!allow_self_signed)}
+                >
+                  <Feather 
+                    name={allow_self_signed ? "check-square" : "square"} 
+                    size={20} 
+                    color={theme.colors.primary} 
+                  />
+                  <Text style={styles.checkbox_label}>Allow self-signed certificates</Text>
+                </TouchableOpacity>
+
+
+                
+                <TouchableOpacity 
+                  style={[styles.save_button, connection_status === 'testing' && styles.disabled_button]}
+                  onPress={handle_save_node_url}
+                  disabled={connection_status === 'testing'}
                 >
                   <Feather name="save" size={16} color={theme.colors.inversePrimary} />
-                  <Text style={styles.saveButtonText}>Save & Apply</Text>
+                  <Text style={styles.save_button_text}>Save & apply</Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
 
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Hide Tracker Balance</Text>
-              <TouchableOpacity onPress={toggleHideTrackerBalance}>
+              <Text style={styles.row_label}>Hide Tracker Balance</Text>
+              <TouchableOpacity onPress={toggle_hide_tracker_balance}>
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={styles.switcherText}>{hideTrackerBalance ? 'On' : 'Off'}</Text>
+                  <Text style={styles.switcher_text}>{hide_tracker_balance ? 'On' : 'Off'}</Text>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
                 </View>
               </TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Hide Wallet Balance</Text>
-              <TouchableOpacity onPress={toggleHideWalletBalance}>
+              <Text style={styles.row_label}>Hide Wallet Balance</Text>
+              <TouchableOpacity onPress={toggle_hide_wallet_balance}>
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={styles.switcherText}>{hideWalletBalance ? 'On' : 'Off'}</Text>
+                  <Text style={styles.switcher_text}>{hide_wallet_balance ? 'On' : 'Off'}</Text>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
                 </View>
               </TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Enable Biometrics</Text>
-              <TouchableOpacity onPress={toggleBiometrics}>
+              <Text style={styles.row_label}>Enable Biometrics</Text>
+              <TouchableOpacity onPress={toggle_biometrics}>
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={styles.switcherText}>{isBiometricsEnabled ? 'On' : 'Off'}</Text>
+                  <Text style={styles.switcher_text}>{is_biometrics_enabled ? 'On' : 'Off'}</Text>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
                 </View>
               </TouchableOpacity>
             </View>
           </View>
 
-          {isBiometricsEnabled && (
-            <View style={styles.rowWrapper}>
+          {is_biometrics_enabled && (
+            <View style={styles.row_wrapper}>
               <View style={styles.row}>
-                <Text style={styles.rowLabel}>Auto Lock</Text>
+                <Text style={styles.row_label}>Auto Lock</Text>
                 <View style={styles.switcher}>
-                  <TouchableOpacity onPress={() => handleAutoLockChange('prev')}>
+                  <TouchableOpacity onPress={() => handle_auto_lock_change('prev')}>
                     <Feather name="chevron-left" size={24} color={theme.colors.primary} />
                   </TouchableOpacity>
-                  <Text style={styles.switcherText}>{getAutoLockLabel(autoLockOptions[autoLockTimeIndex])}</Text>
-                  <TouchableOpacity onPress={() => handleAutoLockChange('next')}>
+                  <Text style={styles.switcher_text}>{get_auto_lock_label(auto_lock_options[auto_lock_time_index])}</Text>
+                  <TouchableOpacity onPress={() => handle_auto_lock_change('next')}>
                     <Feather name="chevron-right" size={24} color={theme.colors.primary} />
                   </TouchableOpacity>
                 </View>
@@ -451,83 +482,83 @@ const handleReset = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>About</Text>
+          <Text style={styles.section_title}>About</Text>
           
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <TouchableOpacity 
               style={styles.row}
               onPress={() => Linking.openURL('https://github.com/pechen987/Trustless')}
             >
-              <Text style={styles.rowLabel}>GitHub</Text>
+              <Text style={styles.row_label}>GitHub</Text>
               <Feather name="chevron-right" size={24} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <TouchableOpacity 
               style={styles.row}
               onPress={() => Linking.openURL('https://tally.so/r/Y5RyOz')}
             >
-              <Text style={styles.rowLabel}>Contact us</Text>
+              <Text style={styles.row_label}>Contact us</Text>
               <Feather name="chevron-right" size={24} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
           
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <TouchableOpacity 
               style={styles.row}
               onPress={() => navigation.navigate('PrivacyPolicy')}
             >
-              <Text style={styles.rowLabel}>Privacy Policy</Text>
+              <Text style={styles.row_label}>Privacy Policy</Text>
               <Feather name="chevron-right" size={24} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
             <TouchableOpacity 
               style={styles.row}
               onPress={() => navigation.navigate('TermsConditions')}
             >
-              <Text style={styles.rowLabel}>Terms & Conditions</Text>
+              <Text style={styles.row_label}>Terms & Conditions</Text>
               <Feather name="chevron-right" size={24} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.rowWrapper}>
+          <View style={styles.row_wrapper}>
            <TouchableOpacity 
             style={styles.row}
             onPress={() => navigation.navigate('Support' as any)}
           >
-            <Text style={styles.rowLabel}>Support Trustless</Text>
+            <Text style={styles.row_label}>Support Trustless</Text>
             <Feather name="heart" size={24} color={theme.colors.bitcoin} />
           </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Danger Zone</Text>
+          <Text style={styles.section_title}>Danger Zone</Text>
           <TouchableOpacity 
-            style={styles.buttonContainer}
-            onPress={handleReset}
+            style={styles.button_container}
+            onPress={handle_reset}
           >
             <View style={styles.button}>
-              <View style={styles.buttonContentRowCentered}>
+              <View style={styles.button_content_row_centered}>
                 <Feather name="alert-triangle" size={16} color={theme.colors.inversePrimary} />
-                <Text style={styles.buttonText}>Reset App</Text>
+                <Text style={styles.button_text}>Reset App</Text>
               </View>
             </View>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.versionContainer}>
-          <Text style={styles.versionText}>
+        <View style={styles.version_container}>
+          <Text style={styles.version_text}>
             Version 1.1.1
           </Text>
-          <Text style={styles.commitText}>
-            Commit: {buildInfo?.commitHash || 'Unknown'}
+          <Text style={styles.commit_text}>
+            Commit: {build_info?.commitHash || 'Unknown'}
           </Text>
-          <Text style={styles.commitText}>
-            Built: {buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleDateString() : 'Unknown'}
+          <Text style={styles.commit_text}>
+            Built: {build_info?.buildDate ? new Date(build_info.buildDate).toLocaleDateString() : 'Unknown'}
           </Text>
         </View>
 
@@ -536,12 +567,12 @@ const handleReset = () => {
   );
 };
 
-const getStyles = (theme: Theme) => StyleSheet.create({
+const get_styles = (theme: Theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  contentContainer: {
+  content_container: {
     padding: 24,
     flexGrow: 1,
     paddingBottom: 40,
@@ -550,13 +581,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   section: {
     marginBottom: 32,
   },
-  sectionTitle: {
+  section_title: {
     fontSize: 16,
     fontWeight: '600',
     color: theme.colors.primary,
     marginBottom: 16,
   },
-  rowWrapper: {
+  row_wrapper: {
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
@@ -566,7 +597,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
   },
-  rowNoBorder: {
+  row_no_border: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -576,7 +607,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
-  rowLabel: {
+  row_label: {
     fontSize: 16,
     color: theme.colors.muted,
   },
@@ -585,14 +616,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  switcherText: {
+  switcher_text: {
     fontSize: 16,
-
     minWidth: 90,
     textAlign: 'center',
     color: theme.colors.primary,
   },
-  buttonContainer: {
+  button_container: {
     alignSelf: 'flex-start',
   },
   button: {
@@ -601,31 +631,51 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
   },
-  buttonText: {
+  button_text: {
     color: theme.colors.inversePrimary,
     fontSize: 14,
     fontWeight: '600',
   },
-  buttonContentRowCentered: {
+  button_content_row_centered: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
-  nodeInputContainer: {
+  node_input_container: {
     marginTop: 4,
     marginBottom: 16,
   },
-  helperText: {
+  status_banner: {
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  banner_text: {
+    fontSize: 12,
+    color: theme.colors.muted,
+    fontFamily: 'monospace',
+  },
+  helper_text: {
     fontSize: 12,
     color: theme.colors.muted,
     marginBottom: 8,
     fontFamily: 'monospace',
   },
-  inputSpacing: {
-    marginBottom: 8,
+  input_spacing: {
+    marginBottom: 1,
   },
-  saveButton: {
+  checkbox_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  checkbox_label: {
+    fontSize: 14,
+    color: theme.colors.primary,
+  },
+  save_button: {
     alignSelf: 'flex-start',
     backgroundColor: theme.colors.primary,
     borderRadius: 6,
@@ -635,45 +685,44 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
-  disabledButton: {
+  disabled_button: {
     opacity: 0.5,
   },
-  saveButtonText: {
+  save_button_text: {
     color: theme.colors.inversePrimary,
     fontSize: 14,
     fontWeight: '600',
   },
-  rowHeaderGroup: {
+  row_header_group: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8
   },
-  statusRow: {
+  status_row: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  testingContainer: {
+  testing_container: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  statusText: {
+  status_text: {
     fontSize: 12,
     fontWeight: '600',
     color: theme.colors.muted,
   },
-
-  versionContainer: {
+  version_container: {
     alignItems: 'center',
     marginTop: 16,
     opacity: 0.6,
   },
-  versionText: {
+  version_text: {
     fontSize: 12,
     color: theme.colors.muted,
     marginBottom: 2,
   },
-  commitText: {
+  commit_text: {
     fontSize: 12,
     color: theme.colors.muted,
     fontFamily: 'SpaceMono-Regular',

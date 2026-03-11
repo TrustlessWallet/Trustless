@@ -11,6 +11,7 @@ import { EventEmitter } from 'events';
 const TcpSocket = require('react-native-tcp-socket').default || require('react-native-tcp-socket');
 
 const CUSTOM_NODE_KEY = '@customNodeUrl'; 
+const ALLOW_SELF_SIGNED_KEY = '@allowSelfSigned';
 
 /**
  * CustomElectrumClient
@@ -23,9 +24,10 @@ const CUSTOM_NODE_KEY = '@customNodeUrl';
  */
 class CustomElectrumClient extends EventEmitter {
   private socket: any = null;
-  private host: string = '';
-  private port: number = 0;
-  private protocol: 'tcp' | 'tls' = 'tcp';
+  public host: string = '';
+  public port: number = 0;
+  public protocol: 'tcp' | 'tls' = 'tcp';
+  private allowSelfSigned: boolean = false;
   
   // JSON-RPC request ID counter. Every request gets a unique ID so we can identify the response.
   private id: number = 0;
@@ -41,11 +43,12 @@ class CustomElectrumClient extends EventEmitter {
   public isConnected: boolean = false;
   private keepAliveInterval: any = null;
 
-  constructor(host: string, port: number, protocol: 'tcp' | 'tls' = 'tcp') {
+constructor(host: string, port: number, protocol: 'tcp' | 'tls' = 'tcp', allowSelfSigned: boolean = false) {
     super();
     this.host = host;
     this.port = port;
     this.protocol = protocol;
+    this.allowSelfSigned = allowSelfSigned;
   }
 
   /**
@@ -66,9 +69,7 @@ class CustomElectrumClient extends EventEmitter {
         const options: any = {
           port: this.port,
           host: this.host,
-          // We disable unauthorized rejection to allow self-signed certs (common in private nodes),
-          // though for public infrastructure this is a security trade-off.
-          rejectUnauthorized: false, 
+          rejectUnauthorized: !this.allowSelfSigned,
         };
 
         const onConnect = () => {
@@ -180,18 +181,20 @@ class CustomElectrumClient extends EventEmitter {
 
     // 3. Handle Standard Responses
     if (response.id !== undefined) {
-      const req = this.requests.get(response.id);
-      if (req) {
-        // Remove from pending map
-        this.requests.delete(response.id);
-        
-        if (response.error) {
-          req.reject(new Error(response.error.message || 'Electrum Error'));
-        } else {
-          req.resolve(response.result);
+          const req = this.requests.get(response.id);
+          if (req) {
+            this.requests.delete(response.id);
+            
+            if (response.error) {
+              console.log(`❌ ERROR (id=${response.id}):`, JSON.stringify(response.error));
+              req.reject(new Error(response.error.message || 'Electrum Error'));
+            } else {
+              // Optional: log successful responses to track data flow
+              // console.log(`⬇️ RECV (id=${response.id})`);
+              req.resolve(response.result);
+            }
+          }
         }
-      }
-    }
   }
 
   /**
@@ -332,6 +335,9 @@ export const getElectrumClient = async () => {
         // 1. Try Custom Node first
         try {
             let custom = await AsyncStorage.getItem(CUSTOM_NODE_KEY);
+            let allowSelfSignedStr = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_KEY);
+            let allowSelfSigned = allowSelfSignedStr === 'true';
+
             if (custom) {
                 // Remove http/https prefix if user pasted it by accident
                 custom = custom.replace(/^https?:\/\//, '');
@@ -353,7 +359,7 @@ export const getElectrumClient = async () => {
 
                 if (host) {
                     console.log(`🔌 Custom Node: ${host}:${port} (${protocol})`);
-                    const cl = new CustomElectrumClient(host, port, protocol);
+                    const cl = new CustomElectrumClient(host, port, protocol, allowSelfSigned);
                     await cl.connect();
                     client = cl;
                     currentNetworkIsTestnet = IS_TESTNET;
@@ -368,7 +374,7 @@ export const getElectrumClient = async () => {
         for (const peer of peerList) {
             try {
                 console.log(`🔌 Connecting to ${peer.host}:${peer.port} (${peer.protocol})...`);
-                const cl = new CustomElectrumClient(peer.host, peer.port, peer.protocol);
+                const cl = new CustomElectrumClient(peer.host, peer.port, peer.protocol, false);
                 await cl.connect();
                 
                 client = cl;
@@ -412,17 +418,47 @@ export const electrumEstimateFee = async (blocks: number) => (await getElectrumC
 export const electrumGetHeader = async () => (await getElectrumClient()).request('blockchain.headers.subscribe');
 
 // Batch Requests
-export const electrumBatchGetBalance = async (scriptHashes: string[]) => {
-    const cl = await getElectrumClient();
-    return cl.batch(scriptHashes.map(h => ({ method: 'blockchain.scripthash.get_balance', params: [h] })));
+export const electrumBatchGetBalance = async (script_hashes: string[]) => {
+    const client = await getElectrumClient();
+    return client.batch(script_hashes.map(hash => ({ method: 'blockchain.scripthash.get_balance', params: [hash] })));
 };
 
-export const electrumBatchGetHistory = async (scriptHashes: string[]) => {
-    const cl = await getElectrumClient();
-    return cl.batch(scriptHashes.map(h => ({ method: 'blockchain.scripthash.get_history', params: [h] })));
+export const electrumBatchGetHistory = async (script_hashes: string[]) => {
+    const client = await getElectrumClient();
+    return client.batch(script_hashes.map(hash => ({ method: 'blockchain.scripthash.get_history', params: [hash] })));
 };
 
-export const electrumBatchGetTransactions = async (txIds: string[]) => {
-    const cl = await getElectrumClient();
-    return cl.batch(txIds.map(txid => ({ method: 'blockchain.transaction.get', params: [txid, true] })));
+export const electrumBatchGetTransactions = async (tx_ids: string[]) => {
+    const client = await getElectrumClient();
+    return client.batch(tx_ids.map(id => ({ method: 'blockchain.transaction.get', params: [id, false] })));
+};
+
+// Application State Controls
+export const resetActiveConnection = () => {
+    if (client) {
+        client.forceClose();
+        client = null;
+        connectionPromise = null;
+    }
+};
+
+export const getActiveHostName = (): string | null => {
+    if (!client || !client.isConnected) return null;
+    return client.host;
+};
+
+export const test_custom_node_connection = async (custom_url: string, allow_self_signed: boolean): Promise<boolean> => {
+  try {
+    const parts = custom_url.split(':');
+    const host = parts[0];
+    const port = parseInt(parts[1]) || 50001;
+    const protocol = (parts.length > 2 ? parts[2].toLowerCase() : 'tcp') as 'tcp' | 'tls';
+
+    const test_client = new CustomElectrumClient(host, port, protocol, allow_self_signed);
+    await test_client.connect();
+    test_client.forceClose(); 
+    return true;
+  } catch (error) {
+    return false; 
+  }
 };
