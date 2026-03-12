@@ -259,7 +259,7 @@ const handle_save_node_url = async () => {
   if (parts.length < 2) {
     Alert.alert(
       "Invalid Format", 
-      "Please use the format: Host:Port:Protocol\n\nExample:\n192.168.1.50:50001:tcp"
+      "Please use the format: host:port:protocol\n\nExample:\n192.168.1.50:50001:tcp"
     );
     return;
   }
@@ -384,7 +384,7 @@ const handle_save_node_url = async () => {
                     set_custom_node_url(text);
                     if (connection_status === 'failed') set_connection_status('idle');
                   }}
-                  placeholder="Format: Host:Port:Protocol"
+                  placeholder="host:port:protocol"
                   placeholderTextColor={theme.colors.muted}
                   autoCapitalize="none"
                   autoComplete="off"
