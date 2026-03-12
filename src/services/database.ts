@@ -36,8 +36,7 @@ export const initDatabase = async () => {
       scriptType TEXT DEFAULT 'p2wpkh',
       network TEXT NOT NULL,
       changeAddressIndex INTEGER DEFAULT 0,
-      nextUtxoCount INTEGER DEFAULT 1,
-      mnemonic_enc TEXT -- Note: We rarely store mnemonic here (usually Keychain), this is a legacy/backup field.
+      nextUtxoCount INTEGER DEFAULT 1
     );
 
     -- TABLE: ADDRESSES
