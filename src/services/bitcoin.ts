@@ -1,5 +1,5 @@
 import { Transaction } from '../types';
-import { NETWORK, CUSTOM_NODE_URL_KEY } from '../constants/network';
+import { NETWORK, CUSTOM_NODE_URL_KEY, NETWORK_NAME } from '../constants/network';
 import { address as btcAddress, networks, Transaction as BitcoinTransaction } from 'bitcoinjs-lib';
 import { BIP32Factory } from 'bip32';
 import * as secp from '@bitcoinerlab/secp256k1';
@@ -37,12 +37,12 @@ export const getBip32Node = (key: string, network: any) => {
     return bip32.fromBase58(key, network);
   } catch (e) {}
 
-  const isMainnet = network.bech32 === 'bc';
-  const alts = isMainnet ? ALT_NETWORKS.bitcoin : ALT_NETWORKS.testnet;
+  const is_mainnet = network.bech32 === 'bc';
+  const alts = is_mainnet ? ALT_NETWORKS.bitcoin : ALT_NETWORKS.testnet;
 
-  for (const altNet of alts) {
+  for (const alt_net of alts) {
     try {
-      return bip32.fromBase58(key, altNet);
+      return bip32.fromBase58(key, alt_net);
     } catch (e) {}
   }
 
@@ -56,6 +56,34 @@ export const inferScriptType = (key: string): 'p2wpkh' | 'p2sh-p2wpkh' => {
   return 'p2wpkh'; 
 };
 
+export const format_public_key = (xpub: string, script_type: string, network_name: string): string => {
+    if (!xpub) return '';
+    try {
+        const is_testnet = network_name.toLowerCase() === 'testnet';
+        const node = getBip32Node(xpub, is_testnet ? networks.testnet : networks.bitcoin);
+        
+        let target_bip32_header = { public: 0x0488b21e, private: 0x0488ade4 }; 
+        if (is_testnet) {
+            if (script_type === 'p2wpkh') target_bip32_header = { public: 0x045f1cf6, private: 0x045f18bc }; 
+            else if (script_type === 'p2sh-p2wpkh') target_bip32_header = { public: 0x044a5262, private: 0x044a4e28 }; 
+            else target_bip32_header = { public: 0x043587cf, private: 0x04358394 }; 
+        } else {
+            if (script_type === 'p2wpkh') target_bip32_header = { public: 0x04b24746, private: 0x04b2430c }; 
+            else if (script_type === 'p2sh-p2wpkh') target_bip32_header = { public: 0x049d7cb2, private: 0x049d7878 }; 
+        }
+        
+        const target_network = {
+            ...(is_testnet ? networks.testnet : networks.bitcoin),
+            bip32: target_bip32_header
+        };
+
+        (node as any).network = target_network;
+        return node.toBase58();
+    } catch (e) {
+        return xpub;
+    }
+};
+
 const chunkArray = <T>(array: T[], size: number): T[][] => {
   const chunked: T[][] = [];
   for (let i = 0; i < array.length; i += size) {
@@ -64,37 +92,37 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
   return chunked;
 };
 
-export const calculateVSize = (nInputs: number, nOutputs: number): number => {
-  return Math.ceil((nInputs * 68) + (nOutputs * 31) + 10.5);
+export const calculateVSize = (n_inputs: number, n_outputs: number): number => {
+  return Math.ceil((n_inputs * 68) + (n_outputs * 31) + 10.5);
 };
 
 export const calculateTransactionMetrics = (
-  nInputs: number,
+  n_inputs: number,
   amount: number,
-  totalInputValue: number,
-  feeRate: number
+  total_input_value: number,
+  fee_rate: number
 ): { vsize: number; fee: number; change: number; numOutputs: number } => {
   let numOutputs = 1;
-  let vsize = calculateVSize(nInputs, numOutputs);
-  let fee = Math.ceil(vsize * feeRate);
-  let change = totalInputValue - amount - fee;
+  let vsize = calculateVSize(n_inputs, numOutputs);
+  let fee = Math.ceil(vsize * fee_rate);
+  let change = total_input_value - amount - fee;
 
   if (change > DUST_THRESHOLD) {
-    const vsizeTwo = calculateVSize(nInputs, 2);
-    const feeTwo = Math.ceil(vsizeTwo * feeRate);
-    const changeTwo = totalInputValue - amount - feeTwo;
+    const vsize_two = calculateVSize(n_inputs, 2);
+    const fee_two = Math.ceil(vsize_two * fee_rate);
+    const change_two = total_input_value - amount - fee_two;
     
-    if (changeTwo > DUST_THRESHOLD) {
+    if (change_two > DUST_THRESHOLD) {
        numOutputs = 2;
-       vsize = vsizeTwo;
-       fee = feeTwo;
-       change = changeTwo;
+       vsize = vsize_two;
+       fee = fee_two;
+       change = change_two;
     }
   }
   return { vsize, fee, change, numOutputs };
 };
 
-export const testNodeConnection = async (customUrl: string): Promise<boolean> => {
+export const testNodeConnection = async (custom_url: string): Promise<boolean> => {
     try { return true; } catch (error) { return false; }
 };
 
@@ -111,15 +139,15 @@ export const fetchAddressInfoBatch = async (
     const histories = await electrumBatchGetHistory(hashes) as any[];
 
     return map.map((item, index) => {
-        const balData = balances[index].result as any;
-        const histData = histories[index].result as any[];
-        const totalBalance = (balData?.confirmed || 0) + (balData?.unconfirmed || 0);
-        const txCount = histData ? histData.length : 0;
+        const bal_data = balances[index].result as any;
+        const hist_data = histories[index].result as any[];
+        const total_balance = (bal_data?.confirmed || 0) + (bal_data?.unconfirmed || 0);
+        const tx_count = hist_data ? hist_data.length : 0;
 
         return {
             address: item.addr,
-            balance: totalBalance,
-            tx_count: txCount
+            balance: total_balance,
+            tx_count: tx_count
         };
     });
   } catch (err) {
@@ -209,9 +237,7 @@ const hydrateInputDetails = async (txs: any[]) => {
                     parent_map.set(txid, { vout: parsed_outputs });
                 }
             });
-        } catch (e) {
-            console.warn('Failed to hydrate some inputs', e);
-        }
+        } catch (e) {}
     }
 
     return txs.map(tx => {
@@ -239,20 +265,20 @@ const hydrateInputDetails = async (txs: any[]) => {
     });
 };
 
-const processTransaction = (tx: any, walletAddresses: Set<string>, tip_height: number): Transaction => {
-    let voutTotal = 0;
-    let walletVoutTotal = 0;
-    let walletVinTotal = 0;
+const processTransaction = (tx: any, wallet_addresses: Set<string>, tip_height: number): Transaction => {
+    let vout_total = 0;
+    let wallet_vout_total = 0;
+    let wallet_vin_total = 0;
     let vin_total = 0; 
 
-    const normalizedVout = tx.vout.map((output: any) => {
+    const normalized_vout = tx.vout.map((output: any) => {
         const sats = output.value;
         const address = output.scriptPubKey?.address || output.scriptPubKey?.addresses?.[0] || output.scriptpubkey_address;
 
-        if (walletAddresses.has(address)) {
-            walletVoutTotal += sats;
+        if (wallet_addresses.has(address)) {
+            wallet_vout_total += sats;
         }
-        voutTotal += sats;
+        vout_total += sats;
 
         return {
             ...output,
@@ -261,7 +287,7 @@ const processTransaction = (tx: any, walletAddresses: Set<string>, tip_height: n
         };
     });
 
-    const normalizedVin = tx.vin.map((input: any) => {
+    const normalized_vin = tx.vin.map((input: any) => {
         const prevout = input.prevout || { 
             scriptpubkey_address: 'Unknown', 
             value: 0 
@@ -269,8 +295,8 @@ const processTransaction = (tx: any, walletAddresses: Set<string>, tip_height: n
 
         vin_total += prevout.value || 0; 
 
-        if (prevout.scriptpubkey_address && walletAddresses.has(prevout.scriptpubkey_address)) {
-            walletVinTotal += prevout.value;
+        if (prevout.scriptpubkey_address && wallet_addresses.has(prevout.scriptpubkey_address)) {
+            wallet_vin_total += prevout.value;
         }
 
         return {
@@ -282,15 +308,15 @@ const processTransaction = (tx: any, walletAddresses: Set<string>, tip_height: n
     let type: 'send' | 'receive' | 'internal' = 'receive'; 
     let amount = 0;
 
-    if (walletVinTotal > 0 && walletVoutTotal === 0) {
+    if (wallet_vin_total > 0 && wallet_vout_total === 0) {
         type = 'send';
-        amount = walletVinTotal; 
-    } else if (walletVinTotal > walletVoutTotal) {
+        amount = wallet_vin_total; 
+    } else if (wallet_vin_total > wallet_vout_total) {
         type = 'send';
-        amount = walletVinTotal - walletVoutTotal; 
+        amount = wallet_vin_total - wallet_vout_total; 
     } else {
         type = 'receive';
-        amount = walletVoutTotal - walletVinTotal;
+        amount = wallet_vout_total - wallet_vin_total;
     }
 
     let confirmations = 0;
@@ -302,9 +328,9 @@ const processTransaction = (tx: any, walletAddresses: Set<string>, tip_height: n
         }
     }
 
-    const isConfirmed = confirmations > 0;
-    const effectiveTime = tx.blocktime || tx.time || Math.floor(Date.now() / 1000);
-    const tx_fee = Math.max(0, vin_total - voutTotal);
+    const is_confirmed = confirmations > 0;
+    const effective_time = tx.blocktime || tx.time || Math.floor(Date.now() / 1000);
+    const tx_fee = Math.max(0, vin_total - vout_total);
 
     const result: any = { 
         txid: tx.txid || tx.hash,
@@ -313,12 +339,12 @@ const processTransaction = (tx: any, walletAddresses: Set<string>, tip_height: n
         size: tx.size,
         weight: tx.weight,
         fee: tx_fee, 
-        vin: normalizedVin,
-        vout: normalizedVout,
+        vin: normalized_vin,
+        vout: normalized_vout,
         confirmations: confirmations, 
         status: { 
-            confirmed: isConfirmed, 
-            block_time: effectiveTime,
+            confirmed: is_confirmed, 
+            block_time: effective_time,
             block_height: tx.blockheight || null,
             block_hash: tx.blockhash || null
         },
@@ -338,28 +364,27 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
       const hashes = map.map(m => m.hash);
 
       const histories = await electrumBatchGetHistory(hashes) as any[];
-      const txIds = new Set<string>();
-      const heightMap = new Map<string, number>();
-      const uniqueHeights = new Set<number>();
+      const tx_ids = new Set<string>();
+      const height_map = new Map<string, number>();
+      const unique_heights = new Set<number>();
       
       histories.forEach((h: any) => {
           if (!h.result) return;
           (h.result as any[]).forEach((item: any) => {
-              txIds.add(item.tx_hash);
+              tx_ids.add(item.tx_hash);
               if (item.height > 0) {
-                  heightMap.set(item.tx_hash, item.height);
-                  uniqueHeights.add(item.height);
+                  height_map.set(item.tx_hash, item.height);
+                  unique_heights.add(item.height);
               }
           });
       });
 
-      const timeMap = new Map<number, number>();
-      const heightArr = Array.from(uniqueHeights);
+      const time_map = new Map<number, number>();
+      const height_arr = Array.from(unique_heights);
       
-      // Fetch headers individually in small chunks to bypass aggressive rate limiting
-      if (heightArr.length > 0) {
+      if (height_arr.length > 0) {
           const client = await getElectrumClient();
-          const chunks = chunkArray(heightArr, 10);
+          const chunks = chunkArray(height_arr, 10);
           for (const chunk of chunks) {
               await Promise.all(chunk.map(async (h) => {
                   try {
@@ -367,20 +392,18 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
                       if (r && typeof r === 'string' && r.length >= 160) {
                           const time_hex = r.substring(136, 144);
                           const timestamp = Buffer.from(time_hex, 'hex').readUInt32LE(0);
-                          timeMap.set(h, timestamp);
+                          time_map.set(h, timestamp);
                       }
-                  } catch (e) {
-                      // Silently ignore if a single header fails
-                  }
+                  } catch (e) {}
               }));
           }
       }
 
-      const uniqueIds = Array.from(txIds);
-      if (uniqueIds.length === 0) return [];
+      const unique_ids = Array.from(tx_ids);
+      if (unique_ids.length === 0) return [];
 
-      const batches = chunkArray(uniqueIds, 10);
-      let fullTxs: any[] = [];
+      const batches = chunkArray(unique_ids, 10);
+      let full_txs: any[] = [];
       
       for (const batch of batches) {
           const results = await electrumBatchGetTransactions(batch) as any[];
@@ -412,10 +435,9 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
                       };
                   });
 
-                  // Rigidly bind the hash to the batch index to guarantee mapping works
                   const tx_hash = batch[index];
-                  const height = heightMap.get(tx_hash) || null;
-                  const blocktime = height ? timeMap.get(height) : undefined;
+                  const height = height_map.get(tx_hash) || null;
+                  const blocktime = height ? time_map.get(height) : undefined;
 
                   const tx = {
                       txid: decoded_tx.getId(),
@@ -430,14 +452,14 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
                       blocktime: blocktime
                   };
                   
-                  fullTxs.push(tx);
+                  full_txs.push(tx);
               }
           });
       }
 
-      const hydratedTxs = await hydrateInputDetails(fullTxs);
-      const walletAddressSet = new Set(addresses);
-      const processed = hydratedTxs.map(tx => processTransaction(tx, walletAddressSet, tip_height));
+      const hydrated_txs = await hydrateInputDetails(full_txs);
+      const wallet_address_set = new Set(addresses);
+      const processed = hydrated_txs.map(tx => processTransaction(tx, wallet_address_set, tip_height));
 
       return processed.sort((a, b) => (b.status.block_time || 0) - (a.status.block_time || 0));
   } catch (err) {
@@ -445,9 +467,9 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
   }
 };
 
-export const broadcastTransaction = async (txHex: string) => {
+export const broadcastTransaction = async (tx_hex: string) => {
   try {
-      return await electrumBroadcast(txHex);
+      return await electrumBroadcast(tx_hex);
   } catch (err: any) {
       throw new Error(err.message || 'Broadcast failed');
   }
@@ -461,16 +483,16 @@ export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: numbe
         electrumEstimateFee(25)
     ]) as [any, any, any];
 
-    const toSatsVB = (btcPerKb: any) => {
-        const val = Number(btcPerKb);
+    const to_sats_vb = (btc_per_kb: any) => {
+        const val = Number(btc_per_kb);
         if (isNaN(val) || val < 0) return 1;
         return Math.ceil((val * 100000000) / 1000);
     };
 
     return {
-        fast: toSatsVB(fast),
-        normal: toSatsVB(normal),
-        slow: toSatsVB(slow),
+        fast: to_sats_vb(fast),
+        normal: to_sats_vb(normal),
+        slow: to_sats_vb(slow),
     };
   } catch (err) {
     return { fast: 10, normal: 5, slow: 2 };
@@ -483,7 +505,7 @@ export const fetchBalanceDetails = async (addresses: string[]): Promise<{ totalB
     return { totalBalance: total, availableToSend: total };
 };
 
-export const getTransactionDetails = async (txid: string, walletAddresses: string[]): Promise<Transaction> => {
+export const getTransactionDetails = async (txid: string, wallet_addresses: string[]): Promise<Transaction> => {
     const raw_tx_hex = (await electrumGetTransaction(txid)) as string;
     const decoded_tx = BitcoinTransaction.fromHex(raw_tx_hex);
                   
@@ -523,7 +545,7 @@ export const getTransactionDetails = async (txid: string, walletAddresses: strin
     
     const tip_height = await getTipHeight();
     const [hydrated] = await hydrateInputDetails([tx]);
-    return processTransaction(hydrated, new Set(walletAddresses), tip_height);
+    return processTransaction(hydrated, new Set(wallet_addresses), tip_height);
 };
 
 export const getTipHeight = async (): Promise<number> => {

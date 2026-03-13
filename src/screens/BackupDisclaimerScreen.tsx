@@ -64,7 +64,7 @@ const BackupDisclaimerScreen = () => {
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Backup Recovery Phrase</Text>
+            <Text style={styles.title}>Backup recovery phrase</Text>
             <View style={styles.bullets_wrapper}>
                 <BulletPoint text="You are about to view your secret recovery phrase." theme={theme} />
                 <BulletPoint text="Ensure no one else is looking at your screen." theme={theme} />

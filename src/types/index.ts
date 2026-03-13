@@ -1,4 +1,5 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
+
 export type BitcoinAddress = {
   id: string;
   address: string;
@@ -6,16 +7,19 @@ export type BitcoinAddress = {
   balance: number;
   lastUpdated: Date;
 };
+
 export type DerivedAddress = {
   address: string;
   index: number;
 };
+
 export type DerivedAddressInfo = {
   address: string;
   index: number;
   balance: number;
   tx_count: number;
 };
+
 export type UTXO = {
   txid: string;
   vout: number;
@@ -28,6 +32,7 @@ export type UTXO = {
     block_time: number | null;
   };
 };
+
 export type Transaction = {
   txid: string;
   version: number;
@@ -67,6 +72,7 @@ export type Transaction = {
   type: 'send' | 'receive' | 'internal';
   amount: number;
 };
+
 export interface Wallet {
   id: string;
   name: string;
@@ -80,11 +86,13 @@ export interface Wallet {
   utxoLabels: Record<string, string>;
   nextUtxoCount: number;
 }
+
 export type TabParamList = {
   Tracker: undefined;
   Wallet: undefined;
   Settings: undefined;
 };
+
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<TabParamList> & { screen?: keyof TabParamList } | undefined;
   AddAddress: undefined;
@@ -112,6 +120,8 @@ export type RootStackParamList = {
   TransactionDetails: { transaction: Transaction };
   TransactionHistory: undefined;
   WalletSwitcher: undefined;
+  WalletOptions: { wallet_id: string };
+  ShowPublicKey: { wallet_id: string };
   AddWalletOptions: undefined;
   BackupDisclaimer: { walletId: string };
   AddressBook: { returnScreen?: keyof RootStackParamList } | undefined;

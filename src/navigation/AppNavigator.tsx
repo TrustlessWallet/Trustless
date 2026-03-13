@@ -23,6 +23,8 @@ import TransactionConfirmScreen from '../screens/TransactionConfirmScreen';
 import TransactionDetailsScreen from '../screens/TransactionDetailsScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import WalletSwitcherScreen from '../screens/WalletSwitcherScreen';
+import WalletOptionsScreen from '../screens/WalletOptionsScreen';
+import ShowPublicKeyScreen from '../screens/ShowPublicKeyScreen';
 import AddWalletOptionsScreen from '../screens/AddWalletOptionsScreen';
 import BackupDisclaimerScreen from '../screens/BackupDisclaimerScreen';
 import AddressBookScreen from '../screens/AddressBookScreen';
@@ -45,31 +47,31 @@ const AUTO_LOCK_TIME_KEY = '@autoLockTime';
 const DEFAULT_SCREEN_KEY = '@defaultScreen';
 
 const AppNavigator = () => {
-  const { loading: walletLoading } = useWallet();
+  const { loading: wallet_loading } = useWallet();
   const { theme, isDark } = useTheme(); 
-  const navigationRef = useNavigationContainerRef<RootStackParamList>();
-  const [isLoading, setIsLoading] = useState(true);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  const [hasShownOnboarding, setHasShownOnboarding] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
-  const [isBackgrounded, setIsBackgrounded] = useState(false);
-  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('MainTabs');
-  const [initialTab, setInitialTab] = useState<keyof TabParamList>('Wallet'); 
-  const [currentRouteName, setCurrentRouteName] = useState<string | undefined>(undefined);
-  const appState = useRef(AppState.currentState);
+  const navigation_ref = useNavigationContainerRef<RootStackParamList>();
+  const [is_loading, set_is_loading] = useState(true);
+  const [needs_onboarding, set_needs_onboarding] = useState(false);
+  const [has_shown_onboarding, set_has_shown_onboarding] = useState(false);
+  const [show_splash, set_show_splash] = useState(true);
+  const [is_backgrounded, set_is_backgrounded] = useState(false);
+  const [initial_route, set_initial_route] = useState<keyof RootStackParamList>('MainTabs');
+  const [initial_tab, set_initial_tab] = useState<keyof TabParamList>('Wallet'); 
+  const [current_route_name, set_current_route_name] = useState<string | undefined>(undefined);
+  const app_state = useRef(AppState.currentState);
 
-  const [splashVisible, setSplashVisible] = useState(true);
+  const [splash_visible, set_splash_visible] = useState(true);
   
-  const splashOpacity = useRef(new Animated.Value(1)).current;
+  const splash_opacity = useRef(new Animated.Value(1)).current;
 
-  const isAndroid = Platform.OS === 'android';
+  const is_android = Platform.OS === 'android';
 
-  const splashIcon = isDark 
+  const splash_icon = isDark 
     ? require('../../assets/splash-icon-black.png') 
     : require('../../assets/splash-icon-white.png');
-  const splashBg = isDark ? '#000000' : '#ffffff';
+  const splash_bg = isDark ? '#000000' : '#ffffff';
 
-  const navigationTheme = {
+  const navigation_theme = {
     dark: isDark,
     colors: {
       primary: theme.colors.primary,
@@ -83,24 +85,24 @@ const AppNavigator = () => {
   };
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', async nextAppState => {
-      if (nextAppState.match(/inactive|background/)) {
-        setIsBackgrounded(true);
-      } else if (nextAppState === 'active') {
-        setIsBackgrounded(false);
+    const subscription = AppState.addEventListener('change', async next_app_state => {
+      if (next_app_state.match(/inactive|background/)) {
+        set_is_backgrounded(true);
+      } else if (next_app_state === 'active') {
+        set_is_backgrounded(false);
         setBiometricPromptShown(false);
       }
 
       if (
-        appState.current.match(/inactive|background/) &&
-        nextAppState === 'active'
+        app_state.current.match(/inactive|background/) &&
+        next_app_state === 'active'
       ) {
-        await checkAuthNeeded();
-      } else if (nextAppState.match(/inactive|background/)) {
+        await check_auth_needed();
+      } else if (next_app_state.match(/inactive|background/)) {
         await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
         setAppIsAuthenticated(false);
       }
-      appState.current = nextAppState;
+      app_state.current = next_app_state;
     });
 
     return () => {
@@ -108,37 +110,37 @@ const AppNavigator = () => {
     };
   }, []);
 
-  const checkAuthNeeded = async () => {
+  const check_auth_needed = async () => {
     try {
-      const hasCompletedOnboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
-      if (!hasCompletedOnboarding) return;
+      const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
+      if (!has_completed_onboarding) return;
 
-      const authCompleted = getAppIsAuthenticated();
-      if (authCompleted) return;
+      const auth_completed = getAppIsAuthenticated();
+      if (auth_completed) return;
 
-      const isBiometricsEnabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      const autoLockTime = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
+      const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
+      const is_enrolled = await LocalAuthentication.isEnrolledAsync();
+      const auto_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
 
-      if (isBiometricsEnabled === 'true' && isEnrolled && autoLockTime !== null && autoLockTime !== 'Off') {
-        const lockTimeMinutes = parseInt(autoLockTime, 10);
-        let shouldAuth = false;
+      if (is_biometrics_enabled === 'true' && is_enrolled && auto_lock_time !== null && auto_lock_time !== 'Off') {
+        const lock_time_minutes = parseInt(auto_lock_time, 10);
+        let should_auth = false;
 
-        if (lockTimeMinutes === 0) {
-          shouldAuth = true;
+        if (lock_time_minutes === 0) {
+          should_auth = true;
         } else {
-          const lastActiveTime = await AsyncStorage.getItem('@lastActiveTime');
-          if (lastActiveTime) {
-            const timeSinceLastActive = Date.now() - parseInt(lastActiveTime, 10);
-            const lockTimeMs = lockTimeMinutes * 60 * 1000;
-            if (timeSinceLastActive >= lockTimeMs) {
-              shouldAuth = true;
+          const last_active_time = await AsyncStorage.getItem('@lastActiveTime');
+          if (last_active_time) {
+            const time_since_last_active = Date.now() - parseInt(last_active_time, 10);
+            const lock_time_ms = lock_time_minutes * 60 * 1000;
+            if (time_since_last_active >= lock_time_ms) {
+              should_auth = true;
             }
           }
         }
 
-        if (shouldAuth && navigationRef.isReady()) {
-          navigationRef.navigate('AuthCheck');
+        if (should_auth && navigation_ref.isReady()) {
+          navigation_ref.navigate('AuthCheck');
         }
       }
     } catch (e) {
@@ -147,42 +149,42 @@ const AppNavigator = () => {
   };
 
   useEffect(() => {
-    const checkInitialStatus = async () => {
+    const check_initial_status = async () => {
       try {
-        const hasCompletedOnboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
-        const savedDefaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-        setInitialTab(savedDefaultScreen === 'Tracker' ? 'Tracker' : 'Wallet');
+        const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
+        const saved_default_screen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
+        set_initial_tab(saved_default_screen === 'Tracker' ? 'Tracker' : 'Wallet');
 
-        if (hasCompletedOnboarding === null) {
-          setNeedsOnboarding(true);
-          setIsLoading(false);
+        if (has_completed_onboarding === null) {
+          set_needs_onboarding(true);
+          set_is_loading(false);
           return;
         }
 
-        const isBiometricsEnabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
-        const isEnrolled = await LocalAuthentication.isEnrolledAsync(); 
+        const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
+        const is_enrolled = await LocalAuthentication.isEnrolledAsync(); 
         
-        if (isBiometricsEnabled === 'true' && isEnrolled) {
-          setInitialRoute('AuthCheck');
+        if (is_biometrics_enabled === 'true' && is_enrolled) {
+          set_initial_route('AuthCheck');
         }
       } catch (e) {
         console.error("Failed to check app status", e);
       } finally {
-        setIsLoading(false);
+        set_is_loading(false);
       }
     };
 
-    if (!walletLoading) {
-      checkInitialStatus();
+    if (!wallet_loading) {
+      check_initial_status();
     }
-  }, [walletLoading]);
+  }, [wallet_loading]);
 
   useEffect(() => {
-    if (!isLoading && needsOnboarding && navigationRef.isReady() && !hasShownOnboarding) {
+    if (!is_loading && needs_onboarding && navigation_ref.isReady() && !has_shown_onboarding) {
       requestAnimationFrame(() => {
         setTimeout(() => {
-          if (navigationRef.isReady()) {
-            navigationRef.reset({
+          if (navigation_ref.isReady()) {
+            navigation_ref.reset({
               index: 3,
               routes: [
                 { name: 'MainTabs' },
@@ -191,42 +193,42 @@ const AppNavigator = () => {
                 { name: 'OnboardingWelcome' },
               ],
             });
-            setHasShownOnboarding(true);
+            set_has_shown_onboarding(true);
             setTimeout(() => {
-              setShowSplash(false);
+              set_show_splash(false);
             }, 100);
           }
         }, 0);
       });
-    } else if (!isLoading && !needsOnboarding) {
-      setShowSplash(false);
+    } else if (!is_loading && !needs_onboarding) {
+      set_show_splash(false);
     }
-  }, [isLoading, needsOnboarding, navigationRef, hasShownOnboarding]);
+  }, [is_loading, needs_onboarding, navigation_ref, has_shown_onboarding]);
 
-  const shouldShowSplash = walletLoading || isLoading || showSplash || (isBackgrounded && !getBiometricPromptShown());
+  const should_show_splash = wallet_loading || is_loading || show_splash || (is_backgrounded && !getBiometricPromptShown());
 
   useEffect(() => {
-    if (shouldShowSplash) {
-      setSplashVisible(true);
-      Animated.timing(splashOpacity, {
+    if (should_show_splash) {
+      set_splash_visible(true);
+      Animated.timing(splash_opacity, {
         toValue: 1,
         duration: 200,
         useNativeDriver: true,
       }).start();
     } else {
-      Animated.timing(splashOpacity, {
+      Animated.timing(splash_opacity, {
         toValue: 0,
         duration: 200,
         useNativeDriver: true,
       }).start(() => {
-        setSplashVisible(false);
+        set_splash_visible(false);
       });
     }
-  }, [shouldShowSplash]);
+  }, [should_show_splash]);
 
-  const screenOptions: NativeStackNavigationOptions = {
+  const screen_options: NativeStackNavigationOptions = {
     contentStyle: { backgroundColor: theme.colors.background },
-    animation: isAndroid ? 'slide_from_right' : undefined,
+    animation: is_android ? 'slide_from_right' : undefined,
     gestureEnabled: true,
     gestureDirection: 'horizontal',
 
@@ -294,7 +296,7 @@ const AppNavigator = () => {
     </TouchableOpacity>
   );
 
-  const androidSheetOptions: Partial<NativeStackNavigationOptions> = isAndroid ? {
+  const android_sheet_options: Partial<NativeStackNavigationOptions> = is_android ? {
     presentation: 'formSheet',
     sheetAllowedDetents: [0.95],
     sheetCornerRadius: 24,
@@ -302,12 +304,12 @@ const AppNavigator = () => {
     animation: 'slide_from_bottom', 
   } : {};
 
-  if (walletLoading || isLoading) {
+  if (wallet_loading || is_loading) {
     const { width, height } = Dimensions.get('screen');
     return (
-      <View style={{ flex: 1, backgroundColor: splashBg }}>
+      <View style={{ flex: 1, backgroundColor: splash_bg }}>
         <Image 
-          source={splashIcon}
+          source={splash_icon}
           style={{ width: width, height: height, resizeMode: 'cover', position: 'absolute' }}
         />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -319,14 +321,14 @@ const AppNavigator = () => {
   return (
     <>
       <NavigationContainer 
-        ref={navigationRef} 
-        theme={navigationTheme}
-        onReady={() => setCurrentRouteName(navigationRef.getCurrentRoute()?.name)}
-        onStateChange={() => setCurrentRouteName(navigationRef.getCurrentRoute()?.name)}
+        ref={navigation_ref} 
+        theme={navigation_theme}
+        onReady={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
+        onStateChange={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
       >
         <Stack.Navigator
-          initialRouteName={initialRoute}
-          screenOptions={screenOptions}
+          initialRouteName={initial_route}
+          screenOptions={screen_options}
         >
           <Stack.Screen
             name="MainTabs"
@@ -335,13 +337,13 @@ const AppNavigator = () => {
               headerShown: false,
               contentStyle: { backgroundColor: theme.colors.background }
             }}
-            initialParams={{ screen: initialTab }}
+            initialParams={{ screen: initial_tab }}
           />
           <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
           
           <Stack.Group screenOptions={{ 
             presentation: 'formSheet',
-            ...androidSheetOptions, 
+            ...android_sheet_options, 
           }}>
             <Stack.Screen name="AddAddress" component={AddAddressScreen} options={{ title: 'Add bitcoin address' }} />
             <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
@@ -352,6 +354,7 @@ const AppNavigator = () => {
             <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
             <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
             <Stack.Screen name="WalletSwitcher" component={WalletSwitcherScreen} options={{ title: 'Wallets' }} />
+            <Stack.Screen name="WalletOptions" component={WalletOptionsScreen} options={{ title: 'Wallet options' }} />
             <Stack.Screen name="AddWalletOptions" component={AddWalletOptionsScreen} options={{ title: 'Add wallet' }} />
             <Stack.Screen name="BackupDisclaimer" component={BackupDisclaimerScreen} options={{ title: 'Backup wallet' }} />
             <Stack.Screen name="AddressBook" component={AddressBookScreen} options={{ title: 'Saved addresses' }} />
@@ -359,7 +362,7 @@ const AppNavigator = () => {
             <Stack.Screen name="CoinControl" component={CoinControlScreen} options={{ title: 'Select coins to spend' }} />
           </Stack.Group>
 
-          <Stack.Group screenOptions={{ presentation: 'modal', ...androidSheetOptions }}>
+          <Stack.Group screenOptions={{ presentation: 'modal', ...android_sheet_options }}>
 
             <Stack.Screen
               name="BalanceDetail"
@@ -375,9 +378,18 @@ const AppNavigator = () => {
               headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
             })}
             />
+
+            <Stack.Screen
+              name="ShowPublicKey"
+              component={ShowPublicKeyScreen}
+              options={({ navigation }) => ({
+                title: 'Public key',
+                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+              })}
+            />
           </Stack.Group>
 
-          <Stack.Group screenOptions={{ presentation: 'modal', ...androidSheetOptions }}>
+          <Stack.Group screenOptions={{ presentation: 'modal', ...android_sheet_options }}>
             <Stack.Screen
               name="Receive"
               component={ReceiveScreen}
@@ -451,7 +463,7 @@ const AppNavigator = () => {
       </NavigationContainer>
       
       <Modal
-        visible={splashVisible}
+        visible={splash_visible}
         transparent={true}
         animationType="none"
         statusBarTranslucent={true}
@@ -463,13 +475,13 @@ const AppNavigator = () => {
           left: 0,
           width: Dimensions.get('screen').width,
           height: Dimensions.get('screen').height,
-          backgroundColor: splashBg,
+          backgroundColor: splash_bg,
           justifyContent: 'center',
           alignItems: 'center',
-          opacity: splashOpacity,
+          opacity: splash_opacity,
         }}>
           <Image 
-            source={splashIcon}
+            source={splash_icon}
             style={{ 
               width: '100%', 
               height: '100%', 

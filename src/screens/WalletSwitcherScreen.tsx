@@ -9,133 +9,105 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'WalletSwitcher'>;
+type navigation_prop = NativeStackNavigationProp<RootStackParamList, 'WalletSwitcher'>;
 
 const WalletSwitcherScreen = () => {
-    const navigation = useNavigation<NavigationProp>();
-    const { wallets, activeWallet, switchWallet, updateWalletName, removeWallet } = useWallet();
+    const navigation = useNavigation<navigation_prop>();
+    const { wallets, activeWallet, switchWallet, updateWalletName } = useWallet();
     const { theme, isDark } = useTheme(); 
-    const styles = useMemo(() => getStyles(theme), [theme]); 
-    const [editingWalletId, setEditingWalletId] = useState<string | null>(null);
-    const [editingName, setEditingName] = useState('');
-    const [switchingToWalletId, setSwitchingToWalletId] = useState<string | null>(null);
-    const editInputRef = useRef<TextInput>(null);
+    const styles = useMemo(() => get_styles(theme), [theme]); 
+    const [editing_wallet_id, set_editing_wallet_id] = useState<string | null>(null);
+    const [editing_name, set_editing_name] = useState('');
+    const [switching_to_wallet_id, set_switching_to_wallet_id] = useState<string | null>(null);
+    const edit_input_ref = useRef<TextInput>(null);
 
     useEffect(() => {
-        if (editingWalletId) {
-            editInputRef.current?.focus();
+        if (editing_wallet_id) {
+            edit_input_ref.current?.focus();
         }
-    }, [editingWalletId]);
+    }, [editing_wallet_id]);
 
-    const handleSwitchWallet = async (walletId: string) => {
-        if (switchingToWalletId || editingWalletId === walletId) return;
-        if (walletId === activeWallet?.id) {
+    const handle_switch_wallet = async (wallet_id: string) => {
+        if (switching_to_wallet_id || editing_wallet_id === wallet_id) return;
+        if (wallet_id === activeWallet?.id) {
             navigation.goBack();
             return;
         }
-        setSwitchingToWalletId(walletId);
+        set_switching_to_wallet_id(wallet_id);
         try {
-            await switchWallet(walletId);
+            await switchWallet(wallet_id);
             setTimeout(() => {
                 navigation.goBack();
-                setSwitchingToWalletId(null);
+                set_switching_to_wallet_id(null);
             }, 500);
         } catch (error) {
             Alert.alert("Error", "Failed to switch wallet.");
-            setSwitchingToWalletId(null);
+            set_switching_to_wallet_id(null);
         }
     };
 
-    const handleStartEditing = (wallet: Wallet) => {
-        setEditingWalletId(wallet.id);
-        setEditingName(wallet.name || '');
+    const handle_start_editing = (wallet: Wallet) => {
+        set_editing_wallet_id(wallet.id);
+        set_editing_name(wallet.name || '');
     };
 
-    const handleEndEditing = () => {
-        if (!editingWalletId) return;
-        updateWalletName(editingWalletId, editingName.trim());
-        setEditingWalletId(null);
+    const handle_end_editing = () => {
+        if (!editing_wallet_id) return;
+        updateWalletName(editing_wallet_id, editing_name.trim());
+        set_editing_wallet_id(null);
     };
 
-    const handleRemoveWallet = (wallet: Wallet) => {
-        Alert.alert(
-            "Remove Wallet",
-            `Are you sure you want to remove "${wallet.name}"? This action cannot be undone.`,
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Remove",
-                    style: "destructive",
-                    onPress: async () => {
-                        try {
-                            await removeWallet(wallet.id);
-                            if (activeWallet?.id === wallet.id) {
-                                navigation.goBack();
-                            }
-                        } catch (error) {
-                            Alert.alert("Error", error instanceof Error ? error.message : "Could not remove wallet.");
-                        }
-                    },
-                },
-            ]
-        );
+    const handle_open_options = (wallet_id: string) => {
+        navigation.navigate('WalletOptions', { wallet_id });
     };
 
-    const renderWalletItem = ({ item }: { item: Wallet }) => {
-        const isEditing = editingWalletId === item.id;
-        const isActive = activeWallet?.id === item.id;
-        const isSwitching = switchingToWalletId === item.id;
-        const isWatchOnly = item.type === 'watch-only';
+    const render_wallet_item = ({ item }: { item: Wallet }) => {
+        const is_editing = editing_wallet_id === item.id;
+        const is_active = activeWallet?.id === item.id;
+        const is_switching = switching_to_wallet_id === item.id;
+        const is_watch_only = item.type === 'watch-only';
 
         return (
             <TouchableOpacity
-                style={[styles.walletItem, isActive && styles.activeItem]}
-                onPress={() => handleSwitchWallet(item.id)}
+                style={[styles.wallet_item, is_active && styles.active_item]}
+                onPress={() => handle_switch_wallet(item.id)}
                 activeOpacity={0.7}
-                disabled={isSwitching}
+                disabled={is_switching}
             >
-                <View style={styles.walletInfo}>
-                    {isEditing ? (
+                <View style={styles.wallet_info}>
+                    {is_editing ? (
                         <TextInput
-                            ref={editInputRef}
-                            style={styles.walletNameInput}
-                            value={editingName}
-                            onChangeText={setEditingName}
-                            onBlur={handleEndEditing}
-                            onSubmitEditing={handleEndEditing}
+                            ref={edit_input_ref}
+                            style={styles.wallet_name_input}
+                            value={editing_name}
+                            onChangeText={set_editing_name}
+                            onBlur={handle_end_editing}
+                            onSubmitEditing={handle_end_editing}
                             autoFocus={true}
                             keyboardAppearance={isDark ? 'dark' : 'light'}
                             placeholderTextColor={theme.colors.muted}
                         />
                     ) : (
-                        <View style={styles.nameContainer}>
-                            <Text style={styles.walletName}>{item.name}</Text>
-                            <TouchableOpacity style={styles.editButton} onPress={() => handleStartEditing(item)}>
-                                <Feather name="edit" style={styles.editIcon} />
+                        <View style={styles.name_container}>
+                            <Text style={styles.wallet_name}>{item.name}</Text>
+                            <TouchableOpacity style={styles.edit_button} onPress={() => handle_start_editing(item)}>
+                                <Feather name="edit" style={styles.edit_icon} />
                             </TouchableOpacity>
                         </View>
                     )}
                 </View>
-                {isSwitching ? (
+                {is_switching ? (
                     <ActivityIndicator color={theme.colors.primary} />
                 ) : (
-                    <View style={styles.actionsContainer}>
-                        {isWatchOnly ? (
-                            <View style={styles.watchOnlyContainer}>
-                                <Feather name="eye" size={16} color={theme.colors.primary} />
-                                <Text style={styles.watchOnlyText}>Watch-only</Text>
+                    <View style={styles.actions_container}>
+                        {is_watch_only && (
+                            <View style={styles.watch_only_container}>
+                                <Text style={{ color: theme.colors.muted }}>Watch-only </Text>
+                                <Feather name="eye" size={16} color={theme.colors.muted} />
                             </View>
-                        ) : (
-                            <TouchableOpacity
-                                style={styles.backupButton}
-                                onPress={() => navigation.navigate('BackupDisclaimer', { walletId: item.id })}
-                            >
-                                <Feather name="shield" size={16} color={theme.colors.primary} />
-                                <Text style={styles.backupButtonText}>Backup</Text>
-                            </TouchableOpacity>
                         )}
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleRemoveWallet(item)}>
-                            <Feather name="trash-2" size={16} color={theme.colors.primary} />
+                        <TouchableOpacity style={styles.action_button} onPress={() => handle_open_options(item.id)}>
+                            <Feather name="more-vertical" size={20} color={theme.colors.primary} />
                         </TouchableOpacity>
                     </View>
                 )}
@@ -148,16 +120,16 @@ const WalletSwitcherScreen = () => {
             <SafeAreaView style={styles.container}>
                 <FlatList
                     data={wallets}
-                    renderItem={renderWalletItem}
+                    renderItem={render_wallet_item}
                     keyExtractor={(item) => item.id}
-                    contentContainerStyle={styles.listContent}
+                    contentContainerStyle={styles.list_content}
                     style={styles.list}
                     keyboardShouldPersistTaps="handled"
                 />
                 <View style={styles.footer}>
-                    <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('AddWalletOptions')}>
+                    <TouchableOpacity style={styles.add_button} onPress={() => navigation.navigate('AddWalletOptions')}>
                         <Feather name="plus-circle" size={20} color={theme.colors.inversePrimary} />
-                        <Text style={styles.addButtonText}>Add Wallet</Text>
+                        <Text style={styles.add_button_text}>Add Wallet</Text>
                     </TouchableOpacity>
                 </View>
             </SafeAreaView>
@@ -165,7 +137,7 @@ const WalletSwitcherScreen = () => {
     );
 };
 
-const getStyles = (theme: Theme) => StyleSheet.create({
+const get_styles = (theme: Theme) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.colors.background,
@@ -173,12 +145,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     list: {
         flex: 1,
     },
-    listContent: {
+    list_content: {
         padding: 24,
         paddingBottom: 20,
         gap: 8,
     },
-    walletItem: {
+    wallet_item: {
         paddingVertical: 12,
         paddingHorizontal: 16,
         borderRadius: 8,
@@ -190,65 +162,49 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         minHeight: 64,
     },
-    activeItem: {
+    active_item: {
         borderColor: theme.colors.bitcoin,
     },
-    walletInfo: {
+    wallet_info: {
         flex: 1,
         marginRight: 16,
     },
-    nameContainer: {
+    name_container: {
         flexDirection: 'row',
         alignItems: 'center',
         alignSelf: 'flex-start',
     },
-    walletName: {
+    wallet_name: {
         fontSize: 16,
         color: theme.colors.primary,
     },
-    editButton: {
+    edit_button: {
         padding: 4,
         marginLeft: 4,
     },
-    editIcon: {
+    edit_icon: {
         fontSize: 16,
         color: theme.colors.primary,
     },
-    walletNameInput: {
+    wallet_name_input: {
         fontSize: 16,
         color: theme.colors.primary,
         fontFamily: 'SpaceMono-Regular',
     },
-    actionsContainer: {
+    actions_container: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
     },
-    actionButton: {
+    action_button: {
         padding: 8,
     },
-    backupButton: {
+    watch_only_container: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        justifyContent: 'center',
         paddingVertical: 7,
-        paddingHorizontal: 10,
-        borderRadius: 6,
-    },
-    backupButtonText: {
-        color: theme.colors.primary,
-        fontSize: 14,
-    },
-    watchOnlyContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingVertical: 7,
-        paddingHorizontal: 10,
-    },
-    watchOnlyText: {
-        color: theme.colors.primary,
-        fontSize: 14,
+        paddingHorizontal: 4,
     },
     footer: {
         padding: 24,
@@ -256,7 +212,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: theme.colors.border,
     },
-    addButton: {
+    add_button: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
@@ -265,7 +221,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         padding: 16,
         borderRadius: 8,
     },
-    addButtonText: {
+    add_button_text: {
         color: theme.colors.inversePrimary,
         fontSize: 16,
         fontWeight: '600',
