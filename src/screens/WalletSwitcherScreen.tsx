@@ -97,7 +97,7 @@ const WalletSwitcherScreen = () => {
                     )}
                 </View>
                 {is_switching ? (
-                    <ActivityIndicator color={theme.colors.primary} />
+                    <ActivityIndicator style={styles.loader} color={theme.colors.primary} />
                 ) : (
                     <View style={styles.actions_container}>
                         {is_watch_only && (
@@ -129,7 +129,7 @@ const WalletSwitcherScreen = () => {
                 <View style={styles.footer}>
                     <TouchableOpacity style={styles.add_button} onPress={() => navigation.navigate('AddWalletOptions')}>
                         <Feather name="plus-circle" size={20} color={theme.colors.inversePrimary} />
-                        <Text style={styles.add_button_text}>Add Wallet</Text>
+                        <Text style={styles.add_button_text}>Add wallet</Text>
                     </TouchableOpacity>
                 </View>
             </SafeAreaView>
@@ -197,6 +197,9 @@ const get_styles = (theme: Theme) => StyleSheet.create({
         gap: 8,
     },
     action_button: {
+        padding: 8,
+    },
+    loader: {
         padding: 8,
     },
     watch_only_container: {
