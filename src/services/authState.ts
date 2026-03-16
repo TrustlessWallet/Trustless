@@ -1,18 +1,41 @@
-let isSessionAuthenticated = false;
-let isBiometricPromptShown = false;
+import * as keychain from 'react-native-keychain';
+import * as LocalAuthentication from 'expo-local-authentication';
 
-export const setAppIsAuthenticated = (value: boolean) => {
-  isSessionAuthenticated = value;
+let is_biometric_prompt_shown = false;
+
+export const authenticate_session = async (): Promise<boolean> => {
+  try {
+    const credentials = await keychain.getGenericPassword({
+      authenticationPrompt: { title: 'Authenticate to unlock wallet' },
+    });
+    
+    if (credentials) {
+       return true;
+    }
+    
+    const fallback_auth = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Authenticate to upgrade session security',
+        cancelLabel: 'Cancel',
+        fallbackLabel: 'Use Passcode',
+    });
+
+    if (fallback_auth.success) {
+        await keychain.setGenericPassword('wallet_session', 'encrypted_token_placeholder', {
+            accessControl: keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
+        });
+        return true;
+    }
+
+    return false;
+  } catch (error) {
+    return false;
+  }
 };
 
-export const getAppIsAuthenticated = () => {
-  return isSessionAuthenticated;
+export const set_biometric_prompt_shown = (value: boolean) => {
+  is_biometric_prompt_shown = value;
 };
 
-export const setBiometricPromptShown = (value: boolean) => {
-  isBiometricPromptShown = value;
-};
-
-export const getBiometricPromptShown = () => {
-  return isBiometricPromptShown;
+export const get_biometric_prompt_shown = () => {
+  return is_biometric_prompt_shown;
 };

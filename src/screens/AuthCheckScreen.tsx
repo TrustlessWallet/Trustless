@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
-import * as LocalAuthentication from 'expo-local-authentication';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, TabParamList } from '../types';
@@ -9,7 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
-import { setAppIsAuthenticated, setBiometricPromptShown } from '../services/authState';
+import { get_biometric_prompt_shown, set_biometric_prompt_shown, authenticate_session } from '../services/authState';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'AuthCheck'>;
 const DEFAULT_SCREEN_KEY = '@defaultScreen'; 
@@ -17,41 +16,35 @@ const DEFAULT_SCREEN_KEY = '@defaultScreen';
 const AuthCheckScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const { theme } = useTheme(); 
-    const styles = useMemo(() => getStyles(theme), [theme]); 
-    const [isAuthenticating, setIsAuthenticating] = useState(false);
+    const styles = useMemo(() => get_styles(theme), [theme]); 
+    const [is_authenticating, set_is_authenticating] = useState(false);
 
-    const authenticate = async () => {
-        if (isAuthenticating) return;
-        setIsAuthenticating(true);
-        setBiometricPromptShown(true);
+    const run_authentication = async () => {
+        if (is_authenticating) return;
+        set_is_authenticating(true);
+        set_biometric_prompt_shown(true);
         
         try {
-            const result = await LocalAuthentication.authenticateAsync({
-                promptMessage: 'Authenticate to access your wallet',
-                cancelLabel: 'Cancel',
-                fallbackLabel: 'Use Passcode',
-            });
-            if (result.success) {
-                setAppIsAuthenticated(true);
+            const success = await authenticate_session();
+            if (success) {
                 await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
-                const defaultScreen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-                // Logic changed: default to Wallet if 'Tracker' is not explicitly set
-                const screenToLoad: keyof TabParamList = defaultScreen === 'Tracker' ? 'Tracker' : 'Wallet';
-                navigation.replace('MainTabs', { screen: screenToLoad });
+                const default_screen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
+                const screen_to_load: keyof TabParamList = default_screen === 'Tracker' ? 'Tracker' : 'Wallet';
+                navigation.replace('MainTabs', { screen: screen_to_load });
             } else {
                 Alert.alert('Authentication failed', 'Please try again.');
-                setIsAuthenticating(false);
+                set_is_authenticating(false);
             }
         } catch (error) {
             console.error(error);
             Alert.alert('Authentication error', 'Could not verify your identity.');
-            setIsAuthenticating(false);
+            set_is_authenticating(false);
         }
     };
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            authenticate();
+            run_authentication();
         }, 300);
         return () => clearTimeout(timer);
     }, []);
@@ -62,15 +55,15 @@ const AuthCheckScreen = () => {
             <Text style={styles.subtitle}>Please authenticate to access your wallet</Text>
             <TouchableOpacity 
                 style={styles.button} 
-                onPress={authenticate}
-                disabled={isAuthenticating}
+                onPress={run_authentication}
+                disabled={is_authenticating}
             >
-                {isAuthenticating ? (
+                {is_authenticating ? (
                     <ActivityIndicator color={theme.colors.inversePrimary} />
                 ) : (
-                    <View style={styles.buttonContentRowCentered}>
+                    <View style={styles.button_content_row}>
                         <Feather name="unlock" size={18} color={theme.colors.inversePrimary} />
-                        <Text style={styles.buttonText}>
+                        <Text style={styles.button_text}>
                             Authenticate
                         </Text>
                     </View>
@@ -80,7 +73,7 @@ const AuthCheckScreen = () => {
     );
 };
 
-const getStyles = (theme: Theme) => StyleSheet.create({
+const get_styles = (theme: Theme) => StyleSheet.create({
     container: {
         flex: 1,
         justifyContent: 'center',
@@ -113,12 +106,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         width: '60%',
         minHeight: 55
     },
-    buttonText: {
+    button_text: {
         color: theme.colors.inversePrimary, 
         fontSize: 16,
         fontWeight: '600',
     },
-    buttonContentRowCentered: {
+    button_content_row: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',

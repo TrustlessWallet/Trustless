@@ -11,7 +11,6 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network'; 
-import { setAppIsAuthenticated } from '../services/authState';
 import { StyledInput } from '../components/StyledInput'; 
 import { getElectrumClient, resetActiveConnection, getActiveHostName, test_custom_node_connection } from '../services/electrum';
 
@@ -141,7 +140,6 @@ const SettingsScreen = () => {
       if (result.success) {
         const new_value = !is_biometrics_enabled;
         await AsyncStorage.setItem(BIOMETRICS_ENABLED_KEY, new_value.toString());
-        if (new_value) setAppIsAuthenticated(true);
         set_is_biometrics_enabled(new_value);
       }
     } catch (error) {
