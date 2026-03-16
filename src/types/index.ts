@@ -100,6 +100,7 @@ export type RootStackParamList = {
   BackupIntro: undefined;
   ShowMnemonic: { mnemonic: string; mode: 'create' | 'backup' };
   VerifyMnemonic: { mnemonic: string };
+  ShowMnemonicQR: { mnemonic: string; mode: 'create' | 'backup' };
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
   Receive: undefined;

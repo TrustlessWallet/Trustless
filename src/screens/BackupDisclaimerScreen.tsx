@@ -11,7 +11,7 @@ import { Theme } from '../constants/theme';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-type navigation_prop = NativeStackNavigationProp<RootStackParamList, 'BackupDisclaimer'>;
+type navigation_prop = NativeStackNavigationProp<any>;
 type route_prop_type = RouteProp<RootStackParamList, 'BackupDisclaimer'>;
 
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
@@ -28,11 +28,12 @@ const BackupDisclaimerScreen = () => {
     const route = useRoute<route_prop_type>();
     const { walletId } = route.params;
     const { getMnemonicForWallet } = useWallet();
-    const [is_loading, set_is_loading] = useState(false);
+    const [is_loading_phrase, set_is_loading_phrase] = useState(false);
+    const [is_loading_qr, set_is_loading_qr] = useState(false);
     const { theme } = useTheme();
     const styles = useMemo(() => get_styles(theme), [theme]);
 
-    const handle_show_phrase = async () => {
+    const authenticate_and_fetch = async (destination: string) => {
         try {
             const saved_setting = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
             
@@ -47,17 +48,25 @@ const BackupDisclaimerScreen = () => {
                 }
             }
 
-            set_is_loading(true);
+            if (destination === 'ShowMnemonic') {
+                set_is_loading_phrase(true);
+            } else {
+                set_is_loading_qr(true);
+            }
+
             const mnemonic = await getMnemonicForWallet(walletId);
-            set_is_loading(false);
+            
+            set_is_loading_phrase(false);
+            set_is_loading_qr(false);
 
             if (mnemonic) {
-                navigation.navigate('ShowMnemonic', { mnemonic, mode: 'backup' });
+                navigation.navigate(destination, { mnemonic, mode: 'backup' });
             } else {
                 Alert.alert("Error", "Could not retrieve the recovery phrase for this wallet.");
             }
         } catch (error) {
-            set_is_loading(false);
+            set_is_loading_phrase(false);
+            set_is_loading_qr(false);
             Alert.alert("Error", "An error occurred during authentication.");
         }
     };
@@ -70,16 +79,38 @@ const BackupDisclaimerScreen = () => {
                 <BulletPoint text="Ensure no one else is looking at your screen." theme={theme} />
                 <BulletPoint text="This phrase is the only way to recover your funds." theme={theme} />
             </View>
-            <TouchableOpacity style={styles.button} onPress={handle_show_phrase} disabled={is_loading}>
-                {is_loading ? (
-                    <ActivityIndicator color={theme.colors.inversePrimary} />
-                ) : (
-                    <View style={styles.button_content_row_centered}>
-                        <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
-                        <Text style={styles.button_text}>Show Phrase</Text>
-                    </View>
-                )}
-            </TouchableOpacity>
+            
+            <View style={styles.buttons_wrapper}>
+                <TouchableOpacity 
+                    style={styles.button_primary} 
+                    onPress={() => authenticate_and_fetch('ShowMnemonic')} 
+                    disabled={is_loading_phrase || is_loading_qr}
+                >
+                    {is_loading_phrase ? (
+                        <ActivityIndicator color={theme.colors.inversePrimary} />
+                    ) : (
+                        <View style={styles.button_content_row_centered}>
+                            <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
+                            <Text style={styles.button_text_primary}>Show phrase</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={styles.button_secondary} 
+                    onPress={() => authenticate_and_fetch('ShowMnemonicQR')} 
+                    disabled={is_loading_phrase || is_loading_qr}
+                >
+                    {is_loading_qr ? (
+                        <ActivityIndicator color={theme.colors.primary} />
+                    ) : (
+                        <View style={styles.button_content_row_centered}>
+                            <Feather name="grid" size={18} color={theme.colors.primary} />
+                            <Text style={styles.button_text_secondary}>Show QR code</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+            </View>
         </View>
     );
 };
@@ -120,14 +151,32 @@ const get_styles = (theme: Theme) => StyleSheet.create({
       color: theme.colors.primary,
       lineHeight: 28 
     },
-    button: { 
+    buttons_wrapper: {
+      gap: 16,
+      width: '100%',
+    },
+    button_primary: { 
       backgroundColor: theme.colors.primary,
       paddingVertical: 16, 
       borderRadius: 8, 
       width: '100%' 
     },
-    button_text: { 
+    button_secondary: {
+      backgroundColor: 'transparent',
+      borderColor: theme.colors.primary,
+      borderWidth: 1,
+      paddingVertical: 16, 
+      borderRadius: 8, 
+      width: '100%' 
+    },
+    button_text_primary: { 
       color: theme.colors.inversePrimary,
+      fontSize: 16, 
+      fontWeight: '600', 
+      textAlign: 'center' 
+    },
+    button_text_secondary: { 
+      color: theme.colors.primary,
       fontSize: 16, 
       fontWeight: '600', 
       textAlign: 'center' 

@@ -14,6 +14,7 @@ import AddAddressScreen from '../screens/AddAddressScreen';
 import QRScannerScreen from '../screens/QRScannerScreen';
 import BackupIntroScreen from '../screens/BackupIntroScreen';
 import ShowMnemonicScreen from '../screens/ShowMnemonicScreen';
+import ShowMnemonicQRScreen from '../screens/ShowMnemonicQRScreen';
 import VerifyMnemonicScreen from '../screens/VerifyMnemonicScreen';
 import RecoverWalletScreen from '../screens/RecoverWalletScreen';
 import ImportWatchOnlyScreen from '../screens/ImportWatchOnlyScreen';
@@ -353,6 +354,7 @@ useEffect(() => {
             <Stack.Screen name="AddAddress" component={AddAddressScreen} options={{ title: 'Add bitcoin address' }} />
             <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
             <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
+            <Stack.Screen name="ShowMnemonicQR" component={ShowMnemonicQRScreen} options={{ title: 'Recovery QR' }} />
             <Stack.Screen name="VerifyMnemonic" component={VerifyMnemonicScreen} options={{ title: 'Verify phrase' }} />
             <Stack.Screen name="RecoverWallet" component={RecoverWalletScreen} options={{ title: 'Recover wallet' }} />
             <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
