@@ -26,7 +26,7 @@ class CustomElectrumClient extends EventEmitter {
   private socket: any = null;
   public host: string = '';
   public port: number = 0;
-  public protocol: 'tcp' | 'tls' = 'tcp';
+  public protocol: 'tcp' | 'tls' = 'tls';
   private allowSelfSigned: boolean = false;
   
   // JSON-RPC request ID counter. Every request gets a unique ID so we can identify the response.
@@ -43,7 +43,7 @@ class CustomElectrumClient extends EventEmitter {
   public isConnected: boolean = false;
   private keepAliveInterval: any = null;
 
-constructor(host: string, port: number, protocol: 'tcp' | 'tls' = 'tcp', allowSelfSigned: boolean = false) {
+constructor(host: string, port: number, protocol: 'tcp' | 'tls' = 'tls', allowSelfSigned: boolean = false) {
     super();
     this.host = host;
     this.port = port;
@@ -269,16 +269,12 @@ constructor(host: string, port: number, protocol: 'tcp' | 'tls' = 'tcp', allowSe
   }
 }
 
-// Hardcoded fallback peers if the user hasn't defined a custom node.
-// We mix TCP and TLS ports.
 const PEERS = {
   mainnet: [
-    { host: 'electrum.blockstream.info', port: 50001, protocol: 'tcp' as const },
-    { host: 'electrum.emzy.de', port: 50001, protocol: 'tcp' as const },
+    { host: 'electrum.blockstream.info', port: 50002, protocol: 'tls' as const },
+    { host: 'electrum.emzy.de', port: 50002, protocol: 'tls' as const },
   ],
   testnet: [
-    { host: 'testnet.qtornado.com', port: 51001, protocol: 'tcp' as const },
-    { host: 'electrum.blockstream.info', port: 60001, protocol: 'tcp' as const },
     { host: 'testnet.qtornado.com', port: 51002, protocol: 'tls' as const },
     { host: 'electrum.blockstream.info', port: 60002, protocol: 'tls' as const },
   ],
@@ -345,16 +341,15 @@ export const getElectrumClient = async () => {
                 const parts = custom.split(':');
                 const host = parts[0];
                 
-                let port = 50001;
-                let protocol: 'tcp' | 'tls' = 'tcp';
+                let port = 50002;
+                let protocol: 'tcp' | 'tls' = 'tls';
 
                 if (parts.length > 1) {
-                    port = parseInt(parts[1]) || 50001;
+                    port = parseInt(parts[1], 10) || 50002;
                 }
-                
-                // Allow user to specify protocol in URL, e.g., host:port:tls
+
                 if (parts.length > 2) {
-                    protocol = (parts[2].toLowerCase() as 'tcp' | 'tls') || 'tcp';
+                    protocol = (parts[2].toLowerCase() as 'tcp' | 'tls') || 'tls';
                 }
 
                 if (host) {
@@ -451,8 +446,8 @@ export const test_custom_node_connection = async (custom_url: string, allow_self
   try {
     const parts = custom_url.split(':');
     const host = parts[0];
-    const port = parseInt(parts[1]) || 50001;
-    const protocol = (parts.length > 2 ? parts[2].toLowerCase() : 'tcp') as 'tcp' | 'tls';
+    const port = parseInt(parts[1], 10) || 50002;
+    const protocol = (parts.length > 2 ? parts[2].toLowerCase() : 'tls') as 'tcp' | 'tls';
 
     const test_client = new CustomElectrumClient(host, port, protocol, allow_self_signed);
     await test_client.connect();
