@@ -39,7 +39,7 @@ import AddressDetailsScreen from '../screens/AddressDetailsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import SupportScreen from '../screens/SupportScreen';
-import { getAppIsAuthenticated, setAppIsAuthenticated, getBiometricPromptShown, setBiometricPromptShown } from '../services/authState'; 
+import { get_biometric_prompt_shown, set_biometric_prompt_shown, authenticate_session } from '../services/authState';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
@@ -84,23 +84,31 @@ const AppNavigator = () => {
     fonts: DefaultTheme.fonts,
   };
 
-  useEffect(() => {
+useEffect(() => {
     const subscription = AppState.addEventListener('change', async next_app_state => {
+      const is_prompt_active = get_biometric_prompt_shown();
+
       if (next_app_state.match(/inactive|background/)) {
         set_is_backgrounded(true);
       } else if (next_app_state === 'active') {
         set_is_backgrounded(false);
-        setBiometricPromptShown(false);
       }
 
       if (
         app_state.current.match(/inactive|background/) &&
         next_app_state === 'active'
       ) {
-        await check_auth_needed();
+        // Only run auth checks if returning from a real background state, not the prompt overlay
+        if (!is_prompt_active) {
+          await check_auth_needed();
+        }
+        // Reset the flag after evaluating so the next backgrounding works normally
+        set_biometric_prompt_shown(false);
       } else if (next_app_state.match(/inactive|background/)) {
-        await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
-        setAppIsAuthenticated(false);
+        // Do not update the last active time if the app is just inactive due to the prompt
+        if (!is_prompt_active) {
+          await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
+        }
       }
       app_state.current = next_app_state;
     });
@@ -111,42 +119,39 @@ const AppNavigator = () => {
   }, []);
 
   const check_auth_needed = async () => {
-    try {
-      const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
-      if (!has_completed_onboarding) return;
+      try {
+        const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
+        if (!has_completed_onboarding) return;
 
-      const auth_completed = getAppIsAuthenticated();
-      if (auth_completed) return;
+        const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
+        const is_enrolled = await LocalAuthentication.isEnrolledAsync();
+        const auto_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
 
-      const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
-      const is_enrolled = await LocalAuthentication.isEnrolledAsync();
-      const auto_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
+        if (is_biometrics_enabled === 'true' && is_enrolled && auto_lock_time !== null && auto_lock_time !== 'Off') {
+          const lock_time_minutes = parseInt(auto_lock_time, 10);
+          let should_auth = false;
 
-      if (is_biometrics_enabled === 'true' && is_enrolled && auto_lock_time !== null && auto_lock_time !== 'Off') {
-        const lock_time_minutes = parseInt(auto_lock_time, 10);
-        let should_auth = false;
-
-        if (lock_time_minutes === 0) {
-          should_auth = true;
-        } else {
-          const last_active_time = await AsyncStorage.getItem('@lastActiveTime');
-          if (last_active_time) {
-            const time_since_last_active = Date.now() - parseInt(last_active_time, 10);
-            const lock_time_ms = lock_time_minutes * 60 * 1000;
-            if (time_since_last_active >= lock_time_ms) {
-              should_auth = true;
+          if (lock_time_minutes === 0) {
+            should_auth = true;
+          } else {
+            const last_active_time = await AsyncStorage.getItem('@lastActiveTime');
+            if (last_active_time) {
+              const time_since_last_active = Date.now() - parseInt(last_active_time, 10);
+              const lock_time_ms = lock_time_minutes * 60 * 1000;
+              if (time_since_last_active >= lock_time_ms) {
+                should_auth = true;
+              }
             }
           }
-        }
 
-        if (should_auth && navigation_ref.isReady()) {
-          navigation_ref.navigate('AuthCheck');
+          if (should_auth && navigation_ref.isReady()) {
+            navigation_ref.navigate('AuthCheck');
+          }
         }
+      } catch (e) {
+        console.error("Failed to check auth needed", e);
       }
-    } catch (e) {
-      console.error("Failed to check auth needed", e);
-    }
-  };
+    };
 
   useEffect(() => {
     const check_initial_status = async () => {
@@ -205,7 +210,7 @@ const AppNavigator = () => {
     }
   }, [is_loading, needs_onboarding, navigation_ref, has_shown_onboarding]);
 
-  const should_show_splash = wallet_loading || is_loading || show_splash || (is_backgrounded && !getBiometricPromptShown());
+  const should_show_splash = wallet_loading || is_loading || show_splash || (is_backgrounded && !get_biometric_prompt_shown());
 
   useEffect(() => {
     if (should_show_splash) {
