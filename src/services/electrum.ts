@@ -350,6 +350,8 @@ export const getElectrumClient = async () => {
 
                 if (parts.length > 2) {
                     protocol = (parts[2].toLowerCase() as 'tcp' | 'tls') || 'tls';
+                } else if (port === 50001) {
+                    protocol = 'tcp';
                 }
 
                 if (host) {
@@ -447,7 +449,13 @@ export const test_custom_node_connection = async (custom_url: string, allow_self
     const parts = custom_url.split(':');
     const host = parts[0];
     const port = parseInt(parts[1], 10) || 50002;
-    const protocol = (parts.length > 2 ? parts[2].toLowerCase() : 'tls') as 'tcp' | 'tls';
+    let protocol = 'tls' as 'tcp' | 'tls';
+
+    if (parts.length > 2) {
+        protocol = parts[2].toLowerCase() as 'tcp' | 'tls';
+    } else if (port === 50001) {
+        protocol = 'tcp';
+    }
 
     const test_client = new CustomElectrumClient(host, port, protocol, allow_self_signed);
     await test_client.connect();
