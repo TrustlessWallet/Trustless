@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Linking, Alert } from 'react-native';
 import { Text } from '../components/StyledText';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { RootStackParamList, Transaction } from '../types';
 import { getTransactionDetails, getTipHeight } from '../services/bitcoin';
@@ -11,7 +11,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL } from '../constants/network'; 
 import { AddressText } from '../components/AddressText';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionDetails'>;
+const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 const DetailRow = ({ label, value, isAddress, styles, valueStyle }: { label: string, value: string, isAddress?: boolean, styles: ReturnType<typeof getStyles>, valueStyle?: any }) => (
   <View style={styles.detailRow}>
@@ -25,6 +27,7 @@ const DetailRow = ({ label, value, isAddress, styles, valueStyle }: { label: str
 );
 const TransactionDetailsScreen = () => {
   const route = useRoute<RoutePropType>();
+  const isFocused = useIsFocused();
   const { transaction: txFromParams } = route.params || {};
   const { activeWallet } = useWallet();
   const { theme } = useTheme(); 
@@ -32,6 +35,7 @@ const TransactionDetailsScreen = () => {
   const [tx, setTx] = useState<Transaction | null>(txFromParams);
   const [tipHeight, setTipHeight] = useState<number | null>(null);
   const [loading, setLoading] = useState(!txFromParams);
+  const [hideBalance, setHideBalance] = useState(false);
     useEffect(() => {
     const fetchTx = async () => {
       const receiveAddresses = activeWallet?.derivedReceiveAddresses.map(a => a.address) ?? [];
@@ -60,6 +64,16 @@ const TransactionDetailsScreen = () => {
     };
     fetchTip();
   }, []);
+
+  useEffect(() => {
+    const loadPreference = async () => {
+      const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
+      setHideBalance(savedPref === 'true');
+    };
+    if (isFocused) {
+      loadPreference();
+    }
+  }, [isFocused]);
   const handleOpenExplorer = () => {
     if (tx?.txid) {
       const url = `${EXPLORER_UI_URL}/tx/${tx.txid}`;
@@ -93,7 +107,9 @@ const TransactionDetailsScreen = () => {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.amountText}>
-          {isSend ? '-' : '+'} {formatBtc(tx.amount)} <Text style={styles.orangeSymbol}>₿</Text>
+          {hideBalance ? '*******' : (
+            <>{isSend ? '-' : '+'} {formatBtc(tx.amount)} <Text style={styles.orangeSymbol}>₿</Text></>
+          )}
         </Text>
       </View>
       <View style={styles.detailsContainer}>
