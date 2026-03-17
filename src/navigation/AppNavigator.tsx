@@ -47,6 +47,25 @@ const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 const AUTO_LOCK_TIME_KEY = '@autoLockTime';
 const DEFAULT_SCREEN_KEY = '@defaultScreen';
 
+const privacy_overlay_screen = () => {
+  const { isDark } = useTheme();
+  
+  const splash_icon_img = isDark 
+    ? require('../../assets/splash-icon-black.png') 
+    : require('../../assets/splash-icon-white.png');
+    
+  const bg_color = isDark ? '#000000' : '#ffffff';
+
+  return (
+    <View style={{ flex: 1, backgroundColor: bg_color, justifyContent: 'center', alignItems: 'center' }}>
+      <Image 
+        source={splash_icon_img}
+        style={{ width: '100%', height: '100%', resizeMode: 'cover', position: 'absolute' }}
+      />
+    </View>
+  );
+};
+
 const AppNavigator = () => {
   const { loading: wallet_loading } = useWallet();
   const { theme, isDark } = useTheme(); 
@@ -59,6 +78,7 @@ const AppNavigator = () => {
   const [initial_route, set_initial_route] = useState<keyof RootStackParamList>('MainTabs');
   const [initial_tab, set_initial_tab] = useState<keyof TabParamList>('Wallet'); 
   const [current_route_name, set_current_route_name] = useState<string | undefined>(undefined);
+  const [is_nav_ready, set_is_nav_ready] = useState(false);
   const app_state = useRef(AppState.currentState);
 
   const [splash_visible, set_splash_visible] = useState(true);
@@ -85,7 +105,7 @@ const AppNavigator = () => {
     fonts: DefaultTheme.fonts,
   };
 
-useEffect(() => {
+  useEffect(() => {
     const subscription = AppState.addEventListener('change', async next_app_state => {
       const is_prompt_active = get_biometric_prompt_shown();
 
@@ -99,14 +119,11 @@ useEffect(() => {
         app_state.current.match(/inactive|background/) &&
         next_app_state === 'active'
       ) {
-        // Only run auth checks if returning from a real background state, not the prompt overlay
         if (!is_prompt_active) {
           await check_auth_needed();
         }
-        // Reset the flag after evaluating so the next backgrounding works normally
         set_biometric_prompt_shown(false);
       } else if (next_app_state.match(/inactive|background/)) {
-        // Do not update the last active time if the app is just inactive due to the prompt
         if (!is_prompt_active) {
           await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
         }
@@ -211,10 +228,11 @@ useEffect(() => {
     }
   }, [is_loading, needs_onboarding, navigation_ref, has_shown_onboarding]);
 
-  const should_show_splash = wallet_loading || is_loading || show_splash || (is_backgrounded && !get_biometric_prompt_shown());
+  const should_show_initial_splash = wallet_loading || is_loading || show_splash;
+  const is_privacy_active = is_backgrounded && !get_biometric_prompt_shown();
 
   useEffect(() => {
-    if (should_show_splash) {
+    if (should_show_initial_splash) {
       set_splash_visible(true);
       Animated.timing(splash_opacity, {
         toValue: 1,
@@ -230,7 +248,21 @@ useEffect(() => {
         set_splash_visible(false);
       });
     }
-  }, [should_show_splash]);
+  }, [should_show_initial_splash]);
+
+  useEffect(() => {
+    if (!is_nav_ready || !navigation_ref.isReady()) return;
+
+    const current_route = navigation_ref.getCurrentRoute()?.name;
+
+    if (is_privacy_active && current_route !== 'PrivacyOverlay') {
+      navigation_ref.navigate('PrivacyOverlay' as never);
+    } else if (!is_privacy_active && current_route === 'PrivacyOverlay') {
+      if (navigation_ref.canGoBack()) {
+        navigation_ref.goBack();
+      }
+    }
+  }, [is_privacy_active, is_nav_ready]);
 
   const screen_options: NativeStackNavigationOptions = {
     contentStyle: { backgroundColor: theme.colors.background },
@@ -329,7 +361,10 @@ useEffect(() => {
       <NavigationContainer 
         ref={navigation_ref} 
         theme={navigation_theme}
-        onReady={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
+        onReady={() => {
+          set_is_nav_ready(true);
+          set_current_route_name(navigation_ref.getCurrentRoute()?.name);
+        }}
         onStateChange={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
       >
         <Stack.Navigator
@@ -370,13 +405,11 @@ useEffect(() => {
           </Stack.Group>
 
           <Stack.Group screenOptions={{ presentation: 'modal', ...android_sheet_options }}>
-
             <Stack.Screen
               name="BalanceDetail"
               component={BalanceDetailScreen}
               options={{ title: 'Balance details' }}
             />
-
             <Stack.Screen 
             name="AddressDetails" 
             component={AddressDetailsScreen} 
@@ -385,7 +418,6 @@ useEffect(() => {
               headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
             })}
             />
-
             <Stack.Screen
               name="ShowPublicKey"
               component={ShowPublicKeyScreen}
@@ -466,6 +498,17 @@ useEffect(() => {
               })}
             />
           </Stack.Group>
+
+          <Stack.Screen
+            name={"PrivacyOverlay" as any}
+            component={privacy_overlay_screen}
+            options={{
+              headerShown: false,
+              presentation: 'fullScreenModal',
+              animation: 'fade',
+              gestureEnabled: false, 
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
       

@@ -104,7 +104,7 @@ const get_styles = (theme: Theme) => StyleSheet.create({
         paddingHorizontal: 16,
         borderRadius: 8,
         width: '60%',
-        minHeight: 55
+        minHeight: 56
     },
     button_text: {
         color: theme.colors.inversePrimary, 

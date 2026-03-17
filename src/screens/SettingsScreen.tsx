@@ -485,7 +485,7 @@ const handle_save_node_url = async () => {
           <View style={styles.row_wrapper}>
             <TouchableOpacity 
               style={styles.row}
-              onPress={() => Linking.openURL('https://github.com/pechen987/Trustless')}
+              onPress={() => Linking.openURL('https://github.com/TrustlessWallet/Trustless')}
             >
               <Text style={styles.row_label}>GitHub</Text>
               <Feather name="chevron-right" size={24} color={theme.colors.primary} />

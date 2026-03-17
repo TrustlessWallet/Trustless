@@ -159,7 +159,8 @@ const get_styles = (theme: Theme) => StyleSheet.create({
       backgroundColor: theme.colors.primary,
       paddingVertical: 16, 
       borderRadius: 8, 
-      width: '100%' 
+      width: '100%',
+      minHeight: 56
     },
     button_secondary: {
       backgroundColor: 'transparent',
@@ -167,7 +168,8 @@ const get_styles = (theme: Theme) => StyleSheet.create({
       borderWidth: 1,
       paddingVertical: 16, 
       borderRadius: 8, 
-      width: '100%' 
+      width: '100%',
+      minHeight: 56
     },
     button_text_primary: { 
       color: theme.colors.inversePrimary,
