@@ -119,7 +119,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
       backgroundColor: theme.colors.primary, 
       paddingVertical: 16, 
       borderRadius: 8, 
-      marginTop: 16 
+      marginTop: 16,
+      minHeight: 56
     },
     buttonDisabled: {
         opacity: 0.5

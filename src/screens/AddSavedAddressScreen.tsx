@@ -153,7 +153,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     borderRadius: 8, 
     padding: 16, 
     alignItems: 'center', 
-    justifyContent: 'center' 
+    justifyContent: 'center',
+    minHeight: 56
   },
   buttonDisabled: { 
     opacity: 0.5,

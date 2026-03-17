@@ -103,6 +103,7 @@ export type RootStackParamList = {
   ShowMnemonicQR: { mnemonic: string; mode: 'create' | 'backup' };
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
+  PrivacyOverlay: undefined;
   Receive: undefined;
   Send: { selectedAddress?: string } | undefined;
   TransactionConfirm: {
