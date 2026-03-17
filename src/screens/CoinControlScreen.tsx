@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
-import { useNavigation, RouteProp, useRoute } from '@react-navigation/native';
+import { useNavigation, RouteProp, useRoute, useIsFocused } from '@react-navigation/native';
 import { useWallet } from '../contexts/WalletContext';
 import { fetchUTXOs } from '../services/bitcoin';
 import { UTXO, RootStackParamList } from '../types';
@@ -13,6 +13,7 @@ import { formatBitcoinAddressShort } from '../constants/format';
 
 type RoutePropType = RouteProp<RootStackParamList, 'CoinControl'>;
 
+const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 const formatTxidShort = (txid: string) => {
   if (!txid || txid.length <= 8) return txid;
@@ -22,6 +23,7 @@ const formatTxidShort = (txid: string) => {
 const CoinControlScreen = () => {
   const navigation = useNavigation();
   const route = useRoute<RoutePropType>();
+  const isFocused = useIsFocused();
   const { onSelect, targetAmount } = route.params;
   const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
   const { theme, isDark } = useTheme();
@@ -30,6 +32,7 @@ const CoinControlScreen = () => {
   const [utxos, setUtxos] = useState<UTXO[]>([]);
   const [selectedUtxos, setSelectedUtxos] = useState<UTXO[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hideBalance, setHideBalance] = useState(false);
 
   // Edit State
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
@@ -91,6 +94,16 @@ const CoinControlScreen = () => {
       }, 100);
     }
   }, [editingUtxoKey]);
+
+  useEffect(() => {
+    const loadPreference = async () => {
+      const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
+      setHideBalance(savedPref === 'true');
+    };
+    if (isFocused) {
+      loadPreference();
+    }
+  }, [isFocused]);
 
   const handleSelectUtxo = (utxo: UTXO) => {
     setSelectedUtxos(prev => {
@@ -183,7 +196,9 @@ const CoinControlScreen = () => {
             <Text style={styles.txidText}>{formatTxidShort(item.txid)}:{item.vout}</Text>
         </View>
         <Text style={styles.balanceText}>
-          {formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text>
+          {hideBalance ? '*******' : (
+            <>{formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text></>
+          )}
         </Text>
       </TouchableOpacity>
     );
@@ -202,7 +217,11 @@ const CoinControlScreen = () => {
         </View>
         <View style={styles.amountBox}>
             <Text style={styles.amountLabel}>Selected Amount</Text>
-            <Text style={[styles.amountText, totalSelected > 0 ? styles.selectedAmountText : {}]}>{formatBtc(totalSelected)} <Text style={styles.orangeSymbol}>₿</Text></Text>
+            <Text style={[styles.amountText, totalSelected > 0 ? styles.selectedAmountText : {}]}>
+              {hideBalance ? '*******' : (
+                <>{formatBtc(totalSelected)} <Text style={styles.orangeSymbol}>₿</Text></>
+              )}
+            </Text>
         </View>
       </View>
       <FlatList

@@ -26,6 +26,7 @@ type Unit = 'BTC' | 'sats';
 
 const UTXO_CACHE_PREFIX = '@utxoCache:';
 const UTXO_CACHE_STALE_MS = 240000; 
+const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance'; 
 
 const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number) => {
     const sortedUtxos = [...utxos].sort((a, b) => b.value - a.value); 
@@ -56,6 +57,7 @@ const SendScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [selectedUtxos, setSelectedUtxos] = useState<UTXO[] | null>(null);
+    const [hideBalance, setHideBalance] = useState(false);
 
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
@@ -128,6 +130,16 @@ const SendScreen = () => {
             getBalance(true); 
         }
     }, [lastRefreshTime, activeWallet, getBalance]);
+
+    useEffect(() => {
+        const loadPreference = async () => {
+            const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
+            setHideBalance(savedPref === 'true');
+        };
+        if (isFocused) {
+            loadPreference();
+        }
+    }, [isFocused]);
 
     const handleTransaction = async (finalFeeRate: number, utxosToUse: UTXO[]) => {
         setLoading(true);
@@ -323,7 +335,9 @@ const SendScreen = () => {
                             <ActivityIndicator color={theme.colors.primary} />
                         ) : (
                             <Text style={styles.balanceText}>
-                                {formatBalance(balance)} {unit === 'sats' ? 'sats' : <Text style={styles.orangeSymbol}>₿</Text>}
+                                {hideBalance ? '*******' : (
+                                    <>{formatBalance(balance)} {unit === 'sats' ? 'sats' : <Text style={styles.orangeSymbol}>₿</Text>}</>
+                                )}
                             </Text>
                         )}
                     </TouchableOpacity>

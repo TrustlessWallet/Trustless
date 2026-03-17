@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, UTXO } from '../types';
 import { useWallet } from '../contexts/WalletContext';
@@ -21,19 +21,23 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BalanceDetail'>;
 
+const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 
 const BalanceDetailScreen = () => {
   const route = useRoute<RoutePropType>();
   const navigation = useNavigation<NavigationProp>();
+  const isFocused = useIsFocused();
   const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
   const { utxos } = route.params;
+  const [hideBalance, setHideBalance] = useState(false);
 
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -44,6 +48,16 @@ const BalanceDetailScreen = () => {
     [...utxos].sort((a, b) => b.value - a.value), 
     [utxos]
   );
+
+  useEffect(() => {
+    const loadPreference = async () => {
+      const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
+      setHideBalance(savedPref === 'true');
+    };
+    if (isFocused) {
+      loadPreference();
+    }
+  }, [isFocused]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -166,7 +180,9 @@ const BalanceDetailScreen = () => {
 
         <View style={styles.balanceContainer}>
           <Text style={styles.balanceText}>
-            {formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text>
+            {hideBalance ? '*******' : (
+              <>{formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text></>
+            )}
           </Text>
           <TouchableOpacity onPress={() => handleOpenExplorer(item.txid)}>
             <Feather name="external-link" size={20} color={theme.colors.primary} />

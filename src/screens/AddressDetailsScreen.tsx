@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Linking, Alert, ScrollView, TextInput, Clipboard, Share } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, Transaction, UTXO } from '../types';
 import { fetchAddressTransactions, fetchUTXOs, fetchBitcoinBalance } from '../services/bitcoin';
@@ -13,12 +13,14 @@ import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const QR_SIZE = 220;
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'AddressDetails'>;
 type RoutePropType = RouteProp<RootStackParamList, 'AddressDetails'>;
 
+const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 const formatBalance = (sats: number) => {
     const btc = (sats || 0) / 100000000;
@@ -31,6 +33,7 @@ const formatBalance = (sats: number) => {
 const AddressDetailsScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
+  const isFocused = useIsFocused();
   const { address } = route.params;
   const scrollRef = useRef<ScrollView>(null);
   const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
@@ -41,6 +44,7 @@ const AddressDetailsScreen = () => {
   const [utxos, setUtxos] = useState<UTXO[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hideBalance, setHideBalance] = useState(false);
   
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -93,6 +97,16 @@ const AddressDetailsScreen = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const loadPreference = async () => {
+      const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
+      setHideBalance(savedPref === 'true');
+    };
+    if (isFocused) {
+      loadPreference();
+    }
+  }, [isFocused]);
 
   useEffect(() => {
     if (editingUtxoKey && editInputRef.current) {
@@ -183,7 +197,9 @@ const AddressDetailsScreen = () => {
           padLastLine
         />
         <Text style={styles.balanceText}>
-          {formatBtc(balance)} <Text style={styles.orangeSymbol}>₿</Text>
+          {hideBalance ? '*******' : (
+            <>{formatBtc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
+          )}
         </Text>
 
         <View style={styles.actionsContainer}>
@@ -250,7 +266,11 @@ const AddressDetailsScreen = () => {
                       {item.txid.substring(0, 6)}...{item.txid.substring(item.txid.length - 6)}:{item.vout}
                     </Text>
                   </View>
-                  <Text style={styles.itemAmount}>{formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text></Text>
+                  <Text style={styles.itemAmount}>
+                    {hideBalance ? '*******' : (
+                      <>{formatBtc(item.value)} <Text style={styles.orangeSymbol}>₿</Text></>
+                    )}
+                  </Text>
                 </View>
               );
             })}
@@ -301,7 +321,9 @@ const AddressDetailsScreen = () => {
                   </View>
                   <View style={styles.txAmountContainer}>
                     <Text style={styles.txAmount}>
-                      {isSend ? '-' : '+'} {formatBalance(item.amount)} <Text style={styles.orangeSymbol}>₿</Text>
+                      {hideBalance ? '*******' : (
+                        <>{isSend ? '-' : '+'} {formatBalance(item.amount)} <Text style={styles.orangeSymbol}>₿</Text></>
+                      )}
                     </Text>
                     <Text style={styles.txStatus}>
                       {item.status.confirmed ? 'Confirmed' : 'Pending'}

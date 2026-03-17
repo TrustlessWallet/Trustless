@@ -4,7 +4,7 @@ import { Text } from '../components/StyledText';
 import QRCode from 'react-native-qrcode-svg';
 import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
@@ -12,21 +12,25 @@ import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 
 const QR_SIZE = 220;
 const UNUSED_BUFFER_SIZE = 20;
+const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
 const format_btc = (sats: number) => (sats / 100000000).toFixed(8);
 
 const ReceiveScreen = () => {
   const navigation = useNavigation<NavigationProp>();
+  const isFocused = useIsFocused();
   const { activeWallet, loading: wallet_loading, getOrCreateNextUnusedReceiveAddress } = useWallet();
   const { theme, isDark } = useTheme(); 
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]); 
   const [copied, set_copied] = useState(false);
   const [address_offset, set_address_offset] = useState(0);
+  const [hideBalance, setHideBalance] = useState(false);
   const scroll_ref = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -42,6 +46,16 @@ const ReceiveScreen = () => {
   useEffect(() => {
     set_address_offset(0);
   }, [activeWallet?.id]);
+
+  useEffect(() => {
+    const loadPreference = async () => {
+      const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
+      setHideBalance(savedPref === 'true');
+    };
+    if (isFocused) {
+      loadPreference();
+    }
+  }, [isFocused]);
 
   const path_prefix = useMemo(() => {
     if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
@@ -223,7 +237,11 @@ const ReceiveScreen = () => {
                   <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
                 </View>
                 <View style={styles.balanceContainer}>
-                  <Text style={styles.balanceText}>{format_btc(balance)} <Text style={styles.orangeSymbol}>₿</Text></Text>
+                  <Text style={styles.balanceText}>
+                    {hideBalance ? '*******' : (
+                      <>{format_btc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
+                    )}
+                  </Text>
                   <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
                     <Feather name="external-link" size={20} color={theme.colors.primary} />
                   </TouchableOpacity>
