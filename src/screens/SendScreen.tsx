@@ -58,6 +58,7 @@ const SendScreen = () => {
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [selectedUtxos, setSelectedUtxos] = useState<UTXO[] | null>(null);
     const [hideBalance, setHideBalance] = useState(false);
+    const [feeRate, setFeeRate] = useState<number | null>(null);
 
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
@@ -113,6 +114,9 @@ const SendScreen = () => {
                 setBalance(availableToSend);
                 setUtxos(fetchedUtxos);
                 await AsyncStorage.setItem(cacheKey, JSON.stringify({ utxos: fetchedUtxos, balance: availableToSend, timestamp: Date.now() }));
+                
+                const estimates = await fetchFeeEstimates();
+                setFeeRate(estimates.normal);
             } catch (e) {
                 console.error('Error fetching balance:', e);
                 Alert.alert('Error', 'Could not fetch wallet balance.');
@@ -143,11 +147,6 @@ const SendScreen = () => {
 
     const handleTransaction = async (finalFeeRate: number, utxosToUse: UTXO[]) => {
         setLoading(true);
-        if (!utxosToUse || utxosToUse.length === 0) {
-            Alert.alert('Error', 'No UTXOs available for the transaction.');
-            setLoading(false);
-            return;
-        }
         try {
             const cleanAmount = amount.replace(',', '.');
             const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
@@ -159,7 +158,7 @@ const SendScreen = () => {
               await incrementChangeIndex(activeWallet.id, usedChangeIndex);
             }
 
-            const txid = await broadcastTransaction(txHex);
+            await broadcastTransaction(txHex);
             
             Alert.alert(
                 'Transaction Sent!',
@@ -217,15 +216,7 @@ const SendScreen = () => {
             if (selectedUtxos && selectedUtxos.length > 0) {
                 utxosForTx = selectedUtxos;
             } else {
-                let candidateUtxos: UTXO[] = utxos;
-                if (!candidateUtxos || candidateUtxos.length === 0) {
-                    const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
-                    const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
-                    const changeAddresses = (activeWallet?.derivedChangeAddresses ?? []).map(a => a.address);
-                    const targetAddresses = [...new Set([...receiveForUtxos, ...changeAddresses])];
-                    if (targetAddresses.length === 0) throw new Error('Wallet not ready');
-                    candidateUtxos = await fetchUTXOs(targetAddresses);
-                }
+                let candidateUtxos = utxos;
                 const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis);
                 if (!autoSelected) {
                     Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
@@ -236,7 +227,6 @@ const SendScreen = () => {
             }
 
             const totalSelectedValue = utxosForTx.reduce((sum, u) => sum + u.value, 0);
-            
             const { vsize, fee, change, numOutputs } = calculateTransactionMetrics(
                 utxosForTx.length,
                 amountSatoshis,
@@ -261,7 +251,7 @@ const SendScreen = () => {
                     feeVSize: vsize,
                     selectedRate: rate,
                     feeOptions,
-                    onSelectFeeOption: (rate, fee) => {},
+                    onSelectFeeOption: () => {},
                     utxos: utxosForTx,
                 });
             };
@@ -286,10 +276,8 @@ const SendScreen = () => {
             }
 
             proceedToConfirm();
-
         } catch (err) {
             setLoading(false);
-            console.error('Error preparing transaction:', err);
             Alert.alert('Error', err instanceof Error ? err.message : 'Failed to prepare transaction.');
         }
     };
@@ -315,14 +303,11 @@ const SendScreen = () => {
     };
 
     const formatBalance = (sats: number) => {
-        if (unit === 'BTC') {
-            return (sats / 100000000).toFixed(8);
-        }
+        if (unit === 'BTC') return (sats / 100000000).toFixed(8);
         return new Intl.NumberFormat('en-US').format(sats);
     };
 
     const isCoinControlActive = selectedUtxos && selectedUtxos.length > 0;
-    
     const clean_amount_check = amount.replace(',', '.');
     const is_amount_entered = !isNaN(parseFloat(clean_amount_check)) && parseFloat(clean_amount_check) > 0;
 
@@ -342,24 +327,17 @@ const SendScreen = () => {
                         )}
                     </TouchableOpacity>
                 </View>
+
                 <Text style={styles.label}>Recipient Address</Text>
                 <StyledInput
                     placeholder="Enter a bitcoin address"
                     value={recipientAddress}
                     onChangeText={setRecipientAddress}
                     autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="off"
-                    spellCheck={false}
-                    textContentType="none"
-                    keyboardAppearance={isDark ? 'dark' : 'light'}
                     containerStyle={styles.inputSpacing}
                     rightElement={
                         <View style={styles.row}>
-                            <TouchableOpacity 
-                                onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} 
-                                style={styles.iconButton}
-                            >
+                            <TouchableOpacity onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} style={styles.iconButton}>
                                 <Feather name="book-open" size={20} color={theme.colors.primary} />
                             </TouchableOpacity>
                             <TouchableOpacity onPress={handleScanPress} style={styles.iconButton}>
@@ -368,24 +346,14 @@ const SendScreen = () => {
                         </View>
                     }
                 />
-                {!!recipientAddressPreview && (
-                    <AddressText
-                        style={styles.addressPreview}
-                        address={recipientAddressPreview}
-                    />
-                )}
+                {!!recipientAddressPreview && <AddressText style={styles.addressPreview} address={recipientAddressPreview} />}
+
                 <Text style={styles.label}>Amount</Text>
                 <StyledInput
                     placeholder="0.00"
                     value={amount}
                     onChangeText={setAmount}
-                    autoComplete="off"
-                    spellCheck={false}
-                    textContentType="none"
-                    autoCorrect={false}
                     keyboardType="numeric"
-                    keyboardAppearance={isDark ? 'dark' : 'light'}
-                    containerStyle={styles.inputSpacing}
                     rightElement={
                         <View style={styles.unitSelector}>
                             <TouchableOpacity onPress={() => setUnit('BTC')} style={[styles.unitButton, unit === 'BTC' && styles.unitButtonActive]}>
@@ -396,21 +364,44 @@ const SendScreen = () => {
                             </TouchableOpacity>
                         </View>
                     }
+                    
                 />
 
-                <View style={styles.coinControlContainer}>
-                    <View>
-                        <Text style={styles.coinControlLabel}>Coin Control</Text>
-                        <Text style={styles.coinControlSubText}>{isCoinControlActive ? `${selectedUtxos.length} UTXO(s) selected` : 'Automatic selection'}</Text>
+                <View style={styles.feeEstimateRow}>
+                    <View style={styles.feeEstimateContent}>
+                        <Feather name="zap" size={14} color={theme.colors.muted} />
+                        <Text style={styles.feeEstimateText}>
+                            {feeRate ? `Network fee: ~${feeRate} sat/vB` : 'Estimating network fees...'}
+                        </Text>
                     </View>
-                    <TouchableOpacity 
-                        onPress={handleOpenCoinControl} 
-                        style={[styles.coinControlButton, !is_amount_entered && styles.buttonDisabled]}
-                        disabled={!is_amount_entered}
-                    >
-                        <Text style={styles.coinControlButtonText}>{isCoinControlActive ? 'Change' : 'Select'}</Text>
-                    </TouchableOpacity>
                 </View>
+                
+                <View style={styles.coinControlBanner}>
+                    <View style={styles.coinControlHeader}>
+                        <View style={styles.row}>
+                            <Feather name="layers" size={16} color={theme.colors.primary} />
+                            <Text style={styles.coinControlTitle}>Coin Control</Text>
+                        </View>
+                        <TouchableOpacity 
+                            onPress={handleOpenCoinControl} 
+                            style={[styles.selectButton, !is_amount_entered && styles.buttonDisabled]}
+                            disabled={!is_amount_entered}
+                        >
+                            <Text style={styles.selectButtonText}>
+                                {isCoinControlActive ? 'Change' : 'Select UTXOs'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                    
+                    {isCoinControlActive && (
+                        <View style={styles.selectedUtxosRow}>
+                            <Text style={styles.selectedUtxosText}>
+                                {selectedUtxos.length} UTXO{selectedUtxos.length !== 1 ? 's' : ''} selected ({formatBalance(selectedUtxos.reduce((s, u) => s + u.value, 0))} {unit})
+                            </Text>
+                        </View>
+                    )}
+                </View>
+
                 <TouchableOpacity onPress={handleConfirmPress} style={[styles.sendButton, loading && styles.buttonDisabled]} disabled={loading}>
                     {loading ? <ActivityIndicator color={theme.colors.inversePrimary} /> : (
                         <View style={styles.buttonContentRowCentered}>
@@ -424,127 +415,43 @@ const SendScreen = () => {
 };
 
 const getStyles = (theme: Theme) => StyleSheet.create({
-    container: { 
-        flex: 1, 
-        backgroundColor: theme.colors.background
-    },
-    scrollContent: { 
-        padding: 24, 
-        flexGrow: 1 
-    },
-    balanceContainer: { 
-        alignItems: 'center', 
-        marginBottom: 24, 
-        paddingVertical: 8 
-    },
-    balanceLabel: { 
-        fontSize: 16, 
-        color: theme.colors.muted
-    },
-    balanceText: { 
-        fontSize: 32, 
-        fontWeight: 'bold', 
-        color: theme.colors.primary,
-        padding: 8 
-    },
-    label: { 
-        fontSize: 16, 
-        fontWeight: '500', 
-        marginBottom: 8, 
-        color: theme.colors.primary
-    },
-    row: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    inputSpacing: {
-        marginBottom: 16,
-    },
-    addressPreview: {
-        fontSize: 14,
-        fontFamily: 'monospace',
-        marginBottom: 16,
-        color: theme.colors.muted,
-    },
-    iconButton: { 
-        padding: 10,
-    },
-    unitSelector: { 
-        flexDirection: 'row', 
-        backgroundColor: theme.colors.border,
-        borderRadius: 6, 
-        marginRight: 8, 
-        padding: 2 
-    },
-    unitButton: { 
-        paddingVertical: 6, 
-        paddingHorizontal: 12, 
-        borderRadius: 5 
-    },
-    unitButtonActive: { 
-        backgroundColor: theme.colors.primary
-    },
-    unitText: { 
-        fontWeight: '600', 
-        color: theme.colors.muted
-    },
-    unitTextActive: { 
-        color: theme.colors.inversePrimary
-    },
-    coinControlContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 16,
+    container: { flex: 1, backgroundColor: theme.colors.background },
+    scrollContent: { padding: 24, flexGrow: 1 },
+    balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
+    balanceLabel: { fontSize: 16, color: theme.colors.muted },
+    balanceText: { fontSize: 32, fontWeight: 'bold', color: theme.colors.primary, padding: 8 },
+    label: { fontSize: 16, fontWeight: '500', marginBottom: 8, color: theme.colors.primary },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    inputSpacing: { marginBottom: 16 },
+    addressPreview: { fontSize: 14, fontFamily: 'monospace', marginBottom: 16, color: theme.colors.muted },
+    iconButton: { padding: 10 },
+    unitSelector: { flexDirection: 'row', backgroundColor: theme.colors.border, borderRadius: 6, marginRight: 8, padding: 2 },
+    unitButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
+    unitButtonActive: { backgroundColor: theme.colors.primary },
+    unitText: { fontWeight: '600', color: theme.colors.muted },
+    unitTextActive: { color: theme.colors.inversePrimary },
+    coinControlBanner: {
         backgroundColor: theme.colors.surface,
-        borderRadius: 8,
+        borderRadius: 12,
+        padding: 16,
         marginBottom: 24,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
     },
-    coinControlLabel: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: theme.colors.primary,
-    },
-    coinControlSubText: {
-        fontSize: 14,
-        color: theme.colors.muted,
-        marginTop: 2,
-    },
-    coinControlButton: {
-        backgroundColor: theme.colors.primary,
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 6,
-    },
-    coinControlButtonText: {
-        color: theme.colors.inversePrimary,
-        fontWeight: '600',
-    },
-    sendButton: { 
-        backgroundColor: theme.colors.primary,
-        paddingVertical: 16, 
-        borderRadius: 8, 
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 56,
-    },
-    buttonDisabled: { 
-        opacity: 0.5,
-    },
-    sendButtonText: { 
-        color: theme.colors.inversePrimary,
-        fontSize: 16, 
-        fontWeight: '600' 
-    },
-    buttonContentRowCentered: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        gap: 8 
-    },
-    orangeSymbol: {
-        color: theme.colors.bitcoin,
-    },
+    coinControlHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 },
+    coinControlTitle: { fontSize: 16, fontWeight: '600', color: theme.colors.primary },
+    selectButton: { backgroundColor: theme.colors.primary, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
+    selectButtonText: { color: theme.colors.inversePrimary, fontSize: 12, fontWeight: '600' },
+    selectedUtxosRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.colors.border },
+    selectedUtxosText: { fontSize: 13, color: theme.colors.primary },
+    feeEstimateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: 16 },
+    feeEstimateText: { fontSize: 13, color: theme.colors.muted },
+    feeEstimateContent: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    sendButton: { backgroundColor: theme.colors.primary, paddingVertical: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', minHeight: 56 },
+    buttonDisabled: { opacity: 0.5 },
+    sendButtonText: { color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '600' },
+    buttonContentRowCentered: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+    orangeSymbol: { color: theme.colors.bitcoin },
 });
 
 export default SendScreen;
