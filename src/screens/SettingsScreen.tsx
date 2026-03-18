@@ -550,7 +550,7 @@ const handle_save_node_url = async () => {
 
         <View style={styles.version_container}>
           <Text style={styles.version_text}>
-            Version 1.1.1
+            Version 1.2.0
           </Text>
           <Text style={styles.commit_text}>
             Commit: {build_info?.commitHash || 'Unknown'}
