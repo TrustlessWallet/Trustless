@@ -65,29 +65,39 @@ const WalletOptionsScreen = () => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.wallet_name}>{wallet.name}</Text>
-                {active_wallet?.id === wallet.id && (
-                    <Text style={styles.active_badge_text}>● Active</Text>
-                )}
+                <View style={styles.header_left}>
+                    <Text style={styles.wallet_name}>{wallet.name}</Text>
+                    {active_wallet?.id === wallet.id && (
+                        <Text style={styles.active_badge_text}>● Active</Text>
+                    )}
+                </View>
+                <TouchableOpacity style={styles.remove_button} onPress={handle_remove_wallet}>
+                    <Feather name="trash-2" size={18} color={theme.colors.primary} />
+                </TouchableOpacity>
             </View>
 
             <View style={styles.options_container}>
-                <TouchableOpacity style={styles.option_row} onPress={handle_show_public_key}>
-                    <Feather name="key" size={18} color={theme.colors.primary} />
-                    <Text style={styles.option_text}>Show public key</Text>
-                </TouchableOpacity>
+                <View style={styles.row_wrapper}>
+                    <TouchableOpacity style={styles.row} onPress={handle_show_public_key}>
+                        <View style={styles.row_left}>
+
+                            <Text style={styles.row_label}>Show public key</Text>
+                        </View>
+                        <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                </View>
 
                 {wallet.type !== 'watch-only' && (
-                    <TouchableOpacity style={styles.option_row} onPress={handle_backup_wallet}>
-                        <Feather name="shield" size={18} color={theme.colors.primary} />
-                        <Text style={styles.option_text}>Backup wallet</Text>
-                    </TouchableOpacity>
-                )}
+                    <View style={styles.row_wrapper}>
+                        <TouchableOpacity style={styles.row} onPress={handle_backup_wallet}>
+                            <View style={styles.row_left}>
 
-                <TouchableOpacity style={[styles.option_row, styles.remove_row]} onPress={handle_remove_wallet}>
-                    <Feather name="trash-2" size={18} color={theme.colors.error} />
-                    <Text style={[styles.option_text, styles.remove_text]}>Remove wallet</Text>
-                </TouchableOpacity>
+                                <Text style={styles.row_label}>Backup wallet</Text>
+                            </View>
+                            <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                        </TouchableOpacity>
+                    </View>
+                )}
             </View>
         </View>
     );
@@ -102,8 +112,14 @@ const get_styles = (theme: Theme) => StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 24,
+        justifyContent: 'space-between',
+        marginBottom: 32,
+    },
+    header_left: {
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 8,
+        flex: 1,
     },
     wallet_name: {
         fontSize: 20,
@@ -115,34 +131,34 @@ const get_styles = (theme: Theme) => StyleSheet.create({
         fontSize: 12,
         fontWeight: 'bold',
     },
+    remove_button: {
+        padding: 4,
+    },
     error_text: {
         color: theme.colors.error,
         fontSize: 16,
     },
     options_container: {
-        backgroundColor: theme.colors.surface,
-        borderRadius: 12,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: theme.colors.border,
+        marginTop: 8,
     },
-    option_row: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 16,
+    row_wrapper: {
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
+    },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 12,
+    },
+    row_left: {
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 12,
     },
-    option_text: {
+    row_label: {
         fontSize: 16,
-        color: theme.colors.primary,
-    },
-    remove_row: {
-        borderBottomWidth: 0, 
-    },
-    remove_text: {
-        color: theme.colors.error,
+        color: theme.colors.muted,
     },
 });
 

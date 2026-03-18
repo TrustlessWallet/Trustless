@@ -229,6 +229,7 @@ const AppNavigator = () => {
   }, [is_loading, needs_onboarding, navigation_ref, has_shown_onboarding]);
 
   const should_show_initial_splash = wallet_loading || is_loading || show_splash;
+  
   const is_privacy_active = is_backgrounded && !get_biometric_prompt_shown();
 
   useEffect(() => {

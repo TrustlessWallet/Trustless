@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useMemo, useEffect } from 'react';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -10,6 +10,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { set_biometric_prompt_shown, set_backup_flow_active } from '../services/authState';
+import { useFocusEffect } from '@react-navigation/native';
 
 type navigation_prop = NativeStackNavigationProp<any>;
 type route_prop_type = RouteProp<RootStackParamList, 'BackupDisclaimer'>;
@@ -33,17 +35,50 @@ const BackupDisclaimerScreen = () => {
     const { theme } = useTheme();
     const styles = useMemo(() => get_styles(theme), [theme]);
 
+    // Reset biometric flag when user returns to this screen
+    useFocusEffect(
+        React.useCallback(() => {
+            // Only clear flags if app is in active state
+            if (AppState.currentState === 'active') {
+                set_backup_flow_active(false);
+                set_biometric_prompt_shown(false);
+            } else {
+                // Wait for app to become active before clearing flags
+                const subscription = AppState.addEventListener('change', (nextState: string) => {
+                    if (nextState === 'active') {
+                        set_backup_flow_active(false);
+                        set_biometric_prompt_shown(false);
+                        subscription?.remove();
+                    }
+                });
+            }
+            
+            return () => {
+                // Cleanup will be handled by subscription.remove()
+            };
+        }, [])
+    );
+
     const authenticate_and_fetch = async (destination: string) => {
         try {
             const saved_setting = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
             
+            // Start backup flow to prevent privacy overlay during entire process
+            set_backup_flow_active(true);
+            
             if (saved_setting === 'true') {
+                // Set flag to prevent privacy overlay during biometric prompt
+                set_biometric_prompt_shown(true);
+                
                 const auth_result = await LocalAuthentication.authenticateAsync({
                     promptMessage: 'Authenticate to view your recovery phrase',
                     fallbackLabel: 'Use Passcode',
                 });
                 
                 if (!auth_result.success) {
+                    // Reset flags immediately on failure
+                    set_biometric_prompt_shown(false);
+                    set_backup_flow_active(false);
                     return; 
                 }
             }
@@ -60,13 +95,20 @@ const BackupDisclaimerScreen = () => {
             set_is_loading_qr(false);
 
             if (mnemonic) {
+                // Navigate to mnemonic screen
                 navigation.navigate(destination, { mnemonic, mode: 'backup' });
             } else {
-                Alert.alert("Error", "Could not retrieve the recovery phrase for this wallet.");
+                // Reset flags on error
+                set_biometric_prompt_shown(false);
+                set_backup_flow_active(false);
+                Alert.alert("Error", "Could not retrieve recovery phrase for this wallet.");
             }
         } catch (error) {
             set_is_loading_phrase(false);
             set_is_loading_qr(false);
+            // Reset flags in case of error
+            set_biometric_prompt_shown(false);
+            set_backup_flow_active(false);
             Alert.alert("Error", "An error occurred during authentication.");
         }
     };
