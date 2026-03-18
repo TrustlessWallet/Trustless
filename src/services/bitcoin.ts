@@ -583,7 +583,7 @@ export const getTransactionDetails = async (txid: string, wallet_addresses: stri
 export const getTipHeight = async (): Promise<number> => {
     try {
         const client = await getElectrumClient();
-        const header = await client.request('b.headers.subscribe') as any; 
+        const header = await client.request('blockchain.headers.subscribe') as any; 
         return header.height || header.block_height || 0;
     } catch (e) {
         return 0;

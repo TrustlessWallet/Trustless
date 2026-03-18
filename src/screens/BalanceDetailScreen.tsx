@@ -310,8 +310,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     fontSize: 16,
     color: theme.colors.primary
   },
-  emptyText: { 
-    fontSize: 18, 
+  emptyText: {  
     color: theme.colors.muted,
     textAlign: 'center' 
   },
