@@ -47,7 +47,7 @@ const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 const AUTO_LOCK_TIME_KEY = '@autoLockTime';
 const DEFAULT_SCREEN_KEY = '@defaultScreen';
 
-const privacy_overlay_screen = () => {
+const PrivacyOverlayScreen = () => {
   const { isDark } = useTheme();
   
   const splash_icon_img = isDark 
@@ -502,7 +502,7 @@ const AppNavigator = () => {
 
           <Stack.Screen
             name={"PrivacyOverlay" as any}
-            component={privacy_overlay_screen}
+            component={PrivacyOverlayScreen}
             options={{
               headerShown: false,
               presentation: 'fullScreenModal',
