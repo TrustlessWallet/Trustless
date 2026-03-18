@@ -59,7 +59,7 @@ const ThemedStatusBar = () => {
 };
 
 const ThemedAppRoot = () => {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
   const rootBgColor = theme.colors.background;
 
   return (
@@ -75,29 +75,29 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false);
   const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>('light');
   const [appKey, setAppKey] = useState(0);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  let [fontsLoaded] = useFonts({
+    'SpaceMono-Regular': SpaceMono_400Regular,
+    'SpaceMono-Italic': SpaceMono_400Regular_Italic,
+    'SpaceMono-Bold': SpaceMono_700Bold,
+    'SpaceMono-BoldItalic': SpaceMono_700Bold_Italic,
+  });
 
   useEffect(() => {
     const prepareApp = async () => {
       try {
-        console.log('--- START PREPARE APP ---');
-        
         await initDatabase();
         setDbReady(true);
 
         try {
           await Font.loadAsync(Feather.font);
-          console.log('Feather font loaded');
         } catch (fontError) {
           console.error('Error loading Feather font:', fontError);
         }
 
         const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
-        
-        if (savedNetwork === 'testnet') {
-          setNetwork('testnet');
-        } else {
-          setNetwork('mainnet');
-        }
+        setNetwork(savedNetwork === 'testnet' ? 'testnet' : 'mainnet');
 
         const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
         if (savedTheme) {
@@ -109,9 +109,7 @@ export default function App() {
       } catch (e) {
         console.warn('PREPARE APP ERROR:', e);
       } finally {
-        console.log('--- SETTING NETWORK LOADED ---');
         setNetworkLoaded(true);
-        
         onNetworkChange(() => {
           setAppKey(prev => prev + 1);
         });
@@ -121,14 +119,13 @@ export default function App() {
     prepareApp();
   }, []);
 
-  let [fontsLoaded] = useFonts({
-    'SpaceMono-Regular': SpaceMono_400Regular,
-    'SpaceMono-Italic': SpaceMono_400Regular_Italic,
-    'SpaceMono-Bold': SpaceMono_700Bold,
-    'SpaceMono-BoldItalic': SpaceMono_700Bold_Italic,
-  });
+  useEffect(() => {
+    if (fontsLoaded && networkLoaded && dbReady) {
+      setIsInitialLoading(false);
+    }
+  }, [fontsLoaded, networkLoaded, dbReady]);
 
-  if (!fontsLoaded || !networkLoaded || !dbReady) {
+  if (isInitialLoading) {
     const splashBg = splashTheme === 'dark' ? '#000000' : '#ffffff';
     const splashIcon = splashTheme === 'dark' 
       ? require('./assets/splash-icon-black.png') 
