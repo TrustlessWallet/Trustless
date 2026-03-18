@@ -1,5 +1,5 @@
 import { Transaction } from '../types';
-import { NETWORK, CUSTOM_NODE_URL_KEY, NETWORK_NAME } from '../constants/network';
+import { NETWORK, CUSTOM_NODE_URL_KEY, NETWORK_NAME, IS_TESTNET } from '../constants/network';
 import { address as btcAddress, networks, Transaction as BitcoinTransaction } from 'bitcoinjs-lib';
 import { BIP32Factory } from 'bip32';
 import * as secp from '@bitcoinerlab/secp256k1';
@@ -476,26 +476,58 @@ export const broadcastTransaction = async (tx_hex: string) => {
 };
 
 export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: number; slow: number; }> => {
+  const isTestnet = IS_TESTNET;
+  
+  // 1. Try Mempool.space
+  try {
+    const baseUrl = isTestnet 
+      ? 'https://mempool.space/testnet/api/v1/fees/recommended' 
+      : 'https://mempool.space/api/v1/fees/recommended';
+      
+    const response = await fetch(baseUrl);
+    const data = await response.json();
+    
+    if (data && data.fastestFee) {
+      return {
+        fast: data.fastestFee,
+        normal: data.halfHourFee,
+        slow: data.hourFee
+      };
+    }
+  } catch (e) {
+    console.warn(`Mempool ${isTestnet ? 'Testnet' : 'Mainnet'} API failed`);
+  }
+
+  // 2. Fallback to Electrum
   try {
     const [fast, normal, slow] = await Promise.all([
-        electrumEstimateFee(1),
-        electrumEstimateFee(5),
-        electrumEstimateFee(25)
-    ]) as [any, any, any];
+      electrumEstimateFee(1),
+      electrumEstimateFee(5),
+      electrumEstimateFee(25)
+    ]);
 
-    const to_sats_vb = (btc_per_kb: any) => {
-        const val = Number(btc_per_kb);
-        if (isNaN(val) || val < 0) return 1;
-        return Math.ceil((val * 100000000) / 1000);
+    const to_sats_vb = (btc_per_kb: any, fallback: number) => {
+      const val = Number(btc_per_kb);
+      if (isNaN(val) || val <= 0) return fallback;
+      
+      const sats_vb = Math.ceil((val * 100000000) / 1000);
+      
+      // Mainnet high-fee ghosting protection
+      if (!isTestnet && sats_vb > 300) return fallback;
+      
+      return sats_vb;
     };
 
     return {
-        fast: to_sats_vb(fast),
-        normal: to_sats_vb(normal),
-        slow: to_sats_vb(slow),
+      fast: to_sats_vb(fast, isTestnet ? 1.5 : 20),
+      normal: to_sats_vb(normal, isTestnet ? 1.1 : 10),
+      slow: to_sats_vb(slow, 1)
     };
   } catch (err) {
-    return { fast: 10, normal: 5, slow: 2 };
+    // Default safety values
+    return isTestnet 
+      ? { fast: 2, normal: 1, slow: 1 } 
+      : { fast: 25, normal: 12, slow: 1 };
   }
 };
 
@@ -551,7 +583,7 @@ export const getTransactionDetails = async (txid: string, wallet_addresses: stri
 export const getTipHeight = async (): Promise<number> => {
     try {
         const client = await getElectrumClient();
-        const header = await client.request('blockchain.headers.subscribe') as any; 
+        const header = await client.request('b.headers.subscribe') as any; 
         return header.height || header.block_height || 0;
     } catch (e) {
         return 0;
