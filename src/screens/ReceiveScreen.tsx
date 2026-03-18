@@ -9,7 +9,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
+import { EXPLORER_UI_URL, COIN_TYPE, IS_TESTNET } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -195,6 +195,13 @@ const ReceiveScreen = () => {
           groupSize={6}
           padLastLine
         />
+        
+        {IS_TESTNET && (
+          <View style={styles.warningBanner}>
+            <Feather name="alert-triangle" size={14} color={theme.colors.muted} />
+            <Text style={styles.warningText}>Send only testnet coins.</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.actionsContainer}>
@@ -394,7 +401,28 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     color: theme.colors.muted,
+    alignSelf: 'center',
+    marginTop: 32,
     padding: 20,
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: theme.colors.surface,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginHorizontal: 20,
+    marginTop: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  warningText: {
+    fontSize: 12,
+    color: theme.colors.muted,
+    fontWeight: '400',
   }
 });
 
