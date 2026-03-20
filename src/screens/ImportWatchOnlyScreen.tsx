@@ -87,24 +87,14 @@ const ImportWatchOnlyScreen = () => {
     return (
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.container}>
-                <Text style={styles.label}>Wallet Label (Optional)</Text>
+                <View style={styles.inputSpacing}>
+                <Text style={styles.label}>Extended public key</Text>
                 <StyledInput 
-                    placeholder="e.g. Cold Storage"
-                    value={name}
-                    onChangeText={set_name}
-                    containerStyle={styles.inputSpacing}
-                    editable={!loading}
-                    keyboardAppearance={isDark ? 'dark' : 'light'}
-                />
-
-                <Text style={styles.label}>Extended Public Key</Text>
-                <StyledInput 
-                    placeholder="xpub..., zpub..., ypub..."
+                    placeholder="xpub / zpub / ypub"
                     value={xpub}
                     onChangeText={set_xpub}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    containerStyle={styles.inputSpacing}
                     editable={!loading}
                     keyboardAppearance={isDark ? 'dark' : 'light'}
                     rightElement={
@@ -112,11 +102,21 @@ const ImportWatchOnlyScreen = () => {
                             <Feather name="camera" size={20} color={theme.colors.primary} />
                         </TouchableOpacity>
                     }
-                />
-
+                />                
                 <Text style={styles.helperText}>
-                    Supports xpub, zpub, ypub formats. Import from hardware wallets or other software to watch your balance.
+                    Import from hardware wallets or other software to watch your balance.
                 </Text>
+                </View>
+
+                <Text style={styles.label}>Wallet label (optional)</Text>
+                <StyledInput 
+                    placeholder="e.g. Cold storage"
+                    value={name}
+                    onChangeText={set_name}
+                    containerStyle={styles.inputSpacing}
+                    editable={!loading}
+                    keyboardAppearance={isDark ? 'dark' : 'light'}
+                />
 
                 <TouchableOpacity 
                     style={[styles.button, (!xpub || loading) && styles.buttonDisabled]} 
@@ -127,7 +127,7 @@ const ImportWatchOnlyScreen = () => {
                         <ActivityIndicator color={theme.colors.inversePrimary} />
                     ) : (
                         <View style={styles.buttonContent}>
-                            <Feather name="download-cloud" size={18} color={theme.colors.inversePrimary} />
+                            <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
                             <Text style={styles.buttonText}>Import Wallet</Text>
                         </View>
                     )}
@@ -150,7 +150,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontWeight: '500',
     },
     inputSpacing: {
-        marginBottom: 24,
+        marginBottom: 16,
     },
     scanButton: {
         padding: 10,
@@ -158,8 +158,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     helperText: {
         color: theme.colors.muted,
         fontSize: 13,
-        marginBottom: 32,
-        lineHeight: 20
+        lineHeight: 20,
+        marginTop: 8,
     },
     button: { 
         backgroundColor: theme.colors.primary, 

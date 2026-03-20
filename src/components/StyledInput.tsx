@@ -48,7 +48,7 @@ export const StyledInput: React.FC<StyledInputProps> = ({
 
   const baseContainerStyle = {
     backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.border,
+    borderColor: isFocused ? 'transparent' : theme.colors.border,
     borderRadius: theme.LAYOUT.radius,
     borderWidth: 1,
     ...(multiline ? { minHeight: theme.LAYOUT.inputHeight } : { height: theme.LAYOUT.inputHeight }),
@@ -65,6 +65,7 @@ export const StyledInput: React.FC<StyledInputProps> = ({
             borderWidth: 1,
             borderRadius: theme.LAYOUT.radius,
             opacity: focusAnim, 
+            margin: -1,
           }
         ]}
       />
