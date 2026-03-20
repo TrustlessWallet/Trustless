@@ -312,7 +312,8 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   emptyText: {  
     color: theme.colors.muted,
-    textAlign: 'center' 
+    textAlign: 'center', 
+    fontSize: 16,
   },
   orangeSymbol: {
     color: theme.colors.bitcoin,
