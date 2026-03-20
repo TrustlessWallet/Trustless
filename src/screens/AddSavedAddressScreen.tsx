@@ -66,19 +66,11 @@ const AddSavedAddressScreen = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Label (optional)</Text>
-      <StyledInput
-        placeholder="e.g., My Friend's Wallet"
-        value={name}
-        onChangeText={setName}
-        editable={!loading}
-        keyboardAppearance={isDark ? 'dark' : 'light'}
-        containerStyle={styles.inputSpacing}
-      />
-      
+
+            <View style={styles.inputSpacing}>
       <Text style={styles.label}>Bitcoin address</Text>
       <StyledInput
-        placeholder="Enter or scan a Bitcoin address"
+        placeholder="Enter a Bitcoin address"
         value={address}
         onChangeText={setAddress}
         autoComplete="off"
@@ -87,7 +79,6 @@ const AddSavedAddressScreen = () => {
         autoCorrect={false}
         keyboardAppearance={isDark ? 'dark' : 'light'}
         editable={!loading}
-        containerStyle={styles.inputSpacing}
         rightElement={
           <TouchableOpacity 
             style={styles.scanButton} 
@@ -104,6 +95,18 @@ const AddSavedAddressScreen = () => {
           address={address.trim()}
         />
       )}
+      </View>
+
+      <Text style={styles.label}>Label (optional)</Text>
+      <StyledInput
+        placeholder="e.g., My friend's wallet"
+        value={name}
+        onChangeText={setName}
+        editable={!loading}
+        keyboardAppearance={isDark ? 'dark' : 'light'}
+        containerStyle={styles.inputSpacing}
+      />
+      
       
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
@@ -141,8 +144,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   addressPreview: {
     fontSize: 14,
     fontFamily: 'monospace',
-    marginTop: -12,
-    marginBottom: 24,
+    marginTop: 8,
     color: theme.colors.muted,
   },
   scanButton: { 

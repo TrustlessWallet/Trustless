@@ -314,7 +314,7 @@ const SendScreen = () => {
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
                 <View style={styles.balanceContainer}>
-                    <Text style={styles.balanceLabel}>Available to Send</Text>
+                    <Text style={styles.balanceLabel}>Available to send</Text>
                     <TouchableOpacity onPress={() => navigation.navigate('BalanceDetail', { utxos: utxos })}>
                         {loadingBalance ? (
                             <ActivityIndicator color={theme.colors.primary} />
@@ -328,13 +328,13 @@ const SendScreen = () => {
                     </TouchableOpacity>
                 </View>
 
-                <Text style={styles.label}>Recipient Address</Text>
+                <Text style={styles.label}>Recipient address</Text>
+                <View style={styles.inputSpacing}>
                 <StyledInput
                     placeholder="Enter a bitcoin address"
                     value={recipientAddress}
                     onChangeText={setRecipientAddress}
                     autoCapitalize="none"
-                    containerStyle={styles.inputSpacing}
                     rightElement={
                         <View style={styles.row}>
                             <TouchableOpacity onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} style={styles.iconButton}>
@@ -347,6 +347,7 @@ const SendScreen = () => {
                     }
                 />
                 {!!recipientAddressPreview && <AddressText style={styles.addressPreview} address={recipientAddressPreview} />}
+                </View>
 
                 <Text style={styles.label}>Amount</Text>
                 <StyledInput
@@ -380,7 +381,7 @@ const SendScreen = () => {
                     <View style={styles.coinControlHeader}>
                         <View style={styles.row}>
                             <Feather name="layers" size={16} color={theme.colors.primary} />
-                            <Text style={styles.coinControlTitle}>Coin Control</Text>
+                            <Text style={styles.coinControlTitle}>Coin control</Text>
                         </View>
                         <TouchableOpacity 
                             onPress={handleOpenCoinControl} 
@@ -419,11 +420,11 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     scrollContent: { padding: 24, flexGrow: 1 },
     balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
     balanceLabel: { fontSize: 16, color: theme.colors.muted },
-    balanceText: { fontSize: 32, fontWeight: 'bold', color: theme.colors.primary, padding: 8 },
+    balanceText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary, padding: 8 },
     label: { fontSize: 16, fontWeight: '500', marginBottom: 8, color: theme.colors.primary },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     inputSpacing: { marginBottom: 16 },
-    addressPreview: { fontSize: 14, fontFamily: 'monospace', marginBottom: 16, color: theme.colors.muted },
+    addressPreview: { fontSize: 14, fontFamily: 'monospace', marginTop: 8, color: theme.colors.muted },
     iconButton: { padding: 10 },
     unitSelector: { flexDirection: 'row', backgroundColor: theme.colors.border, borderRadius: 6, marginRight: 8, padding: 2 },
     unitButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
@@ -432,14 +433,17 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     unitTextActive: { color: theme.colors.inversePrimary },
     coinControlBanner: {
         backgroundColor: theme.colors.surface,
-        borderRadius: 12,
-        padding: 16,
+        borderRadius: 8,
+        minHeight: 56,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        justifyContent: 'center',
         marginBottom: 24,
         borderWidth: 1,
         borderColor: theme.colors.border,
     },
     coinControlHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 },
-    coinControlTitle: { fontSize: 16, fontWeight: '600', color: theme.colors.primary },
+    coinControlTitle: { fontSize: 16, fontWeight: '500', color: theme.colors.primary },
     selectButton: { backgroundColor: theme.colors.primary, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
     selectButtonText: { color: theme.colors.inversePrimary, fontSize: 12, fontWeight: '600' },
     selectedUtxosRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.colors.border },

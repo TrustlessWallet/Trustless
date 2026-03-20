@@ -172,6 +172,12 @@ const AddressDetailsScreen = () => {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.header}>
+        <Text style={styles.balanceText}>
+          {hideBalance ? '*******' : (
+            <>{formatBtc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
+          )}
+        </Text>
+
         {derivation_path && (
           <Text style={styles.derivationPathDisplay}>{derivation_path}</Text>
         )}
@@ -196,11 +202,6 @@ const AddressDetailsScreen = () => {
           groupSize={6}
           padLastLine
         />
-        <Text style={styles.balanceText}>
-          {hideBalance ? '*******' : (
-            <>{formatBtc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
-          )}
-        </Text>
 
         <View style={styles.actionsContainer}>
           <TouchableOpacity style={styles.actionButton} onPress={copy_to_clipboard}>
@@ -221,7 +222,7 @@ const AddressDetailsScreen = () => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Spendable Coins (UTXOs)</Text>
+        <Text style={styles.sectionTitle}>Spendable coins (UTXOs)</Text>
         {utxos.length === 0 ? (
           <Text style={styles.emptyText}>No spendable coins (utxos) found.</Text>
         ) : (
@@ -279,7 +280,7 @@ const AddressDetailsScreen = () => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Transaction History</Text>
+        <Text style={styles.sectionTitle}>Transaction history</Text>
         {transactions.length === 0 ? (
           <Text style={styles.emptyText}>No transaction history found.</Text>
         ) : (
@@ -389,10 +390,10 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     marginBottom: 12,
   },
   balanceText: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: 'bold',
     color: theme.colors.primary,
-    marginBottom: 8,
+    marginVertical: 16,
   },
   orangeSymbol: {
     color: theme.colors.bitcoin,
@@ -401,7 +402,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 24,
-    marginTop: 8,
   },
   actionButton: {
     alignItems: 'center',

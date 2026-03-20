@@ -8,6 +8,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
 import { formatBitcoinAddressShort } from '../constants/format';
+import { AddressText } from '../components/AddressText';
 
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionConfirm'>;
 const DUST_LIMIT = 546;
@@ -131,13 +132,15 @@ const TransactionConfirmModal = () => {
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
             <View style={styles.section}>
-                <View style={styles.rowItem}>
-                    <Text style={styles.label}>Sending to</Text>
-                    <Text style={styles.valueMain} selectable>{formatBitcoinAddressShort(recipientAddress)}</Text>
-                </View>
+                <Text style={styles.label}>Sending to:</Text>
+                <AddressText
+                    style={styles.fullAddress}
+                    selectable
+                    address={recipientAddress}
+                />
             </View>
             <View style={styles.section}>
-                <Text style={styles.label}>Sending from</Text>
+                <Text style={styles.label}>Sending from:</Text>
                 {inputDetails.map((item, index) => (
                     <View key={item.address} style={styles.inputRow}>
                         <View>
@@ -194,10 +197,10 @@ const TransactionConfirmModal = () => {
             </View>
             {showHighFeeWarning && (
                 <View style={styles.warningContainer}>
-                    <Feather name="alert-triangle" size={18} color={theme.colors.bitcoin} />
                     <Text style={styles.warningText}>
                         The network fee is high compared to the amount you are sending.
                     </Text>
+                    <Feather name="alert-triangle" size={18} color={theme.colors.bitcoin} />
                 </View>
             )}
             <View style={styles.summaryBox}>
@@ -209,7 +212,7 @@ const TransactionConfirmModal = () => {
                     </View>
                 </View>
                 <View style={styles.detailRow}>
-                    <Text style={styles.label}>Transaction Size</Text>
+                    <Text style={styles.label}>Transaction size</Text>
                     <Text style={styles.value}>{feeVSize} vbytes</Text>
                 </View>
                 
@@ -261,16 +264,19 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     section: {
         marginBottom: 24,
     },
-    rowItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+    fullAddress: {
+        fontFamily: 'monospace',
+        fontSize: 14,
+        color: theme.colors.primary,
+        lineHeight: 24,
+        marginTop: 4,
+        textAlign: 'left',
     },
     inputRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        marginTop: 8,
+        marginTop: 4,
         paddingVertical: 8,
         borderBottomWidth: 1,
         borderColor: theme.colors.border, 
@@ -284,14 +290,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 16,
         color: theme.colors.primary, 
     },
-    valueMain: {
-        fontSize: 16,
-        color: theme.colors.primary, 
-        fontFamily: 'monospace',
-    },
     inputValue: {
         fontSize: 14,
-        color: theme.colors.muted, 
+        color: theme.colors.primary, 
         fontFamily: 'monospace',
     },
     amountValue: {
@@ -437,6 +438,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         justifyContent: 'center',
         minHeight: 56,
         marginTop: 24,
+        marginBottom: 128,
     },
     buttonDisabled: {
         opacity: 0.5, 

@@ -215,7 +215,7 @@ const ReceiveScreen = () => {
           disabled={loading_info}
         >
           <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
-          <Text style={styles.actionButtonText}>New Address</Text>
+          <Text style={styles.actionButtonText}>New address</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionButton} onPress={on_share}>
           <Feather name="share-2" size={24} color={theme.colors.primary} />
@@ -224,7 +224,7 @@ const ReceiveScreen = () => {
       </View>
 
       <View style={styles.listHeaderContainer}>
-        <Text style={styles.listHeader}>Used Addresses</Text>
+        <Text style={styles.listHeader}>Used addresses</Text>
         {wallet_loading && <ActivityIndicator color={theme.colors.primary} />}
       </View>
 
