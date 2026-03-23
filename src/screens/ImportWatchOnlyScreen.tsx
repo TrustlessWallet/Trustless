@@ -36,7 +36,6 @@ const ImportWatchOnlyScreen = () => {
         navigation.navigate('QRScanner', {
             onScanSuccess: (data) => {
                 set_xpub(data);
-                navigation.goBack();
             }
         });
     };
