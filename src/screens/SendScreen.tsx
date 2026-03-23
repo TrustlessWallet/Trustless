@@ -28,14 +28,26 @@ const UTXO_CACHE_PREFIX = '@utxoCache:';
 const UTXO_CACHE_STALE_MS = 240000; 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance'; 
 
-const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number) => {
+const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number, feeRate: number = 4) => {
     const sortedUtxos = [...utxos].sort((a, b) => b.value - a.value); 
     let selected = [];
     let totalValue = 0;
+    
+    // Estimate fee for current number of inputs + 1 output (no change initially)
+    const estimateFee = (n_inputs: number) => {
+        const vsize = Math.ceil((n_inputs * 68) + (1 * 31) + 10.5);
+        return Math.ceil(vsize * feeRate);
+    };
+    
     for (const utxo of sortedUtxos) {
         selected.push(utxo);
         totalValue += utxo.value;
-        if (totalValue >= targetAmount) {
+        
+        // Check if we have enough to cover amount + estimated fee
+        const estimatedFee = estimateFee(selected.length);
+        const requiredTotal = targetAmount + estimatedFee;
+        
+        if (totalValue >= requiredTotal) {
             return selected;
         }
     }
@@ -161,7 +173,7 @@ const SendScreen = () => {
             await broadcastTransaction(txHex);
             
             Alert.alert(
-                'Transaction Sent!',
+                'Transaction sent!',
                 `Your transaction has been broadcasted.`,
                 [{ 
                     text: 'OK', 
@@ -173,7 +185,7 @@ const SendScreen = () => {
             );
         } catch (error) {
             console.error(error);
-            Alert.alert('Transaction Error', error instanceof Error ? error.message : 'An unexpected error occurred.');
+            Alert.alert('Transaction error', error instanceof Error ? error.message : 'An unexpected error occurred.');
         } finally {
             setLoading(false);
         }
@@ -182,24 +194,26 @@ const SendScreen = () => {
     const handleConfirmPress = async () => {
         const trimmedRecipient = recipientAddress.trim();
         if (!validateBitcoinAddress(trimmedRecipient)) {
-            Alert.alert('Invalid Address', 'Please enter a valid bitcoin address.');
+            Alert.alert('Invalid address', 'Please enter a valid bitcoin address.');
             return;
         }
         const cleanAmount = amount.replace(',', '.');
         const amountNum = parseFloat(cleanAmount);
         if (isNaN(amountNum) || amountNum <= 0) {
-            Alert.alert('Invalid Amount', 'Please enter a valid amount.');
+            Alert.alert('Invalid amount', 'Please enter a valid amount.');
             return;
         }
         const amountSatoshis = unit === 'BTC' ? Math.round(amountNum * 100000000) : parseInt(cleanAmount, 10);
         
         if (amountSatoshis < DUST_THRESHOLD) {
-            Alert.alert('Amount Too Low', `The amount is too small. Please enter an amount greater than ${DUST_THRESHOLD} sats.`);
+            Alert.alert('Amount too low', `The amount is too small. Please enter an amount greater than ${DUST_THRESHOLD} sats.`);
             return;
         }
 
         if (amountSatoshis > balance) {
-            Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
+            const formatAmount = (sats: number) => unit === 'BTC' ? (sats / 100000000).toFixed(8) : sats.toString();
+            const denomSymbol = unit === 'BTC' ? 'BTC' : 'sats';
+            Alert.alert('Insufficient balance', `You only have ${formatAmount(balance)} ${denomSymbol} available, but trying to send ${formatAmount(amountSatoshis)} ${denomSymbol}.`);
             return;
         }
 
@@ -217,9 +231,24 @@ const SendScreen = () => {
                 utxosForTx = selectedUtxos;
             } else {
                 let candidateUtxos = utxos;
-                const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis);
+                const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis, rate);
                 if (!autoSelected) {
-                    Alert.alert('Insufficient Funds', 'The amount entered is higher than your available balance.');
+                    // Check if the issue is fees or pure amount
+                    const totalBalance = candidateUtxos.reduce((sum, u) => sum + u.value, 0);
+                    const formatAmount = (sats: number) => unit === 'BTC' ? (sats / 100000000).toFixed(8) : sats.toString();
+                    const denomSymbol = unit === 'BTC' ? 'BTC' : 'sats';
+                    
+                    if (totalBalance >= amountSatoshis) {
+                        Alert.alert(
+                            'Insufficient for fees', 
+                            `You have enough to send ${formatAmount(amountSatoshis)} ${denomSymbol}, but not enough to cover network fees. Try sending a smaller amount.`
+                        );
+                    } else {
+                        Alert.alert(
+                            'Insufficient balance', 
+                            `You only have ${formatAmount(totalBalance)} ${denomSymbol} available, but trying to send ${formatAmount(amountSatoshis)} ${denomSymbol}.`
+                        );
+                    }
                     setLoading(false);
                     return;
                 }
@@ -259,12 +288,12 @@ const SendScreen = () => {
             if (numOutputs === 1 && change > 0 && change <= DUST_THRESHOLD) {
                 setLoading(false);
                 Alert.alert(
-                    'Dust Change Detected',
+                    'Dust change detected',
                     `This transaction has ${change} sats of change, which is too small to keep (dust).\n\nIt will be added to the miner fee unless you adjust the amount.`,
                     [
                         { text: 'Cancel', style: 'cancel' },
                         { 
-                            text: 'Continue (Burn)', 
+                            text: 'Continue (burn)', 
                             onPress: () => {
                                 setLoading(true);
                                 proceedToConfirm(); 
