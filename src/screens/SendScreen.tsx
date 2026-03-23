@@ -446,10 +446,10 @@ const SendScreen = () => {
 
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
-    scrollContent: { padding: 24, flexGrow: 1 },
+    scrollContent: { padding: 24, paddingBottom: 350, flexGrow: 1 },
     balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
     balanceLabel: { fontSize: 16, color: theme.colors.muted },
-    balanceText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary, padding: 8 },
+    balanceText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary, padding: 0 },
     label: { fontSize: 16, fontWeight: '500', marginBottom: 8, color: theme.colors.primary },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     inputSpacing: { marginBottom: 16 },
