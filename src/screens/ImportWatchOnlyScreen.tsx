@@ -28,7 +28,6 @@ const ImportWatchOnlyScreen = () => {
     const { addWallet } = useWallet();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
-    const [name, set_name] = useState('');
     const [xpub, set_xpub] = useState('');
     const [loading, set_loading] = useState(false);
 
@@ -46,7 +45,7 @@ const ImportWatchOnlyScreen = () => {
         
         const valid_prefixes = ['xpub', 'zpub', 'ypub', 'vpub', 'tpub', 'upub'];
         if (!valid_prefixes.some(p => trimmed_xpub.startsWith(p))) {
-            Alert.alert("Invalid Key", "Please enter a valid extended public key.");
+            Alert.alert("Invalid key", "Please enter a valid extended public key.");
             return;
         }
 
@@ -66,7 +65,7 @@ const ImportWatchOnlyScreen = () => {
             const wallet = await addWallet({
                 type: 'watch-only',
                 xpub: trimmed_xpub,
-                name: name.trim() || undefined
+                name: undefined
             });
 
             if (wallet) {
@@ -86,7 +85,7 @@ const ImportWatchOnlyScreen = () => {
     return (
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.container}>
-                <View style={styles.inputSpacing}>
+                <View>
                 <Text style={styles.label}>Extended public key</Text>
                 <StyledInput 
                     placeholder="xpub / zpub / ypub"
@@ -96,6 +95,8 @@ const ImportWatchOnlyScreen = () => {
                     autoCorrect={false}
                     editable={!loading}
                     keyboardAppearance={isDark ? 'dark' : 'light'}
+                    multiline
+                    containerStyle={styles.multilineInput}
                     rightElement={
                         <TouchableOpacity style={styles.scanButton} onPress={handle_scan}>
                             <Feather name="camera" size={20} color={theme.colors.primary} />
@@ -103,19 +104,9 @@ const ImportWatchOnlyScreen = () => {
                     }
                 />                
                 <Text style={styles.helperText}>
-                    Import from hardware wallets or other software to watch your balance.
+                    Import from hardware wallet or other software to watch your balance.
                 </Text>
                 </View>
-
-                <Text style={styles.label}>Wallet label (optional)</Text>
-                <StyledInput 
-                    placeholder="e.g. Cold storage"
-                    value={name}
-                    onChangeText={set_name}
-                    containerStyle={styles.inputSpacing}
-                    editable={!loading}
-                    keyboardAppearance={isDark ? 'dark' : 'light'}
-                />
 
                 <TouchableOpacity 
                     style={[styles.button, (!xpub || loading) && styles.buttonDisabled]} 
@@ -148,8 +139,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.primary, 
         fontWeight: '500',
     },
-    inputSpacing: {
-        marginBottom: 16,
+    multilineInput: {
+        height: 120,
+        marginBottom: 8,
     },
     scanButton: {
         padding: 10,
@@ -158,7 +150,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.muted,
         fontSize: 13,
         lineHeight: 20,
-        marginTop: 8,
     },
     button: { 
         backgroundColor: theme.colors.primary, 
@@ -166,6 +157,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center', 
         height: 56, 
         justifyContent: 'center',
+        marginTop: 24,
     },
     buttonDisabled: {
         opacity: 0.5
