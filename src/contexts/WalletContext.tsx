@@ -586,7 +586,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (walletXpub) {
              const existingId = await dbFindWalletByXpub(walletXpub);
              if (existingId) {
-                 Alert.alert("Wallet Exists", "This wallet has already been added.");
+                 Alert.alert("Wallet exists", "This wallet has already been added.");
                  return null;
              }
         }
@@ -607,7 +607,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
              if (firstAddressObj) {
                  const existingId = await dbFindWalletByAddress(firstAddressObj.address);
                  if (existingId) {
-                     Alert.alert("Wallet Exists", "This wallet has already been added.");
+                     Alert.alert("Wallet exists", "This wallet has already been added.");
                      return null;
                  }
              }
