@@ -31,7 +31,7 @@ echo "5. Compiling APK..."
 export MAX_WORKERS=1
 export NODE_ENV=production
 cd android
-./gradlew assembleRelease
+./gradlew assembleRelease --no-daemon
 cd ..
 
 echo "6. Build successful"
