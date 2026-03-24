@@ -54,6 +54,14 @@ const RecoverWalletScreen = () => {
         set_suggestions([]);
     };
 
+    const handle_qr_scan = (scanned_data: string) => {
+        set_phrase(scanned_data);
+    };
+
+    const open_qr_scanner = () => {
+        navigation.navigate('QRScanner', { onScanSuccess: handle_qr_scan });
+    };
+
     const handle_recover = async () => {
         const trimmed_phrase = phrase.trim().toLowerCase();
         
@@ -97,6 +105,11 @@ const RecoverWalletScreen = () => {
                     autoCorrect={false}
                     keyboardAppearance={is_dark ? 'dark' : 'light'}
                     placeholderTextColor={theme.colors.muted}
+                    rightElement={
+                        <TouchableOpacity onPress={open_qr_scanner} style={styles.scanner_button}>
+                            <Feather name="camera" size={24} color={theme.colors.primary} />
+                        </TouchableOpacity>
+                    }
                 />
             </View>
 
@@ -157,7 +170,12 @@ const get_styles = (theme: Theme) => StyleSheet.create({
   },
   input_container: { 
     height: 120, 
-    marginBottom: 16 
+    marginBottom: 16
+  },
+  scanner_button: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   suggestions_wrapper: {
     height: 50,
