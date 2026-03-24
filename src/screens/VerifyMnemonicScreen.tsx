@@ -55,48 +55,47 @@ const VerifyMnemonicScreen = () => {
         setUserInputs(newInputs);
     };
     return (
-
-            <View style={styles.scrollContent}>
-                <Text style={styles.subtitle}>
-                    To ensure you have saved your phrase correctly, please enter the missing words.
-                </Text>
-                {wordsToVerify.map((wordIndex, i) => (
-                    <View key={wordIndex} style={styles.inputGroup}>
-                        <Text style={styles.label}>Word #{wordIndex + 1}</Text>
-                        <StyledInput
-                            value={userInputs[i]}
-                            onChangeText={(text) => handleInputChange(text, i)}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            autoComplete="off"
-                            spellCheck={false}
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                            placeholderTextColor={theme.colors.muted}
-                            placeholder={`Enter word #${wordIndex + 1}`}
-                            editable={!loading}
-                        />
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+            <Text style={styles.subtitle}>
+                To ensure you have saved your phrase correctly, please enter the missing words.
+            </Text>
+            {wordsToVerify.map((wordIndex, i) => (
+                <View key={wordIndex} style={styles.inputGroup}>
+                    <Text style={styles.label}>Word #{wordIndex + 1}</Text>
+                    <StyledInput
+                        value={userInputs[i]}
+                        onChangeText={(text) => handleInputChange(text, i)}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        autoComplete="off"
+                        spellCheck={false}
+                        keyboardAppearance={isDark ? 'dark' : 'light'}
+                        placeholderTextColor={theme.colors.muted}
+                        placeholder={`Enter word #${wordIndex + 1}`}
+                        editable={!loading}
+                    />
+                </View>
+            ))}
+            <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleVerify} disabled={loading}>
+                {loading ? (
+                     <ActivityIndicator color={theme.colors.inversePrimary} />
+                ) : (
+                    <View style={styles.buttonContentRowCentered}>
+                        <Feather name="check-circle" size={18} color={theme.colors.inversePrimary} />
+                        <Text style={styles.buttonText}>Verify</Text>
                     </View>
-                ))}
-                <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleVerify} disabled={loading}>
-                    {loading ? (
-                         <ActivityIndicator color={theme.colors.inversePrimary} />
-                    ) : (
-                        <View style={styles.buttonContentRowCentered}>
-                            <Feather name="check-circle" size={18} color={theme.colors.inversePrimary} />
-                            <Text style={styles.buttonText}>Verify</Text>
-                        </View>
-                    )}
-                </TouchableOpacity>
-            </View>
+                )}
+            </TouchableOpacity>
+        </ScrollView>
     );
 };
 const getStyles = (theme: Theme) => StyleSheet.create({
-    container: { 
-      flex: 1, 
-      backgroundColor: theme.colors.background 
+    scrollView: {
+      flex: 1,
     },
     scrollContent: {
       padding: 24,
+      paddingBottom: 350,
       flexGrow: 1,
     },
     subtitle: { 
@@ -119,7 +118,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
       backgroundColor: theme.colors.primary, 
       paddingVertical: 16, 
       borderRadius: 8, 
-      marginTop: 16,
+      marginTop: 8,
       minHeight: 56
     },
     buttonDisabled: {

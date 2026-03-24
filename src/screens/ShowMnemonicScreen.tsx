@@ -85,7 +85,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 8,
-        marginBottom: 32,
+        marginBottom: 16,
         borderWidth: 1,
         borderColor: theme.colors.primary, 
         width: '100%',
