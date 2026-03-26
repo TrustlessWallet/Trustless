@@ -19,6 +19,7 @@ import {
 } from '../../services/database';
 import * as keychain from 'react-native-keychain';
 
+
 jest.mock('react-native-keychain', () => ({
     getGenericPassword: jest.fn(),
     setGenericPassword: jest.fn(),
@@ -76,6 +77,25 @@ const wrapper = ({ children }: { children: React.ReactNode }) => {
 };
 
 describe('wallet_context_comprehensive_tests', () => {
+    let original_console_error: typeof console.error;
+
+    beforeAll(() => {
+        original_console_error = console.error;
+        console.error = (...args: any[]) => {
+            if (
+                typeof args[0] === 'string' &&
+                (args[0].includes('Failed to bootstrap wallet') || args[0].includes('was not wrapped in act'))
+            ) {
+                return;
+            }
+            original_console_error(...args);
+        };
+    });
+
+    afterAll(() => {
+        console.error = original_console_error;
+    });
+
     beforeEach(() => {
         jest.clearAllMocks();
         // Provide a valid mnemonic by default so wallet loading does not fail and throw warnings
