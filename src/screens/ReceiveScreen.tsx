@@ -26,8 +26,8 @@ const ReceiveScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
   const { activeWallet, loading: wallet_loading, getOrCreateNextUnusedReceiveAddress } = useWallet();
-  const { theme, isDark } = useTheme(); 
-  const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]); 
+  const { theme, isDark } = useTheme();
+  const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
   const [copied, set_copied] = useState(false);
   const [address_offset, set_address_offset] = useState(0);
   const [hideBalance, setHideBalance] = useState(false);
@@ -66,9 +66,9 @@ const ReceiveScreen = () => {
 
   const all_unused_addresses = useMemo(() => {
     if (!activeWallet) return [];
-    
+
     const info_map = new Map(activeWallet.derivedAddressInfoCache.map(i => [i.address, i.tx_count]));
-    
+
     return activeWallet.derivedReceiveAddresses
       .filter(addr => {
         const tx_count = info_map.get(addr.address) ?? 0;
@@ -95,17 +95,17 @@ const ReceiveScreen = () => {
 
   const current_display_data = useMemo(() => {
     if (!activeWallet || displayable_addresses.length === 0) {
-        return { 
-            address: activeWallet?.address || '', 
-            index: activeWallet?.receiveAddressIndex || 0, 
-            path: `${path_prefix}/0/${activeWallet?.receiveAddressIndex || 0}` 
-        };
+      return {
+        address: activeWallet?.address || '',
+        index: activeWallet?.receiveAddressIndex || 0,
+        path: `${path_prefix}/0/${activeWallet?.receiveAddressIndex || 0}`
+      };
     }
     const item = displayable_addresses[address_offset % displayable_addresses.length];
     return {
-        address: item.address,
-        index: item.index,
-        path: `${path_prefix}/0/${item.index}`
+      address: item.address,
+      index: item.index,
+      path: `${path_prefix}/0/${item.index}`
     };
   }, [activeWallet, displayable_addresses, address_offset, path_prefix]);
 
@@ -140,7 +140,7 @@ const ReceiveScreen = () => {
 
   const handle_next_address = () => {
     if (displayable_addresses.length > 0) {
-        set_address_offset(prev => (prev + 1) % displayable_addresses.length);
+      set_address_offset(prev => (prev + 1) % displayable_addresses.length);
     }
   };
 
@@ -148,26 +148,26 @@ const ReceiveScreen = () => {
     if (!activeWallet) return [];
     const change_address_set = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
     return activeWallet.derivedAddressInfoCache
-        .filter(item => {
-            if (item.tx_count === 0) return false;
-            if (change_address_set.has(item.address)) return false;
-            return true;
-        })
-        .sort((a, b) => a.index - b.index); 
+      .filter(item => {
+        if (item.tx_count === 0) return false;
+        if (change_address_set.has(item.address)) return false;
+        return true;
+      })
+      .sort((a, b) => a.index - b.index);
   }, [activeWallet]);
 
   const loading_info = wallet_loading || !activeWallet;
 
   if (loading_info) {
     return (
-        <View style={styles.centeredContainer}>
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-        </View>
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
     );
   }
 
   return (
-    <ScrollView 
+    <ScrollView
       ref={scroll_ref}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={true}
@@ -181,12 +181,14 @@ const ReceiveScreen = () => {
               <Text style={styles.copiedText}>Copied!</Text>
             </View>
           )}
-          <QRCode 
-            value={current_display_data.address} 
-            size={QR_SIZE} 
-            backgroundColor={theme.colors.background} 
-            color={theme.colors.primary} 
-          />
+          {current_display_data.address ? (
+            <QRCode
+              value={current_display_data.address}
+              size={QR_SIZE}
+              backgroundColor={theme.colors.background}
+              color={theme.colors.primary}
+            />
+          ) : null}
         </TouchableOpacity>
         <AddressText
           style={styles.addressText}
@@ -195,7 +197,7 @@ const ReceiveScreen = () => {
           groupSize={6}
           padLastLine
         />
-        
+
         {IS_TESTNET && (
           <View style={styles.warningBanner}>
             <Feather name="alert-triangle" size={14} color={theme.colors.muted} />
@@ -209,8 +211,8 @@ const ReceiveScreen = () => {
           <Feather name="copy" size={24} color={theme.colors.primary} />
           <Text style={styles.actionButtonText}>Copy</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.actionButton, loading_info && styles.actionButtonDisabled]} 
+        <TouchableOpacity
+          style={[styles.actionButton, loading_info && styles.actionButtonDisabled]}
           onPress={handle_next_address}
           disabled={loading_info}
         >
@@ -229,61 +231,61 @@ const ReceiveScreen = () => {
       </View>
 
       {used_addresses.length === 0 ? (
-          <Text style={styles.emptyText}>No used receive addresses yet.</Text>
+        <Text style={styles.emptyText}>No used receive addresses yet.</Text>
       ) : (
-          used_addresses.map((item) => {
-            const balance = item.balance;
-            return (
-              <TouchableOpacity 
-                key={item.index.toString()}
-                style={styles.row}
-                onPress={() => handle_view_details(item.address)}
-              >
-                <View style={styles.addressContainer}>
-                  <Text style={styles.addressShortText}>{formatBitcoinAddressShort(item.address)}</Text>
-                  <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
-                </View>
-                <View style={styles.balanceContainer}>
-                  <Text style={styles.balanceText}>
-                    {hideBalance ? '*******' : (
-                      <>{format_btc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
-                    )}
-                  </Text>
-                  <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
-                    <Feather name="external-link" size={20} color={theme.colors.primary} />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            );
-          })
+        used_addresses.map((item) => {
+          const balance = item.balance;
+          return (
+            <TouchableOpacity
+              key={item.index.toString()}
+              style={styles.row}
+              onPress={() => handle_view_details(item.address)}
+            >
+              <View style={styles.addressContainer}>
+                <Text style={styles.addressShortText}>{formatBitcoinAddressShort(item.address)}</Text>
+                <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
+              </View>
+              <View style={styles.balanceContainer}>
+                <Text style={styles.balanceText}>
+                  {hideBalance ? '*******' : (
+                    <>{format_btc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
+                  )}
+                </Text>
+                <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
+                  <Feather name="external-link" size={20} color={theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          );
+        })
       )}
     </ScrollView>
   );
 };
 
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
-  centeredContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: theme.colors.background, 
+  centeredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
   },
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 32,
-    backgroundColor: theme.colors.background, 
+    backgroundColor: theme.colors.background,
   },
-  qrContainer: { 
-    alignItems: 'center', 
-    paddingTop: 8, 
+  qrContainer: {
+    alignItems: 'center',
+    paddingTop: 8,
     paddingBottom: 8,
-    width: '100%', 
+    width: '100%',
     borderBottomWidth: 0,
-    borderColor: theme.colors.border, 
+    borderColor: theme.colors.border,
   },
-  qrCodeWrapper: { 
+  qrCodeWrapper: {
     padding: 16,
-    backgroundColor: theme.colors.background, 
+    backgroundColor: theme.colors.background,
     borderRadius: 8,
     shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 0 },
@@ -294,57 +296,57 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     borderColor: theme.colors.border,
     marginBottom: 16,
   },
-  addressText: { 
+  addressText: {
     fontSize: 14,
-    textAlign: 'center', 
-    color: theme.colors.primary, 
+    textAlign: 'center',
+    color: theme.colors.primary,
     lineHeight: 24,
     paddingHorizontal: 72,
   },
   derivationPathDisplay: {
     fontSize: 14,
-    color: theme.colors.muted, 
+    color: theme.colors.muted,
     marginBottom: 8
   },
-  copiedOverlay: { 
+  copiedOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    justifyContent: 'center', 
-    alignItems: 'center', 
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: theme.colors.background + 'CC',
     borderRadius: 8,
     gap: 8,
     zIndex: 10,
   },
-  copiedText: { 
-    fontSize: 20, 
-    fontWeight: 'bold', 
-    color: theme.colors.primary 
+  copiedText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: theme.colors.primary
   },
-  actionsContainer: { 
-    flexDirection: 'row', 
+  actionsContainer: {
+    flexDirection: 'row',
     justifyContent: 'center',
     gap: 24,
     width: '100%',
     paddingVertical: 1,
     borderBottomWidth: 1,
-    borderColor: theme.colors.border, 
+    borderColor: theme.colors.border,
   },
-  actionButton: { 
-    alignItems: 'center', 
-    padding: 12, 
-    minWidth: 80 
+  actionButton: {
+    alignItems: 'center',
+    padding: 12,
+    minWidth: 80
   },
   actionButtonDisabled: {
     opacity: 0.3,
   },
-  actionButtonText: { 
-    color: theme.colors.primary, 
-    fontSize: 14, 
-    marginTop: 8 
+  actionButtonText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    marginTop: 8
   },
   listHeaderContainer: {
     flexDirection: 'row',
@@ -357,7 +359,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   listHeader: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: theme.colors.primary, 
+    color: theme.colors.primary,
   },
   row: {
     flexDirection: 'row',
@@ -366,14 +368,14 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderColor: theme.colors.border, 
+    borderColor: theme.colors.border,
   },
   rowSelected: {
-    backgroundColor: theme.colors.surface, 
+    backgroundColor: theme.colors.surface,
   },
-  addressContainer: { 
-    flex: 3, 
-    gap: 2 
+  addressContainer: {
+    flex: 3,
+    gap: 2
   },
   addressShortText: {
     fontSize: 14,
@@ -392,11 +394,11 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   balanceText: {
     fontSize: 16,
-    color: theme.colors.primary 
+    color: theme.colors.primary
   },
   orangeSymbol: {
     fontSize: 14,
-    color: theme.colors.bitcoin, 
+    color: theme.colors.bitcoin,
   },
   emptyText: {
     textAlign: 'center',
