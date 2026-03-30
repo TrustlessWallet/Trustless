@@ -272,6 +272,9 @@ constructor(host: string, port: number, protocol: 'tcp' | 'tls' = 'tls', allowSe
 const PEERS = {
   mainnet: [
     { host: 'electrum.blockstream.info', port: 50002, protocol: 'tls' as const },
+    { host: 'electrum1.bluewallet.io', port: 50001, protocol: 'tcp' as const },
+    { host: 'electrum2.bluewallet.io', port: 50001, protocol: 'tcp' as const },
+    { host: 'electrum3.bluewallet.io', port: 50001, protocol: 'tcp' as const },
     { host: 'electrum.emzy.de', port: 50002, protocol: 'tls' as const },
   ],
   testnet: [
