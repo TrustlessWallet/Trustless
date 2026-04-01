@@ -242,6 +242,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       const currentReceiveAddress = derivedReceiveAddresses.find(a => a.index === firstUnusedIndex)?.address || '';
 
+      // Verify change address index to prevent reuse on restoration
+      const change_set = new Set(derivedChangeAddresses.map(a => a.address));
+      const max_change_index = derivedChangeAddresses.length > 0 ? derivedChangeAddresses[derivedChangeAddresses.length - 1].index : -1;
+      let first_unused_change = -1;
+
+      for (let i = 0; i <= max_change_index; i++) {
+          const info = derivedAddressInfoCache.find(c => c.index === i && change_set.has(c.address));
+          if (!info || info.tx_count === 0) {
+              first_unused_change = i;
+              break;
+          }
+      }
+
+      if (first_unused_change === -1) {
+          first_unused_change = max_change_index + 1;
+      }
+
       return {
           ...basicWallet,
           derivedReceiveAddresses,
@@ -249,7 +266,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           derivedAddressInfoCache,
           utxoLabels,
           address: currentReceiveAddress,
-          receiveAddressIndex: firstUnusedIndex
+          receiveAddressIndex: firstUnusedIndex,
+          changeAddressIndex: Math.max(basicWallet.changeAddressIndex || 0, first_unused_change)
       };
   };
 
@@ -717,12 +735,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const root = bip32.fromSeed(seed, NETWORK);
 
     // Prepare Change Address
-    const nextChangeIndex = activeWallet.changeAddressIndex ?? 0;
+    let verified_change_index = activeWallet.changeAddressIndex ?? 0;
+    const change_addresses_set = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
+
+    // Scan forward to ensure the chosen index has exactly 0 previous transactions
+    for (let i = verified_change_index; i < activeWallet.derivedChangeAddresses.length + 20; i++) {
+        const info = activeWallet.derivedAddressInfoCache.find(c => c.index === i && change_addresses_set.has(c.address));
+        if (!info || info.tx_count === 0) {
+            verified_change_index = i;
+            break;
+        }
+    }
+
     const scriptType = activeWallet.scriptType || 'p2wpkh'; 
     
-    let changeAddress = activeWallet.derivedChangeAddresses.find(a => a.index === nextChangeIndex)?.address;
+    let changeAddress = activeWallet.derivedChangeAddresses.find(a => a.index === verified_change_index)?.address;
     if (!changeAddress) {
-        const derived = deriveChangeAddress(root, nextChangeIndex, false, scriptType);
+        const derived = deriveChangeAddress(root, verified_change_index, false, scriptType);
         if (derived) {
             await dbSaveAddress(activeWallet.id, derived, 1, NETWORK_NAME);
             changeAddress = derived.address;
@@ -791,7 +820,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       let usedChangeIndex: number | null = null;
       if (numOutputs === 2) {
         psbt.addOutput({ address: changeAddress, value: change });
-        usedChangeIndex = nextChangeIndex;
+        usedChangeIndex = verified_change_index;
       }
 
       // Sign Inputs
