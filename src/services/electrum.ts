@@ -275,8 +275,8 @@ const PEERS = {
     { host: 'electrum.emzy.de', port: 50002, protocol: 'tls' as const },
   ],
   testnet: [
-    { host: 'testnet.qtornado.com', port: 51002, protocol: 'tls' as const },
     { host: 'electrum.blockstream.info', port: 60002, protocol: 'tls' as const },
+    { host: 'testnet.qtornado.com', port: 51002, protocol: 'tls' as const },
   ],
 };
 

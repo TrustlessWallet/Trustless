@@ -11,12 +11,13 @@ import { ECPairFactory } from 'ecpair';
 import { useQueryClient } from '@tanstack/react-query'; 
 import { Alert } from 'react-native';
 
-import { Wallet, DerivedAddress, BitcoinAddress, DerivedAddressInfo, UTXO } from '../types';
+import { Wallet, DerivedAddress, BitcoinAddress } from '../types';
 import { 
     calculateTransactionMetrics,
     fetchUTXOs,
     getBip32Node,
-    inferScriptType
+    inferScriptType,
+    fetchAddressInfoBatch
 } from '../services/bitcoin';
 import { NETWORK, DERIVATION_PARENT_PATH, NETWORK_NAME } from '../constants/network'; 
 import { 
@@ -407,44 +408,138 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
    * It ensures we have derived enough addresses (Gap Limit) so the user doesn't
    * miss any funds if they restored from an old backup.
    */
-  const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
+const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
     let wallet = await buildActiveWallet(walletId);
     if (!wallet) return false;
 
     try {
         const root = await getRootNode(wallet);
-        const isWatchOnly = wallet.type === 'watch-only';
-        const scriptType = wallet.scriptType || 'p2wpkh'; 
-        let derivedNew = false;
-        
-        // Ensure we have change addresses up to the gap limit
-        for (let i = 0; i < GAP_LIMIT; i++) {
-            if (!wallet.derivedChangeAddresses.find(a => a.index === i)) {
-                const derived = deriveChangeAddress(root, i, isWatchOnly, scriptType);
-                if (derived) {
-                    await dbSaveAddress(walletId, derived, 1, NETWORK_NAME);
-                    derivedNew = true;
+        const is_watch_only = wallet.type === 'watch-only';
+        const script_type = wallet.scriptType || 'p2wpkh'; 
+        let derived_new = false;
+
+        // Create a fast map to eliminate O(N^2) array lookups
+        const cacheMap = new Map();
+        wallet.derivedAddressInfoCache.forEach(c => cacheMap.set(c.address, c.tx_count));
+
+        const checkUsage = async (addresses: string[]): Promise<boolean[]> => {
+            const usage = new Array(addresses.length).fill(false);
+            const to_fetch: string[] = [];
+            const fetch_map = new Map<string, number>();
+
+            addresses.forEach((addr, i) => {
+                const tx_count = cacheMap.get(addr);
+                if (tx_count !== undefined && tx_count > 0) {
+                    usage[i] = true;
+                } else {
+                    to_fetch.push(addr);
+                    fetch_map.set(addr, i);
+                }
+            });
+
+            if (to_fetch.length > 0) {
+                try {
+                    const network_data = await fetchAddressInfoBatch(to_fetch);
+                    network_data.forEach(data => {
+                        if (data.tx_count > 0) {
+                            const index = fetch_map.get(data.address);
+                            if (index !== undefined) {
+                                usage[index] = true;
+                                cacheMap.set(data.address, data.tx_count);
+                            }
+                        }
+                    });
+                } catch (e) {
+                    // Fail silently to allow boot if offline
                 }
             }
-        }
+            return usage;
+        };
 
-        // Ensure we have receive addresses up to the gap limit
-        const currentMax = wallet.derivedReceiveAddresses.length > 0 
-            ? wallet.derivedReceiveAddresses[wallet.derivedReceiveAddresses.length - 1].index 
-            : -1;
+        // --- RECEIVE CHAIN ---
+        let consecutive_unused_receive = 0;
+        const max_rx = wallet.derivedReceiveAddresses.length;
         
-        if (wallet.derivedReceiveAddresses.length < GAP_LIMIT) {
-            for (let i = currentMax + 1; i < GAP_LIMIT; i++) {
-                 const derived = deriveReceiveAddress(root, i, isWatchOnly, scriptType);
-                 if (derived) {
-                     await dbSaveAddress(walletId, derived, 0, NETWORK_NAME);
-                     derivedNew = true;
-                 }
-            }
+        // Count backwards to determine existing gap
+        for (let i = max_rx - 1; i >= 0; i--) {
+            const addr = wallet.derivedReceiveAddresses.find(a => a.index === i)?.address;
+            if (addr && cacheMap.get(addr) > 0) break;
+            consecutive_unused_receive++;
         }
 
-        if (derivedNew) {
-            // Re-fetch if we added new addresses
+        let receive_index = max_rx; 
+
+        while (consecutive_unused_receive < GAP_LIMIT) {
+            const batch_size = GAP_LIMIT - consecutive_unused_receive;
+            const current_batch: string[] = [];
+
+            for (let i = 0; i < batch_size; i++) {
+                const index_to_derive = receive_index + i;
+                const derived = deriveReceiveAddress(root, index_to_derive, is_watch_only, script_type);
+                if (derived) {
+                    await dbSaveAddress(walletId, derived, 0, NETWORK_NAME);
+                    current_batch.push(derived.address);
+                    wallet!.derivedReceiveAddresses.push(derived);
+                    derived_new = true;
+                }
+            }
+
+            const usage_results = await checkUsage(current_batch);
+            
+            for (let i = 0; i < usage_results.length; i++) {
+                if (usage_results[i]) {
+                    consecutive_unused_receive = 0; 
+                } else {
+                    consecutive_unused_receive++;
+                }
+            }
+            
+            receive_index += batch_size;
+            if (receive_index > 500) break; 
+        }
+
+        // --- CHANGE CHAIN ---
+        let consecutive_unused_change = 0;
+        const max_ch = wallet.derivedChangeAddresses.length;
+        
+        for (let i = max_ch - 1; i >= 0; i--) {
+            const addr = wallet.derivedChangeAddresses.find(a => a.index === i)?.address;
+            if (addr && cacheMap.get(addr) > 0) break;
+            consecutive_unused_change++;
+        }
+
+        let change_index = max_ch;
+
+        while (consecutive_unused_change < GAP_LIMIT) {
+            const batch_size = GAP_LIMIT - consecutive_unused_change;
+            const current_batch: string[] = [];
+
+            for (let i = 0; i < batch_size; i++) {
+                const index_to_derive = change_index + i;
+                const derived = deriveChangeAddress(root, index_to_derive, is_watch_only, script_type);
+                if (derived) {
+                    await dbSaveAddress(walletId, derived, 1, NETWORK_NAME);
+                    current_batch.push(derived.address);
+                    wallet!.derivedChangeAddresses.push(derived);
+                    derived_new = true;
+                }
+            }
+
+            const usage_results = await checkUsage(current_batch);
+            
+            for (let i = 0; i < usage_results.length; i++) {
+                if (usage_results[i]) {
+                    consecutive_unused_change = 0; 
+                } else {
+                    consecutive_unused_change++;
+                }
+            }
+            
+            change_index += batch_size;
+            if (change_index > 500) break; 
+        }
+
+        if (derived_new) {
             wallet = await buildActiveWallet(walletId);
         }
         
@@ -458,7 +553,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setActiveWallet(null);
         return false;
     }
-  };
+};
 
   // INITIALIZATION
   // On app start, load all wallets and select the last active one.
