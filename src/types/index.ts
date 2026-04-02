@@ -78,6 +78,8 @@ export interface Wallet {
   name: string;
   type: 'standard' | 'watch-only';
   xpub?: string;
+  fingerprint?: string;
+  derivation_path?: string;
   scriptType?: 'p2wpkh' | 'p2sh-p2wpkh';
   changeAddressIndex: number;
   derivedReceiveAddresses: DerivedAddress[];

@@ -66,7 +66,7 @@ interface WalletContextType {
   lastRefreshTime: number;
   triggerRefresh: () => void;
   generateMnemonic: (strength?: number) => Promise<string | null>;
-  addWallet: (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string }) => Promise<Wallet | null>;
+  addWallet: (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; }) => Promise<Wallet | null>;
   switchWallet: (walletId: string) => Promise<void>;
   updateWalletName: (walletId: string, newName: string) => Promise<void>;
   removeWallet: (walletId: string) => Promise<void>;
@@ -670,8 +670,8 @@ const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
    * 2. An imported mnemonic (Standard).
    * 3. An xpub (Watch-only).
    */
-  const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string }): Promise<Wallet | null> => {
-    const { mnemonic, name } = params;
+const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; }): Promise<Wallet | null> => {
+    const { mnemonic, name, fingerprint, derivation_path } = params;
     const type = params.type || 'standard';
     let walletXpub = params.xpub;
     
@@ -682,7 +682,6 @@ const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
              scriptType = inferScriptType(walletXpub);
         }
 
-        // If standard, we need to derive the Account xpub for duplication checking
         if (type === 'standard' && mnemonic) {
              const seed = bip39.mnemonicToSeedSync(mnemonic);
              const root = bip32.fromSeed(seed, NETWORK);
@@ -695,7 +694,6 @@ const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
              }
         }
 
-        // DUPLICATE CHECKS
         if (walletXpub) {
              const existingId = await dbFindWalletByXpub(walletXpub);
              if (existingId) {
@@ -704,7 +702,6 @@ const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
              }
         }
         
-        // Secondary check using address derivation
         let root;
         if (type === 'watch-only' && walletXpub) {
              root = getBip32Node(walletXpub, NETWORK);
@@ -733,12 +730,11 @@ const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
     const defaultName = name || `Wallet ${wallets.length + 1}`;
     const newWalletId = uuidv4();
 
-    // Store sensitive mnemonic in Keychain, everything else in SQLite
     if (type === 'standard' && mnemonic) {
         await Keychain.setGenericPassword('user', mnemonic, { service: `${KEYCHAIN_SERVICE_PREFIX}.${newWalletId}` });
     }
     
-    await dbCreateWallet(newWalletId, defaultName, NETWORK_NAME, type, walletXpub, scriptType);
+    await dbCreateWallet(newWalletId, defaultName, NETWORK_NAME, type, walletXpub, scriptType, fingerprint, derivation_path);
 
     const newWallets = await dbGetWallets(NETWORK_NAME);
     setWallets(newWallets);
