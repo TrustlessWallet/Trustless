@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Clipboard, Share, Alert, ScrollView } from 'react-native';
 import { Text } from '../components/StyledText';
 import QRCode from 'react-native-qrcode-svg';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -22,32 +22,45 @@ const ShowPublicKeyScreen = () => {
     const navigation = useNavigation<navigation_prop>();
     const route = useRoute<route_prop_type>();
     const { wallet_id } = route.params;
-    
+
     const { wallets } = useWallet();
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]);
-    
+
     const [copied, set_copied] = useState(false);
 
     const wallet = useMemo(() => wallets.find(w => w.id === wallet_id), [wallets, wallet_id]);
-    
+
     const formatted_pub_key = useMemo(() => {
         if (!wallet || !wallet.xpub) return '';
         return format_public_key(wallet.xpub, wallet.scriptType || 'p2wpkh', NETWORK_NAME);
     }, [wallet]);
 
+    const export_string = useMemo(() => {
+        if (!formatted_pub_key) return '';
+        if (wallet?.fingerprint && wallet?.derivation_path) {
+            let path = wallet.derivation_path;
+            if (path.startsWith('m/')) {
+                path = path.slice(2);
+            }
+            path = path.replace(/h/g, "'");
+            return `[${wallet.fingerprint}/${path}]${formatted_pub_key}`;
+        }
+        return formatted_pub_key;
+    }, [formatted_pub_key, wallet]);
+
     const copy_to_clipboard = () => {
-        if (formatted_pub_key) {
-            Clipboard.setString(formatted_pub_key);
+        if (export_string) {
+            Clipboard.setString(export_string);
             set_copied(true);
             setTimeout(() => set_copied(false), 1500);
         }
     };
 
     const on_share = async () => {
-        if (formatted_pub_key) {
+        if (export_string) {
             try {
-                await Share.share({ message: formatted_pub_key });
+                await Share.share({ message: export_string });
             } catch (error) {
                 Alert.alert("Error", "Could not share the public key.");
             }
@@ -68,7 +81,13 @@ const ShowPublicKeyScreen = () => {
                 <Text style={styles.description_text}>
                     This extended public key can be used to generate all your wallet's addresses.
                 </Text>
-                
+
+                {!!wallet.derivation_path && (
+                    <View style={styles.meta_container}>
+                        <Text style={styles.meta_text}>{wallet.derivation_path.replace(/h/g, "'")}</Text>
+                    </View>
+                )}
+
                 <TouchableOpacity style={styles.qr_code_wrapper} onPress={copy_to_clipboard} activeOpacity={0.8}>
                     {copied && (
                         <View style={styles.copied_overlay}>
@@ -76,14 +95,21 @@ const ShowPublicKeyScreen = () => {
                             <Text style={styles.copied_text}>Copied!</Text>
                         </View>
                     )}
-                    <QRCode 
-                        value={formatted_pub_key} 
-                        size={qr_size} 
-                        backgroundColor={theme.colors.background} 
-                        color={theme.colors.primary} 
+                    <QRCode
+                        value={export_string}
+                        size={qr_size}
+                        backgroundColor={theme.colors.background}
+                        color={theme.colors.primary}
                     />
                 </TouchableOpacity>
-                
+
+                {!!wallet.fingerprint && (
+                    <View style={[styles.meta_container, styles.meta_container_bottom]}>
+                        <MaterialIcons name="fingerprint" size={16} color={theme.colors.muted} style={styles.meta_icon} />
+                        <Text style={styles.meta_text}>{wallet.fingerprint}</Text>
+                    </View>
+                )}
+
                 <AddressText
                     style={styles.address_text}
                     selectable
@@ -108,39 +134,56 @@ const ShowPublicKeyScreen = () => {
 };
 
 const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
-    centered_container: { 
-        flex: 1, 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        backgroundColor: theme.colors.background, 
+    centered_container: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
     },
     scroll_content: {
         flexGrow: 1,
-        paddingBottom: 32,
-        backgroundColor: theme.colors.background, 
-        paddingTop: 16,
+        paddingBottom: 16,
+        backgroundColor: theme.colors.background,
+        paddingTop: 8,
     },
     error_text: {
         color: theme.colors.error,
         fontSize: 16,
     },
-    qr_container: { 
-        alignItems: 'center', 
-        paddingTop: 8, 
-        paddingBottom: 24,
-        width: '100%', 
+    qr_container: {
+        alignItems: 'center',
+        paddingBottom: 16,
+        width: '100%',
     },
     description_text: {
         fontSize: 14,
-        color: theme.colors.muted, 
-        marginBottom: 24,
+        color: theme.colors.muted,
+        marginBottom: 16,
         textAlign: 'center',
         paddingHorizontal: 24,
         lineHeight: 20,
     },
-    qr_code_wrapper: { 
+    meta_container: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
+    },
+    meta_container_bottom: {
+        marginBottom: 16,
+    },
+    meta_text: {
+        fontSize: 14,
+        color: theme.colors.muted,
+        fontWeight: 'normal',
+        letterSpacing: 0.5,
+    },
+    meta_icon: {
+        marginRight: 6,
+    },
+    qr_code_wrapper: {
         padding: 16,
-        backgroundColor: theme.colors.background, 
+        backgroundColor: theme.colors.background,
         borderRadius: 8,
         shadowColor: theme.colors.primary,
         shadowOffset: { width: 0, height: 0 },
@@ -149,49 +192,49 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
         elevation: 3,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        marginBottom: 24,
+        marginBottom: 8,
     },
-    copied_overlay: { 
+    copied_overlay: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        justifyContent: 'center', 
-        alignItems: 'center', 
+        justifyContent: 'center',
+        alignItems: 'center',
         backgroundColor: theme.colors.background + 'CC',
         borderRadius: 8,
         gap: 8,
         zIndex: 10,
     },
-    copied_text: { 
-        fontSize: 20, 
-        fontWeight: 'bold', 
-        color: theme.colors.primary 
+    copied_text: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: theme.colors.primary
     },
-    address_text: { 
+    address_text: {
         fontSize: 14,
-        textAlign: 'center', 
-        color: theme.colors.primary, 
+        textAlign: 'center',
+        color: theme.colors.primary,
         lineHeight: 24,
         paddingHorizontal: 50,
     },
-    actions_container: { 
-        flexDirection: 'row', 
+    actions_container: {
+        flexDirection: 'row',
         justifyContent: 'center',
         gap: 32,
         width: '100%',
         paddingVertical: 1,
     },
-    action_button: { 
-        alignItems: 'center', 
-        padding: 12, 
-        minWidth: 80 
+    action_button: {
+        alignItems: 'center',
+        padding: 12,
+        minWidth: 80
     },
-    action_button_text: { 
-        color: theme.colors.primary, 
-        fontSize: 14, 
-        marginTop: 8 
+    action_button_text: {
+        color: theme.colors.primary,
+        fontSize: 14,
+        marginTop: 8
     },
 });
 
