@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  TouchableOpacity, 
-  Alert, 
-  ActivityIndicator, 
-  TouchableWithoutFeedback, 
-  Keyboard 
+import {
+    View,
+    StyleSheet,
+    TouchableOpacity,
+    Alert,
+    ActivityIndicator,
+    TouchableWithoutFeedback,
+    Keyboard
 } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
@@ -40,21 +40,39 @@ const ImportWatchOnlyScreen = () => {
     };
 
     const handle_import = async () => {
-        const trimmed_xpub = xpub.trim();
-        if (!trimmed_xpub) return;
-        
+        const raw_input = xpub.trim();
+        if (!raw_input) return;
+
+        let final_xpub = raw_input;
+        let parsed_fingerprint = undefined;
+        let parsed_path = undefined;
+
+        const match = raw_input.match(/^\[([a-f0-9]{8})\/([^\]]+)\](.*)$/i);
+
+        if (match) {
+            parsed_fingerprint = match[1];
+            parsed_path = "m/" + match[2].replace(/'/g, "h");
+            final_xpub = match[3];
+        } else {
+            Alert.alert(
+                "Missing metadata",
+                "Hardware wallets require the master fingerprint and derivation path. Please scan the full format containing [fingerprint/path]."
+            );
+            return;
+        }
+
         const valid_prefixes = ['xpub', 'zpub', 'ypub', 'vpub', 'tpub', 'upub'];
-        if (!valid_prefixes.some(p => trimmed_xpub.startsWith(p))) {
+        if (!valid_prefixes.some(p => final_xpub.startsWith(p))) {
             Alert.alert("Invalid key", "Please enter a valid extended public key.");
             return;
         }
 
         try {
-            getBip32Node(trimmed_xpub, NETWORK);
+            getBip32Node(final_xpub, NETWORK);
         } catch (e) {
             console.warn(e);
             Alert.alert(
-                "Network Mismatch", 
+                "Network Mismatch",
                 `This key is not valid for ${NETWORK_NAME}. Please switch networks or use a compatible key.`
             );
             return;
@@ -64,7 +82,9 @@ const ImportWatchOnlyScreen = () => {
         try {
             const wallet = await addWallet({
                 type: 'watch-only',
-                xpub: trimmed_xpub,
+                xpub: final_xpub,
+                fingerprint: parsed_fingerprint,
+                derivation_path: parsed_path,
                 name: undefined
             });
 
@@ -86,30 +106,30 @@ const ImportWatchOnlyScreen = () => {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.container}>
                 <View>
-                <Text style={styles.label}>Extended public key</Text>
-                <StyledInput 
-                    placeholder="xpub / zpub / ypub"
-                    value={xpub}
-                    onChangeText={set_xpub}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!loading}
-                    keyboardAppearance={isDark ? 'dark' : 'light'}
-                    multiline
-                    containerStyle={styles.multilineInput}
-                    rightElement={
-                        <TouchableOpacity style={styles.scanButton} onPress={handle_scan}>
-                            <Feather name="camera" size={20} color={theme.colors.primary} />
-                        </TouchableOpacity>
-                    }
-                />                
-                <Text style={styles.helperText}>
-                    Import from hardware wallet or other software to watch your balance.
-                </Text>
+                    <Text style={styles.label}>Extended public key</Text>
+                    <StyledInput
+                        placeholder="xpub / zpub / ypub"
+                        value={xpub}
+                        onChangeText={set_xpub}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        editable={!loading}
+                        keyboardAppearance={isDark ? 'dark' : 'light'}
+                        multiline
+                        containerStyle={styles.multilineInput}
+                        rightElement={
+                            <TouchableOpacity style={styles.scanButton} onPress={handle_scan}>
+                                <Feather name="camera" size={20} color={theme.colors.primary} />
+                            </TouchableOpacity>
+                        }
+                    />
+                    <Text style={styles.helperText}>
+                        Import from hardware wallet or other software to watch your balance.
+                    </Text>
                 </View>
 
-                <TouchableOpacity 
-                    style={[styles.button, (!xpub || loading) && styles.buttonDisabled]} 
+                <TouchableOpacity
+                    style={[styles.button, (!xpub || loading) && styles.buttonDisabled]}
                     onPress={handle_import}
                     disabled={!xpub || loading}
                 >
@@ -128,15 +148,15 @@ const ImportWatchOnlyScreen = () => {
 };
 
 const getStyles = (theme: Theme) => StyleSheet.create({
-    container: { 
-        flex: 1, 
+    container: {
+        flex: 1,
         backgroundColor: theme.colors.background,
         padding: 24
     },
     label: {
-        fontSize: 16, 
-        marginBottom: 8, 
-        color: theme.colors.primary, 
+        fontSize: 16,
+        marginBottom: 8,
+        color: theme.colors.primary,
         fontWeight: '500',
     },
     multilineInput: {
@@ -151,11 +171,11 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 13,
         lineHeight: 20,
     },
-    button: { 
-        backgroundColor: theme.colors.primary, 
-        borderRadius: 8, 
-        alignItems: 'center', 
-        height: 56, 
+    button: {
+        backgroundColor: theme.colors.primary,
+        borderRadius: 8,
+        alignItems: 'center',
+        height: 56,
         justifyContent: 'center',
         marginTop: 24,
     },
@@ -167,10 +187,10 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         gap: 8
     },
-    buttonText: { 
-        color: theme.colors.inversePrimary, 
-        fontSize: 16, 
-        fontWeight: '600', 
+    buttonText: {
+        color: theme.colors.inversePrimary,
+        fontSize: 16,
+        fontWeight: '600',
     }
 });
 
