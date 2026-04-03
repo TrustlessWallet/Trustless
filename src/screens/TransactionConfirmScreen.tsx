@@ -15,7 +15,7 @@ const DUST_LIMIT = 546;
 
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 
-const TransactionConfirmModal = () => {
+const TransactionConfirmScreen = () => {
     const route = useRoute<RoutePropType>();
     const { 
         recipientAddress, 
@@ -34,26 +34,43 @@ const TransactionConfirmModal = () => {
     const styles = useMemo(() => getStyles(theme), [theme]); 
     const { activeWallet } = useWallet();
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [currentRate, setCurrentRate] = useState<number>(selectedRate);
+
+    const safeFeeOptions = feeOptions ?? { fast: 1, normal: 1, slow: 1 };
+    const safeSelectedRate = selectedRate ?? safeFeeOptions.normal;
+    const safeOnSelectFeeOption = onSelectFeeOption ?? (() => { });
+
+    const cleanAmount = amount.replace(',', '.');
+    const amountInSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
+    const totalInput = useMemo(() => utxos.reduce((acc, u) => acc + u.value, 0), [utxos]);
+    
+    const calculatedVSize = useMemo(() => {
+        if (feeVSize) return feeVSize;
+        const initialChange = Math.max(0, totalInput - amountInSatoshis - fee);
+        const numInputs = utxos.length || 1;
+        const numOutputs = initialChange > DUST_LIMIT ? 2 : 1;
+        return Math.ceil((numInputs * 68) + (numOutputs * 31) + 10.5);
+    }, [feeVSize, utxos.length, totalInput, amountInSatoshis, fee]);
+
+    const canEditFees = calculatedVSize > 0 && !!feeOptions;
+
+    const [currentRate, setCurrentRate] = useState<number>(safeSelectedRate);
     const [currentFee, setCurrentFee] = useState<number>(fee);
-    const [customRate, setCustomRate] = useState<string>(selectedRate.toString());
+    const [customRate, setCustomRate] = useState<string>(safeSelectedRate.toString());
     const [showHighFeeWarning, setShowHighFeeWarning] = useState(false);
-    const initialKey = selectedRate === feeOptions.normal
+    
+    const initialKey = safeSelectedRate === safeFeeOptions.normal
         ? 'normal'
-        : selectedRate === feeOptions.fast
+        : safeSelectedRate === safeFeeOptions.fast
         ? 'fast'
-        : selectedRate === feeOptions.slow
+        : safeSelectedRate === safeFeeOptions.slow
         ? 'slow' 
         : 'custom';
     const [selectedKey, setSelectedKey] = useState<'slow' | 'normal' | 'fast' | 'custom'>(initialKey);
-    const cleanAmount = amount.replace(',', '.');
-    const amountInSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
+    
     const feePercentage = amountInSatoshis > 0 ? (currentFee / amountInSatoshis) * 100 : 0;
     const total = amountInSatoshis + currentFee;
     const totalInBtc = total / 100000000;
     
-    // Calculate Change
-    const totalInput = useMemo(() => utxos.reduce((acc, u) => acc + u.value, 0), [utxos]);
     const estimatedChange = Math.max(0, totalInput - amountInSatoshis - currentFee);
     const isDust = estimatedChange > 0 && estimatedChange <= DUST_LIMIT;
 
@@ -63,24 +80,26 @@ const TransactionConfirmModal = () => {
     }, [feePercentage, amountInSatoshis]);
 
     const handleFeeSelection = (key: 'slow' | 'normal' | 'fast' | 'custom', rate: number) => {
+        if (!canEditFees) return;
         setSelectedKey(key);
         if (key !== 'custom') {
-            const newFee = Math.ceil(feeVSize * rate);
+            const newFee = Math.ceil(calculatedVSize * rate);
             setCurrentRate(rate);
             setCurrentFee(newFee);
             setCustomRate(rate.toString());
-            onSelectFeeOption(rate, newFee);
+            safeOnSelectFeeOption(rate, newFee);
         }
     };
 
     const handleCustomRateChange = (text: string) => {
+        if (!canEditFees) return;
         setCustomRate(text);
         const rate = parseInt(text, 10);
         if (!isNaN(rate) && rate > 0) {
-            const newFee = Math.ceil(feeVSize * rate);
+            const newFee = Math.ceil(calculatedVSize * rate);
             setCurrentRate(rate);
             setCurrentFee(newFee);
-            onSelectFeeOption(rate, newFee);
+            safeOnSelectFeeOption(rate, newFee);
         }
     };
 
@@ -139,7 +158,7 @@ const TransactionConfirmModal = () => {
                     address={recipientAddress}
                 />
             </View>
-            <View style={styles.section}>
+            <View style={[styles.section, route.params.isImported && styles.sectionReducedMargin]}>
                 <Text style={styles.label}>Sending from:</Text>
                 {inputDetails.map((item, index) => (
                     <View key={item.address} style={styles.inputRow}>
@@ -155,46 +174,50 @@ const TransactionConfirmModal = () => {
                     </View>
                 ))}
             </View>
-            <View style={styles.feeSelectorContainer}>
-                <Text style={styles.label}>Fee rate</Text>
-                <View style={styles.feeOptionsRow}>
-                    {(['slow', 'normal', 'fast'] as const).map((key) => (
+            {!route.params.isImported && (
+                <View style={styles.feeSelectorContainer}>
+                    <Text style={styles.label}>Fee rate</Text>
+                    <View style={styles.feeOptionsRow}>
+                        {(['slow', 'normal', 'fast'] as const).map((key) => (
+                            <TouchableOpacity
+                                key={key}
+                                onPress={() => handleFeeSelection(key, safeFeeOptions[key])}
+                                style={[styles.feeOption, selectedKey === key && styles.feeOptionActive]}
+                                disabled={!canEditFees}
+                            >
+                                <Text style={[styles.feeOptionText, selectedKey === key ? styles.feeOptionTextActive : {}]}>
+                                    {key.charAt(0).toUpperCase() + key.slice(1)}
+                                </Text>
+                                <Text style={[styles.feeOptionRate, selectedKey === key ? styles.feeOptionRateActive : {}]}>
+                                    {safeFeeOptions[key]} s/vB
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
                         <TouchableOpacity
-                            key={key}
-                            onPress={() => handleFeeSelection(key, feeOptions[key])}
-                            style={[styles.feeOption, selectedKey === key && styles.feeOptionActive]}
+                            onPress={() => handleFeeSelection('custom', parseInt(customRate, 10) || 1)}
+                            style={[styles.feeOption, selectedKey === 'custom' && styles.feeOptionActive]}
+                            disabled={!canEditFees}
                         >
-                            <Text style={[styles.feeOptionText, selectedKey === key ? styles.feeOptionTextActive : {}]}>
-                                {key.charAt(0).toUpperCase() + key.slice(1)}
-                            </Text>
-                            <Text style={[styles.feeOptionRate, selectedKey === key ? styles.feeOptionRateActive : {}]}>
-                                {feeOptions[key]} s/vB
-                            </Text>
+                            <Text style={[styles.feeOptionText, selectedKey === 'custom' ? styles.feeOptionTextActive : {}]}>Custom</Text>
+                            <Text style={[styles.feeOptionRate, selectedKey === 'custom' ? styles.feeOptionRateActive : {}]}>Edit</Text>
                         </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity
-                        onPress={() => handleFeeSelection('custom', parseInt(customRate, 10) || 1)}
-                        style={[styles.feeOption, selectedKey === 'custom' && styles.feeOptionActive]}
-                    >
-                        <Text style={[styles.feeOptionText, selectedKey === 'custom' ? styles.feeOptionTextActive : {}]}>Custom</Text>
-                        <Text style={[styles.feeOptionRate, selectedKey === 'custom' ? styles.feeOptionRateActive : {}]}>Edit</Text>
-                    </TouchableOpacity>
-                </View>
-                {selectedKey === 'custom' && (
-                    <View style={styles.customFeeContainer}>
-                        <Text style={styles.customFeeLabel}>Rate (sat/vB):</Text>
-                        <TextInput
-                            style={styles.customFeeInput}
-                            keyboardType="numeric"
-                            value={customRate}
-                            onChangeText={handleCustomRateChange}
-                            placeholder="0"
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                            placeholderTextColor={theme.colors.muted}
-                        />
                     </View>
-                )}
-            </View>
+                    {selectedKey === 'custom' && (
+                        <View style={styles.customFeeContainer}>
+                            <Text style={styles.customFeeLabel}>Rate (sat/vB):</Text>
+                            <TextInput
+                                style={styles.customFeeInput}
+                                keyboardType="numeric"
+                                value={customRate}
+                                onChangeText={handleCustomRateChange}
+                                placeholder="0"
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
+                                placeholderTextColor={theme.colors.muted}
+                            />
+                        </View>
+                    )}
+                </View>
+            )}
             {showHighFeeWarning && (
                 <View style={styles.warningContainer}>
                     <Text style={styles.warningText}>
@@ -203,7 +226,16 @@ const TransactionConfirmModal = () => {
                     <Feather name="alert-triangle" size={18} color={theme.colors.bitcoin} />
                 </View>
             )}
-            <View style={styles.summaryBox}>
+            <View style={[styles.summaryBox, route.params.isImported && styles.summaryBoxNoBorder]}>
+                {route.params.isImported && (
+                    <>
+                        <View style={styles.separator} />
+                        <View style={styles.detailRow}>
+                            <Text style={styles.label}>Fee rate</Text>
+                            <Text style={styles.value}>{Math.round(currentFee / calculatedVSize)} s/vB</Text>
+                        </View>
+                    </>
+                )}
                 <View style={styles.detailRow}>
                     <Text style={styles.label}>Total fee</Text>
                     <View style={styles.valueContainer}>
@@ -213,7 +245,7 @@ const TransactionConfirmModal = () => {
                 </View>
                 <View style={styles.detailRow}>
                     <Text style={styles.label}>Transaction size</Text>
-                    <Text style={styles.value}>{feeVSize} vbytes</Text>
+                    <Text style={styles.value}>{calculatedVSize} vbytes</Text>
                 </View>
                 
                 <View style={styles.detailRow}>
@@ -264,6 +296,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     section: {
         marginBottom: 24,
     },
+    sectionReducedMargin: {
+        marginBottom: 0,
+    },
     fullAddress: {
         fontFamily: 'monospace',
         fontSize: 14,
@@ -278,8 +313,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'flex-start',
         marginTop: 4,
         paddingVertical: 8,
-        borderBottomWidth: 1,
-        borderColor: theme.colors.border, 
     },
     addressRow: {
         flexDirection: 'row',
@@ -332,15 +365,17 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontFamily: 'monospace',
     },
     summaryBox: {
-        marginTop: 16,
         paddingTop: 16,
         borderTopWidth: 1,
         borderColor: theme.colors.border, 
     },
+    summaryBoxNoBorder: {
+        borderTopWidth: 0,
+    },
     separator: {
         height: 1,
         backgroundColor: theme.colors.border, 
-        marginVertical: 16,
+        marginBottom: 16,
     },
     feeSelectorContainer: {
         marginBottom: 16,
@@ -455,4 +490,4 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         gap: 8,
     }
 });
-export default TransactionConfirmModal;
+export default TransactionConfirmScreen;

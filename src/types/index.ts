@@ -96,51 +96,65 @@ export type TabParamList = {
 };
 
 export type RootStackParamList = {
-  MainTabs: NavigatorScreenParams<TabParamList> & { screen?: keyof TabParamList } | undefined;
+  MainTabs: { screen?: string } | undefined;
+  AuthCheck: undefined;
   AddAddress: undefined;
-  QRScanner: { onScanSuccess: (scannedData: string) => void };
   BackupIntro: undefined;
-  ShowMnemonic: { mnemonic: string; mode: 'create' | 'backup' };
-  VerifyMnemonic: { mnemonic: string };
-  ShowMnemonicQR: { mnemonic: string; mode: 'create' | 'backup' };
+  ShowMnemonic: undefined;
+  ShowMnemonicQR: undefined;
+  VerifyMnemonic: undefined;
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
-  PrivacyOverlay: undefined;
-  Receive: undefined;
-  Send: { selectedAddress?: string } | undefined;
+  Send: { selectedAddress?: string };
   TransactionConfirm: {
-    recipientAddress: string,
-    amount: string,
-    unit: 'BTC' | 'sats',
-    onConfirm: (finalFeeRate: number) => Promise<void>,
-    loading: boolean,
-    fee: number,
-    feeVSize: number,
-    selectedRate: number,
-    feeOptions: { fast: number; normal: number; slow: number },
-    onSelectFeeOption: (rate: number, fee: number) => void,
-    utxos: UTXO[],
+    recipientAddress: string;
+    amount: string;
+    unit: 'BTC' | 'sats';
+    onConfirm: (finalFeeRate?: number) => Promise<void>;
+    loading: boolean;
+    fee: number;
+    feeVSize?: number;
+    selectedRate?: number;
+    feeOptions?: { fast: number; normal: number; slow: number };
+    onSelectFeeOption?: (rate: number, fee: number) => void;
+    utxos: UTXO[];
+    isImported?: boolean;
   };
-  TransactionDetails: { transaction: Transaction };
-  TransactionHistory: undefined;
+  ExportPSBT: {
+    recipientAddress: string;
+    amount: string;
+    unit: 'BTC' | 'sats';
+    feeRate: number;
+    fee: number;
+    utxos: UTXO[];
+  };
+  ImportPSBT: {
+    recipientAddress: string;
+    amount: string;
+    unit: 'BTC' | 'sats';
+    fee: number;
+    utxos: UTXO[];
+    unsignedPsbtBase64: string;
+  };
   WalletSwitcher: undefined;
-  WalletOptions: { wallet_id: string };
-  ShowPublicKey: { wallet_id: string };
+  WalletOptions: undefined;
   AddWalletOptions: undefined;
-  BackupDisclaimer: { walletId: string };
-  AddressBook: { returnScreen?: keyof RootStackParamList } | undefined;
+  BackupDisclaimer: undefined;
+  AddressBook: { returnScreen?: keyof RootStackParamList };
   AddSavedAddress: undefined;
+  CoinControl: { targetAmount: number; onSelect: (utxos: UTXO[]) => void };
   BalanceDetail: { utxos: UTXO[] };
-  AddressDetails: { address: string };
-  CoinControl: {
-    onSelect: (selectedUtxos: UTXO[]) => void;
-    targetAmount: number;
-  };
+  AddressDetails: undefined;
+  ShowPublicKey: { wallet_id: string };
+  Receive: undefined;
+  QRScanner: { onScanSuccess: (data: string) => void };
+  TransactionHistory: undefined;
+  TransactionDetails: { transaction: Transaction };
   OnboardingWelcome: undefined;
   OnboardingTracker: undefined;
   OnboardingWallet: undefined;
-  AuthCheck: undefined;
   PrivacyPolicy: undefined;
   TermsConditions: undefined;
   Support: undefined;
+  PrivacyOverlay: undefined;
 };

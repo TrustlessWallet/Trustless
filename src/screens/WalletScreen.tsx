@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context'; 
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -8,8 +8,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, Transaction } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useTheme } from '../contexts/ThemeContext'; 
-import { Theme } from '../constants/theme'; 
+import { useTheme } from '../contexts/ThemeContext';
+import { Theme } from '../constants/theme';
 import { useWalletTransactions, useWalletUTXOs } from '../hooks/useBalance';
 import { formatBitcoinAddressShort } from '../constants/format';
 
@@ -30,8 +30,8 @@ const formatBalance = (sats: number) => {
 const WalletScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const { activeWallet, loading: walletLoading, triggerRefresh } = useWallet();
-    const { theme } = useTheme(); 
-    const styles = useMemo(() => getStyles(theme), [theme]); 
+    const { theme } = useTheme();
+    const styles = useMemo(() => getStyles(theme), [theme]);
     const [hideBalance, setHideBalance] = useState(false);
     const isFocused = useIsFocused();
 
@@ -51,31 +51,31 @@ const WalletScreen = () => {
     const walletAddressesSet = useMemo(() => {
         if (!activeWallet) return new Set<string>();
         return new Set([
-          ...(activeWallet.derivedReceiveAddresses.map(a => a.address) ?? []),
-          ...(activeWallet.derivedChangeAddresses.map(a => a.address) ?? [])
+            ...(activeWallet.derivedReceiveAddresses.map(a => a.address) ?? []),
+            ...(activeWallet.derivedChangeAddresses.map(a => a.address) ?? [])
         ]);
     }, [activeWallet]);
 
-    const { 
-        data: transactions, 
-        isLoading: loadingTxs, 
+    const {
+        data: transactions,
+        isLoading: loadingTxs,
         refetch: refetchTxs,
-        isRefetching: isRefetchingTxs 
+        isRefetching: isRefetchingTxs
     } = useWalletTransactions(activeWallet?.id, queryAddresses);
 
-    const { 
-        data: utxos, 
-        refetch: refetchUtxos 
+    const {
+        data: utxos,
+        refetch: refetchUtxos
     } = useWalletUTXOs(queryAddresses);
 
     useEffect(() => {
-      const loadPreference = async () => {
-        const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
-        setHideBalance(savedPref === 'true');
-      };
-      if (isFocused) {
-        loadPreference();
-      }
+        const loadPreference = async () => {
+            const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
+            setHideBalance(savedPref === 'true');
+        };
+        if (isFocused) {
+            loadPreference();
+        }
     }, [isFocused]);
 
     const onRefresh = () => {
@@ -85,43 +85,43 @@ const WalletScreen = () => {
     };
 
     const renderTransactionItem = useCallback(({ item }: { item: Transaction }) => {
-      const isSend = item.type === 'send';
-      let otherAddress = 'Multiple';
-      
-      if (isSend) {
-        const externalOutputs = item.vout.filter(o => !walletAddressesSet.has(o.scriptpubkey_address));
-        if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
-      } else {
-        const externalInputs = item.vin.filter(i => !walletAddressesSet.has(i.prevout?.scriptpubkey_address));
-        if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
-      }
+        const isSend = item.type === 'send';
+        let otherAddress = 'Multiple';
 
-      const txDate = item.status.block_time
-        ? new Date(item.status.block_time * 1000).toLocaleString()
-        : 'Pending confirmation';
+        if (isSend) {
+            const externalOutputs = item.vout.filter(o => !walletAddressesSet.has(o.scriptpubkey_address));
+            if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
+        } else {
+            const externalInputs = item.vin.filter(i => !walletAddressesSet.has(i.prevout?.scriptpubkey_address));
+            if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
+        }
 
-      return (
-        <TouchableOpacity 
-            key={item.txid} 
-            style={styles.txRow} 
-            onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}
-        >
-            <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
-            <View style={styles.txDetails}>
-                <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
-                <Text style={styles.txAddress}>{isSend ? "To" : "From"} {formatBitcoinAddressShort(otherAddress || 'Unknown')}</Text>
-                <Text style={styles.txDate}>{txDate}</Text>
-            </View>
-            <View style={styles.txAmountContainer}>
-                <Text style={styles.txAmount}>
-                    {hideBalance ? '*******' : (
-                        <>{isSend ? '-' : '+'} {formatBalance(item.amount)} <Text style={styles.orangeSymbol}>₿</Text></>
-                    )}
-                </Text>
-                <Text style={styles.txStatus}>{item.status.confirmed ? 'Confirmed' : 'Pending'}</Text>
-            </View>
-        </TouchableOpacity>
-      );
+        const txDate = item.status.block_time
+            ? new Date(item.status.block_time * 1000).toLocaleString()
+            : 'Pending confirmation';
+
+        return (
+            <TouchableOpacity
+                key={item.txid}
+                style={styles.txRow}
+                onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}
+            >
+                <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
+                <View style={styles.txDetails}>
+                    <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
+                    <Text style={styles.txAddress}>{isSend ? "To" : "From"} {formatBitcoinAddressShort(otherAddress || 'Unknown')}</Text>
+                    <Text style={styles.txDate}>{txDate}</Text>
+                </View>
+                <View style={styles.txAmountContainer}>
+                    <Text style={styles.txAmount}>
+                        {hideBalance ? '*******' : (
+                            <>{isSend ? '-' : '+'} {formatBalance(item.amount)} <Text style={styles.orangeSymbol}>₿</Text></>
+                        )}
+                    </Text>
+                    <Text style={styles.txStatus}>{item.status.confirmed ? 'Confirmed' : 'Pending'}</Text>
+                </View>
+            </TouchableOpacity>
+        );
     }, [walletAddressesSet, hideBalance, theme, navigation, styles]);
 
     const txList = transactions || [];
@@ -157,8 +157,6 @@ const WalletScreen = () => {
         );
     }
 
-    const isWatchOnly = activeWallet.type === 'watch-only';
-
     return (
         <SafeAreaView style={styles.container} edges={['right', 'left']}>
             <View style={styles.topSection}>
@@ -166,8 +164,8 @@ const WalletScreen = () => {
                     <Text style={styles.walletName}>{activeWallet.name}</Text>
                     <Feather name="chevron-down" size={22} color={theme.colors.muted} />
                 </TouchableOpacity>
-                <TouchableOpacity 
-                    style={styles.balanceContainer} 
+                <TouchableOpacity
+                    style={styles.balanceContainer}
                     onPress={() => navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
                 >
                     <Text style={styles.balanceText}>
@@ -179,13 +177,12 @@ const WalletScreen = () => {
                         <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />
                         <Text style={styles.actionButtonText}>Receive</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={[styles.actionButton, isWatchOnly ? styles.disabledActionButton : {}]} 
-                        onPress={() => !isWatchOnly && navigation.navigate('Send')}
-                        disabled={isWatchOnly}
+                    <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => navigation.navigate('Send', {})}
                     >
-                        <Feather name="arrow-up-circle" size={18} color={isWatchOnly ? theme.colors.muted : theme.colors.inversePrimary} />
-                        <Text style={[styles.actionButtonText, isWatchOnly ? styles.disabledActionButtonText : {}]}>Send</Text>
+                        <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
+                        <Text style={styles.actionButtonText}>Send</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -214,15 +211,15 @@ const WalletScreen = () => {
 };
 
 const getStyles = (theme: Theme) => StyleSheet.create({
-    container: { 
-        flex: 1, 
-        backgroundColor: theme.colors.background 
+    container: {
+        flex: 1,
+        backgroundColor: theme.colors.background
     },
-    centeredContainer: { 
-        flex: 1, 
-        backgroundColor: theme.colors.background, 
-        alignItems: 'center', 
-        justifyContent: 'center' 
+    centeredContainer: {
+        flex: 1,
+        backgroundColor: theme.colors.background,
+        alignItems: 'center',
+        justifyContent: 'center'
     },
     emptyStateContainer: {
         flex: 1,
@@ -230,45 +227,45 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         justifyContent: 'center',
         padding: 24,
     },
-    createButton: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        gap: 8, 
+    createButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
         backgroundColor: theme.colors.primary,
         paddingVertical: 16,
         marginVertical: 6,
-        borderRadius: 8, 
-        width: '100%' 
+        borderRadius: 8,
+        width: '100%'
     },
-    createButtonText: { 
+    createButtonText: {
         color: theme.colors.inversePrimary,
-        fontSize: 16, 
-        fontWeight: '600' 
+        fontSize: 16,
+        fontWeight: '600'
     },
-    orText: { 
-        fontSize: 16, 
+    orText: {
+        fontSize: 16,
         color: theme.colors.muted,
         textAlign: 'center',
-        marginVertical: 16 
+        marginVertical: 16
     },
-    importButton: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        gap: 8, 
+    importButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
         backgroundColor: theme.colors.background,
-        paddingVertical: 16, 
+        paddingVertical: 16,
         marginVertical: 6,
-        borderRadius: 8, 
-        borderWidth: 1, 
+        borderRadius: 8,
+        borderWidth: 1,
         borderColor: theme.colors.primary,
-        width: '100%' 
+        width: '100%'
     },
-    importButtonText: { 
+    importButtonText: {
         color: theme.colors.primary,
-        fontSize: 16, 
-        fontWeight: '600' 
+        fontSize: 16,
+        fontWeight: '600'
     },
     topSection: {
         flex: 1.2,
@@ -278,123 +275,119 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     bottomSection: {
         flex: 1,
         borderTopWidth: 1,
-        borderTopColor: theme.colors.border, 
+        borderTopColor: theme.colors.border,
     },
-    walletSelector: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        gap: 8, 
-        marginBottom: 8 
+    walletSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginBottom: 8
     },
-    walletName: { 
-        fontSize: 20, 
-        color: theme.colors.muted, 
+    walletName: {
+        fontSize: 20,
+        color: theme.colors.muted,
     },
-    balanceContainer: { 
-        alignItems: 'center', 
-        height: 44, 
-        justifyContent: 'center' 
+    balanceContainer: {
+        alignItems: 'center',
+        height: 44,
+        justifyContent: 'center'
     },
-    balanceText: { 
-        fontSize: 36, 
-        fontFamily: 'SpaceMono-Bold', 
-        fontWeight: 'bold', 
+    balanceText: {
+        fontSize: 36,
+        fontFamily: 'SpaceMono-Bold',
+        fontWeight: 'bold',
         color: theme.colors.primary,
-        includeFontPadding: false, 
+        includeFontPadding: false,
         textAlignVertical: 'center'
     },
-    orangeSymbol: { 
-        color: theme.colors.bitcoin 
+    orangeSymbol: {
+        color: theme.colors.bitcoin
     },
-    actionsContainer: { 
-        flexDirection: 'row', 
-        justifyContent: 'center', 
-        paddingTop: 24, 
-        paddingBottom: 16 
+    actionsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        paddingTop: 24,
+        paddingBottom: 16
     },
-    actionButton: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        gap: 8, 
-        backgroundColor: theme.colors.primary, 
-        paddingVertical: 16, 
-        paddingHorizontal: 12, 
-        borderRadius: 8, 
-        marginHorizontal: 8, 
-        minWidth: 128, 
-        justifyContent: 'center' 
+    actionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: theme.colors.primary,
+        paddingVertical: 16,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        marginHorizontal: 8,
+        minWidth: 128,
+        justifyContent: 'center'
     },
-    actionButtonText: { 
-        color: theme.colors.inversePrimary, 
-        fontSize: 16, 
-        fontWeight: '600' 
-    },
-    disabledActionButton: {
-        backgroundColor: theme.colors.border,
-        opacity: 0.6
+    actionButtonText: {
+        color: theme.colors.inversePrimary,
+        fontSize: 16,
+        fontWeight: '600'
     },
     disabledActionButtonText: {
         color: theme.colors.muted
     },
-    historyContainer: { 
-        paddingHorizontal: 20, 
-        paddingBottom: 20 
+    historyContainer: {
+        paddingHorizontal: 20,
+        paddingBottom: 20
     },
-    noTxText: { 
-        textAlign: 'center', 
+    noTxText: {
+        textAlign: 'center',
         paddingVertical: 40,
-        fontSize: 16, 
-        color: theme.colors.muted 
+        fontSize: 16,
+        color: theme.colors.muted
     },
     loadingIndicator: {
         marginTop: 40
     },
-    txRow: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        paddingVertical: 10, 
-        borderBottomWidth: 1, 
-        borderColor: theme.colors.border 
+    txRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderColor: theme.colors.border
     },
-    txIcon: { 
-        marginRight: 16 
+    txIcon: {
+        marginRight: 16
     },
-    txDetails: { 
-        flex: 1, 
-        gap: 4 
+    txDetails: {
+        flex: 1,
+        gap: 4
     },
-    txType: { 
-        fontSize: 16, 
-        color: theme.colors.primary 
+    txType: {
+        fontSize: 16,
+        color: theme.colors.primary
     },
-    txAddress: { 
-        fontSize: 14, 
-        color: theme.colors.muted, 
-        fontFamily: 'monospace' 
+    txAddress: {
+        fontSize: 14,
+        color: theme.colors.muted,
+        fontFamily: 'monospace'
     },
-    txDate: { 
-        fontSize: 14, 
-        color: theme.colors.muted 
+    txDate: {
+        fontSize: 14,
+        color: theme.colors.muted
     },
-    txAmountContainer: { 
-        alignItems: 'flex-end' 
+    txAmountContainer: {
+        alignItems: 'flex-end'
     },
-    txAmount: { 
-        fontSize: 16, 
-        color: theme.colors.primary 
+    txAmount: {
+        fontSize: 16,
+        color: theme.colors.primary
     },
-    txStatus: { 
-        fontSize: 14, 
-        color: theme.colors.muted 
+    txStatus: {
+        fontSize: 14,
+        color: theme.colors.muted
     },
-    showMoreButton: { 
-        alignItems: 'center', 
-        padding: 16 
+    showMoreButton: {
+        alignItems: 'center',
+        padding: 16
     },
-    showMoreText: { 
-        color: theme.colors.primary, 
-        fontSize: 16 
+    showMoreText: {
+        color: theme.colors.primary,
+        fontSize: 16
     },
 });
 
