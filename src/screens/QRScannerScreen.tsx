@@ -59,7 +59,7 @@ const QRScannerScreen = () => {
       />
       <View style={styles.overlay}>
         <View style={styles.scanBox} />
-        <Text style={styles.scanText}>Scan a QR Code</Text>
+        <Text style={styles.scanText}>Scan a QR code</Text>
       </View>
     </View>
   );

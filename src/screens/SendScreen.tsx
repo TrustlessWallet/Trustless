@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput'; 
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
@@ -33,7 +33,6 @@ const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number, feeRate: numb
     let selected = [];
     let totalValue = 0;
     
-    // Estimate fee for current number of inputs + 1 output (no change initially)
     const estimateFee = (n_inputs: number) => {
         const vsize = Math.ceil((n_inputs * 68) + (1 * 31) + 10.5);
         return Math.ceil(vsize * feeRate);
@@ -43,7 +42,6 @@ const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number, feeRate: numb
         selected.push(utxo);
         totalValue += utxo.value;
         
-        // Check if we have enough to cover amount + estimated fee
         const estimatedFee = estimateFee(selected.length);
         const requiredTotal = targetAmount + estimatedFee;
         
@@ -60,6 +58,8 @@ const SendScreen = () => {
     const isFocused = useIsFocused(); 
     
     const { activeWallet, createAndSignTransaction, triggerRefresh, incrementChangeIndex, lastRefreshTime } = useWallet();
+    const isWatchOnly = activeWallet?.type === 'watch-only';
+
     const [recipientAddress, setRecipientAddress] = useState('');
     const [recipientAddressPreview, setRecipientAddressPreview] = useState('');
     const [amount, setAmount] = useState('');
@@ -70,10 +70,13 @@ const SendScreen = () => {
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [selectedUtxos, setSelectedUtxos] = useState<UTXO[] | null>(null);
     const [hideBalance, setHideBalance] = useState(false);
-    const [feeRate, setFeeRate] = useState<number | null>(null);
+    
+    const [feeOptions, setFeeOptions] = useState<{fast: number; normal: number; slow: number} | null>(null);
+    const [selectedFee, setSelectedFee] = useState<'slow' | 'normal' | 'fast' | 'custom'>('normal');
+    const [customRate, setCustomRate] = useState('');
 
     const { theme, isDark } = useTheme();
-    const styles = useMemo(() => getStyles(theme), [theme]);
+    const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
 
     useEffect(() => {
         if (route.params?.selectedAddress) {
@@ -128,7 +131,7 @@ const SendScreen = () => {
                 await AsyncStorage.setItem(cacheKey, JSON.stringify({ utxos: fetchedUtxos, balance: availableToSend, timestamp: Date.now() }));
                 
                 const estimates = await fetchFeeEstimates();
-                setFeeRate(estimates.normal);
+                setFeeOptions(estimates);
             } catch (e) {
                 console.error('Error fetching balance:', e);
                 Alert.alert('Error', 'Could not fetch wallet balance.');
@@ -220,12 +223,25 @@ const SendScreen = () => {
         try {
             setLoading(true);
             let utxosForTx: UTXO[];
+            
             let rate = 15;
-            let estimates: { fast: number; normal: number; slow: number; } | null = null;
-            try {
-                estimates = await fetchFeeEstimates();
+            let estimates = feeOptions;
+            if (!estimates) {
+                try {
+                    estimates = await fetchFeeEstimates();
+                    setFeeOptions(estimates);
+                } catch(e) {}
+            }
+            
+            if (isWatchOnly && estimates) {
+                if (selectedFee === 'custom') {
+                    rate = parseInt(customRate, 10) || 1;
+                } else {
+                    rate = estimates[selectedFee];
+                }
+            } else if (estimates) {
                 rate = estimates.normal;
-            } catch (e) { console.warn('Failed to fetch fee estimates, using default rate'); }
+            }
             
             if (selectedUtxos && selectedUtxos.length > 0) {
                 utxosForTx = selectedUtxos;
@@ -233,7 +249,6 @@ const SendScreen = () => {
                 let candidateUtxos = utxos;
                 const autoSelected = selectUtxosForAmount(candidateUtxos, amountSatoshis, rate);
                 if (!autoSelected) {
-                    // Check if the issue is fees or pure amount
                     const totalBalance = candidateUtxos.reduce((sum, u) => sum + u.value, 0);
                     const formatAmount = (sats: number) => unit === 'BTC' ? (sats / 100000000).toFixed(8) : sats.toString();
                     const denomSymbol = unit === 'BTC' ? 'BTC' : 'sats';
@@ -263,26 +278,37 @@ const SendScreen = () => {
                 rate
             );
 
-            const proceedToConfirm = () => {
-                const feeOptions = {
-                    fast: estimates?.fast ?? rate * 1.5,
-                    normal: estimates?.normal ?? rate,
-                    slow: Math.max(1, estimates?.slow ?? rate * 0.8),
-                };
+            const completeNavigation = () => {
                 setLoading(false);
-                navigation.navigate('TransactionConfirm', {
-                    recipientAddress: trimmedRecipient,
-                    amount,
-                    unit,
-                    onConfirm: (finalFeeRate) => handleTransaction(finalFeeRate, utxosForTx),
-                    loading: false,
-                    fee,
-                    feeVSize: vsize,
-                    selectedRate: rate,
-                    feeOptions,
-                    onSelectFeeOption: () => {},
-                    utxos: utxosForTx,
-                });
+                if (isWatchOnly) {
+                    (navigation as any).navigate('ExportPSBT', {
+                        recipientAddress: trimmedRecipient,
+                        amount,
+                        unit,
+                        feeRate: rate,
+                        fee,
+                        utxos: utxosForTx,
+                    });
+                } else {
+                    const options = {
+                        fast: estimates?.fast ?? rate * 1.5,
+                        normal: estimates?.normal ?? rate,
+                        slow: Math.max(1, estimates?.slow ?? rate * 0.8),
+                    };
+                    navigation.navigate('TransactionConfirm', {
+                        recipientAddress: trimmedRecipient,
+                        amount,
+                        unit,
+                        onConfirm: (finalFeeRate) => handleTransaction(finalFeeRate ?? rate, utxosForTx),
+                        loading: false,
+                        fee,
+                        feeVSize: vsize,
+                        selectedRate: rate,
+                        feeOptions: options,
+                        onSelectFeeOption: () => {},
+                        utxos: utxosForTx,
+                    });
+                }
             };
 
             if (numOutputs === 1 && change > 0 && change <= DUST_THRESHOLD) {
@@ -296,7 +322,7 @@ const SendScreen = () => {
                             text: 'Continue (burn)', 
                             onPress: () => {
                                 setLoading(true);
-                                proceedToConfirm(); 
+                                completeNavigation(); 
                             }
                         }
                     ]
@@ -304,7 +330,7 @@ const SendScreen = () => {
                 return;
             }
 
-            proceedToConfirm();
+            completeNavigation();
         } catch (err) {
             setLoading(false);
             Alert.alert('Error', err instanceof Error ? err.message : 'Failed to prepare transaction.');
@@ -339,6 +365,9 @@ const SendScreen = () => {
     const isCoinControlActive = selectedUtxos && selectedUtxos.length > 0;
     const clean_amount_check = amount.replace(',', '.');
     const is_amount_entered = !isNaN(parseFloat(clean_amount_check)) && parseFloat(clean_amount_check) > 0;
+    const is_address_entered = recipientAddress.trim().length > 0;
+    const is_fee_valid = !isWatchOnly || (selectedFee !== 'custom' || parseInt(customRate, 10) > 0);
+    const is_form_valid = is_amount_entered && is_address_entered && is_fee_valid;
 
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
@@ -394,17 +423,59 @@ const SendScreen = () => {
                             </TouchableOpacity>
                         </View>
                     }
-                    
                 />
 
-                <View style={styles.feeEstimateRow}>
-                    <View style={styles.feeEstimateContent}>
-                        <Feather name="zap" size={14} color={theme.colors.muted} />
-                        <Text style={styles.feeEstimateText}>
-                            {feeRate ? `Network fee: ~${feeRate} sat/vB` : 'Estimating network fees...'}
-                        </Text>
+                {isWatchOnly ? (
+                    <View style={styles.feeSelectorContainer}>
+                        <Text style={[styles.label, {marginTop: 16}]}>Fee rate</Text>
+                        <View style={styles.feeOptionsRow}>
+                            {(['slow', 'normal', 'fast'] as const).map((key) => (
+                                <TouchableOpacity
+                                    key={key}
+                                    onPress={() => setSelectedFee(key)}
+                                    style={[styles.feeOption, selectedFee === key && styles.feeOptionActive]}
+                                >
+                                    <Text style={[styles.feeOptionText, selectedFee === key ? styles.feeOptionTextActive : {}]}>
+                                        {key.charAt(0).toUpperCase() + key.slice(1)}
+                                    </Text>
+                                    <Text style={[styles.feeOptionRate, selectedFee === key ? styles.feeOptionRateActive : {}]}>
+                                        {feeOptions?.[key] || '-'} s/vB
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                            <TouchableOpacity
+                                onPress={() => setSelectedFee('custom')}
+                                style={[styles.feeOption, selectedFee === 'custom' && styles.feeOptionActive]}
+                            >
+                                <Text style={[styles.feeOptionText, selectedFee === 'custom' ? styles.feeOptionTextActive : {}]}>Custom</Text>
+                                <Text style={[styles.feeOptionRate, selectedFee === 'custom' ? styles.feeOptionRateActive : {}]}>Edit</Text>
+                            </TouchableOpacity>
+                        </View>
+                        {selectedFee === 'custom' && (
+                            <View style={styles.customFeeContainer}>
+                                <Text style={styles.customFeeLabel}>Rate (sat/vB):</Text>
+                                <TextInput
+                                    style={styles.customFeeInput}
+                                    keyboardType="numeric"
+                                    value={customRate}
+                                    onChangeText={setCustomRate}
+                                    placeholder="0"
+                                    keyboardAppearance={isDark ? 'dark' : 'light'}
+                                    placeholderTextColor={theme.colors.muted}
+                                />
+                            </View>
+                        )}
                     </View>
-                </View>
+                ) : (
+                    <View style={styles.feeEstimateRow}>
+                        <View style={styles.feeEstimateContent}>
+                            <Feather name="zap" size={14} color={theme.colors.muted} />
+                            <Text style={styles.feeEstimateText}>
+                                {feeOptions?.normal ? `Network fee: ~${feeOptions.normal} sat/vB` : 'Estimating network fees...'}
+                            </Text>
+                        </View>
+                    </View>
+                )}
                 
                 <View style={styles.coinControlBanner}>
                     <View style={styles.coinControlHeader}>
@@ -432,11 +503,17 @@ const SendScreen = () => {
                     )}
                 </View>
 
-                <TouchableOpacity onPress={handleConfirmPress} style={[styles.sendButton, loading && styles.buttonDisabled]} disabled={loading}>
+                <TouchableOpacity 
+                    onPress={handleConfirmPress} 
+                    style={[styles.sendButton, (loading || !is_form_valid) && styles.buttonDisabled]} 
+                    disabled={loading || !is_form_valid}
+                >
                     {loading ? <ActivityIndicator color={theme.colors.inversePrimary} /> : (
                         <View style={styles.buttonContentRowCentered}>
-                            <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
-                            <Text style={styles.sendButtonText}>View transaction</Text>
+                            <Feather name={isWatchOnly ? "upload" : "arrow-up-circle"} size={18} color={theme.colors.inversePrimary} />
+                            <Text style={styles.sendButtonText}>
+                                {isWatchOnly ? 'Export transaction' : 'View transaction'}
+                            </Text>
                         </View>
                     )}
                 </TouchableOpacity>
@@ -444,7 +521,7 @@ const SendScreen = () => {
     );
 };
 
-const getStyles = (theme: Theme) => StyleSheet.create({
+const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { padding: 24, paddingBottom: 350, flexGrow: 1 },
     balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
@@ -468,6 +545,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         paddingVertical: 8,
         justifyContent: 'center',
         marginBottom: 24,
+        marginTop: 16,
         borderWidth: 1,
         borderColor: theme.colors.border,
     },
@@ -477,7 +555,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     selectButtonText: { color: theme.colors.inversePrimary, fontSize: 12, fontWeight: '600' },
     selectedUtxosRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.colors.border },
     selectedUtxosText: { fontSize: 13, color: theme.colors.primary },
-    feeEstimateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: 16 },
+    feeEstimateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
     feeEstimateText: { fontSize: 13, color: theme.colors.muted },
     feeEstimateContent: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     sendButton: { backgroundColor: theme.colors.primary, paddingVertical: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', minHeight: 56 },
@@ -485,6 +563,72 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     sendButtonText: { color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '600' },
     buttonContentRowCentered: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
     orangeSymbol: { color: theme.colors.bitcoin },
+    
+    // Fee Selector Styles
+    feeSelectorContainer: {
+        marginBottom: 16,
+    },
+    feeOptionsRow: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    feeOption: {
+        flex: 1,
+        paddingVertical: 8,
+        paddingHorizontal: 2,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.border, 
+        backgroundColor: theme.colors.surface, 
+        alignItems: 'center',
+    },
+    feeOptionActive: {
+        backgroundColor: theme.colors.primary, 
+        borderColor: theme.colors.primary, 
+    },
+    feeOptionText: {
+        color: theme.colors.primary, 
+        fontWeight: '600',
+        fontSize: 12,
+    },
+    feeOptionTextActive: {
+        color: theme.colors.inversePrimary, 
+    },
+    feeOptionRate: {
+        color: theme.colors.muted, 
+        fontSize: 11,
+        marginTop: 2,
+    },
+    feeOptionRateActive: {
+        color: theme.colors.inversePrimary, 
+    },
+    customFeeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 12,
+        backgroundColor: theme.colors.surface, 
+        padding: 12,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.border, 
+    },
+    customFeeLabel: {
+        fontSize: 14,
+        marginRight: 12,
+        color: theme.colors.primary, 
+    },
+    customFeeInput: {
+        flex: 1,
+        backgroundColor: theme.colors.background, 
+        borderWidth: 1,
+        borderColor: theme.colors.border, 
+        color: theme.colors.primary, 
+        borderRadius: 4,
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        fontSize: 16,
+        fontFamily: 'SpaceMono-Regular',
+    },
 });
 
 export default SendScreen;
