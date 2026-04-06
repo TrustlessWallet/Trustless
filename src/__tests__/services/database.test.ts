@@ -24,13 +24,6 @@ describe('Database Service', () => {
     
     // Re-import the module fresh for every test
     dbService = require('../../services/database');
-
-    // Default mock behavior for getAllAsync (e.g., migrations check)
-    mockGetAllAsync.mockResolvedValue([
-      { name: 'type' }, 
-      { name: 'xpub' }, 
-      { name: 'scriptType' }
-    ]);
   });
 
   describe('Initialization & State', () => {
@@ -38,10 +31,7 @@ describe('Database Service', () => {
       expect(() => dbService.getDB()).toThrow('Database not initialized');
     });
 
-    it('initializes the database, enables foreign keys, and runs migrations', async () => {
-      // Simulate an older DB missing the 'xpub' column during migration check
-      mockGetAllAsync.mockResolvedValueOnce([{ name: 'type' }, { name: 'scriptType' }]);
-
+    it('initializes the database and enables foreign keys', async () => {
       await dbService.initDatabase();
 
       expect(mockOpenDatabaseAsync).toHaveBeenCalledWith('trustless_wallet.db');
@@ -51,9 +41,6 @@ describe('Database Service', () => {
       // Should create tables
       expect(mockExecAsync).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS wallets'));
       expect(mockExecAsync).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS transactions'));
-
-      // Should run missing column migration for 'xpub'
-      expect(mockExecAsync).toHaveBeenCalledWith('ALTER TABLE wallets ADD COLUMN xpub TEXT');
       
       expect(() => dbService.getDB()).not.toThrow();
     });
@@ -66,7 +53,7 @@ describe('Database Service', () => {
 
     it('dbGetWallets fetches and formats wallets', async () => {
       mockGetAllAsync.mockResolvedValueOnce([
-        { id: '1', name: 'Main', type: 'standard', xpub: null, scriptType: 'p2wpkh', changeAddressIndex: 2, nextUtxoCount: 5 }
+        { id: '1', name: 'Main', type: 'standard', xpub: null, scriptType: 'p2wpkh', changeAddressIndex: 2, nextUtxoCount: 5, fingerprint: 'fp123', derivation_path: "m/84'/0'/0'" }
       ]);
 
       const wallets = await dbService.dbGetWallets('testnet');
@@ -83,6 +70,8 @@ describe('Database Service', () => {
         scriptType: 'p2wpkh',
         changeAddressIndex: 2,
         nextUtxoCount: 5,
+        fingerprint: 'fp123',
+        derivation_path: "m/84'/0'/0'",
         derivedReceiveAddresses: [],
         derivedChangeAddresses: [],
         derivedAddressInfoCache: [],
@@ -95,7 +84,7 @@ describe('Database Service', () => {
 
       expect(mockRunAsync).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO wallets'),
-        ['w1', 'My Wallet', 'mainnet', 0, 1, 'standard', null, 'p2wpkh']
+        ['w1', 'My Wallet', 'mainnet', 0, 1, 'standard', null, 'p2wpkh', null, null]
       );
     });
 
