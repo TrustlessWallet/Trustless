@@ -82,8 +82,8 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 
 1. Ensure the working tree is completely clean to avoid the dirty flag.
 2. Create and push the new tag: 
-   `git tag -a 1.2.1 -m "release 1.2.1"`
-   `git push origin 1.2.1`
+   `git tag -a 1.3.0 -m "release 1.3.0"`
+   `git push origin 1.3.0`
 3. Navigate into the repository directory to ensure all generated files stay in the correct folder:
    `cd Trustless`
 4. Generate the unsigned package: 
@@ -92,9 +92,9 @@ To run the project in development mode, you need node-js and a setup for ios (xc
    `keytool -genkey -v -keystore trustless-release.keystore -alias trustless-alias -keyalg RSA -keysize 2048 -validity 10000`
 6. Locate the signing tool and sign the package using the keystore: 
    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1)`
-   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v1.2.1-release.apk android/app/build/outputs/apk/release/app-release-unsigned.apk`
+   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v1.3.0-release.apk android/app/build/outputs/apk/release/app-release-unsigned.apk`
 7. Generate the official hash: 
-   `shasum -a 256 trustless-v1.2.1-release.apk`
+   `shasum -a 256 trustless-v1.3.0-release.apk`
 8. Create the github release. Upload the signed package and paste the hash into the release notes.
 
 </details>
@@ -104,7 +104,7 @@ To verify that the official binary was built exactly from the published source c
 1.  **Download the signed release:**
     Download the official signed file from the github releases page into a new testing directory. *(Replace the URL with the specific version you are testing)*.
     ```bash
-    curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/1.2.1/trustless-v1.2.1-release.apk
+    curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/1.3.0/trustless-v1.3.0-release.apk
     ```
 2. **Verify that hash matches the one listed on Github by running:**
     ```bash
@@ -115,7 +115,7 @@ To verify that the official binary was built exactly from the published source c
     ```bash
     git clone https://github.com/trustlesswallet/trustless.git
     cd trustless
-    git checkout 1.2.1
+    git checkout 1.3.0
     ```
 
 5.  **Build the local unsigned package:**
