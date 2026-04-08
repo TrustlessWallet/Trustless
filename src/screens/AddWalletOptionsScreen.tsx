@@ -42,7 +42,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
       alignItems: 'center', 
       justifyContent: 'center', 
       padding: 24,
-      gap: 24
+      gap: 8
     },
     button: { 
       flexDirection: 'row', 
@@ -63,7 +63,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
       fontSize: 16, 
       color: theme.colors.muted,
       textAlign: 'center',
-      marginBottom: 4
+      marginVertical: 8
     },
     recoverButton: { 
       flexDirection: 'row', 
