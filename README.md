@@ -1,4 +1,4 @@
-<a href="https://apple.co/4vpMOrh"><img src="https://github.com/user-attachments/assets/1c049492-6fb6-43cc-a5eb-0469bbef9b2c" alt="Download on the App Store" height="50" align="middle"></a> <a href="https://walletscrutiny.com/"><img src="assets/Website%20images/Walletscrutiny.png" alt="Wallet Scrutiny" height="62" align="middle"></a>
+<a href="https://apple.co/4vpMOrh"><img src="https://github.com/user-attachments/assets/1c049492-6fb6-43cc-a5eb-0469bbef9b2c" alt="Download on the App Store" height="50" align="middle"></a> <a href="https://walletscrutiny.com/iphone/com.btc.trustless/"><img src="assets/Website%20images/Walletscrutiny.png" alt="Wallet Scrutiny" height="62" align="middle"></a>
 
 ## Intro
 Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
