@@ -1,3 +1,5 @@
+[![black](https://github.com/user-attachments/assets/1c049492-6fb6-43cc-a5eb-0469bbef9b2c)](https://apple.co/4vpMOrh)
+
 ## Intro
 Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-only mobile wallet. It is very minimalist and easy to use, yet very functional.
 
