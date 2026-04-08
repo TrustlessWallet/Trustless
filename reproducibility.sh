@@ -4,7 +4,7 @@ echo "1. Generating version metadata..."
 node src/scripts/write-version.js
 
 echo "2. Installing dependencies..."
-npm install
+npm ci
 
 echo "3. Generating android and ios directories..."
 export CI=1
