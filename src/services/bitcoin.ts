@@ -1,9 +1,11 @@
 import { Transaction } from '../types';
-import { NETWORK, CUSTOM_NODE_URL_KEY, NETWORK_NAME, IS_TESTNET } from '../constants/network';
-import { address as btcAddress, networks, Transaction as BitcoinTransaction } from 'bitcoinjs-lib';
+import { NETWORK, CUSTOM_NODE_URL_KEY, NETWORK_NAME, IS_TESTNET, DERIVATION_PARENT_PATH } from '../constants/network';
+import { address as btcAddress, networks, Transaction as BitcoinTransaction, Psbt, payments } from 'bitcoinjs-lib';
 import { BIP32Factory } from 'bip32';
 import * as secp from '@bitcoinerlab/secp256k1';
 import { Buffer } from 'buffer';
+import { UR, UREncoder } from '@ngraveio/bc-ur';
+import { cborEncode } from '@ngraveio/bc-ur/dist/cbor';
 import {
     getElectrumClient,
     addressToScriptHash,
@@ -467,9 +469,9 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
     }
 };
 
-export const broadcastTransaction = async (tx_hex: string) => {
+export const broadcastTransaction = async (tx_hex: string): Promise<string> => {
     try {
-        return await electrumBroadcast(tx_hex);
+        return (await electrumBroadcast(tx_hex)) as string;
     } catch (err: any) {
         throw new Error(err.message || 'Broadcast failed');
     }
@@ -478,7 +480,6 @@ export const broadcastTransaction = async (tx_hex: string) => {
 export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: number; slow: number; }> => {
     const isTestnet = IS_TESTNET;
 
-    // 1. Try Mempool.space
     try {
         const baseUrl = isTestnet
             ? 'https://mempool.space/testnet/api/v1/fees/recommended'
@@ -498,7 +499,6 @@ export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: numbe
         console.warn(`Mempool ${isTestnet ? 'Testnet' : 'Mainnet'} API failed`);
     }
 
-    // 2. Fallback to Electrum
     try {
         const [fast, normal, slow] = await Promise.all([
             electrumEstimateFee(1),
@@ -512,7 +512,6 @@ export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: numbe
 
             const sats_vb = Math.ceil((val * 100000000) / 1000);
 
-            // Mainnet high-fee ghosting protection
             if (!isTestnet && sats_vb > 300) return fallback;
 
             return sats_vb;
@@ -524,7 +523,6 @@ export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: numbe
             slow: to_sats_vb(slow, 1)
         };
     } catch (err) {
-        // Default safety values
         return isTestnet
             ? { fast: 2, normal: 1, slow: 1 }
             : { fast: 25, normal: 12, slow: 1 };
@@ -597,4 +595,103 @@ export const validateBitcoinAddress = (address: string): boolean => {
     } catch (e) {
         return false;
     }
+};
+
+export const buildPSBT = (
+    activeWallet: any,
+    recipientAddress: string,
+    amount: string,
+    unit: string,
+    fee: number,
+    utxos: any[]
+): string => {
+    if (!activeWallet || activeWallet.type !== 'watch-only') throw new Error("Invalid wallet type");
+    if (!activeWallet.fingerprint || !activeWallet.xpub) throw new Error("Wallet is missing master fingerprint or xpub.");
+
+    const cleanAmount = amount.replace(',', '.');
+    const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
+    const totalInput = utxos.reduce((sum, u) => sum + u.value, 0);
+    const change = totalInput - amountSatoshis - fee;
+
+    const psbt = new Psbt({ network: NETWORK });
+    const rootNode = getBip32Node(activeWallet.xpub, NETWORK);
+    const masterFingerprint = Buffer.from(activeWallet.fingerprint, 'hex');
+
+    let basePath = activeWallet.derivation_path || DERIVATION_PARENT_PATH;
+    if (basePath.startsWith('m/')) basePath = basePath.slice(2);
+    basePath = basePath.replace(/'/g, 'h');
+
+    utxos.forEach(utxo => {
+        const recvInfo = activeWallet.derivedReceiveAddresses.find((a: any) => a.address === utxo.address);
+        const changeInfo = recvInfo ? null : activeWallet.derivedChangeAddresses.find((a: any) => a.address === utxo.address);
+
+        if (!recvInfo && !changeInfo) throw new Error("Derivation info missing for UTXO");
+
+        const chain = changeInfo ? 1 : 0;
+        const index = changeInfo ? changeInfo.index : recvInfo!.index;
+        const pathSuffix = `${chain}/${index}`;
+        const fullPath = `m/${basePath}/${pathSuffix}`.replace(/h/g, "'");
+
+        const childNode = rootNode.derivePath(pathSuffix);
+        const p2wpkh = payments.p2wpkh({ pubkey: childNode.publicKey, network: NETWORK });
+
+        psbt.addInput({
+            hash: utxo.txid,
+            index: utxo.vout,
+            witnessUtxo: { script: p2wpkh.output!, value: utxo.value },
+            bip32Derivation: [{
+                masterFingerprint,
+                path: fullPath,
+                pubkey: childNode.publicKey
+            }]
+        });
+    });
+
+    psbt.addOutput({ address: recipientAddress, value: amountSatoshis });
+
+    if (change > 0) {
+        let verifiedChangeIndex = activeWallet.changeAddressIndex ?? 0;
+        const changeSet = new Set(activeWallet.derivedChangeAddresses.map((a: any) => a.address));
+        for (let i = verifiedChangeIndex; i < activeWallet.derivedChangeAddresses.length + 20; i++) {
+            const info = activeWallet.derivedAddressInfoCache.find((c: any) => c.index === i && changeSet.has(c.address));
+            if (!info || info.tx_count === 0) {
+                verifiedChangeIndex = i;
+                break;
+            }
+        }
+
+        const changeNode = rootNode.derivePath(`1/${verifiedChangeIndex}`);
+        const p2wpkhChange = payments.p2wpkh({ pubkey: changeNode.publicKey, network: NETWORK });
+        const fullChangePath = `m/${basePath}/1/${verifiedChangeIndex}`.replace(/h/g, "'");
+
+        psbt.addOutput({
+            address: p2wpkhChange.address!,
+            value: change,
+            bip32Derivation: [{
+                masterFingerprint,
+                path: fullChangePath,
+                pubkey: changeNode.publicKey
+            }]
+        });
+    }
+
+    return psbt.toBase64();
+};
+
+export const encodePSBTtoUR = (base64Psbt: string): string[] => {
+    const psbtBytes = Buffer.from(base64Psbt, 'base64');
+    const ur = new UR(cborEncode(psbtBytes), 'crypto-psbt');
+    const encoder = new UREncoder(ur, 120);
+    return encoder.encodeWhole();
+};
+
+export const finalizeAndBroadcastPSBT = async (unsignedPsbtBase64: string, signedPsbtBase64: string): Promise<string> => {
+    const basePsbt = Psbt.fromBase64(unsignedPsbtBase64, { network: NETWORK });
+    const signedPsbt = Psbt.fromBase64(signedPsbtBase64, { network: NETWORK });
+
+    basePsbt.combine(signedPsbt);
+    basePsbt.finalizeAllInputs();
+    const txHex = basePsbt.extractTransaction().toHex();
+
+    return await broadcastTransaction(txHex);
 };
