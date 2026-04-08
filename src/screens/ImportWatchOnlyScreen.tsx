@@ -108,7 +108,7 @@ const ImportWatchOnlyScreen = () => {
                 <View>
                     <Text style={styles.label}>Extended public key</Text>
                     <StyledInput
-                        placeholder="xpub / zpub / ypub"
+                        placeholder="[95e61bfa/84'/1'/0']vpub5Z8P...vUsREK"
                         value={xpub}
                         onChangeText={set_xpub}
                         autoCapitalize="none"
@@ -138,7 +138,7 @@ const ImportWatchOnlyScreen = () => {
                     ) : (
                         <View style={styles.buttonContent}>
                             <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
-                            <Text style={styles.buttonText}>Import Wallet</Text>
+                            <Text style={styles.buttonText}>Import wallet</Text>
                         </View>
                     )}
                 </TouchableOpacity>
