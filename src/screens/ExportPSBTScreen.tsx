@@ -9,12 +9,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { Feather } from '@expo/vector-icons';
-import * as bitcoin from 'bitcoinjs-lib';
-import { UR, UREncoder } from '@ngraveio/bc-ur';
-import { cborEncode } from '@ngraveio/bc-ur/dist/cbor';
-import { getBip32Node } from '../services/bitcoin';
-import { NETWORK, DERIVATION_PARENT_PATH } from '../constants/network';
-import { Buffer } from 'buffer';
+import { buildPSBT, encodePSBTtoUR } from '../services/bitcoin';
 
 type RouteParams = RouteProp<RootStackParamList, 'ExportPSBT'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ExportPSBT'>;
@@ -41,90 +36,12 @@ const ExportPSBTScreen = () => {
     }, []);
 
     useEffect(() => {
-        if (!activeWallet || activeWallet.type !== 'watch-only') return;
-        if (!activeWallet.fingerprint || !activeWallet.xpub) {
-            setError("Wallet is missing master fingerprint or xpub.");
-            return;
-        }
-
         try {
-            const cleanAmount = amount.replace(',', '.');
-            const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
-            const totalInput = utxos.reduce((sum, u) => sum + u.value, 0);
-            const change = totalInput - amountSatoshis - fee;
-
-            const psbt = new bitcoin.Psbt({ network: NETWORK });
-            const rootNode = getBip32Node(activeWallet.xpub, NETWORK);
-            const masterFingerprint = Buffer.from(activeWallet.fingerprint, 'hex');
-
-            let basePath = activeWallet.derivation_path || DERIVATION_PARENT_PATH;
-            if (basePath.startsWith('m/')) basePath = basePath.slice(2);
-            basePath = basePath.replace(/'/g, 'h');
-
-            utxos.forEach(utxo => {
-                const recvInfo = activeWallet.derivedReceiveAddresses.find(a => a.address === utxo.address);
-                const changeInfo = recvInfo ? null : activeWallet.derivedChangeAddresses.find(a => a.address === utxo.address);
-
-                if (!recvInfo && !changeInfo) throw new Error("Derivation info missing for UTXO");
-
-                const chain = changeInfo ? 1 : 0;
-                const index = changeInfo ? changeInfo.index : recvInfo!.index;
-                const pathSuffix = `${chain}/${index}`;
-                const fullPath = `m/${basePath}/${pathSuffix}`.replace(/h/g, "'");
-
-                const childNode = rootNode.derivePath(pathSuffix);
-                const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: childNode.publicKey, network: NETWORK });
-
-                psbt.addInput({
-                    hash: utxo.txid,
-                    index: utxo.vout,
-                    witnessUtxo: { script: p2wpkh.output!, value: utxo.value },
-                    bip32Derivation: [{
-                        masterFingerprint,
-                        path: fullPath,
-                        pubkey: childNode.publicKey
-                    }]
-                });
-            });
-
-            psbt.addOutput({ address: recipientAddress, value: amountSatoshis });
-
-            if (change > 0) {
-                let verifiedChangeIndex = activeWallet.changeAddressIndex ?? 0;
-                const changeSet = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
-                for (let i = verifiedChangeIndex; i < activeWallet.derivedChangeAddresses.length + 20; i++) {
-                    const info = activeWallet.derivedAddressInfoCache.find(c => c.index === i && changeSet.has(c.address));
-                    if (!info || info.tx_count === 0) {
-                        verifiedChangeIndex = i;
-                        break;
-                    }
-                }
-
-                const changeNode = rootNode.derivePath(`1/${verifiedChangeIndex}`);
-                const p2wpkhChange = bitcoin.payments.p2wpkh({ pubkey: changeNode.publicKey, network: NETWORK });
-                const fullChangePath = `m/${basePath}/1/${verifiedChangeIndex}`.replace(/h/g, "'");
-
-                psbt.addOutput({
-                    address: p2wpkhChange.address!,
-                    value: change,
-                    bip32Derivation: [{
-                        masterFingerprint,
-                        path: fullChangePath,
-                        pubkey: changeNode.publicKey
-                    }]
-                });
-            }
-
-            const base64Psbt = psbt.toBase64();
+            const base64Psbt = buildPSBT(activeWallet, recipientAddress, amount, unit, fee, utxos);
             setUnsignedPsbtString(base64Psbt);
 
-            const psbtBytes = Buffer.from(base64Psbt, 'base64');
-            const ur = new UR(cborEncode(psbtBytes), 'crypto-psbt');
-            const encoder = new UREncoder(ur, 120);
-            const parts = encoder.encodeWhole();
-
+            const parts = encodePSBTtoUR(base64Psbt);
             setQrFrames(parts.length > 0 ? parts : [base64Psbt]);
-
         } catch (e) {
             console.error(e);
             setError(e instanceof Error ? e.message : "Failed to build transaction");
@@ -146,7 +63,7 @@ const ExportPSBTScreen = () => {
             unit,
             fee,
             utxos,
-            unsignedPsbtBase64: unsignedPsbtString // <-- Add this line
+            unsignedPsbtBase64: unsignedPsbtString
         });
     };
 

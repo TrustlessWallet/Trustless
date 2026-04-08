@@ -8,11 +8,9 @@ import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { Feather } from '@expo/vector-icons';
-import * as bitcoin from 'bitcoinjs-lib';
-import { broadcastTransaction } from '../services/bitcoin';
-import { NETWORK } from '../constants/network';
 import { URDecoder } from '@ngraveio/bc-ur';
 import { Buffer } from 'buffer';
+import { finalizeAndBroadcastPSBT } from '../services/bitcoin';
 
 type RouteParams = RouteProp<RootStackParamList, 'ImportPSBT'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ImportPSBT'>;
@@ -30,7 +28,6 @@ const ImportPSBTScreen = () => {
     const [decoder] = useState(() => new URDecoder());
     const [progress, setProgress] = useState(0);
 
-    // Animation values
     const progressAnim = useRef(new Animated.Value(0)).current;
     const revealAnim = useRef(new Animated.Value(0)).current;
 
@@ -40,7 +37,6 @@ const ImportPSBTScreen = () => {
         }
     }, [permission, requestPermission]);
 
-    // Handle progress bar reveal and hide
     useEffect(() => {
         if (progress > 0 && progress < 1) {
             Animated.timing(revealAnim, {
@@ -57,7 +53,6 @@ const ImportPSBTScreen = () => {
         }
     }, [progress, revealAnim]);
 
-    // Handle progress bar width
     useEffect(() => {
         Animated.timing(progressAnim, {
             toValue: progress,
@@ -96,8 +91,6 @@ const ImportPSBTScreen = () => {
             }
 
             if (psbtBase64) {
-                bitcoin.Psbt.fromBase64(psbtBase64, { network: NETWORK });
-
                 const { recipientAddress, amount, unit, fee, utxos, unsignedPsbtBase64 } = route.params;
 
                 navigation.navigate('TransactionConfirm', {
@@ -110,14 +103,7 @@ const ImportPSBTScreen = () => {
                     loading: false,
                     onConfirm: async () => {
                         try {
-                            const basePsbt = bitcoin.Psbt.fromBase64(unsignedPsbtBase64, { network: NETWORK });
-                            const signedPsbt = bitcoin.Psbt.fromBase64(psbtBase64, { network: NETWORK });
-
-                            basePsbt.combine(signedPsbt);
-                            basePsbt.finalizeAllInputs();
-                            const txHex = basePsbt.extractTransaction().toHex();
-
-                            await broadcastTransaction(txHex);
+                            await finalizeAndBroadcastPSBT(unsignedPsbtBase64, psbtBase64);
 
                             Alert.alert(
                                 'Transaction sent!',

@@ -15,9 +15,12 @@ import {
     fetchFeeEstimates as fetch_fee_estimates,
     fetchBalanceDetails as fetch_balance_details,
     getTransactionDetails as get_transaction_details,
-    getTipHeight as get_tip_height
+    getTipHeight as get_tip_height,
+    buildPSBT as build_psbt,
+    encodePSBTtoUR as encode_psbt_to_ur,
+    finalizeAndBroadcastPSBT as finalize_and_broadcast_psbt
 } from '../../services/bitcoin';
-import { networks } from 'bitcoinjs-lib';
+import { networks, Psbt } from 'bitcoinjs-lib';
 
 const mock_electrum_client = {
     request: jest.fn()
@@ -43,6 +46,22 @@ global.fetch = jest.fn(() =>
 ) as jest.Mock;
 
 describe('bitcoin_service_functions', () => {
+    let original_console_warn: typeof console.warn;
+
+    beforeAll(() => {
+        original_console_warn = console.warn;
+        console.warn = (...args: any[]) => {
+            if (typeof args[0] === 'string' && args[0].includes('Failed electrum')) {
+                return;
+            }
+            original_console_warn(...args);
+        };
+    });
+
+    afterAll(() => {
+        console.warn = original_console_warn;
+    });
+
     beforeEach(() => {
         jest.clearAllMocks();
     });
@@ -166,5 +185,62 @@ describe('bitcoin_service_functions', () => {
         mock_electrum_client.request.mockResolvedValueOnce({ height: 800000 });
         const height = await get_tip_height();
         expect(height).toBe(800000);
+    });
+
+    it('build_psbt_throws_error_for_non_watch_only_wallet', () => {
+        expect(() => build_psbt({ type: 'standard' }, 'address', '0.0001', 'BTC', 100, [])).toThrow("Invalid wallet type");
+    });
+
+it('build_psbt_generates_valid_base64_string_with_change', () => {
+        const mock_wallet = {
+            type: 'watch-only',
+            fingerprint: 'deadbeef',
+            xpub: 'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8',
+            derivation_path: "m/84'/0'/0'",
+            changeAddressIndex: 0,
+            derivedReceiveAddresses: [{ address: 'fake_address', index: 0 }],
+            derivedChangeAddresses: [{ address: 'fake_change', index: 0 }],
+            derivedAddressInfoCache: [{ address: 'fake_change', index: 0, tx_count: 0 }]
+        };
+        const utxos = [{ 
+            txid: '0000000000000000000000000000000000000000000000000000000000000000', 
+            vout: 0, 
+            value: 100000, 
+            address: 'fake_address' 
+        }];
+        
+        // Use a mathematically valid Bech32 address
+        const psbt_base64 = build_psbt(mock_wallet, 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', '50000', 'sats', 1000, utxos);
+        
+        expect(typeof psbt_base64).toBe('string');
+        expect(psbt_base64.length).toBeGreaterThan(0);
+    });
+
+    it('encode_psbt_to_ur_returns_array_of_ur_parts', () => {
+        const mock_base64 = Buffer.from('mock_psbt_data').toString('base64');
+        const ur_parts = encode_psbt_to_ur(mock_base64);
+        
+        expect(Array.isArray(ur_parts)).toBe(true);
+        expect(ur_parts[0].startsWith('ur:crypto-psbt')).toBe(true);
+    });
+
+    it('finalize_and_broadcast_psbt_combines_and_broadcasts', async () => {
+        const extract_tx_mock = jest.fn().mockReturnValue({ toHex: () => 'mock_final_hex' });
+        const finalize_mock = jest.fn();
+        const combine_mock = jest.fn();
+
+        jest.spyOn(Psbt, 'fromBase64').mockReturnValue({
+            combine: combine_mock,
+            finalizeAllInputs: finalize_mock,
+            extractTransaction: extract_tx_mock
+        } as any);
+
+        const tx_id = await finalize_and_broadcast_psbt('unsigned_base64', 'signed_base64');
+        
+        expect(combine_mock).toHaveBeenCalled();
+        expect(finalize_mock).toHaveBeenCalled();
+        expect(tx_id).toBe('mock_tx_id');
+        
+        jest.restoreAllMocks();
     });
 });
