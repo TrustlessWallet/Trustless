@@ -10,7 +10,7 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 * [License](#license)
 
 ## Main features
-* **Bitcoin wallet:** Import or create new wallets, track balances, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets.
+* **Bitcoin wallet:** Import or create new wallets, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets.
 
   <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/c4b1f8de-e08a-4336-a5ff-8139ed797a80" />
   <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/2fb1f615-290c-4f97-8573-8e0e1633f301" />
@@ -92,6 +92,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
    `keytool -genkey -v -keystore trustless-release.keystore -alias trustless-alias -keyalg RSA -keysize 2048 -validity 10000`
 6. Locate the signing tool and sign the package using the keystore: 
    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1)`
+   
    `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v1.3.0-release.apk android/app/build/outputs/apk/release/app-release-unsigned.apk`
 7. Generate the official hash: 
    `shasum -a 256 trustless-v1.3.0-release.apk`

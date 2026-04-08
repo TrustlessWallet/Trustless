@@ -1,8 +1,9 @@
+// src/screens/AuthCheckScreen.tsx
 import React, { useEffect, useState, useMemo } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, TabParamList } from '../types';
+import { RootStackParamList } from '../types';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,7 +12,6 @@ import { Theme } from '../constants/theme';
 import { get_biometric_prompt_shown, set_biometric_prompt_shown, authenticate_session } from '../services/authState';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'AuthCheck'>;
-const DEFAULT_SCREEN_KEY = '@defaultScreen'; 
 
 const AuthCheckScreen = () => {
     const navigation = useNavigation<NavigationProp>();
@@ -28,9 +28,7 @@ const AuthCheckScreen = () => {
             const success = await authenticate_session();
             if (success) {
                 await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
-                const default_screen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-                const screen_to_load: keyof TabParamList = default_screen === 'Tracker' ? 'Tracker' : 'Wallet';
-                navigation.replace('MainTabs', { screen: screen_to_load });
+                navigation.replace('MainTabs', { screen: 'Wallet' });
             } else {
                 Alert.alert('Authentication failed', 'Please try again.');
                 set_is_authenticating(false);

@@ -32,9 +32,8 @@ export const useWalletBalanceSync = (
     });
 };
 
-
 export const useAddressListSync = (
-    category: 'saved' | 'tracked',
+    category: 'saved',
     items: BitcoinAddress[]
 ) => {
     return useQuery({

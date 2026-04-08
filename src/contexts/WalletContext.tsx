@@ -1,3 +1,4 @@
+// src/contexts/WalletContext.tsx
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import 'react-native-get-random-values';
 import * as bip39 from 'bip39';
@@ -91,13 +92,6 @@ interface WalletContextType {
   removeSavedAddress: (addressId: string) => Promise<void>;
   updateSavedAddressName: (addressId: string, newName: string) => Promise<void>;
   refreshSavedAddressBalances: () => Promise<void>;
-
-  trackedAddresses: BitcoinAddress[];
-  loadingTrackedAddresses: boolean;
-  addTrackedAddress: (address: Omit<BitcoinAddress, 'id'>) => Promise<void>;
-  removeTrackedAddress: (addressId: string) => Promise<void>;
-  updateTrackedAddressName: (addressId: string, newName: string) => Promise<void>;
-  refreshTrackedAddressBalances: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -118,10 +112,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Address Book state
   const [savedAddresses, setSavedAddresses] = useState<BitcoinAddress[]>([]);
   const [loadingSavedAddresses, setLoadingSavedAddresses] = useState(true);
-
-  // Watchlist state (Tracked Addresses)
-  const [trackedAddresses, setTrackedAddresses] = useState<BitcoinAddress[]>([]);
-  const [loadingTrackedAddresses, setLoadingTrackedAddresses] = useState(true);
 
   const ACTIVE_WALLET_KEY = getStorageKey(KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE);
 
@@ -188,24 +178,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }
   }, [syncedSavedBalances]);
-
-  // Hook 3: Sync Balance for Tracked Addresses
-  const { data: syncedTrackedBalances } = useAddressListSync('tracked', trackedAddresses);
-
-  useEffect(() => {
-    if (syncedTrackedBalances && trackedAddresses.length > 0) {
-        const updated = trackedAddresses.map((addr, index) => ({
-            ...addr,
-            balance: syncedTrackedBalances[index] ?? addr.balance,
-            lastUpdated: new Date()
-        }));
-        const hasChanged = updated.some((u, i) => u.balance !== trackedAddresses[i].balance);
-        if (hasChanged) {
-            updated.forEach(u => dbUpdateSavedAddress('tracked_addresses', u));
-            setTrackedAddresses(updated);
-        }
-    }
-  }, [syncedTrackedBalances]);
 
   // ------------------------------------------------------------------
   // WALLET HYDRATION & LOGIC
@@ -380,7 +352,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setLastRefreshTime(Date.now());
     queryClient.invalidateQueries({ queryKey: ['wallet-balances'] });
     queryClient.invalidateQueries({ queryKey: ['saved', 'balances'] });
-    queryClient.invalidateQueries({ queryKey: ['tracked', 'balances'] });
   };
 
   // Helper to get the root BIP32 node from either an xpub (watch-only) or seed (standard).
@@ -561,7 +532,6 @@ const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
     const bootstrap = async () => {
       setLoading(true);
       setLoadingSavedAddresses(true);
-      setLoadingTrackedAddresses(true);
       try {
         const walletsFromDb = await dbGetWallets(NETWORK_NAME);
         setWallets(walletsFromDb);
@@ -598,15 +568,12 @@ const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
 
         const saved = await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses');
         setSavedAddresses(saved);
-        const tracked = await dbGetSavedAddresses(NETWORK_NAME, 'tracked_addresses');
-        setTrackedAddresses(tracked);
 
       } catch (error) {
         console.error("DEBUG: Failed to bootstrap wallet:", error);
       } finally {
         setLoading(false);
         setLoadingSavedAddresses(false);
-        setLoadingTrackedAddresses(false);
       }
     };
     bootstrap();
@@ -977,29 +944,6 @@ const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'sta
     queryClient.invalidateQueries({ queryKey: ['saved', 'balances'] });
   };
 
-  const addTrackedAddress = async (address: Omit<BitcoinAddress, 'id'>) => {
-    const item = { ...address, id: uuidv4() };
-    await dbAddSavedAddress('tracked_addresses', item, NETWORK_NAME);
-    setTrackedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'tracked_addresses'));
-  };
-
-  const removeTrackedAddress = async (addressId: string) => {
-    await dbRemoveSavedAddress('tracked_addresses', addressId);
-    setTrackedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'tracked_addresses'));
-  };
-
-  const updateTrackedAddressName = async (addressId: string, newName: string) => {
-    const item = trackedAddresses.find(a => a.id === addressId);
-    if(item) {
-        await dbUpdateSavedAddress('tracked_addresses', { ...item, name: newName });
-        setTrackedAddresses(await dbGetSavedAddresses(NETWORK_NAME, 'tracked_addresses'));
-    }
-  };
-
-  const refreshTrackedAddressBalances = async () => {
-    queryClient.invalidateQueries({ queryKey: ['tracked', 'balances'] });
-  };
-
   const value = {
     wallets,
     activeWallet,
@@ -1027,13 +971,6 @@ const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'sta
     removeSavedAddress,
     updateSavedAddressName,
     refreshSavedAddressBalances,
-
-    trackedAddresses,
-    loadingTrackedAddresses,
-    addTrackedAddress,
-    removeTrackedAddress,
-    updateTrackedAddressName,
-    refreshTrackedAddressBalances,
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
