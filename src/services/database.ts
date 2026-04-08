@@ -97,18 +97,6 @@ export const initDatabase = async () => {
       lastUpdated INTEGER,
       network TEXT NOT NULL
     );
-
-    -- TABLE: TRACKED ADDRESSES (Watchlist)
-    -- Similar to address book, but separated logically for "Watch Only" single addresses
-    -- that don't belong to a full HD wallet.
-    CREATE TABLE IF NOT EXISTS tracked_addresses (
-      id TEXT PRIMARY KEY NOT NULL,
-      address TEXT NOT NULL,
-      name TEXT,
-      balance INTEGER DEFAULT 0,
-      lastUpdated INTEGER,
-      network TEXT NOT NULL
-    );
   `);
 };
 
@@ -363,7 +351,7 @@ export const dbSaveTransactions = async (wallet_id: string, transactions: Transa
 // ADDRESS BOOK & WATCHLIST
 // ------------------------------------------------------------------
 
-export const dbGetSavedAddresses = async (network: string, table: 'saved_addresses' | 'tracked_addresses') => {
+export const dbGetSavedAddresses = async (network: string, table: 'saved_addresses') => {
     const d = getDB();
     const rows = await d.getAllAsync<any>(`SELECT * FROM ${table} WHERE network = ?`, [network]);
     return rows.map((r: any) => ({
@@ -375,7 +363,7 @@ export const dbGetSavedAddresses = async (network: string, table: 'saved_address
     }));
 };
 
-export const dbAddSavedAddress = async (table: 'saved_addresses' | 'tracked_addresses', item: BitcoinAddress, network: string) => {
+export const dbAddSavedAddress = async (table: 'saved_addresses', item: BitcoinAddress, network: string) => {
     const d = getDB();
     await d.runAsync(
         `INSERT INTO ${table} (id, address, name, balance, lastUpdated, network) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -383,12 +371,12 @@ export const dbAddSavedAddress = async (table: 'saved_addresses' | 'tracked_addr
     );
 };
 
-export const dbRemoveSavedAddress = async (table: 'saved_addresses' | 'tracked_addresses', id: string) => {
+export const dbRemoveSavedAddress = async (table: 'saved_addresses', id: string) => {
     const d = getDB();
     await d.runAsync(`DELETE FROM ${table} WHERE id = ?`, [id]);
 };
 
-export const dbUpdateSavedAddress = async (table: 'saved_addresses' | 'tracked_addresses', item: BitcoinAddress) => {
+export const dbUpdateSavedAddress = async (table: 'saved_addresses', item: BitcoinAddress) => {
     const d = getDB();
     await d.runAsync(
         `UPDATE ${table} SET name = ?, balance = ?, lastUpdated = ? WHERE id = ?`,

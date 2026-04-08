@@ -20,7 +20,6 @@ type navigation_prop = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>
 
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 const AUTO_LOCK_TIME_KEY = '@autoLockTime';
-const HIDE_TRACKER_BALANCE_KEY = '@hideTrackerBalance';
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_SCREEN_KEY = '@defaultScreen';
 const NETWORK_PREF_KEY = '@network_preference';
@@ -45,9 +44,8 @@ const SettingsScreen = () => {
   
   const [is_biometrics_enabled, set_is_biometrics_enabled] = useState(false);
   const [auto_lock_time_index, set_auto_lock_time_index] = useState(3);
-  const [hide_tracker_balance, set_hide_tracker_balance] = useState(false);
   const [hide_wallet_balance, set_hide_wallet_balance] = useState(false);
-  const [default_screen, set_default_screen] = useState<'Wallet' | 'Tracker'>('Wallet');
+  const [default_screen, set_default_screen] = useState<'Wallet'>('Wallet');
   
   const [custom_node_url, set_custom_node_url] = useState('');
   const [allow_self_signed, set_allow_self_signed] = useState(false);
@@ -79,18 +77,9 @@ const SettingsScreen = () => {
         if (index !== -1) set_auto_lock_time_index(index);
       }
       
-      const saved_tracker_pref = await AsyncStorage.getItem(HIDE_TRACKER_BALANCE_KEY);
-      set_hide_tracker_balance(saved_tracker_pref === 'true');
-      
       const saved_wallet_pref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
       set_hide_wallet_balance(saved_wallet_pref === 'true');
-      
-      const saved_default_screen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-      if (saved_default_screen === 'Tracker') {
-        set_default_screen('Tracker');
-      } else {
-        set_default_screen('Wallet');
-      }
+
 
       const saved_node = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY);
       const saved_self_signed = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_KEY);
@@ -165,7 +154,6 @@ const SettingsScreen = () => {
                 DEFAULT_SCREEN_KEY,
                 BIOMETRICS_ENABLED_KEY,
                 AUTO_LOCK_TIME_KEY, 
-                HIDE_TRACKER_BALANCE_KEY,
                 HIDE_WALLET_BALANCE_KEY,
                 CUSTOM_NODE_URL_KEY,
                 ALLOW_SELF_SIGNED_KEY,
@@ -200,22 +188,10 @@ const SettingsScreen = () => {
     await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
   };
 
-  const toggle_hide_tracker_balance = async () => {
-    const new_value = !hide_tracker_balance;
-    set_hide_tracker_balance(new_value);
-    await AsyncStorage.setItem(HIDE_TRACKER_BALANCE_KEY, new_value.toString());
-  };
-
   const toggle_hide_wallet_balance = async () => {
     const new_value = !hide_wallet_balance;
     set_hide_wallet_balance(new_value);
     await AsyncStorage.setItem(HIDE_WALLET_BALANCE_KEY, new_value.toString());
-  };
-
-  const handle_default_screen_change = async () => {
-    const new_value = default_screen === 'Wallet' ? 'Tracker' : 'Wallet';
-    set_default_screen(new_value);
-    await AsyncStorage.setItem(DEFAULT_SCREEN_KEY, new_value);
   };
 
   const handle_network_change = async () => {
@@ -325,19 +301,6 @@ const handle_save_node_url = async () => {
               </TouchableOpacity>
             </View>
           </View>
-
-          <View style={styles.row_wrapper}>
-            <View style={styles.row}>
-              <Text style={styles.row_label}>Default Screen</Text>
-              <TouchableOpacity onPress={handle_default_screen_change}>
-                <View style={styles.switcher}>
-                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={styles.switcher_text}>{default_screen}</Text>
-                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
         </View>
 
         <View style={styles.section}>
@@ -420,19 +383,6 @@ const handle_save_node_url = async () => {
                 </TouchableOpacity>
               </View>
             )}
-          </View>
-
-          <View style={styles.row_wrapper}>
-            <View style={styles.row}>
-              <Text style={styles.row_label}>Hide Tracker Balance</Text>
-              <TouchableOpacity onPress={toggle_hide_tracker_balance}>
-                <View style={styles.switcher}>
-                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={styles.switcher_text}>{hide_tracker_balance ? 'On' : 'Off'}</Text>
-                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-                </View>
-              </TouchableOpacity>
-            </View>
           </View>
 
           <View style={styles.row_wrapper}>

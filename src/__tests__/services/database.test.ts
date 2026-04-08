@@ -272,16 +272,6 @@ describe('Database Service', () => {
       });
     });
 
-    it('dbAddSavedAddress inserts item', async () => {
-      const item: BitcoinAddress = { id: '1', address: 'addr1', name: 'Alice', balance: 100, lastUpdated: mockDate };
-      await dbService.dbAddSavedAddress('tracked_addresses', item, 'testnet');
-      
-      expect(mockRunAsync).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO tracked_addresses'),
-        ['1', 'addr1', 'Alice', 100, mockDate.getTime(), 'testnet']
-      );
-    });
-
     it('dbRemoveSavedAddress deletes item', async () => {
       await dbService.dbRemoveSavedAddress('saved_addresses', '1');
       expect(mockRunAsync).toHaveBeenCalledWith('DELETE FROM saved_addresses WHERE id = ?', ['1']);

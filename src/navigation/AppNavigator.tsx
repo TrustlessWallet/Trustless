@@ -11,7 +11,6 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import ExportPSBTScreen from '../screens/ExportPSBTScreen';
 import ImportPSBTScreen from '../screens/ImportPSBTScreen';
 import TabNavigator from './TabNavigator';
-import AddAddressScreen from '../screens/AddAddressScreen';
 import QRScannerScreen from '../screens/QRScannerScreen';
 import BackupIntroScreen from '../screens/BackupIntroScreen';
 import ShowMnemonicScreen from '../screens/ShowMnemonicScreen';
@@ -35,7 +34,6 @@ import BalanceDetailScreen from '../screens/BalanceDetailScreen';
 import CoinControlScreen from '../screens/CoinControlScreen';
 import AuthCheckScreen from '../screens/AuthCheckScreen';
 import OnboardingWelcomeScreen from '../screens/OnboardingWelcomeScreen';
-import OnboardingTrackerScreen from '../screens/OnboardingTrackerScreen';
 import OnboardingWalletScreen from '../screens/OnboardingWalletScreen';
 import AddressDetailsScreen from '../screens/AddressDetailsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
@@ -46,7 +44,6 @@ import { get_biometric_prompt_shown, set_biometric_prompt_shown, authenticate_se
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 const AUTO_LOCK_TIME_KEY = '@autoLockTime';
-const DEFAULT_SCREEN_KEY = '@defaultScreen';
 
 const PrivacyOverlayScreen = () => {
   const { isDark } = useTheme();
@@ -176,8 +173,7 @@ const AppNavigator = () => {
     const check_initial_status = async () => {
       try {
         const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
-        const saved_default_screen = await AsyncStorage.getItem(DEFAULT_SCREEN_KEY);
-        set_initial_tab(saved_default_screen === 'Tracker' ? 'Tracker' : 'Wallet');
+        set_initial_tab('Wallet');
 
         if (has_completed_onboarding === null) {
           set_needs_onboarding(true);
@@ -209,11 +205,10 @@ const AppNavigator = () => {
         setTimeout(() => {
           if (navigation_ref.isReady()) {
             navigation_ref.reset({
-              index: 3,
+              index: 2,
               routes: [
                 { name: 'MainTabs' },
                 { name: 'OnboardingWallet' },
-                { name: 'OnboardingTracker' },
                 { name: 'OnboardingWelcome' },
               ],
             });
@@ -388,7 +383,6 @@ const AppNavigator = () => {
             presentation: 'formSheet',
             ...android_sheet_options,
           }}>
-            <Stack.Screen name="AddAddress" component={AddAddressScreen} options={{ title: 'Add bitcoin address' }} />
             <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
             <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
             <Stack.Screen name="ShowMnemonicQR" component={ShowMnemonicQRScreen} options={{ title: 'Recovery QR' }} />
@@ -473,11 +467,6 @@ const AppNavigator = () => {
               name="OnboardingWelcome"
               component={OnboardingWelcomeScreen}
               options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="OnboardingTracker"
-              component={OnboardingTrackerScreen}
-              options={{ title: 'Tracker' }}
             />
             <Stack.Screen
               name="OnboardingWallet"

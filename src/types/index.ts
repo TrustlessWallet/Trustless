@@ -90,7 +90,6 @@ export interface Wallet {
 }
 
 export type TabParamList = {
-  Tracker: undefined;
   Wallet: undefined;
   Settings: undefined;
 };
@@ -151,7 +150,6 @@ export type RootStackParamList = {
   TransactionHistory: undefined;
   TransactionDetails: { transaction: Transaction };
   OnboardingWelcome: undefined;
-  OnboardingTracker: undefined;
   OnboardingWallet: undefined;
   PrivacyPolicy: undefined;
   TermsConditions: undefined;

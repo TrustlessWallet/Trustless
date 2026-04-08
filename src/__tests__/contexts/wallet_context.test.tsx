@@ -345,60 +345,6 @@ describe('wallet_context_comprehensive_tests', () => {
         fetch_spy.mockRestore();
     });
 
-    it('adds_tracked_address', async () => {
-        const { result } = renderHook(() => use_wallet(), { wrapper });
-
-        await waitFor(() => expect(result.current.loading).toBe(false));
-
-        await act(async () => {
-            await result.current.addTrackedAddress({ address: 'bc1q_tracked', balance: 0, lastUpdated: new Date() });
-        });
-
-        expect(db_add_saved_address).toHaveBeenCalled();
-    });
-
-    it('removes_tracked_address', async () => {
-        const { result } = renderHook(() => use_wallet(), { wrapper });
-
-        await waitFor(() => expect(result.current.loading).toBe(false));
-
-        await act(async () => {
-            await result.current.removeTrackedAddress('tracked_id_1');
-        });
-
-        expect(db_remove_saved_address).toHaveBeenCalledWith('tracked_addresses', 'tracked_id_1');
-    });
-
-    it('updates_tracked_address_name', async () => {
-        const mock_tracked = { id: 'tracked_id_1', address: 'bc1qtest', name: '', balance: 0, lastUpdated: new Date() };
-        (db_get_saved_addresses as jest.Mock).mockImplementation((network, table) => {
-            if (table === 'tracked_addresses') return Promise.resolve([mock_tracked]);
-            return Promise.resolve([]);
-        });
-
-        const { result } = renderHook(() => use_wallet(), { wrapper });
-
-        await waitFor(() => expect(result.current.loading).toBe(false));
-
-        await act(async () => {
-            await result.current.updateTrackedAddressName('tracked_id_1', 'Cold Storage Tracker');
-        });
-
-        expect(db_update_saved_address).toHaveBeenCalledWith('tracked_addresses', { ...mock_tracked, name: 'Cold Storage Tracker' });
-    });
-
-    it('refreshes_tracked_address_balances', async () => {
-        const { result } = renderHook(() => use_wallet(), { wrapper });
-
-        await waitFor(() => expect(result.current.loading).toBe(false));
-
-        await act(async () => {
-            await result.current.refreshTrackedAddressBalances();
-        });
-
-        expect(result.current.loadingTrackedAddresses).toBeDefined();
-    });
-
     it('refreshes_saved_address_balances', async () => {
         const { result } = renderHook(() => use_wallet(), { wrapper });
 
