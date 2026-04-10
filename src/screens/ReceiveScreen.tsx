@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text } from '../components/StyledText';
 import QRCode from 'react-native-qrcode-svg';
 import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
@@ -15,6 +15,7 @@ import { AddressText } from '../components/AddressText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
+type ReceiveScreenRouteProp = RouteProp<RootStackParamList, 'Receive'>;
 
 const QR_SIZE = 220;
 const UNUSED_BUFFER_SIZE = 20;
@@ -23,15 +24,31 @@ const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const format_btc = (sats: number) => (sats / 100000000).toFixed(8);
 
 const ReceiveScreen = () => {
+  const route = useRoute<ReceiveScreenRouteProp>();
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
-  const { activeWallet, loading: wallet_loading, getOrCreateNextUnusedReceiveAddress } = useWallet();
+  const { 
+    activeWallet, 
+    loading: wallet_loading, 
+    getOrCreateNextUnusedReceiveAddress,
+    getLightningInvoice,
+    isLightningInitialized
+  } = useWallet();
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
+  
+  const initialMode = route.params?.mode || 'onchain';
+  const [mode, setMode] = useState<'onchain' | 'lightning'>(initialMode);
+
   const [copied, set_copied] = useState(false);
   const [address_offset, set_address_offset] = useState(0);
   const [hideBalance, setHideBalance] = useState(false);
   const scroll_ref = useRef<ScrollView>(null);
+
+  // Phase 1 Lightning State
+  const [amountSats, setAmountSats] = useState<string>('');
+  const [lightningInvoice, setLightningInvoice] = useState<string>('');
+  const [isGeneratingLn, setIsGeneratingLn] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({
@@ -109,21 +126,39 @@ const ReceiveScreen = () => {
     };
   }, [activeWallet, displayable_addresses, address_offset, path_prefix]);
 
-  const copy_to_clipboard = () => {
-    if (current_display_data.address) {
-      Clipboard.setString(current_display_data.address);
+  const copy_to_clipboard = (text: string) => {
+    if (text) {
+      Clipboard.setString(text);
       set_copied(true);
       setTimeout(() => set_copied(false), 1500);
     }
   };
 
-  const on_share = async () => {
-    if (current_display_data.address) {
+  const on_share = async (text: string) => {
+    if (text) {
       try {
-        await Share.share({ message: current_display_data.address });
+        await Share.share({ message: text });
       } catch (error) {
         Alert.alert("Error", "Could not share the address.");
       }
+    }
+  };
+
+  const generateLnInvoice = async () => {
+    const sats = parseInt(amountSats, 10);
+    if (isNaN(sats) || sats <= 0) {
+        Alert.alert('Invalid Amount', 'Please enter a valid amount in sats.');
+        return;
+    }
+    
+    setIsGeneratingLn(true);
+    try {
+        const invoice = await getLightningInvoice(sats);
+        setLightningInvoice(invoice);
+    } catch (error: any) {
+        Alert.alert('Invoice Error', error.message || 'Failed to generate Lightning invoice.');
+    } finally {
+        setIsGeneratingLn(false);
     }
   };
 
@@ -167,99 +202,201 @@ const ReceiveScreen = () => {
   }
 
   return (
-    <ScrollView
-      ref={scroll_ref}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={true}
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
-      <View style={styles.qrContainer}>
-        <Text style={styles.derivationPathDisplay}>{current_display_data.path}</Text>
-        <TouchableOpacity style={styles.qrCodeWrapper} onPress={copy_to_clipboard} activeOpacity={0.8}>
-          {copied && (
-            <View style={styles.copiedOverlay}>
-              <Feather name="copy" size={32} color={theme.colors.primary} />
-              <Text style={styles.copiedText}>Copied!</Text>
-            </View>
-          )}
-          {current_display_data.address ? (
-            <QRCode
-              value={current_display_data.address}
-              size={QR_SIZE}
-              backgroundColor={theme.colors.background}
-              color={theme.colors.primary}
-            />
-          ) : null}
-        </TouchableOpacity>
-        <AddressText
-          style={styles.addressText}
-          selectable
-          address={current_display_data.address}
-          groupSize={6}
-          padLastLine
-        />
-
-        {IS_TESTNET && (
-          <View style={styles.warningBanner}>
-            <Feather name="alert-triangle" size={14} color={theme.colors.muted} />
-            <Text style={styles.warningText}>Send only testnet coins.</Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity style={styles.actionButton} onPress={copy_to_clipboard}>
-          <Feather name="copy" size={24} color={theme.colors.primary} />
-          <Text style={styles.actionButtonText}>Copy</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, loading_info && styles.actionButtonDisabled]}
-          onPress={handle_next_address}
-          disabled={loading_info}
-        >
-          <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
-          <Text style={styles.actionButtonText}>New address</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={on_share}>
-          <Feather name="share-2" size={24} color={theme.colors.primary} />
-          <Text style={styles.actionButtonText}>Share</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.listHeaderContainer}>
-        <Text style={styles.listHeader}>Used addresses</Text>
-        {wallet_loading && <ActivityIndicator color={theme.colors.primary} />}
-      </View>
-
-      {used_addresses.length === 0 ? (
-        <Text style={styles.emptyText}>No used receive addresses yet.</Text>
-      ) : (
-        used_addresses.map((item) => {
-          const balance = item.balance;
-          return (
-            <TouchableOpacity
-              key={item.index.toString()}
-              style={styles.row}
-              onPress={() => handle_view_details(item.address)}
+      <ScrollView
+        ref={scroll_ref}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+      >
+        <View style={styles.toggleContainer}>
+            <TouchableOpacity 
+                style={[styles.toggleButton, mode === 'onchain' && styles.toggleButtonActive]} 
+                onPress={() => setMode('onchain')}
             >
-              <View style={styles.addressContainer}>
-                <Text style={styles.addressShortText}>{formatBitcoinAddressShort(item.address)}</Text>
-                <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
+                <Text style={[styles.toggleText, mode === 'onchain' && styles.toggleTextActive]}>On-Chain</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+                style={[styles.toggleButton, mode === 'lightning' && styles.toggleButtonActive]} 
+                onPress={() => setMode('lightning')}
+                disabled={!isLightningInitialized}
+            >
+                <Text style={[styles.toggleText, mode === 'lightning' && styles.toggleTextActive, !isLightningInitialized && { color: theme.colors.muted }]}>Lightning</Text>
+            </TouchableOpacity>
+        </View>
+
+        {mode === 'onchain' ? (
+          <>
+            <View style={styles.qrContainer}>
+              <Text style={styles.derivationPathDisplay}>{current_display_data.path}</Text>
+              <TouchableOpacity style={styles.qrCodeWrapper} onPress={() => copy_to_clipboard(current_display_data.address)} activeOpacity={0.8}>
+                {copied && (
+                  <View style={styles.copiedOverlay}>
+                    <Feather name="copy" size={32} color={theme.colors.primary} />
+                    <Text style={styles.copiedText}>Copied!</Text>
+                  </View>
+                )}
+                {current_display_data.address ? (
+                  <QRCode
+                    value={current_display_data.address}
+                    size={QR_SIZE}
+                    backgroundColor={theme.colors.background}
+                    color={theme.colors.primary}
+                  />
+                ) : null}
+              </TouchableOpacity>
+              <AddressText
+                style={styles.addressText}
+                selectable
+                address={current_display_data.address}
+                groupSize={6}
+                padLastLine
+              />
+
+              {IS_TESTNET && (
+                <View style={styles.warningBanner}>
+                  <Feather name="alert-triangle" size={14} color={theme.colors.muted} />
+                  <Text style={styles.warningText}>Send only testnet coins.</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.actionsContainer}>
+              <TouchableOpacity style={styles.actionButton} onPress={() => copy_to_clipboard(current_display_data.address)}>
+                <Feather name="copy" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionButtonText}>Copy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, loading_info && styles.actionButtonDisabled]}
+                onPress={handle_next_address}
+                disabled={loading_info}
+              >
+                <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionButtonText}>New address</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={() => on_share(current_display_data.address)}>
+                <Feather name="share-2" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionButtonText}>Share</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.listHeaderContainer}>
+              <Text style={styles.listHeader}>Used addresses</Text>
+              {wallet_loading && <ActivityIndicator color={theme.colors.primary} />}
+            </View>
+
+            {used_addresses.length === 0 ? (
+              <Text style={styles.emptyText}>No used receive addresses yet.</Text>
+            ) : (
+              used_addresses.map((item) => {
+                const balance = item.balance;
+                return (
+                  <TouchableOpacity
+                    key={item.index.toString()}
+                    style={styles.row}
+                    onPress={() => handle_view_details(item.address)}
+                  >
+                    <View style={styles.addressContainer}>
+                      <Text style={styles.addressShortText}>{formatBitcoinAddressShort(item.address)}</Text>
+                      <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
+                    </View>
+                    <View style={styles.balanceContainer}>
+                      <Text style={styles.balanceText}>
+                        {hideBalance ? '*******' : (
+                          <>{format_btc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
+                        )}
+                      </Text>
+                      <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
+                        <Feather name="external-link" size={20} color={theme.colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </>
+        ) : (
+          <View style={styles.lnContainer}>
+            {!isLightningInitialized ? (
+              <View style={styles.lnError}>
+                <Feather name="alert-circle" size={48} color={theme.colors.error} style={{ marginBottom: 16 }} />
+                <Text style={styles.lnErrorText}>Lightning node is not initialized.</Text>
               </View>
-              <View style={styles.balanceContainer}>
-                <Text style={styles.balanceText}>
-                  {hideBalance ? '*******' : (
-                    <>{format_btc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
-                  )}
-                </Text>
-                <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
-                  <Feather name="external-link" size={20} color={theme.colors.primary} />
+            ) : lightningInvoice ? (
+              <>
+                <View style={styles.qrContainer}>
+                  <Text style={styles.derivationPathDisplay}>Lightning Invoice ({amountSats} sats)</Text>
+                  <TouchableOpacity style={styles.qrCodeWrapper} onPress={() => copy_to_clipboard(lightningInvoice)} activeOpacity={0.8}>
+                    {copied && (
+                      <View style={styles.copiedOverlay}>
+                        <Feather name="copy" size={32} color={theme.colors.primary} />
+                        <Text style={styles.copiedText}>Copied!</Text>
+                      </View>
+                    )}
+                    <QRCode
+                      value={lightningInvoice}
+                      size={QR_SIZE}
+                      backgroundColor={theme.colors.background}
+                      color={theme.colors.primary}
+                    />
+                  </TouchableOpacity>
+                  <AddressText
+                    style={styles.addressText}
+                    selectable
+                    address={lightningInvoice}
+                    groupSize={8}
+                    padLastLine
+                  />
+                </View>
+                <View style={styles.actionsContainer}>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => copy_to_clipboard(lightningInvoice)}>
+                    <Feather name="copy" size={24} color={theme.colors.primary} />
+                    <Text style={styles.actionButtonText}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => setLightningInvoice('')}>
+                    <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
+                    <Text style={styles.actionButtonText}>New invoice</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => on_share(lightningInvoice)}>
+                    <Feather name="share-2" size={24} color={theme.colors.primary} />
+                    <Text style={styles.actionButtonText}>Share</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <View style={styles.lnFormContainer}>
+                <Text style={styles.lnInputLabel}>Amount to receive</Text>
+                <View style={styles.lnInputWrapper}>
+                  <TextInput
+                    style={styles.lnInput}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.muted}
+                    value={amountSats}
+                    onChangeText={setAmountSats}
+                    autoFocus
+                  />
+                  <Text style={styles.lnInputSuffix}>sats</Text>
+                </View>
+                <TouchableOpacity 
+                    style={[styles.lnButton, (!amountSats || isGeneratingLn) && styles.lnButtonDisabled]} 
+                    onPress={generateLnInvoice}
+                    disabled={!amountSats || isGeneratingLn}
+                >
+                    {isGeneratingLn ? (
+                        <ActivityIndicator color={theme.colors.background} />
+                    ) : (
+                        <Text style={styles.lnButtonText}>Create Invoice</Text>
+                    )}
                 </TouchableOpacity>
               </View>
-            </TouchableOpacity>
-          );
-        })
-      )}
-    </ScrollView>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -274,6 +411,34 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 32,
     backgroundColor: theme.colors.background,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surface,
+    borderRadius: 8,
+    padding: 4,
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  toggleButton: {
+      flex: 1,
+      paddingVertical: 10,
+      alignItems: 'center',
+      borderRadius: 6,
+  },
+  toggleButtonActive: {
+      backgroundColor: theme.colors.primary,
+  },
+  toggleText: {
+      fontSize: 14,
+      color: theme.colors.muted,
+      fontWeight: '600',
+  },
+  toggleTextActive: {
+      color: theme.colors.inversePrimary,
   },
   qrContainer: {
     alignItems: 'center',
@@ -370,9 +535,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: theme.colors.border,
   },
-  rowSelected: {
-    backgroundColor: theme.colors.surface,
-  },
   addressContainer: {
     flex: 3,
     gap: 2
@@ -425,6 +587,68 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     fontSize: 12,
     color: theme.colors.muted,
     fontWeight: '400',
+  },
+  lnContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+  },
+  lnError: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 60,
+  },
+  lnErrorText: {
+    color: theme.colors.error,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  lnFormContainer: {
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: 40,
+  },
+  lnInputLabel: {
+    fontSize: 16,
+    color: theme.colors.primary,
+    marginBottom: 12,
+    fontWeight: '600'
+  },
+  lnInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  lnInput: {
+    flex: 1,
+    paddingVertical: 16,
+    fontSize: 24,
+    color: theme.colors.primary,
+    fontFamily: 'SpaceMono-Bold',
+  },
+  lnInputSuffix: {
+    fontSize: 18,
+    color: theme.colors.muted,
+    fontFamily: 'SpaceMono-Regular',
+  },
+  lnButton: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  lnButtonDisabled: {
+    opacity: 0.5,
+  },
+  lnButtonText: {
+    color: theme.colors.background,
+    fontSize: 16,
+    fontWeight: '600',
   }
 });
 

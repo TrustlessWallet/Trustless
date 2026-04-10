@@ -73,6 +73,16 @@ export type Transaction = {
   amount: number;
 };
 
+export type LightningTransaction = {
+  paymentHash: string;
+  paymentTime: number;
+  amountMsat: number;
+  feeMsat: number;
+  status: 'pending' | 'complete' | 'failed';
+  type: 'send' | 'receive';
+  description?: string;
+};
+
 export interface Wallet {
   id: string;
   name: string;
@@ -104,7 +114,8 @@ export type RootStackParamList = {
   VerifyMnemonic: undefined;
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
-  Send: { selectedAddress?: string };
+  Send: { selectedAddress?: string; mode?: 'onchain' | 'lightning' };
+  Receive: { mode?: 'onchain' | 'lightning' };
   TransactionConfirm: {
     recipientAddress: string;
     amount: string;
@@ -143,9 +154,8 @@ export type RootStackParamList = {
   AddSavedAddress: undefined;
   CoinControl: { targetAmount: number; onSelect: (utxos: UTXO[]) => void };
   BalanceDetail: { utxos: UTXO[] };
-  AddressDetails: undefined;
+  AddressDetails: { address: string }
   ShowPublicKey: { wallet_id: string };
-  Receive: undefined;
   QRScanner: { onScanSuccess: (data: string) => void };
   TransactionHistory: undefined;
   TransactionDetails: { transaction: Transaction };
