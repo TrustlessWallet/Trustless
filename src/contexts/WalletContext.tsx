@@ -638,9 +638,11 @@ const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
    * 3. An xpub (Watch-only).
    */
 const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; }): Promise<Wallet | null> => {
-    const { mnemonic, name, fingerprint, derivation_path } = params;
+    const { mnemonic, name } = params;
     const type = params.type || 'standard';
     let walletXpub = params.xpub;
+    let fingerprint = params.fingerprint;
+    let derivation_path = params.derivation_path;
     
     let scriptType: 'p2wpkh' | 'p2sh-p2wpkh' = 'p2wpkh';
 
@@ -655,7 +657,14 @@ const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'sta
              try {
                 const accountNode = root.derivePath(DERIVATION_PARENT_PATH);
                 walletXpub = accountNode.neutered().toBase58();
-                scriptType = 'p2wpkh'; 
+                scriptType = 'p2wpkh';
+
+                if (!fingerprint) {
+                    fingerprint = root.fingerprint.toString('hex');
+                }
+                if (!derivation_path) {
+                    derivation_path = DERIVATION_PARENT_PATH;
+                }
              } catch(err) {
                 console.warn("Could not derive account xpub for standard wallet check", err);
              }

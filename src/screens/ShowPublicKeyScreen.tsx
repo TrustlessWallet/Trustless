@@ -1,35 +1,70 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Clipboard, Share, Alert, ScrollView } from 'react-native';
 import { Text } from '../components/StyledText';
 import QRCode from 'react-native-qrcode-svg';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { useWallet } from '../contexts/WalletContext';
-import { NETWORK_NAME } from '../constants/network';
+import { NETWORK, NETWORK_NAME, DERIVATION_PARENT_PATH } from '../constants/network';
 import { format_public_key } from '../services/bitcoin';
 import { AddressText } from '../components/AddressText';
+import * as bip39 from 'bip39';
+import * as secp from '@bitcoinerlab/secp256k1';
+import { BIP32Factory } from 'bip32';
 
 type navigation_prop = NativeStackNavigationProp<RootStackParamList, 'ShowPublicKey'>;
 type route_prop_type = RouteProp<RootStackParamList, 'ShowPublicKey'>;
 
 const qr_size = 260;
 
+const bip32 = BIP32Factory(secp);
+
 const ShowPublicKeyScreen = () => {
-    const navigation = useNavigation<navigation_prop>();
     const route = useRoute<route_prop_type>();
     const { wallet_id } = route.params;
 
-    const { wallets } = useWallet();
+    const { wallets, getMnemonicForWallet } = useWallet();
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]);
 
     const [copied, set_copied] = useState(false);
+    const [derived_fingerprint, set_derived_fingerprint] = useState<string | null>(null);
+    const [derived_path, set_derived_path] = useState<string | null>(null);
 
     const wallet = useMemo(() => wallets.find(w => w.id === wallet_id), [wallets, wallet_id]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const derive_metadata = async () => {
+            if (!wallet) return;
+            if (wallet.type !== 'standard') return;
+            if (wallet.fingerprint && wallet.derivation_path) return;
+
+            try {
+                const mnemonic = await getMnemonicForWallet(wallet.id);
+                if (!mnemonic) return;
+
+                const seed = bip39.mnemonicToSeedSync(mnemonic);
+                const root = bip32.fromSeed(seed, NETWORK);
+
+                if (cancelled) return;
+                set_derived_fingerprint(root.fingerprint.toString('hex'));
+                set_derived_path(DERIVATION_PARENT_PATH);
+            } catch (e) {
+            }
+        };
+
+        derive_metadata();
+        return () => { cancelled = true; };
+    }, [wallet?.id, wallet?.type, wallet?.fingerprint, wallet?.derivation_path, getMnemonicForWallet]);
+
+    const effective_fingerprint = wallet?.fingerprint || derived_fingerprint || '';
+    const effective_path = wallet?.derivation_path || derived_path || '';
 
     const formatted_pub_key = useMemo(() => {
         if (!wallet || !wallet.xpub) return '';
@@ -38,16 +73,16 @@ const ShowPublicKeyScreen = () => {
 
     const export_string = useMemo(() => {
         if (!formatted_pub_key) return '';
-        if (wallet?.fingerprint && wallet?.derivation_path) {
-            let path = wallet.derivation_path;
+        if (effective_fingerprint && effective_path) {
+            let path = effective_path;
             if (path.startsWith('m/')) {
                 path = path.slice(2);
             }
             path = path.replace(/h/g, "'");
-            return `[${wallet.fingerprint}/${path}]${formatted_pub_key}`;
+            return `[${effective_fingerprint}/${path}]${formatted_pub_key}`;
         }
         return formatted_pub_key;
-    }, [formatted_pub_key, wallet]);
+    }, [formatted_pub_key, effective_fingerprint, effective_path]);
 
     const copy_to_clipboard = () => {
         if (export_string) {
@@ -82,9 +117,9 @@ const ShowPublicKeyScreen = () => {
                     This extended public key can be used to generate all your wallet's addresses.
                 </Text>
 
-                {!!wallet.derivation_path && (
+                {!!effective_path && (
                     <View style={styles.meta_container}>
-                        <Text style={styles.meta_text}>{wallet.derivation_path.replace(/h/g, "'")}</Text>
+                        <Text style={styles.meta_text}>{effective_path.replace(/h/g, "'")}</Text>
                     </View>
                 )}
 
@@ -103,10 +138,10 @@ const ShowPublicKeyScreen = () => {
                     />
                 </TouchableOpacity>
 
-                {!!wallet.fingerprint && (
+                {!!effective_fingerprint && (
                     <View style={[styles.meta_container, styles.meta_container_bottom]}>
                         <MaterialIcons name="fingerprint" size={16} color={theme.colors.muted} style={styles.meta_icon} />
-                        <Text style={styles.meta_text}>{wallet.fingerprint}</Text>
+                        <Text style={styles.meta_text}>{effective_fingerprint}</Text>
                     </View>
                 )}
 
