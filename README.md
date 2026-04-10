@@ -14,8 +14,8 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 ## Main features
 * **Bitcoin wallet:** Import or create new wallets, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets.
 
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/c4b1f8de-e08a-4336-a5ff-8139ed797a80" />
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/2fb1f615-290c-4f97-8573-8e0e1633f301" />
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/3595972b-36be-4229-9b71-82b0ac7d92e1" />
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/040f6a53-8312-4de8-9258-931e23016b1e" />
 
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 
@@ -29,8 +29,8 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 
 * **Custom node and network:** Connect to your own node via Electrum and use testnet network for transaction testing / development.
 
-  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/199ceec6-9f0c-4332-bdac-213736bfc0da" />
-  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/b4c09a63-ef1f-41e2-9d52-a20b82633e3b" />
+  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/e31ee43c-0383-4102-bf18-f0a1dafba201" />
+  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/02f25fcf-b16a-436a-88e5-e5b3e807304d" />
 
 * **Receive address switching:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
 
