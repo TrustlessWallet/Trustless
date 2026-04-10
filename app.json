@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon-white.png",
       "resizeMode": "cover",
@@ -35,6 +35,7 @@
       ]
     },
     "plugins": [
+      "@breeztech/breez-sdk-spark-react-native",
       "./src/scripts/withAndroidDisplaySettings",
       [
         "expo-font",

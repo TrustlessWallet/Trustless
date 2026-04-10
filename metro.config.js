@@ -23,12 +23,12 @@ defaultConfig.resolver.assetExts = [
 // 2. Merge your Node Modules with the new TCP Socket modules
 defaultConfig.resolver.extraNodeModules = {
   ...require('node-libs-browser'), // Keep your existing base
-  crypto: require.resolve('react-native-crypto'),
+  crypto: require.resolve('crypto-browserify'), // Updated to resolve sha.js / hash errors
   stream: require.resolve('stream-browserify'),
-  buffer: require.resolve('buffer'),
+  buffer: require.resolve('buffer/'),           // Added trailing slash
   process: require.resolve('process/browser'),
-  events: require.resolve('events'),
-  util: require.resolve('util'),
+  events: require.resolve('events/'),           // Added trailing slash
+  util: require.resolve('util/'),               // Added trailing slash
   vm: require.resolve('vm-browserify'),
   path: require.resolve('path-browserify'),
   os: require.resolve('os-browserify/browser'),

@@ -5,7 +5,7 @@ import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, Transaction } from '../types';
+import { RootStackParamList, Transaction, LightningTransaction } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
@@ -29,16 +29,26 @@ const formatBalance = (sats: number) => {
 
 const WalletScreen = () => {
     const navigation = useNavigation<NavigationProp>();
-    const { activeWallet, loading: walletLoading, triggerRefresh } = useWallet();
+    const { 
+        activeWallet, 
+        loading: walletLoading, 
+        triggerRefresh,
+        lightningBalance,
+        lightningTransactions,
+        isLightningInitialized
+    } = useWallet();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
     const [hideBalance, setHideBalance] = useState(false);
+    const [isLightningMode, setIsLightningMode] = useState(false);
     const isFocused = useIsFocused();
 
-    const balance = useMemo(() => {
+    const onchainBalance = useMemo(() => {
         if (!activeWallet) return 0;
         return activeWallet.derivedAddressInfoCache.reduce((acc, curr) => acc + curr.balance, 0);
     }, [activeWallet]);
+
+    const displayBalance = isLightningMode ? lightningBalance : onchainBalance;
 
     const queryAddresses = useMemo(() => {
         if (!activeWallet) return [];
@@ -57,7 +67,7 @@ const WalletScreen = () => {
     }, [activeWallet]);
 
     const {
-        data: transactions,
+        data: onchainTransactions,
         isLoading: loadingTxs,
         refetch: refetchTxs,
         isRefetching: isRefetchingTxs
@@ -80,31 +90,62 @@ const WalletScreen = () => {
 
     const onRefresh = () => {
         triggerRefresh();
-        refetchTxs();
-        refetchUtxos();
+        if (!isLightningMode) {
+            refetchTxs();
+            refetchUtxos();
+        }
     };
 
-    const renderTransactionItem = useCallback(({ item }: { item: Transaction }) => {
-        const isSend = item.type === 'send';
+    const renderTransactionItem = useCallback(({ item }: { item: any }) => {
+        const isLightning = 'paymentHash' in item;
+
+        if (isLightning) {
+            const lnTx = item as LightningTransaction;
+            const isSend = lnTx.type === 'send';
+            const txDate = new Date(lnTx.paymentTime * 1000).toLocaleString();
+            const amountSats = Math.floor(lnTx.amountMsat / 1000);
+
+            return (
+                <View key={lnTx.paymentHash} style={styles.txRow}>
+                    <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
+                    <View style={styles.txDetails}>
+                        <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
+                        <Text style={styles.txAddress}>{lnTx.description || 'Lightning Payment'}</Text>
+                        <Text style={styles.txDate}>{txDate}</Text>
+                    </View>
+                    <View style={styles.txAmountContainer}>
+                        <Text style={styles.txAmount}>
+                            {hideBalance ? '*******' : (
+                                <>{isSend ? '-' : '+'} {formatBalance(amountSats)} <Text style={styles.orangeSymbol}>₿</Text></>
+                            )}
+                        </Text>
+                        <Text style={styles.txStatus}>{lnTx.status === 'complete' ? 'Complete' : 'Pending'}</Text>
+                    </View>
+                </View>
+            );
+        }
+
+        const ocTx = item as Transaction;
+        const isSend = ocTx.type === 'send';
         let otherAddress = 'Multiple';
 
         if (isSend) {
-            const externalOutputs = item.vout.filter(o => !walletAddressesSet.has(o.scriptpubkey_address));
+            const externalOutputs = ocTx.vout.filter(o => !walletAddressesSet.has(o.scriptpubkey_address));
             if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
         } else {
-            const externalInputs = item.vin.filter(i => !walletAddressesSet.has(i.prevout?.scriptpubkey_address));
+            const externalInputs = ocTx.vin.filter(i => !walletAddressesSet.has(i.prevout?.scriptpubkey_address));
             if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
         }
 
-        const txDate = item.status.block_time
-            ? new Date(item.status.block_time * 1000).toLocaleString()
+        const txDate = ocTx.status.block_time
+            ? new Date(ocTx.status.block_time * 1000).toLocaleString()
             : 'Pending confirmation';
 
         return (
             <TouchableOpacity
-                key={item.txid}
+                key={ocTx.txid}
                 style={styles.txRow}
-                onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}
+                onPress={() => navigation.navigate('TransactionDetails', { transaction: ocTx })}
             >
                 <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
                 <View style={styles.txDetails}>
@@ -115,18 +156,18 @@ const WalletScreen = () => {
                 <View style={styles.txAmountContainer}>
                     <Text style={styles.txAmount}>
                         {hideBalance ? '*******' : (
-                            <>{isSend ? '-' : '+'} {formatBalance(item.amount)} <Text style={styles.orangeSymbol}>₿</Text></>
+                            <>{isSend ? '-' : '+'} {formatBalance(ocTx.amount)} <Text style={styles.orangeSymbol}>₿</Text></>
                         )}
                     </Text>
-                    <Text style={styles.txStatus}>{item.status.confirmed ? 'Confirmed' : 'Pending'}</Text>
+                    <Text style={styles.txStatus}>{ocTx.status.confirmed ? 'Confirmed' : 'Pending'}</Text>
                 </View>
             </TouchableOpacity>
         );
     }, [walletAddressesSet, hideBalance, theme, navigation, styles]);
 
-    const txList = transactions || [];
-    const recentTxs = txList.slice(0, 3);
-    const hasTransactions = txList.length > 0;
+    const displayTransactions = isLightningMode ? lightningTransactions : (onchainTransactions || []);
+    const recentTxs = displayTransactions.slice(0, 3);
+    const hasTransactions = displayTransactions.length > 0;
 
     if (walletLoading) {
         return <View style={styles.centeredContainer}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
@@ -164,22 +205,43 @@ const WalletScreen = () => {
                     <Text style={styles.walletName}>{activeWallet.name}</Text>
                     <Feather name="chevron-down" size={22} color={theme.colors.muted} />
                 </TouchableOpacity>
+
+                {activeWallet.type !== 'watch-only' && (
+                    <View style={styles.toggleContainer}>
+                        <TouchableOpacity 
+                            style={[styles.toggleButton, !isLightningMode && styles.toggleButtonActive]} 
+                            onPress={() => setIsLightningMode(false)}
+                        >
+                            <Text style={[styles.toggleText, !isLightningMode && styles.toggleTextActive]}>On-Chain</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.toggleButton, isLightningMode && styles.toggleButtonActive]} 
+                            onPress={() => setIsLightningMode(true)}
+                            disabled={!isLightningInitialized}
+                        >
+                            <Text style={[styles.toggleText, isLightningMode && styles.toggleTextActive, !isLightningInitialized && { color: theme.colors.muted }]}>Lightning</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
                 <TouchableOpacity
                     style={styles.balanceContainer}
-                    onPress={() => navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
+                    onPress={() => !isLightningMode && navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
+                    disabled={isLightningMode}
                 >
                     <Text style={styles.balanceText}>
-                        {hideBalance ? '*******' : <>{formatBalance(balance)} <Text style={styles.orangeSymbol}>₿</Text></>}
+                        {hideBalance ? '*******' : <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>}
                     </Text>
                 </TouchableOpacity>
+
                 <View style={styles.actionsContainer}>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive')}>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}>
                         <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />
                         <Text style={styles.actionButtonText}>Receive</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.actionButton}
-                        onPress={() => navigation.navigate('Send', {})}
+                        onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
                     >
                         <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
                         <Text style={styles.actionButtonText}>Send</Text>
@@ -189,13 +251,13 @@ const WalletScreen = () => {
 
             <ScrollView
                 style={styles.bottomSection}
-                refreshControl={<RefreshControl refreshing={isRefetchingTxs} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
+                refreshControl={<RefreshControl refreshing={!isLightningMode && isRefetchingTxs} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
             >
-                {loadingTxs ? <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : (
+                {(!isLightningMode && loadingTxs) ? <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : (
                     hasTransactions ? (
                         <View style={styles.historyContainer}>
                             {recentTxs.map((tx) => renderTransactionItem({ item: tx }))}
-                            {txList.length > 5 && (
+                            {displayTransactions.length > 5 && (
                                 <TouchableOpacity style={styles.showMoreButton} onPress={() => navigation.navigate('TransactionHistory')}>
                                     <Text style={styles.showMoreText}>Show full history</Text>
                                 </TouchableOpacity>
@@ -282,11 +344,36 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        marginBottom: 8
+        marginBottom: 16
     },
     walletName: {
         fontSize: 20,
         color: theme.colors.muted,
+    },
+    toggleContainer: {
+        flexDirection: 'row',
+        backgroundColor: theme.colors.surface,
+        borderRadius: 8,
+        padding: 4,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    toggleButton: {
+        paddingVertical: 6,
+        paddingHorizontal: 16,
+        borderRadius: 6,
+    },
+    toggleButtonActive: {
+        backgroundColor: theme.colors.primary,
+    },
+    toggleText: {
+        fontSize: 14,
+        color: theme.colors.muted,
+        fontWeight: '600',
+    },
+    toggleTextActive: {
+        color: theme.colors.inversePrimary,
     },
     balanceContainer: {
         alignItems: 'center',
@@ -326,9 +413,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.inversePrimary,
         fontSize: 16,
         fontWeight: '600'
-    },
-    disabledActionButtonText: {
-        color: theme.colors.muted
     },
     historyContainer: {
         paddingHorizontal: 20,
