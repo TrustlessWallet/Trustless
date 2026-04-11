@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text } from '../components/StyledText';
 import QRCode from 'react-native-qrcode-svg';
 import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types';
+import { RootStackParamList } from '../types'; 
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE, IS_TESTNET } from '../constants/network';
@@ -37,18 +37,16 @@ const ReceiveScreen = () => {
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
   
-  const initialMode = route.params?.mode || 'onchain';
-  const [mode, setMode] = useState<'onchain' | 'lightning'>(initialMode);
+  const mode = route.params?.mode || 'onchain';
 
   const [copied, set_copied] = useState(false);
   const [address_offset, set_address_offset] = useState(0);
   const [hideBalance, setHideBalance] = useState(false);
   const scroll_ref = useRef<ScrollView>(null);
 
-  // Phase 1 Lightning State
-  const [amountSats, setAmountSats] = useState<string>('');
+  const [lnType, setLnType] = useState<'bolt11' | 'bolt12'>('bolt11');
   const [lightningInvoice, setLightningInvoice] = useState<string>('');
-  const [isGeneratingLn, setIsGeneratingLn] = useState(false);
+  const [bolt12Offer, setBolt12Offer] = useState<string>('lno1qgsqvgnwgcg35z6ee2h3yczraddm72xrfua9uve2rlrm9deu7xyfu4e9xh3mxgmqpqg2');
 
   useEffect(() => {
     navigation.setOptions({
@@ -73,6 +71,17 @@ const ReceiveScreen = () => {
       loadPreference();
     }
   }, [isFocused]);
+
+  useEffect(() => {
+    if (mode === 'lightning' && isLightningInitialized && !lightningInvoice) {
+      getLightningInvoice(0)
+        .then(setLightningInvoice)
+        .catch(err => {
+            console.error("Failed to fetch initial BOLT11 invoice", err);
+            setLightningInvoice('lnbc1...'); 
+        });
+    }
+  }, [mode, isLightningInitialized, lightningInvoice, getLightningInvoice]);
 
   const path_prefix = useMemo(() => {
     if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
@@ -144,24 +153,6 @@ const ReceiveScreen = () => {
     }
   };
 
-  const generateLnInvoice = async () => {
-    const sats = parseInt(amountSats, 10);
-    if (isNaN(sats) || sats <= 0) {
-        Alert.alert('Invalid Amount', 'Please enter a valid amount in sats.');
-        return;
-    }
-    
-    setIsGeneratingLn(true);
-    try {
-        const invoice = await getLightningInvoice(sats);
-        setLightningInvoice(invoice);
-    } catch (error: any) {
-        Alert.alert('Invoice Error', error.message || 'Failed to generate Lightning invoice.');
-    } finally {
-        setIsGeneratingLn(false);
-    }
-  };
-
   const handle_view_details = (address: string) => {
     if (address) {
       navigation.navigate('AddressDetails', { address });
@@ -192,6 +183,7 @@ const ReceiveScreen = () => {
   }, [activeWallet]);
 
   const loading_info = wallet_loading || !activeWallet;
+  const currentLnString = lnType === 'bolt11' ? lightningInvoice : bolt12Offer;
 
   if (loading_info) {
     return (
@@ -211,22 +203,6 @@ const ReceiveScreen = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={true}
       >
-        <View style={styles.toggleContainer}>
-            <TouchableOpacity 
-                style={[styles.toggleButton, mode === 'onchain' && styles.toggleButtonActive]} 
-                onPress={() => setMode('onchain')}
-            >
-                <Text style={[styles.toggleText, mode === 'onchain' && styles.toggleTextActive]}>On-Chain</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-                style={[styles.toggleButton, mode === 'lightning' && styles.toggleButtonActive]} 
-                onPress={() => setMode('lightning')}
-                disabled={!isLightningInitialized}
-            >
-                <Text style={[styles.toggleText, mode === 'lightning' && styles.toggleTextActive, !isLightningInitialized && { color: theme.colors.muted }]}>Lightning</Text>
-            </TouchableOpacity>
-        </View>
-
         {mode === 'onchain' ? (
           <>
             <View style={styles.qrContainer}>
@@ -324,74 +300,60 @@ const ReceiveScreen = () => {
                 <Feather name="alert-circle" size={48} color={theme.colors.error} style={{ marginBottom: 16 }} />
                 <Text style={styles.lnErrorText}>Lightning node is not initialized.</Text>
               </View>
-            ) : lightningInvoice ? (
+            ) : (
               <>
                 <View style={styles.qrContainer}>
-                  <Text style={styles.derivationPathDisplay}>Lightning Invoice ({amountSats} sats)</Text>
-                  <TouchableOpacity style={styles.qrCodeWrapper} onPress={() => copy_to_clipboard(lightningInvoice)} activeOpacity={0.8}>
+                  <Text style={styles.derivationPathDisplay}>
+                    {lnType === 'bolt11' ? 'BOLT11 Invoice' : 'BOLT12 Offer'}
+                  </Text>
+                  <TouchableOpacity style={styles.qrCodeWrapper} onPress={() => copy_to_clipboard(currentLnString)} activeOpacity={0.8}>
                     {copied && (
                       <View style={styles.copiedOverlay}>
                         <Feather name="copy" size={32} color={theme.colors.primary} />
                         <Text style={styles.copiedText}>Copied!</Text>
                       </View>
                     )}
-                    <QRCode
-                      value={lightningInvoice}
-                      size={QR_SIZE}
-                      backgroundColor={theme.colors.background}
-                      color={theme.colors.primary}
-                    />
+                    {currentLnString ? (
+                      <QRCode
+                        value={currentLnString}
+                        size={QR_SIZE}
+                        backgroundColor={theme.colors.background}
+                        color={theme.colors.primary}
+                      />
+                    ) : (
+                      <View style={{ height: QR_SIZE, width: QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
+                          <ActivityIndicator size="large" color={theme.colors.primary} />
+                      </View>
+                    )}
                   </TouchableOpacity>
-                  <AddressText
-                    style={styles.addressText}
-                    selectable
-                    address={lightningInvoice}
-                    groupSize={8}
-                    padLastLine
-                  />
                 </View>
+
+                <View style={styles.lnTypeToggleContainer}>
+                    <TouchableOpacity 
+                        style={[styles.toggleButton, lnType === 'bolt11' && styles.toggleButtonActive]} 
+                        onPress={() => setLnType('bolt11')}
+                    >
+                        <Text style={[styles.toggleText, lnType === 'bolt11' && styles.toggleTextActive]}>BOLT11</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={[styles.toggleButton, lnType === 'bolt12' && styles.toggleButtonActive]} 
+                        onPress={() => setLnType('bolt12')}
+                    >
+                        <Text style={[styles.toggleText, lnType === 'bolt12' && styles.toggleTextActive]}>BOLT12</Text>
+                    </TouchableOpacity>
+                </View>
+
                 <View style={styles.actionsContainer}>
-                  <TouchableOpacity style={styles.actionButton} onPress={() => copy_to_clipboard(lightningInvoice)}>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => copy_to_clipboard(currentLnString)}>
                     <Feather name="copy" size={24} color={theme.colors.primary} />
                     <Text style={styles.actionButtonText}>Copy</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionButton} onPress={() => setLightningInvoice('')}>
-                    <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
-                    <Text style={styles.actionButtonText}>New invoice</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionButton} onPress={() => on_share(lightningInvoice)}>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => on_share(currentLnString)}>
                     <Feather name="share-2" size={24} color={theme.colors.primary} />
                     <Text style={styles.actionButtonText}>Share</Text>
                   </TouchableOpacity>
                 </View>
               </>
-            ) : (
-              <View style={styles.lnFormContainer}>
-                <Text style={styles.lnInputLabel}>Amount to receive</Text>
-                <View style={styles.lnInputWrapper}>
-                  <TextInput
-                    style={styles.lnInput}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor={theme.colors.muted}
-                    value={amountSats}
-                    onChangeText={setAmountSats}
-                    autoFocus
-                  />
-                  <Text style={styles.lnInputSuffix}>sats</Text>
-                </View>
-                <TouchableOpacity 
-                    style={[styles.lnButton, (!amountSats || isGeneratingLn) && styles.lnButtonDisabled]} 
-                    onPress={generateLnInvoice}
-                    disabled={!amountSats || isGeneratingLn}
-                >
-                    {isGeneratingLn ? (
-                        <ActivityIndicator color={theme.colors.background} />
-                    ) : (
-                        <Text style={styles.lnButtonText}>Create Invoice</Text>
-                    )}
-                </TouchableOpacity>
-              </View>
             )}
           </View>
         )}
@@ -412,37 +374,9 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingBottom: 32,
     backgroundColor: theme.colors.background,
   },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: theme.colors.surface,
-    borderRadius: 8,
-    padding: 4,
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  toggleButton: {
-      flex: 1,
-      paddingVertical: 10,
-      alignItems: 'center',
-      borderRadius: 6,
-  },
-  toggleButtonActive: {
-      backgroundColor: theme.colors.primary,
-  },
-  toggleText: {
-      fontSize: 14,
-      color: theme.colors.muted,
-      fontWeight: '600',
-  },
-  toggleTextActive: {
-      color: theme.colors.inversePrimary,
-  },
   qrContainer: {
     alignItems: 'center',
-    paddingTop: 8,
+    paddingTop: 24,
     paddingBottom: 8,
     width: '100%',
     borderBottomWidth: 0,
@@ -497,8 +431,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     gap: 24,
     width: '100%',
     paddingVertical: 1,
-    borderBottomWidth: 1,
-    borderColor: theme.colors.border,
   },
   actionButton: {
     alignItems: 'center',
@@ -603,52 +535,32 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
   },
-  lnFormContainer: {
-    width: '100%',
-    paddingHorizontal: 20,
-    paddingTop: 40,
-  },
-  lnInputLabel: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    marginBottom: 12,
-    fontWeight: '600'
-  },
-  lnInputWrapper: {
+  lnTypeToggleContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: theme.colors.surface,
+    borderRadius: 8,
+    padding: 2,
+    marginHorizontal: 60,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    marginBottom: 24,
   },
-  lnInput: {
-    flex: 1,
-    paddingVertical: 16,
-    fontSize: 24,
-    color: theme.colors.primary,
-    fontFamily: 'SpaceMono-Bold',
+  toggleButton: {
+      flex: 1,
+      paddingVertical: 6,
+      alignItems: 'center',
+      borderRadius: 6,
   },
-  lnInputSuffix: {
-    fontSize: 18,
-    color: theme.colors.muted,
-    fontFamily: 'SpaceMono-Regular',
+  toggleButtonActive: {
+      backgroundColor: theme.colors.primary,
   },
-  lnButton: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  toggleText: {
+      fontSize: 12,
+      color: theme.colors.muted,
+      fontWeight: '600',
   },
-  lnButtonDisabled: {
-    opacity: 0.5,
-  },
-  lnButtonText: {
-    color: theme.colors.background,
-    fontSize: 16,
-    fontWeight: '600',
+  toggleTextActive: {
+      color: theme.colors.inversePrimary,
   }
 });
 

@@ -1,4 +1,3 @@
-// src/screens/SendScreen.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
@@ -14,7 +13,7 @@ import {
     fetchFeeEstimates,
     calculateTransactionMetrics,
     DUST_THRESHOLD 
-} from '../services/bitcoin';
+} from '../services/bitcoin'; 
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
@@ -71,9 +70,7 @@ const SendScreen = () => {
     
     const isWatchOnly = activeWallet?.type === 'watch-only';
 
-    // Mode State
-    const initialMode = route.params?.mode || 'onchain';
-    const [mode, setMode] = useState<'onchain' | 'lightning'>(initialMode);
+    const mode = route.params?.mode || 'onchain';
 
     // On-Chain State
     const [recipientAddress, setRecipientAddress] = useState('');
@@ -421,23 +418,6 @@ const SendScreen = () => {
 
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-                
-                {/* Network Mode Toggle */}
-                <View style={styles.toggleContainer}>
-                    <TouchableOpacity 
-                        style={[styles.toggleButton, mode === 'onchain' && styles.toggleButtonActive]} 
-                        onPress={() => setMode('onchain')}
-                    >
-                        <Text style={[styles.toggleText, mode === 'onchain' && styles.toggleTextActive]}>On-Chain</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={[styles.toggleButton, mode === 'lightning' && styles.toggleButtonActive]} 
-                        onPress={() => setMode('lightning')}
-                        disabled={!isLightningInitialized}
-                    >
-                        <Text style={[styles.toggleText, mode === 'lightning' && styles.toggleTextActive, !isLightningInitialized && { color: theme.colors.muted }]}>Lightning</Text>
-                    </TouchableOpacity>
-                </View>
 
                 {/* Unified Balance Display */}
                 <View style={styles.balanceContainer}>
@@ -636,35 +616,6 @@ const SendScreen = () => {
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { padding: 24, paddingBottom: 350, flexGrow: 1 },
-    
-    // Toggle Styles
-    toggleContainer: {
-        flexDirection: 'row',
-        backgroundColor: theme.colors.surface,
-        borderRadius: 8,
-        padding: 4,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    toggleButton: {
-        flex: 1,
-        paddingVertical: 10,
-        alignItems: 'center',
-        borderRadius: 6,
-    },
-    toggleButtonActive: {
-        backgroundColor: theme.colors.primary,
-    },
-    toggleText: {
-        fontSize: 14,
-        color: theme.colors.muted,
-        fontWeight: '600',
-    },
-    toggleTextActive: {
-        color: theme.colors.inversePrimary,
-    },
-
     balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
     balanceLabel: { fontSize: 16, color: theme.colors.muted },
     balanceText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary, padding: 0 },
