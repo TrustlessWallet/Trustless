@@ -1,3 +1,4 @@
+// src/screens/SendScreen.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
@@ -13,7 +14,7 @@ import {
     fetchFeeEstimates,
     calculateTransactionMetrics,
     DUST_THRESHOLD 
-} from '../services/bitcoin'; 
+} from '../services/bitcoin';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
@@ -63,7 +64,6 @@ const SendScreen = () => {
         triggerRefresh, 
         incrementChangeIndex, 
         lastRefreshTime,
-        isLightningInitialized,
         lightningBalance,
         payLightningInvoice
     } = useWallet();
@@ -86,6 +86,7 @@ const SendScreen = () => {
 
     // Lightning State
     const [lightningInvoice, setLightningInvoice] = useState('');
+    const [lnAmount, setLnAmount] = useState('');
 
     // Shared State
     const [loading, setLoading] = useState(false);
@@ -362,7 +363,8 @@ const SendScreen = () => {
 
         setLoading(true);
         try {
-            await payLightningInvoice(lightningInvoice.trim());
+            const sats = parseInt(lnAmount, 10);
+            await payLightningInvoice(lightningInvoice.trim(), isNaN(sats) || sats <= 0 ? undefined : sats);
             Alert.alert(
                 'Payment Sent!',
                 'Your lightning payment has been successfully completed.',
@@ -594,6 +596,21 @@ const SendScreen = () => {
                                 }
                             />
                         </View>
+
+                        <Text style={styles.label}>Amount (Optional if embedded)</Text>
+                        <StyledInput
+                            placeholder="0"
+                            value={lnAmount}
+                            onChangeText={setLnAmount}
+                            keyboardType="numeric"
+                            rightElement={
+                                <View style={styles.unitSelector}>
+                                    <View style={[styles.unitButton, styles.unitButtonActive]}>
+                                        <Text style={[styles.unitText, styles.unitTextActive]}>sats</Text>
+                                    </View>
+                                </View>
+                            }
+                        />
 
                         <TouchableOpacity 
                             onPress={handlePayLightning} 

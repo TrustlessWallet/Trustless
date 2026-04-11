@@ -96,12 +96,11 @@ interface WalletContextType {
     updateSavedAddressName: (addressId: string, newName: string) => Promise<void>;
     refreshSavedAddressBalances: () => Promise<void>;
 
-    // Phase 1 Lightning
     isLightningInitialized: boolean;
     lightningBalance: number;
     lightningTransactions: LightningTransaction[];
     getLightningInvoice: (amountSats: number) => Promise<string>;
-    payLightningInvoice: (bolt11: string) => Promise<void>;
+    payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -272,33 +271,79 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-const getLightningInvoice = async (amountSats: number) => {
-      if (!activeSdkInstance) throw new Error("Lightning node not initialized");
-      
-      const req = await activeSdkInstance.receivePayment({ 
-          paymentMethod: breezSdk.ReceivePaymentMethod.Bolt11Invoice.new({
-              description: "Trustless Wallet Spark Payment",
-              amountSats: BigInt(amountSats),
-              expirySecs: undefined,
-              paymentHash: undefined
-          })
-      });
-      return req.paymentRequest; 
-  };
-
-    const payLightningInvoice = async (bolt11: string) => {
+    const getLightningInvoice = async (amountSats: number) => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
 
-        const prepareResponse = await activeSdkInstance.prepareSendPayment({
-            paymentRequest: bolt11
+        const req = await activeSdkInstance.receivePayment({
+            paymentMethod: breezSdk.ReceivePaymentMethod.Bolt11Invoice.new({
+                description: "Trustless Wallet Spark Payment",
+                amountSats: BigInt(amountSats),
+                expirySecs: undefined,
+                paymentHash: undefined
+            })
         });
+        return req.paymentRequest;
+    };
 
-        await activeSdkInstance.sendPayment({
-            prepareResponse
-        });
+    const payLightningInvoice = async (invoiceStr: string, amountSats?: number) => {
+        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+
+        const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
+
+        if (cleanStr.toLowerCase().startsWith('lno1')) {
+            throw new Error("BOLT12 offers are not supported by the Spark SDK.");
+        }
+
+        let parsedInput;
+        try {
+            parsedInput = await activeSdkInstance.parse(cleanStr);
+        } catch (error: any) {
+            // Bypass parsing failures for valid BOLT11 strings
+            if (cleanStr.toLowerCase().startsWith('lnbc')) {
+                parsedInput = { tag: 'Bolt11Invoice' };
+            } else {
+                throw new Error(`Parse failed: ${error.message || 'Invalid format'}`);
+            }
+        }
+
+        const tag = parsedInput.tag || parsedInput.type;
+        const inner = parsedInput.inner || parsedInput.data || parsedInput;
+
+        if (tag === 'LnUrlPay' || tag === 'lnurlPay') {
+            const payload = inner;
+            const amountMsat = amountSats ? amountSats * 1000 : payload.minSendable;
+
+            if (!amountMsat) throw new Error("Amount is required for this LNURL.");
+
+            await activeSdkInstance.payLnurl({
+                data: payload,
+                amountMsat: amountMsat,
+                comment: "Trustless Wallet Payment"
+            });
+
+        } else if (tag === 'Bolt11' || tag === 'bolt11' || tag === 'Bolt11Invoice' || tag === 'bolt11Invoice') {
+            const req: any = {
+                paymentRequest: cleanStr
+            };
+
+            if (amountSats) {
+                req.amount = amountSats;
+            }
+
+            try {
+                const prepareResponse = await activeSdkInstance.prepareSendPayment(req);
+                await activeSdkInstance.sendPayment({ prepareResponse });
+            } catch (error: any) {
+                throw new Error(`Node Error (${error.message}). Check balance, route, and leave amount blank if the invoice already specifies one.`);
+            }
+
+        } else {
+            throw new Error(`Unsupported lightning format. Parsed tag: ${tag}`);
+        }
 
         await refreshLightningState();
     };
+
     // ------------------------------------------------------------------
     // WALLET HYDRATION & LOGIC
     // ------------------------------------------------------------------
@@ -712,7 +757,7 @@ const getLightningInvoice = async (amountSats: number) => {
         };
         bootstrap();
     }, []);
-    
+
 
     /**
      * Creates a new Receive Address.
