@@ -30,7 +30,7 @@ const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
 const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number, feeRate: number = 4) => {
     const sortedUtxos = [...utxos].sort((a, b) => b.value - a.value); 
-    let selected = [];
+    let selected: UTXO[] = [];
     let totalValue = 0;
     
     const estimateFee = (n_inputs: number) => {
@@ -52,6 +52,50 @@ const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number, feeRate: numb
     return null;
 };
 
+const parseBolt11Amount = (invoice: string): number | null => {
+    const cleanInvoice = invoice.replace(/^lightning:/i, '').trim().toLowerCase();
+    
+    if (!cleanInvoice.startsWith('lnbc') && !cleanInvoice.startsWith('lntb') && !cleanInvoice.startsWith('lnbcrt')) {
+        return null; 
+    }
+
+    const sepIndex = cleanInvoice.lastIndexOf('1');
+    if (sepIndex === -1) return null;
+
+    const hrp = cleanInvoice.substring(0, sepIndex);
+    
+    const prefixMatch = hrp.match(/^(lnbcrt|lntb|lnbc)/);
+    if (!prefixMatch) return null;
+    const prefix = prefixMatch[0];
+
+    const amountStr = hrp.substring(prefix.length);
+    if (!amountStr) return null; 
+
+    const multiplierMatch = amountStr.match(/([mupn])$/);
+    let multiplierStr = '';
+    let numberStr = amountStr;
+
+    if (multiplierMatch) {
+        multiplierStr = multiplierMatch[0];
+        numberStr = amountStr.substring(0, amountStr.length - 1);
+    }
+
+    const val = parseFloat(numberStr);
+    if (isNaN(val)) return null;
+
+    let multiplier = 1;
+    switch (multiplierStr) {
+        case 'm': multiplier = 0.001; break; 
+        case 'u': multiplier = 0.000001; break; 
+        case 'n': multiplier = 0.000000001; break; 
+        case 'p': multiplier = 0.000000000001; break; 
+        default: multiplier = 1; 
+    }
+
+    const btcValue = val * multiplier;
+    return Math.round(btcValue * 100000000);
+};
+
 const SendScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<SendScreenRouteProp>();
@@ -64,7 +108,8 @@ const SendScreen = () => {
         incrementChangeIndex, 
         lastRefreshTime,
         lightningBalance,
-        payLightningInvoice
+        payLightningInvoice,
+        estimateLightningFee
     } = useWallet();
     
     const isWatchOnly = activeWallet?.type === 'watch-only';
@@ -84,6 +129,9 @@ const SendScreen = () => {
 
     const [lightningInvoice, setLightningInvoice] = useState('');
     const [lnAmount, setLnAmount] = useState('');
+    const [hasFixedAmount, setHasFixedAmount] = useState(false);
+    const [lnFeeEstimate, setLnFeeEstimate] = useState<number | null>(null);
+    const [estimatingLnFee, setEstimatingLnFee] = useState(false);
 
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
@@ -105,6 +153,54 @@ const SendScreen = () => {
         }, 200);
         return () => clearTimeout(t);
     }, [recipientAddress]);
+
+    useEffect(() => {
+        if (mode === 'lightning' && lightningInvoice) {
+            const parsedSats = parseBolt11Amount(lightningInvoice);
+            if (parsedSats !== null && parsedSats > 0) {
+                setLnAmount(parsedSats.toString());
+                setHasFixedAmount(true);
+            } else {
+                setHasFixedAmount(false);
+            }
+        } else {
+             setHasFixedAmount(false);
+        }
+    }, [lightningInvoice, mode]);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const estimateFee = async () => {
+            if (mode !== 'lightning' || !lightningInvoice.trim() || !lnAmount) {
+                if (isMounted) setLnFeeEstimate(null);
+                return;
+            }
+
+            const sats = parseInt(lnAmount, 10);
+            if (isNaN(sats) || sats <= 0) {
+                if (isMounted) setLnFeeEstimate(null);
+                return;
+            }
+
+            if (isMounted) setEstimatingLnFee(true);
+            if (isMounted) setLnFeeEstimate(null);
+
+            try {
+                const fee = await estimateLightningFee(lightningInvoice.trim(), sats);
+                if (isMounted) setLnFeeEstimate(fee);
+            } catch (e) {
+            } finally {
+                if (isMounted) setEstimatingLnFee(false);
+            }
+        };
+
+        const timer = setTimeout(estimateFee, 600);
+        return () => {
+            isMounted = false;
+            clearTimeout(timer);
+        };
+    }, [lightningInvoice, lnAmount, mode, estimateLightningFee]);
 
     const getBalance = React.useCallback(async (bypassCache: boolean = false) => {
             const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
@@ -356,11 +452,21 @@ const SendScreen = () => {
             Alert.alert('Invalid input', 'Please enter a valid lightning invoice.');
             return;
         }
+        
+        const sats = parseInt(lnAmount, 10);
+        if (isNaN(sats) || sats <= 0) {
+             Alert.alert('Invalid amount', 'Please enter a valid amount.');
+             return;
+        }
+
+        if (sats > lightningBalance) {
+             Alert.alert('Insufficient balance', `You do not have enough sats to pay this invoice.`);
+             return;
+        }
 
         setLoading(true);
         try {
-            const sats = parseInt(lnAmount, 10);
-            await payLightningInvoice(lightningInvoice.trim(), isNaN(sats) || sats <= 0 ? undefined : sats);
+            await payLightningInvoice(lightningInvoice.trim(), sats);
             Alert.alert(
                 'Payment sent!',
                 'Your lightning payment has been successfully completed.',
@@ -592,6 +698,8 @@ const SendScreen = () => {
                             value={lnAmount}
                             onChangeText={setLnAmount}
                             keyboardType="numeric"
+                            editable={!hasFixedAmount}
+                            style={hasFixedAmount ? styles.inputDisabled : {}}
                             rightElement={
                                 <View style={styles.unitSelector}>
                                     <View style={[styles.unitButton, styles.unitButtonActive]}>
@@ -601,10 +709,23 @@ const SendScreen = () => {
                             }
                         />
 
+                        <View style={styles.feeEstimateRow}>
+                            <View style={styles.feeEstimateContent}>
+                                <Feather name="zap" size={14} color={theme.colors.muted} />
+                                <Text style={styles.feeEstimateText}>
+                                    {estimatingLnFee 
+                                        ? 'Estimating routing fee...' 
+                                        : (lnFeeEstimate !== null 
+                                            ? `Routing fee: ~${lnFeeEstimate} sats` 
+                                            : 'Routing fee: -')}
+                                </Text>
+                            </View>
+                        </View>
+
                         <TouchableOpacity 
                             onPress={handlePayLightning} 
-                            style={[styles.sendButton, { marginTop: 24 }, (loading || !lightningInvoice.trim()) && styles.buttonDisabled]} 
-                            disabled={loading || !lightningInvoice.trim()}
+                            style={[styles.sendButton, { marginTop: 8 }, (loading || !lightningInvoice.trim() || !lnAmount) && styles.buttonDisabled]} 
+                            disabled={loading || !lightningInvoice.trim() || !lnAmount}
                         >
                             {loading ? <ActivityIndicator color={theme.colors.inversePrimary} /> : (
                                 <View style={styles.buttonContentRowCentered}>
@@ -725,6 +846,9 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
         fontSize: 16,
         fontFamily: 'SpaceMono-Regular',
     },
+    inputDisabled: {
+        opacity: 0.6,
+    }
 });
 
 export default SendScreen;
