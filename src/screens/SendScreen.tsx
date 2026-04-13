@@ -1,4 +1,3 @@
-// src/screens/SendScreen.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
@@ -72,7 +71,6 @@ const SendScreen = () => {
 
     const mode = route.params?.mode || 'onchain';
 
-    // On-Chain State
     const [recipientAddress, setRecipientAddress] = useState('');
     const [recipientAddressPreview, setRecipientAddressPreview] = useState('');
     const [amount, setAmount] = useState('');
@@ -84,11 +82,9 @@ const SendScreen = () => {
     const [selectedFee, setSelectedFee] = useState<'slow' | 'normal' | 'fast' | 'custom'>('normal');
     const [customRate, setCustomRate] = useState('');
 
-    // Lightning State
     const [lightningInvoice, setLightningInvoice] = useState('');
     const [lnAmount, setLnAmount] = useState('');
 
-    // Shared State
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [hideBalance, setHideBalance] = useState(false);
@@ -357,7 +353,7 @@ const SendScreen = () => {
 
     const handlePayLightning = async () => {
         if (!lightningInvoice.trim()) {
-            Alert.alert('Invalid Input', 'Please enter a valid lightning invoice.');
+            Alert.alert('Invalid input', 'Please enter a valid lightning invoice.');
             return;
         }
 
@@ -366,13 +362,13 @@ const SendScreen = () => {
             const sats = parseInt(lnAmount, 10);
             await payLightningInvoice(lightningInvoice.trim(), isNaN(sats) || sats <= 0 ? undefined : sats);
             Alert.alert(
-                'Payment Sent!',
+                'Payment sent!',
                 'Your lightning payment has been successfully completed.',
                 [{ text: 'OK', onPress: () => navigation.popToTop() }]
             );
         } catch (error: any) {
             console.error("Lightning payment failed:", error);
-            Alert.alert('Payment Error', error.message || 'Failed to process lightning payment.');
+            Alert.alert('Payment error', error.message || 'Failed to process lightning payment.');
         } finally {
             setLoading(false);
         }
@@ -421,7 +417,6 @@ const SendScreen = () => {
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
 
-                {/* Unified Balance Display */}
                 <View style={styles.balanceContainer}>
                     <Text style={styles.balanceLabel}>Available to send</Text>
                     <TouchableOpacity 
@@ -441,9 +436,6 @@ const SendScreen = () => {
                 </View>
 
                 {mode === 'onchain' ? (
-                    // -----------------------------
-                    // ON-CHAIN SEND FLOW
-                    // -----------------------------
                     <>
                         <Text style={styles.label}>Recipient address</Text>
                         <View style={styles.inputSpacing}>
@@ -578,14 +570,11 @@ const SendScreen = () => {
                         </TouchableOpacity>
                     </>
                 ) : (
-                    // -----------------------------
-                    // LIGHTNING SEND FLOW
-                    // -----------------------------
                     <>
-                        <Text style={styles.label}>Lightning Invoice</Text>
+                        <Text style={styles.label}>Lightning invoice</Text>
                         <View style={styles.inputSpacing}>
                             <StyledInput
-                                placeholder="BOLT11 / BOLT12 / LNURL"
+                                placeholder="BOLT11 / LNURL"
                                 value={lightningInvoice}
                                 onChangeText={setLightningInvoice}
                                 autoCapitalize="none"
@@ -597,7 +586,7 @@ const SendScreen = () => {
                             />
                         </View>
 
-                        <Text style={styles.label}>Amount (Optional if embedded)</Text>
+                        <Text style={styles.label}>Amount</Text>
                         <StyledInput
                             placeholder="0"
                             value={lnAmount}
@@ -620,7 +609,7 @@ const SendScreen = () => {
                             {loading ? <ActivityIndicator color={theme.colors.inversePrimary} /> : (
                                 <View style={styles.buttonContentRowCentered}>
                                     <Feather name="zap" size={18} color={theme.colors.inversePrimary} />
-                                    <Text style={styles.sendButtonText}>Pay Invoice</Text>
+                                    <Text style={styles.sendButtonText}>Pay invoice</Text>
                                 </View>
                             )}
                         </TouchableOpacity>
@@ -672,8 +661,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     sendButtonText: { color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '600' },
     buttonContentRowCentered: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
     orangeSymbol: { color: theme.colors.bitcoin },
-    
-    // Fee Selector Styles
     feeSelectorContainer: {
         marginBottom: 16,
     },

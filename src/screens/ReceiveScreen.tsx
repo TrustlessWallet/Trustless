@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
 import { Text } from '../components/StyledText';
 import QRCode from 'react-native-qrcode-svg';
 import { useWallet } from '../contexts/WalletContext';
@@ -43,10 +43,9 @@ const ReceiveScreen = () => {
   const [address_offset, set_address_offset] = useState(0);
   const [hideBalance, setHideBalance] = useState(false);
   const scroll_ref = useRef<ScrollView>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [lnType, setLnType] = useState<'bolt11' | 'bolt12'>('bolt11');
   const [lightningInvoice, setLightningInvoice] = useState<string>('');
-  const [bolt12Offer, setBolt12Offer] = useState<string>('lno1qgsqvgnwgcg35z6ee2h3yczraddm72xrfua9uve2rlrm9deu7xyfu4e9xh3mxgmqpqg2');
 
   useEffect(() => {
     navigation.setOptions({
@@ -57,6 +56,12 @@ const ReceiveScreen = () => {
       ),
     });
   }, [navigation, theme.colors.primary]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     set_address_offset(0);
@@ -139,7 +144,8 @@ const ReceiveScreen = () => {
     if (text) {
       Clipboard.setString(text);
       set_copied(true);
-      setTimeout(() => set_copied(false), 1500);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => set_copied(false), 1500);
     }
   };
 
@@ -183,7 +189,31 @@ const ReceiveScreen = () => {
   }, [activeWallet]);
 
   const loading_info = wallet_loading || !activeWallet;
-  const currentLnString = lnType === 'bolt11' ? lightningInvoice : bolt12Offer;
+  const currentLnString = lightningInvoice;
+
+  const memoizedOnchainQR = useMemo(() => {
+    if (!current_display_data?.address) return null;
+    return (
+      <QRCode
+        value={current_display_data.address}
+        size={QR_SIZE}
+        backgroundColor={theme.colors.background}
+        color={theme.colors.primary}
+      />
+    );
+  }, [current_display_data?.address, theme.colors.background, theme.colors.primary]);
+
+  const memoizedLightningQR = useMemo(() => {
+    if (!currentLnString) return null;
+    return (
+      <QRCode
+        value={currentLnString}
+        size={QR_SIZE}
+        backgroundColor={theme.colors.background}
+        color={theme.colors.primary}
+      />
+    );
+  }, [currentLnString, theme.colors.background, theme.colors.primary]);
 
   if (loading_info) {
     return (
@@ -207,22 +237,18 @@ const ReceiveScreen = () => {
           <>
             <View style={styles.qrContainer}>
               <Text style={styles.derivationPathDisplay}>{current_display_data.path}</Text>
-              <TouchableOpacity style={styles.qrCodeWrapper} onPress={() => copy_to_clipboard(current_display_data.address)} activeOpacity={0.8}>
+              <Pressable 
+                style={({pressed}) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]} 
+                onPress={() => copy_to_clipboard(current_display_data.address)} 
+              >
                 {copied && (
-                  <View style={styles.copiedOverlay}>
+                  <View style={styles.copiedOverlay} pointerEvents="none">
                     <Feather name="copy" size={32} color={theme.colors.primary} />
                     <Text style={styles.copiedText}>Copied!</Text>
                   </View>
                 )}
-                {current_display_data.address ? (
-                  <QRCode
-                    value={current_display_data.address}
-                    size={QR_SIZE}
-                    backgroundColor={theme.colors.background}
-                    color={theme.colors.primary}
-                  />
-                ) : null}
-              </TouchableOpacity>
+                {current_display_data.address ? memoizedOnchainQR : null}
+              </Pressable>
               <AddressText
                 style={styles.addressText}
                 selectable
@@ -303,44 +329,23 @@ const ReceiveScreen = () => {
             ) : (
               <>
                 <View style={styles.qrContainer}>
-                  <Text style={styles.derivationPathDisplay}>
-                    {lnType === 'bolt11' ? 'BOLT11 Invoice' : 'BOLT12 Offer'}
-                  </Text>
-                  <TouchableOpacity style={styles.qrCodeWrapper} onPress={() => copy_to_clipboard(currentLnString)} activeOpacity={0.8}>
+                  <Text style={styles.derivationPathDisplay}>Lightning Invoice</Text>
+                  <Pressable 
+                    style={({pressed}) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]} 
+                    onPress={() => copy_to_clipboard(currentLnString)} 
+                  >
                     {copied && (
-                      <View style={styles.copiedOverlay}>
+                      <View style={styles.copiedOverlay} pointerEvents="none">
                         <Feather name="copy" size={32} color={theme.colors.primary} />
                         <Text style={styles.copiedText}>Copied!</Text>
                       </View>
                     )}
-                    {currentLnString ? (
-                      <QRCode
-                        value={currentLnString}
-                        size={QR_SIZE}
-                        backgroundColor={theme.colors.background}
-                        color={theme.colors.primary}
-                      />
-                    ) : (
+                    {currentLnString ? memoizedLightningQR : (
                       <View style={{ height: QR_SIZE, width: QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
                           <ActivityIndicator size="large" color={theme.colors.primary} />
                       </View>
                     )}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.lnTypeToggleContainer}>
-                    <TouchableOpacity 
-                        style={[styles.toggleButton, lnType === 'bolt11' && styles.toggleButtonActive]} 
-                        onPress={() => setLnType('bolt11')}
-                    >
-                        <Text style={[styles.toggleText, lnType === 'bolt11' && styles.toggleTextActive]}>BOLT11</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={[styles.toggleButton, lnType === 'bolt12' && styles.toggleButtonActive]} 
-                        onPress={() => setLnType('bolt12')}
-                    >
-                        <Text style={[styles.toggleText, lnType === 'bolt12' && styles.toggleTextActive]}>BOLT12</Text>
-                    </TouchableOpacity>
+                  </Pressable>
                 </View>
 
                 <View style={styles.actionsContainer}>
@@ -534,33 +539,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.error,
     fontSize: 16,
     textAlign: 'center',
-  },
-  lnTypeToggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: theme.colors.surface,
-    borderRadius: 8,
-    padding: 2,
-    marginHorizontal: 60,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  toggleButton: {
-      flex: 1,
-      paddingVertical: 6,
-      alignItems: 'center',
-      borderRadius: 6,
-  },
-  toggleButtonActive: {
-      backgroundColor: theme.colors.primary,
-  },
-  toggleText: {
-      fontSize: 12,
-      color: theme.colors.muted,
-      fontWeight: '600',
-  },
-  toggleTextActive: {
-      color: theme.colors.inversePrimary,
   }
 });
 
