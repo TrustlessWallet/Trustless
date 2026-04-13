@@ -101,6 +101,7 @@ interface WalletContextType {
     lightningTransactions: LightningTransaction[];
     getLightningInvoice: (amountSats: number) => Promise<string>;
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<void>;
+    estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -330,6 +331,44 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         await refreshLightningState();
+    };
+
+    const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
+        if (!activeSdkInstance) return null;
+
+        const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
+
+        let parsedInput;
+        try {
+            parsedInput = await activeSdkInstance.parseInput(cleanStr);
+        } catch (error: any) {
+            if (cleanStr.toLowerCase().startsWith('lnbc')) {
+                parsedInput = { type: 'bolt11Invoice' };
+            } else {
+                return null;
+            }
+        }
+
+        const type = parsedInput.type || parsedInput.tag;
+
+        if (type === 'bolt11Invoice' || type === 'Bolt11' || type === 'bolt11') {
+            const prepareRequest: any = {
+                paymentRequest: cleanStr
+            };
+
+            if (amountSats && amountSats > 0) {
+                prepareRequest.amount = amountSats;
+            }
+
+            try {
+                const prepareResponse = await activeSdkInstance.prepareSendPayment(prepareRequest);
+                const msat = prepareResponse.feesMsat || prepareResponse.routingFeeMsat || 0;
+                return Math.ceil(Number(msat) / 1000);
+            } catch (error) {
+                return null; // Estimation failed (e.g. no route or insufficient funds)
+            }
+        }
+        return null;
     };
 
     // ------------------------------------------------------------------
@@ -1153,7 +1192,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         lightningBalance,
         lightningTransactions,
         getLightningInvoice,
-        payLightningInvoice
+        payLightningInvoice,
+        estimateLightningFee,
     };
 
     return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
