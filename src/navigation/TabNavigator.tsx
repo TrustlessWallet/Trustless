@@ -6,14 +6,19 @@ import { useTheme } from '../contexts/ThemeContext';
 import WalletScreen from '../screens/WalletScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import { Text } from '../components/StyledText';
+import { useIsFocused } from '@react-navigation/native';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
 const TabNavigator = () => {
   const { theme, isDark } = useTheme();
+  const isFocused = useIsFocused();
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+    <View 
+      style={{ flex: 1, backgroundColor: theme.colors.background }} 
+      pointerEvents={isFocused ? 'auto' : 'none'}
+    >
       <Tab.Navigator
         initialRouteName="Wallet"
         screenOptions={{
