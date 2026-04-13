@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking, KeyboardAvoidingView, Platform, Pressable, Modal } from 'react-native';
 import { Text } from '../components/StyledText';
+import { StyledInput } from '../components/StyledInput';
 import QRCode from 'react-native-qrcode-svg';
 import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
@@ -16,12 +17,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 type ReceiveScreenRouteProp = RouteProp<RootStackParamList, 'Receive'>;
+type Unit = 'BTC' | 'sats';
 
-const QR_SIZE = 220;
+const QR_SIZE = 240;
 const UNUSED_BUFFER_SIZE = 20;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
 const format_btc = (sats: number) => (sats / 100000000).toFixed(8);
+
+const formatAmountDisplay = (sats: number, unit: Unit) => {
+    if (unit === 'BTC') {
+        let btc = (sats / 100000000).toFixed(8);
+        btc = btc.replace(/0+$/, ''); 
+        btc = btc.replace(/\.$/, ''); 
+        return btc;
+    }
+    return sats.toLocaleString();
+};
 
 const ReceiveScreen = () => {
   const route = useRoute<ReceiveScreenRouteProp>();
@@ -46,6 +58,12 @@ const ReceiveScreen = () => {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [lightningInvoice, setLightningInvoice] = useState<string>('');
+  const [isGeneratingLightning, setIsGeneratingLightning] = useState(false);
+
+  const [isAmountModalVisible, setIsAmountModalVisible] = useState(false);
+  const [modalAmountStr, setModalAmountStr] = useState('');
+  const [modalUnit, setModalUnit] = useState<Unit>('sats');
+  const [appliedAmountSats, setAppliedAmountSats] = useState<number>(0);
 
   useEffect(() => {
     navigation.setOptions({
@@ -78,15 +96,22 @@ const ReceiveScreen = () => {
   }, [isFocused]);
 
   useEffect(() => {
-    if (mode === 'lightning' && isLightningInitialized && !lightningInvoice) {
-      getLightningInvoice(0)
+    setAppliedAmountSats(0);
+    setModalAmountStr('');
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode === 'lightning' && isLightningInitialized && !lightningInvoice && !isGeneratingLightning) {
+      setIsGeneratingLightning(true);
+      getLightningInvoice(appliedAmountSats)
         .then(setLightningInvoice)
         .catch(err => {
             console.error("Failed to fetch initial BOLT11 invoice", err);
             setLightningInvoice('lnbc1...'); 
-        });
+        })
+        .finally(() => setIsGeneratingLightning(false));
     }
-  }, [mode, isLightningInitialized, lightningInvoice, getLightningInvoice]);
+  }, [mode, isLightningInitialized, lightningInvoice, getLightningInvoice, appliedAmountSats]);
 
   const path_prefix = useMemo(() => {
     if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
@@ -97,9 +122,7 @@ const ReceiveScreen = () => {
 
   const all_unused_addresses = useMemo(() => {
     if (!activeWallet) return [];
-
     const info_map = new Map(activeWallet.derivedAddressInfoCache.map(i => [i.address, i.tx_count]));
-
     return activeWallet.derivedReceiveAddresses
       .filter(addr => {
         const tx_count = info_map.get(addr.address) ?? 0;
@@ -110,7 +133,6 @@ const ReceiveScreen = () => {
 
   useEffect(() => {
     if (wallet_loading || !activeWallet) return;
-
     if (all_unused_addresses.length < UNUSED_BUFFER_SIZE) {
       const last_derived = activeWallet.derivedReceiveAddresses[activeWallet.derivedReceiveAddresses.length - 1];
       if (last_derived) {
@@ -156,6 +178,51 @@ const ReceiveScreen = () => {
       } catch (error) {
         Alert.alert("Error", "Could not share the address.");
       }
+    }
+  };
+
+  const handleOpenAmountModal = () => {
+    setModalAmountStr(appliedAmountSats > 0 ? 
+       (modalUnit === 'BTC' ? (appliedAmountSats / 100000000).toString() : appliedAmountSats.toString()) 
+       : '');
+    setIsAmountModalVisible(true);
+  };
+
+  const handleSaveAmount = async () => {
+    const cleanAmount = modalAmountStr.replace(',', '.');
+    const amountNum = parseFloat(cleanAmount);
+    
+    if (!modalAmountStr || isNaN(amountNum) || amountNum <= 0) {
+        setAppliedAmountSats(0);
+        setIsAmountModalVisible(false);
+        if (mode === 'lightning' && isLightningInitialized) {
+            setIsGeneratingLightning(true);
+            try {
+                const invoice = await getLightningInvoice(0);
+                setLightningInvoice(invoice);
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setIsGeneratingLightning(false);
+            }
+        }
+        return;
+    }
+
+    const sats = modalUnit === 'BTC' ? Math.round(amountNum * 100000000) : parseInt(cleanAmount, 10);
+    setAppliedAmountSats(sats);
+    setIsAmountModalVisible(false);
+
+    if (mode === 'lightning' && isLightningInitialized) {
+        setIsGeneratingLightning(true);
+        try {
+            const invoice = await getLightningInvoice(sats);
+            setLightningInvoice(invoice);
+        } catch (e) {
+            Alert.alert("Error", "Failed to generate lightning invoice with this amount.");
+        } finally {
+            setIsGeneratingLightning(false);
+        }
     }
   };
 
@@ -228,6 +295,49 @@ const ReceiveScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
+      <Modal visible={isAmountModalVisible} transparent animationType="fade">
+          <Pressable style={styles.modalOverlay} onPress={() => setIsAmountModalVisible(false)}>
+              <KeyboardAvoidingView 
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+                style={styles.keyboardAvoidingView}
+              >
+                  <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+                      <View style={styles.modalHeader}>
+                          <Text style={styles.modalTitle}>Set request amount</Text>
+                          <TouchableOpacity 
+                            onPress={() => setIsAmountModalVisible(false)} 
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                              <Feather name="x" size={24} color={theme.colors.primary} />
+                          </TouchableOpacity>
+                      </View>
+                      
+                      <StyledInput
+                          placeholder="0"
+                          value={modalAmountStr}
+                          onChangeText={setModalAmountStr}
+                          keyboardType="numeric"
+                          autoFocus
+                          rightElement={
+                              <View style={styles.unitSelector}>
+                                  <TouchableOpacity onPress={() => setModalUnit('BTC')} style={[styles.unitButton, modalUnit === 'BTC' && styles.unitButtonActive]}>
+                                      <Text style={[styles.unitText, modalUnit === 'BTC' && styles.unitTextActive]}>BTC</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity onPress={() => setModalUnit('sats')} style={[styles.unitButton, modalUnit === 'sats' && styles.unitButtonActive]}>
+                                      <Text style={[styles.unitText, modalUnit === 'sats' && styles.unitTextActive]}>sats</Text>
+                                  </TouchableOpacity>
+                              </View>
+                          }
+                      />
+
+                      <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleSaveAmount}>
+                          <Text style={styles.modalButtonTextPrimary}>Save amount</Text>
+                      </TouchableOpacity>
+                  </Pressable>
+              </KeyboardAvoidingView>
+          </Pressable>
+      </Modal>
+
       <ScrollView
         ref={scroll_ref}
         contentContainerStyle={styles.scrollContent}
@@ -237,6 +347,7 @@ const ReceiveScreen = () => {
           <>
             <View style={styles.qrContainer}>
               <Text style={styles.derivationPathDisplay}>{current_display_data.path}</Text>
+
               <Pressable 
                 style={({pressed}) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]} 
                 onPress={() => copy_to_clipboard(current_display_data.address)} 
@@ -249,6 +360,7 @@ const ReceiveScreen = () => {
                 )}
                 {current_display_data.address ? memoizedOnchainQR : null}
               </Pressable>
+              
               <AddressText
                 style={styles.addressText}
                 selectable
@@ -270,6 +382,7 @@ const ReceiveScreen = () => {
                 <Feather name="copy" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>Copy</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.actionButton, loading_info && styles.actionButtonDisabled]}
                 onPress={handle_next_address}
@@ -278,6 +391,7 @@ const ReceiveScreen = () => {
                 <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>New address</Text>
               </TouchableOpacity>
+
               <TouchableOpacity style={styles.actionButton} onPress={() => on_share(current_display_data.address)}>
                 <Feather name="share-2" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>Share</Text>
@@ -329,10 +443,12 @@ const ReceiveScreen = () => {
             ) : (
               <>
                 <View style={styles.qrContainer}>
-                  <Text style={styles.derivationPathDisplay}>Lightning Invoice</Text>
+                  <Text style={styles.derivationPathDisplay}>Lightning invoice</Text>
+
                   <Pressable 
                     style={({pressed}) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]} 
-                    onPress={() => copy_to_clipboard(currentLnString)} 
+                    onPress={() => !isGeneratingLightning && copy_to_clipboard(currentLnString)} 
+                    disabled={isGeneratingLightning}
                   >
                     {copied && (
                       <View style={styles.copiedOverlay} pointerEvents="none">
@@ -340,20 +456,46 @@ const ReceiveScreen = () => {
                         <Text style={styles.copiedText}>Copied!</Text>
                       </View>
                     )}
-                    {currentLnString ? memoizedLightningQR : (
+                    {isGeneratingLightning ? (
                       <View style={{ height: QR_SIZE, width: QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
                           <ActivityIndicator size="large" color={theme.colors.primary} />
+                          <Text style={{color: theme.colors.muted, marginTop: 12}}>Generating...</Text>
                       </View>
-                    )}
+                    ) : currentLnString ? memoizedLightningQR : null}
                   </Pressable>
+
+                  {appliedAmountSats > 0 && !isGeneratingLightning && (
+                      <Text style={styles.amountValue}>
+                          {formatAmountDisplay(appliedAmountSats, modalUnit)}
+                          {modalUnit === 'BTC' ? (
+                              <Text style={styles.amountBitcoin}> ₿</Text>
+                          ) : (
+                              <Text style={styles.amountUnit}> sats</Text>
+                          )}
+                      </Text>
+                  )}
                 </View>
 
                 <View style={styles.actionsContainer}>
-                  <TouchableOpacity style={styles.actionButton} onPress={() => copy_to_clipboard(currentLnString)}>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]} 
+                    onPress={() => copy_to_clipboard(currentLnString)}
+                    disabled={isGeneratingLightning}
+                  >
                     <Feather name="copy" size={24} color={theme.colors.primary} />
                     <Text style={styles.actionButtonText}>Copy</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionButton} onPress={() => on_share(currentLnString)}>
+
+                  <TouchableOpacity style={styles.actionButton} onPress={handleOpenAmountModal}>
+                    <Feather name="edit" size={24} color={theme.colors.primary} />
+                    <Text style={styles.actionButtonText}>Set amount</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]} 
+                    onPress={() => on_share(currentLnString)}
+                    disabled={isGeneratingLightning}
+                  >
                     <Feather name="share-2" size={24} color={theme.colors.primary} />
                     <Text style={styles.actionButtonText}>Share</Text>
                   </TouchableOpacity>
@@ -398,7 +540,22 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     elevation: 3,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: 16,
+    marginBottom: 8, 
+  },
+  amountValue: {
+    fontSize: 20,
+    color: theme.colors.primary,
+    textAlign: 'center',
+  },
+  amountUnit: {
+    fontSize: 20,
+    fontWeight: 'normal',
+    color: theme.colors.primary,
+  },
+  amountBitcoin: {
+    fontSize: 20,
+    fontWeight: 'normal',
+    color: theme.colors.bitcoin,
   },
   addressText: {
     fontSize: 14,
@@ -433,14 +590,14 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 24,
+    gap: 16,
     width: '100%',
     paddingVertical: 1,
   },
   actionButton: {
     alignItems: 'center',
     padding: 12,
-    minWidth: 80
+    minWidth: 70
   },
   actionButtonDisabled: {
     opacity: 0.3,
@@ -539,6 +696,70 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.error,
     fontSize: 16,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  keyboardAvoidingView: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: theme.colors.surface,
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+  },
+  unitSelector: { 
+    flexDirection: 'row', 
+    backgroundColor: theme.colors.border, 
+    borderRadius: 6, 
+    marginRight: 8, 
+    padding: 2 
+  },
+  unitButton: { 
+    paddingVertical: 6, 
+    paddingHorizontal: 12, 
+    borderRadius: 5 
+  },
+  unitButtonActive: { 
+    backgroundColor: theme.colors.primary 
+  },
+  unitText: { 
+    fontWeight: '600', 
+    color: theme.colors.muted 
+  },
+  unitTextActive: { 
+    color: theme.colors.inversePrimary 
+  },
+  modalButtonPrimary: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  modalButtonTextPrimary: {
+    color: theme.colors.inversePrimary,
+    fontSize: 16,
+    fontWeight: '600',
   }
 });
 

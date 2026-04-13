@@ -449,6 +449,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         backgroundColor: theme.colors.surface, 
         padding: 12,
         borderRadius: 8,
+        marginBottom: 16,
     },
     warningText: {
         flex: 1,
