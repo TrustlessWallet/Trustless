@@ -102,6 +102,8 @@ interface WalletContextType {
     getLightningInvoice: (amountSats: number) => Promise<string>;
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<void>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
+    getLightningTopUpLimits: () => Promise<{ minSats: number; maxSats: number } | null>;
+    getLightningTopUpAddress: () => Promise<string>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -258,7 +260,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (sdk && typeof sdk.addEventListener === 'function') {
                 sdk.addEventListener({
                     onEvent: async (e: any) => {
-                        if (e && (e.type === "invoicePaid" || e.type === "paymentSucceed")) {
+                        if (e && (e.type === "invoicePaid" || e.type === "paymentSucceed" || e.type === "swapUpdated")) {
                             await refreshLightningState();
                         }
                     }
@@ -369,6 +371,48 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
         }
         return null;
+    };
+
+const getLightningTopUpLimits = async (): Promise<{ minSats: number; maxSats: number } | null> => {
+        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+        try {
+            if (typeof activeSdkInstance.fetchOnchainLimits === 'function') {
+                const limits = await activeSdkInstance.fetchOnchainLimits();
+                return { minSats: Number(limits.receive.minSat), maxSats: Number(limits.receive.maxSat) };
+            }
+            if (typeof activeSdkInstance.receiveOnchain === 'function') {
+                const swapInfo = await activeSdkInstance.receiveOnchain({});
+                return { minSats: Number(swapInfo.minAllowedDeposit), maxSats: Number(swapInfo.maxAllowedDeposit) };
+            }
+            return null; // Spark nodes natively accept on-chain without swap provider bounds
+        } catch (error) {
+            return null;
+        }
+    };
+
+    const getLightningTopUpAddress = async (): Promise<string> => {
+        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+        try {
+            // Attempt 1: Standard UniFFI lowerCamelCase object mapping
+            const response = await activeSdkInstance.receivePayment({ 
+                paymentMethod: { type: 'bitcoinAddress' } 
+            });
+            const address = response.paymentRequest || response.bitcoinAddress || response.address;
+            if (address) return address;
+            throw new Error("Address empty");
+        } catch (error: any) {
+            try {
+                // Attempt 2: Direct JS Class instantiation (Spark SDK standard)
+                const response = await activeSdkInstance.receivePayment({ 
+                    paymentMethod: new (breezSdk.ReceivePaymentMethod as any).BitcoinAddress() 
+                });
+                const address = response.paymentRequest || response.bitcoinAddress || response.address;
+                if (address) return address;
+                throw new Error("Address empty");
+            } catch (fallbackError) {
+                throw new Error("Could not generate on-chain address. Ensure node is synced.");
+            }
+        }
     };
 
     // ------------------------------------------------------------------
@@ -1194,6 +1238,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         getLightningInvoice,
         payLightningInvoice,
         estimateLightningFee,
+        getLightningTopUpLimits,
+        getLightningTopUpAddress,
     };
 
     return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
