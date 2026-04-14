@@ -114,6 +114,7 @@ export type RootStackParamList = {
   VerifyMnemonic: undefined;
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
+  LightningTopUp: undefined;
   Send: { selectedAddress?: string; mode?: 'onchain' | 'lightning' };
   Receive: { mode?: 'onchain' | 'lightning' };
   TransactionConfirm: {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -12,6 +12,11 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { useWalletTransactions, useWalletUTXOs } from '../hooks/useBalance';
 import { formatBitcoinAddressShort } from '../constants/format';
+
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
@@ -96,6 +101,11 @@ const WalletScreen = () => {
         }
     };
 
+    const toggleMode = () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setIsLightningMode(prev => !prev);
+    };
+
     const renderTransactionItem = useCallback(({ item }: { item: any }) => {
         const isLightning = 'paymentHash' in item;
 
@@ -169,6 +179,18 @@ const WalletScreen = () => {
     const recentTxs = displayTransactions.slice(0, 3);
     const hasTransactions = displayTransactions.length > 0;
 
+    // A reusable UI component for the dual-icon toggle
+    const ToggleIconElement = () => (
+        <View style={styles.iconToggleInner}>
+            <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
+                <Feather name="link" size={14} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
+            </View>
+            <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
+                <Feather name="zap" size={14} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
+            </View>
+        </View>
+    );
+
     if (walletLoading) {
         return <View style={styles.centeredContainer}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
     }
@@ -201,28 +223,29 @@ const WalletScreen = () => {
     return (
         <SafeAreaView style={styles.container} edges={['right', 'left']}>
             <View style={styles.topSection}>
-                <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
-                    <Text style={styles.walletName}>{activeWallet.name}</Text>
-                    <Feather name="chevron-down" size={22} color={theme.colors.muted} />
-                </TouchableOpacity>
+                
+                <View style={styles.headerRow}>
+                    {/* LEFT SIDE: The real toggle switch */}
+                    <TouchableOpacity 
+                        style={styles.toggleTouchable}
+                        onPress={toggleMode}
+                        activeOpacity={0.8}
+                        disabled={!isLightningInitialized || activeWallet.type === 'watch-only'}
+                    >
+                        {activeWallet.type !== 'watch-only' && <ToggleIconElement />}
+                    </TouchableOpacity>
+                    
+                    {/* CENTER: The wallet name */}
+                    <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
+                        <Text style={styles.walletName}>{activeWallet.name}</Text>
+                        <Feather name="chevron-down" size={20} color={theme.colors.muted} />
+                    </TouchableOpacity>
 
-                {activeWallet.type !== 'watch-only' && (
-                    <View style={styles.toggleContainer}>
-                        <TouchableOpacity 
-                            style={[styles.toggleButton, !isLightningMode && styles.toggleButtonActive]} 
-                            onPress={() => setIsLightningMode(false)}
-                        >
-                            <Text style={[styles.toggleText, !isLightningMode && styles.toggleTextActive]}>On-Chain</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.toggleButton, isLightningMode && styles.toggleButtonActive]} 
-                            onPress={() => setIsLightningMode(true)}
-                            disabled={!isLightningInitialized}
-                        >
-                            <Text style={[styles.toggleText, isLightningMode && styles.toggleTextActive, !isLightningInitialized && { color: theme.colors.muted }]}>Lightning</Text>
-                        </TouchableOpacity>
+                    {/* RIGHT SIDE: Invisible clone to keep the title perfectly centered */}
+                    <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
+                        {activeWallet.type !== 'watch-only' && <ToggleIconElement />}
                     </View>
-                )}
+                </View>
 
                 <TouchableOpacity
                     style={styles.balanceContainer}
@@ -236,16 +259,27 @@ const WalletScreen = () => {
 
                 <View style={styles.actionsContainer}>
                     <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}>
-                        <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />
+                        <Feather name="arrow-down-circle" size={16} color={theme.colors.inversePrimary} />
                         <Text style={styles.actionButtonText}>Receive</Text>
                     </TouchableOpacity>
+                    
                     <TouchableOpacity
                         style={styles.actionButton}
                         onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
                     >
-                        <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
+                        <Feather name="arrow-up-circle" size={16} color={theme.colors.inversePrimary} />
                         <Text style={styles.actionButtonText}>Send</Text>
                     </TouchableOpacity>
+
+                    {isLightningMode && (
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => navigation.navigate('LightningTopUp' as any)}
+                        >
+                            <Feather name="plus-circle" size={16} color={theme.colors.inversePrimary} />
+                            <Text style={styles.actionButtonText}>Top-up</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
             </View>
 
@@ -339,46 +373,52 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: theme.colors.border,
     },
+    headerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        paddingHorizontal: 16,
+        marginBottom: 16,
+    },
+    toggleTouchable: {
+        // Enforce a fixed width so the center remains stable
+        width: 68,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    iconToggleInner: {
+        flexDirection: 'row',
+        backgroundColor: theme.colors.surface,
+        borderRadius: 20,
+        padding: 2,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    iconWrapper: {
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 16,
+    },
+    iconWrapperActive: {
+        backgroundColor: theme.colors.primary,
+    },
     walletSelector: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
-        marginBottom: 16
+        gap: 6,
+        marginHorizontal: 12,
     },
     walletName: {
         fontSize: 20,
         color: theme.colors.muted,
     },
-    toggleContainer: {
-        flexDirection: 'row',
-        backgroundColor: theme.colors.surface,
-        borderRadius: 8,
-        padding: 4,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    toggleButton: {
-        paddingVertical: 6,
-        paddingHorizontal: 16,
-        borderRadius: 6,
-    },
-    toggleButtonActive: {
-        backgroundColor: theme.colors.primary,
-    },
-    toggleText: {
-        fontSize: 14,
-        color: theme.colors.muted,
-        fontWeight: '600',
-    },
-    toggleTextActive: {
-        color: theme.colors.inversePrimary,
-    },
     balanceContainer: {
         alignItems: 'center',
         height: 44,
-        justifyContent: 'center'
+        justifyContent: 'center',
+        marginBottom: 8,
     },
     balanceText: {
         fontSize: 36,
@@ -394,24 +434,26 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     actionsContainer: {
         flexDirection: 'row',
         justifyContent: 'center',
-        paddingTop: 24,
-        paddingBottom: 16
+        width: '100%',
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: 16,
+        gap: 12,
     },
     actionButton: {
+        flex: 1,
+        maxWidth: 140, // Limits button expansion so they remain compact
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 8,
         backgroundColor: theme.colors.primary,
-        paddingVertical: 16,
-        paddingHorizontal: 12,
+        paddingVertical: 14,
         borderRadius: 8,
-        marginHorizontal: 8,
-        minWidth: 128,
-        justifyContent: 'center'
     },
     actionButtonText: {
         color: theme.colors.inversePrimary,
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '600'
     },
     historyContainer: {

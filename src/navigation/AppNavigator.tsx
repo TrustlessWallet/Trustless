@@ -40,6 +40,7 @@ import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import { get_biometric_prompt_shown, set_biometric_prompt_shown, authenticate_session } from '../services/authState';
+import { LightningTopUpScreen } from '../screens/LightningTopUpScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
@@ -390,6 +391,7 @@ const AppNavigator = () => {
             <Stack.Screen name="RecoverWallet" component={RecoverWalletScreen} options={{ title: 'Recover wallet' }} />
             <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
             <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
+            <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
             <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
             <Stack.Screen name="ExportPSBT" component={ExportPSBTScreen} options={{ title: 'Export transaction' }} />
             <Stack.Screen
