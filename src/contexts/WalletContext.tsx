@@ -102,7 +102,6 @@ interface WalletContextType {
     getLightningInvoice: (amountSats: number) => Promise<string>;
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<void>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
-    getLightningTopUpLimits: () => Promise<{ minSats: number; maxSats: number } | null>;
     getLightningTopUpAddress: () => Promise<string>;
 }
 
@@ -236,6 +235,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (apiKey) {
                 config.apiKey = apiKey;
             }
+            config.maxDepositClaimFee = new breezSdk.MaxFee.NetworkRecommended({ 
+                leewaySatPerVbyte: BigInt(1) 
+            });
 
             const basePath = FileSystem.documentDirectory ? FileSystem.documentDirectory.replace('file://', '') : '';
             const storageDir = `${basePath}breezSdkSpark`;
@@ -371,23 +373,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
         }
         return null;
-    };
-
-const getLightningTopUpLimits = async (): Promise<{ minSats: number; maxSats: number } | null> => {
-        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
-        try {
-            if (typeof activeSdkInstance.fetchOnchainLimits === 'function') {
-                const limits = await activeSdkInstance.fetchOnchainLimits();
-                return { minSats: Number(limits.receive.minSat), maxSats: Number(limits.receive.maxSat) };
-            }
-            if (typeof activeSdkInstance.receiveOnchain === 'function') {
-                const swapInfo = await activeSdkInstance.receiveOnchain({});
-                return { minSats: Number(swapInfo.minAllowedDeposit), maxSats: Number(swapInfo.maxAllowedDeposit) };
-            }
-            return null; // Spark nodes natively accept on-chain without swap provider bounds
-        } catch (error) {
-            return null;
-        }
     };
 
     const getLightningTopUpAddress = async (): Promise<string> => {
@@ -1238,7 +1223,6 @@ const getLightningTopUpLimits = async (): Promise<{ minSats: number; maxSats: nu
         getLightningInvoice,
         payLightningInvoice,
         estimateLightningFee,
-        getLightningTopUpLimits,
         getLightningTopUpAddress,
     };
 
