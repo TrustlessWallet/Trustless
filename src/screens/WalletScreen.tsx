@@ -400,7 +400,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontWeight: '600'
     },
     topSection: {
-        flex: 1,
+        flex: 1.2,
         justifyContent: 'center',
         alignItems: 'center',
     },
