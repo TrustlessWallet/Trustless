@@ -15,13 +15,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
-import { AddressText } from '../components/AddressText';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { fetchFeeEstimates, fetchUTXOs, broadcastTransaction } from '../services/bitcoin';
-
-const DUST_LIMIT = 546;
 
 export const LightningTopUpScreen: React.FC = () => {
     const navigation = useNavigation();
@@ -31,7 +28,6 @@ export const LightningTopUpScreen: React.FC = () => {
     const {
         activeWallet,
         isLightningInitialized,
-        getLightningTopUpLimits,
         getLightningTopUpAddress,
         createAndSignTransaction,
         incrementChangeIndex,
@@ -43,7 +39,6 @@ export const LightningTopUpScreen: React.FC = () => {
     const [limits, setLimits] = useState<{ minSats: number; maxSats: number } | null>(null);
     const [feeOptions, setFeeOptions] = useState<{ fast: number; normal: number; slow: number } | null>(null);
     
-    // Fee Selector State
     const [selectedKey, setSelectedKey] = useState<'slow' | 'normal' | 'fast' | 'custom'>('normal');
     const [currentRate, setCurrentRate] = useState<number>(1);
     const [customRate, setCustomRate] = useState<string>('1');
@@ -53,19 +48,16 @@ export const LightningTopUpScreen: React.FC = () => {
     const [executing, setExecuting] = useState(false);
     const [txMetrics, setTxMetrics] = useState<{ fee: number; hex: string; changeIndex: number | null, vsize: number } | null>(null);
 
-    // Initial Data Fetch
     useEffect(() => {
         const initData = async () => {
             try {
                 if (!isLightningInitialized) return; // Wait for node
 
-                const [fetchedLimits, fees, fetchedAddress] = await Promise.all([
-                    getLightningTopUpLimits(),
+                const [fees, fetchedAddress] = await Promise.all([
                     fetchFeeEstimates(),
                     getLightningTopUpAddress()
                 ]);
                 
-                setLimits(fetchedLimits);
                 setFeeOptions(fees);
                 setSwapAddress(fetchedAddress);
                 
@@ -74,7 +66,7 @@ export const LightningTopUpScreen: React.FC = () => {
                 
             } catch (err: any) {
                 console.error("[Breez Node UI] Init error:", err);
-                Alert.alert("Initialization Error", err.message || "Failed to connect to lightning node parameters.");
+                Alert.alert("Initialization error", err.message || "Failed to connect to lightning node parameters.");
                 navigation.goBack();
             } finally {
                 setLoadingData(false);
@@ -84,14 +76,13 @@ export const LightningTopUpScreen: React.FC = () => {
         initData();
     }, [isLightningInitialized]);
 
-    // Transaction Calculation
     const handleCalculate = async () => {
         if (!activeWallet || !swapAddress) return;
         const amountSats = parseInt(amountStr, 10);
 
         if (isNaN(amountSats) || amountSats <= 0) return;
         
-        const minRequired = limits ? limits.minSats : DUST_LIMIT;
+        const minRequired = limits ? limits.minSats : 546;
         if (amountSats < minRequired) {
             Alert.alert("Invalid Amount", `Amount is below the minimum limit of ${minRequired.toLocaleString()} sats.`);
             return;
@@ -183,7 +174,7 @@ export const LightningTopUpScreen: React.FC = () => {
         if (key !== 'custom') {
             setCurrentRate(rate);
             setCustomRate(rate.toString());
-            setTxMetrics(null); // invalidate calculated tx
+            setTxMetrics(null); 
         }
     };
 
@@ -192,8 +183,26 @@ export const LightningTopUpScreen: React.FC = () => {
         const rate = parseInt(text, 10);
         if (!isNaN(rate) && rate > 0) {
             setCurrentRate(rate);
-            setTxMetrics(null); // invalidate calculated tx
+            setTxMetrics(null); 
         }
+    };
+
+    const renderAddressChunks = () => {
+        if (!swapAddress) return <Text style={styles.addressPreview}>Fetching...</Text>;
+        const chunks = swapAddress.match(/.{1,6}/g) || [swapAddress];
+        
+        return (
+            <Text style={styles.addressPreview} selectable>
+                {chunks.map((chunk, index) => {
+                    const isEdge = index === 0 || index === chunks.length - 1;
+                    return (
+                        <Text key={index} style={isEdge ? styles.orangeSymbol : undefined}>
+                            {chunk}{index < chunks.length - 1 ? ' ' : ''}
+                        </Text>
+                    );
+                })}
+            </Text>
+        );
     };
 
     if (loadingData || !feeOptions) {
@@ -212,17 +221,7 @@ export const LightningTopUpScreen: React.FC = () => {
                     
                     <View style={styles.section}>
                         <Text style={styles.label}>Top-up destination</Text>
-                        <StyledInput
-                            value={swapAddress || 'Fetching...'}
-                            editable={false}
-                            style={styles.inputDisabled}
-                        />
-                        {swapAddress && (
-                            <AddressText
-                                style={styles.addressPreview}
-                                address={swapAddress}
-                            />
-                        )}
+                        {renderAddressChunks()}
                     </View>
 
                     <View style={styles.section}>
@@ -238,11 +237,6 @@ export const LightningTopUpScreen: React.FC = () => {
                             editable={!executing && !calculating}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                         />
-                        <Text style={styles.limitText}>
-                            {limits 
-                                ? `Limits: ${limits.minSats.toLocaleString()} - ${limits.maxSats.toLocaleString()} sats`
-                                : `Minimum: ${DUST_LIMIT} sats (Dust)`}
-                        </Text>
                     </View>
 
                     <View style={styles.feeSelectorContainer}>
@@ -378,21 +372,19 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 16,
         color: theme.colors.primary,
         fontFamily: 'SpaceMono-Bold',
+        marginRight: 16, 
     },
     limitText: {
         fontSize: 12,
         color: theme.colors.muted,
         marginTop: 8,
-        textAlign: 'right',
-    },
-    inputDisabled: {
-        opacity: 0.6,
+        textAlign: 'left', 
     },
     addressPreview: {
         fontSize: 14,
         fontFamily: 'monospace',
-        marginTop: 8,
-        color: theme.colors.muted,
+        color: theme.colors.primary,
+        lineHeight: 22,
     },
     feeSelectorContainer: {
         marginBottom: 0,
@@ -493,7 +485,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.primary, 
     },
     orangeSymbol: {
-      color: theme.colors.bitcoin, 
+      color: theme.colors.bitcoin,
+      fontWeight: 'bold',
     },
     confirmButton: {
         backgroundColor: theme.colors.primary, 
