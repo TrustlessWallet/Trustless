@@ -41,6 +41,7 @@ import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import { get_biometric_prompt_shown, set_biometric_prompt_shown, authenticate_session } from '../services/authState';
 import { LightningTopUpScreen } from '../screens/LightningTopUpScreen';
+import { WithdrawToOnchainScreen } from '../screens/WithdrawToOnchainScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
@@ -392,16 +393,10 @@ const AppNavigator = () => {
             <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
             <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
             <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
+            <Stack.Screen name="WithdrawToOnchain" component={WithdrawToOnchainScreen} options={{ title: 'Withdraw to on-chain' }} />
             <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
             <Stack.Screen name="ExportPSBT" component={ExportPSBTScreen} options={{ title: 'Export transaction' }} />
-            <Stack.Screen
-              name="ImportPSBT"
-              component={ImportPSBTScreen}
-              options={({ navigation }) => ({
-                title: 'Scan signed transaction',
-                presentation: 'modal',
-              })}
-            />
+            <Stack.Screen name="ImportPSBT" component={ImportPSBTScreen} options={{ title: 'Scan signed transaction', presentation: 'modal' }} />
             <Stack.Screen name="WalletSwitcher" component={WalletSwitcherScreen} options={{ title: 'Wallets' }} />
             <Stack.Screen name="WalletOptions" component={WalletOptionsScreen} options={{ title: 'Wallet options' }} />
             <Stack.Screen name="AddWalletOptions" component={AddWalletOptionsScreen} options={{ title: 'Add wallet' }} />

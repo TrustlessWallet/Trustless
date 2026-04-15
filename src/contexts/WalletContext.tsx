@@ -103,6 +103,8 @@ interface WalletContextType {
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<void>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
     getLightningTopUpAddress: () => Promise<string>;
+    prepareWithdrawToOnchain: (address: string, amountSats: number) => Promise<{ senderFeeMsat: number; recipientFeeMsat: number }>;
+    withdrawToOnchain: (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -235,8 +237,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (apiKey) {
                 config.apiKey = apiKey;
             }
-            config.maxDepositClaimFee = new breezSdk.MaxFee.NetworkRecommended({ 
-                leewaySatPerVbyte: BigInt(1) 
+            config.maxDepositClaimFee = new breezSdk.MaxFee.NetworkRecommended({
+                leewaySatPerVbyte: BigInt(1)
             });
 
             const basePath = FileSystem.documentDirectory ? FileSystem.documentDirectory.replace('file://', '') : '';
@@ -379,8 +381,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
         try {
             // Attempt 1: Standard UniFFI lowerCamelCase object mapping
-            const response = await activeSdkInstance.receivePayment({ 
-                paymentMethod: { type: 'bitcoinAddress' } 
+            const response = await activeSdkInstance.receivePayment({
+                paymentMethod: { type: 'bitcoinAddress' }
             });
             const address = response.paymentRequest || response.bitcoinAddress || response.address;
             if (address) return address;
@@ -388,8 +390,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (error: any) {
             try {
                 // Attempt 2: Direct JS Class instantiation (Spark SDK standard)
-                const response = await activeSdkInstance.receivePayment({ 
-                    paymentMethod: new (breezSdk.ReceivePaymentMethod as any).BitcoinAddress() 
+                const response = await activeSdkInstance.receivePayment({
+                    paymentMethod: new (breezSdk.ReceivePaymentMethod as any).BitcoinAddress()
                 });
                 const address = response.paymentRequest || response.bitcoinAddress || response.address;
                 if (address) return address;
@@ -397,6 +399,53 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             } catch (fallbackError) {
                 throw new Error("Could not generate on-chain address. Ensure node is synced.");
             }
+        }
+    };
+
+    const prepareWithdrawToOnchain = async (address: string, amountSats: number) => {
+        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+        try {
+            const prepareRequest = {
+                paymentRequest: address,
+                amount: amountSats
+            };
+            // Spark treats on-chain addresses like any other payment request
+            const res = await activeSdkInstance.prepareSendPayment(prepareRequest as any);
+
+            return {
+                senderFeeMsat: Number(res.feesMsat || res.routingFeeMsat || 0),
+                recipientFeeMsat: 0
+            };
+        } catch (error: any) {
+            throw new Error(`Preparation failed: ${error.message}`);
+        }
+    };
+
+    const withdrawToOnchain = async (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => {
+        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+
+        let speed = 'medium';
+        if (feeTier === 'fast') speed = 'fast';
+        if (feeTier === 'slow') speed = 'slow';
+
+        try {
+            const prepareRequest = {
+                paymentRequest: address,
+                amount: amountSats
+            };
+            const prepareResponse = await activeSdkInstance.prepareSendPayment(prepareRequest as any);
+
+            await activeSdkInstance.sendPayment({
+                prepareResponse: prepareResponse,
+                options: {
+                    type: 'bitcoinAddress',
+                    confirmationSpeed: speed
+                }
+            } as any);
+
+            await refreshLightningState();
+        } catch (error: any) {
+            throw new Error(`Withdrawal failed: ${error.message}`);
         }
     };
 
@@ -1224,6 +1273,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         payLightningInvoice,
         estimateLightningFee,
         getLightningTopUpAddress,
+        prepareWithdrawToOnchain,
+        withdrawToOnchain,
     };
 
     return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

@@ -115,6 +115,7 @@ export type RootStackParamList = {
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
   LightningTopUp: undefined;
+  WithdrawToOnchain: undefined;
   Send: { selectedAddress?: string; mode?: 'onchain' | 'lightning' };
   Receive: { mode?: 'onchain' | 'lightning' };
   TransactionConfirm: {

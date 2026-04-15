@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, LayoutAnimation, Platform, UIManager } from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -12,11 +12,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { useWalletTransactions, useWalletUTXOs } from '../hooks/useBalance';
 import { formatBitcoinAddressShort } from '../constants/format';
-
-// Enable LayoutAnimation for Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
@@ -47,6 +42,8 @@ const WalletScreen = () => {
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const isFocused = useIsFocused();
+
+    const lightningAnim = useRef(new Animated.Value(0)).current;
 
     const onchainBalance = useMemo(() => {
         if (!activeWallet) return 0;
@@ -102,9 +99,32 @@ const WalletScreen = () => {
     };
 
     const toggleMode = () => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setIsLightningMode(prev => !prev);
+        const nextMode = !isLightningMode;
+        setIsLightningMode(nextMode);
+        
+        Animated.spring(lightningAnim, {
+            toValue: nextMode ? 1 : 0,
+            useNativeDriver: false,
+            friction: 9,
+            tension: 45
+        }).start();
     };
+
+    const expandedHeight = lightningAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 40]
+    });
+
+    const translateY = lightningAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [-20, 0]
+    });
+
+    const fadeAnim = lightningAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 1],
+        extrapolate: 'clamp'
+    });
 
     const renderTransactionItem = useCallback(({ item }: { item: any }) => {
         const isLightning = 'paymentHash' in item;
@@ -179,7 +199,6 @@ const WalletScreen = () => {
     const recentTxs = displayTransactions.slice(0, 3);
     const hasTransactions = displayTransactions.length > 0;
 
-    // A reusable UI component for the dual-icon toggle
     const ToggleIconElement = () => (
         <View style={styles.iconToggleInner}>
             <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
@@ -225,7 +244,6 @@ const WalletScreen = () => {
             <View style={styles.topSection}>
                 
                 <View style={styles.headerRow}>
-                    {/* LEFT SIDE: The real toggle switch */}
                     <TouchableOpacity 
                         style={styles.toggleTouchable}
                         onPress={toggleMode}
@@ -235,13 +253,11 @@ const WalletScreen = () => {
                         {activeWallet.type !== 'watch-only' && <ToggleIconElement />}
                     </TouchableOpacity>
                     
-                    {/* CENTER: The wallet name */}
                     <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
                         <Text style={styles.walletName}>{activeWallet.name}</Text>
                         <Feather name="chevron-down" size={20} color={theme.colors.muted} />
                     </TouchableOpacity>
 
-                    {/* RIGHT SIDE: Invisible clone to keep the title perfectly centered */}
                     <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
                         {activeWallet.type !== 'watch-only' && <ToggleIconElement />}
                     </View>
@@ -258,28 +274,48 @@ const WalletScreen = () => {
                 </TouchableOpacity>
 
                 <View style={styles.actionsContainer}>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}>
-                        <Feather name="arrow-down-circle" size={16} color={theme.colors.inversePrimary} />
-                        <Text style={styles.actionButtonText}>Receive</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
-                    >
-                        <Feather name="arrow-up-circle" size={16} color={theme.colors.inversePrimary} />
-                        <Text style={styles.actionButtonText}>Send</Text>
-                    </TouchableOpacity>
+                    <View style={styles.actionColumn}>
+                        <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}>
+                            <Feather name="arrow-down-circle" size={16} color={theme.colors.inversePrimary} />
+                            <Text style={styles.actionButtonText}>Receive</Text>
+                        </TouchableOpacity>
+                        
+                        <Animated.View style={{ position: 'absolute', top: 60, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
+                            <Animated.View style={{ transform: [{ translateY }] }}>
+                                <TouchableOpacity
+                                    style={styles.secondaryActionButton}
+                                    onPress={() => navigation.navigate('WithdrawToOnchain' as any)}
+                                    disabled={!isLightningMode}
+                                >
+                                    <Feather name="minus" size={14} color={theme.colors.primary} />
+                                    <Text style={styles.secondaryActionButtonText}>Withdraw</Text>
+                                </TouchableOpacity>
+                            </Animated.View>
+                        </Animated.View>
+                    </View>
 
-                    {isLightningMode && (
+                    <View style={styles.actionColumn}>
                         <TouchableOpacity
                             style={styles.actionButton}
-                            onPress={() => navigation.navigate('LightningTopUp' as any)}
+                            onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
                         >
-                            <Feather name="plus-circle" size={16} color={theme.colors.inversePrimary} />
-                            <Text style={styles.actionButtonText}>Top-up</Text>
+                            <Feather name="arrow-up-circle" size={16} color={theme.colors.inversePrimary} />
+                            <Text style={styles.actionButtonText}>Send</Text>
                         </TouchableOpacity>
-                    )}
+
+                        <Animated.View style={{ position: 'absolute', top: 60, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
+                            <Animated.View style={{ transform: [{ translateY }] }}>
+                                <TouchableOpacity
+                                    style={styles.secondaryActionButton}
+                                    onPress={() => navigation.navigate('LightningTopUp' as any)}
+                                    disabled={!isLightningMode}
+                                >
+                                    <Feather name="plus" size={14} color={theme.colors.primary} />
+                                    <Text style={styles.secondaryActionButtonText}>Top-up</Text>
+                                </TouchableOpacity>
+                            </Animated.View>
+                        </Animated.View>
+                    </View>
                 </View>
             </View>
 
@@ -364,7 +400,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontWeight: '600'
     },
     topSection: {
-        flex: 1.2,
+        flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -372,6 +408,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flex: 1,
         borderTopWidth: 1,
         borderTopColor: theme.colors.border,
+        zIndex: -1,
     },
     headerRow: {
         flexDirection: 'row',
@@ -382,7 +419,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         marginBottom: 16,
     },
     toggleTouchable: {
-        // Enforce a fixed width so the center remains stable
         width: 68,
         alignItems: 'center',
         justifyContent: 'center'
@@ -437,12 +473,16 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         width: '100%',
         paddingHorizontal: 16,
         paddingTop: 16,
-        paddingBottom: 16,
+        paddingBottom: 24,
         gap: 12,
+        zIndex: 10,
+    },
+    actionColumn: {
+        flex: 1,
+        maxWidth: 140,
+        position: 'relative',
     },
     actionButton: {
-        flex: 1,
-        maxWidth: 140, // Limits button expansion so they remain compact
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
@@ -450,11 +490,33 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         backgroundColor: theme.colors.primary,
         paddingVertical: 14,
         borderRadius: 8,
+        width: '100%',
+        zIndex: 2,
     },
     actionButtonText: {
         color: theme.colors.inversePrimary,
         fontSize: 15,
         fontWeight: '600'
+    },
+    secondaryActionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        backgroundColor: theme.colors.background,
+        paddingVertical: 0,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        width: '100%',
+        height: 40,
+    },
+    secondaryActionButtonText: {
+        color: theme.colors.primary,
+        fontSize: 14,
+        fontWeight: '500',
+        includeFontPadding: false,
+        textAlignVertical: 'center'
     },
     historyContainer: {
         paddingHorizontal: 20,
