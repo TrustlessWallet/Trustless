@@ -392,7 +392,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     feeOptionsRow: {
         flexDirection: 'row',
         gap: 8,
-        marginTop: 8,
     },
     feeOption: {
         flex: 1,

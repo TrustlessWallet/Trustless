@@ -530,7 +530,7 @@ const SendScreen = () => {
                         disabled={mode === 'lightning'}
                     >
                         {isBalanceLoading ? (
-                            <ActivityIndicator color={theme.colors.primary} />
+                            <ActivityIndicator style={{ marginTop: 16 }} color={theme.colors.primary} />
                         ) : (
                             <Text style={styles.balanceText}>
                                 {hideBalance ? '*******' : (
