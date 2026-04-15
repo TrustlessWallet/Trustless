@@ -138,7 +138,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                     <View style={styles.balanceContainer}>
                         <Text style={styles.balanceLabel}>Available to withdraw</Text>
                         <Text style={styles.balanceText}>
-                            {formatBalance(lightningBalance)} <Text style={styles.orangeSymbol}>₿</Text>
+                            {new Intl.NumberFormat('en-US').format(lightningBalance)} sats
                         </Text>
                     </View>
 

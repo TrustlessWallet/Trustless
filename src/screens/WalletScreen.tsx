@@ -269,7 +269,13 @@ const WalletScreen = () => {
                     disabled={isLightningMode}
                 >
                     <Text style={styles.balanceText}>
-                        {hideBalance ? '*******' : <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>}
+                        {hideBalance ? '*******' : (
+                            isLightningMode ? (
+                                <>{new Intl.NumberFormat('en-US').format(displayBalance)} sats</>
+                            ) : (
+                                <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>
+                            )
+                        )}
                     </Text>
                 </TouchableOpacity>
 
@@ -311,7 +317,7 @@ const WalletScreen = () => {
                                     disabled={!isLightningMode}
                                 >
                                     <Feather name="plus" size={14} color={theme.colors.primary} />
-                                    <Text style={styles.secondaryActionButtonText}>Top-up</Text>
+                                    <Text style={styles.secondaryActionButtonText}>Top up</Text>
                                 </TouchableOpacity>
                             </Animated.View>
                         </Animated.View>
@@ -334,7 +340,7 @@ const WalletScreen = () => {
                             )}
                         </View>
                     ) : (
-                        <Text style={styles.noTxText}>No transactions yet.</Text>
+                        <Text style={styles.noTxText}>No transactions yet</Text>
                     )
                 )}
             </ScrollView>

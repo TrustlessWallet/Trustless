@@ -700,13 +700,7 @@ const SendScreen = () => {
                             keyboardType="numeric"
                             editable={!hasFixedAmount}
                             style={hasFixedAmount ? styles.inputDisabled : {}}
-                            rightElement={
-                                <View style={styles.unitSelector}>
-                                    <View style={[styles.unitButton, styles.unitButtonActive]}>
-                                        <Text style={[styles.unitText, styles.unitTextActive]}>sats</Text>
-                                    </View>
-                                </View>
-                            }
+                            rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                         />
 
                         <View style={styles.feeEstimateRow}>
@@ -848,6 +842,12 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     },
     inputDisabled: {
         opacity: 0.6,
+    },
+    currencyLabel: {
+        fontSize: 16,
+        color: theme.colors.primary,
+        fontFamily: 'SpaceMono-Bold',
+        marginRight: 16, 
     }
 });
 

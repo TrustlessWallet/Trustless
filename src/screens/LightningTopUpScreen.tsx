@@ -34,6 +34,11 @@ export const LightningTopUpScreen: React.FC = () => {
         triggerRefresh
     } = useWallet();
 
+    const onchainBalance = useMemo(() => {
+        if (!activeWallet) return 0;
+        return activeWallet.derivedAddressInfoCache.reduce((acc, curr) => acc + curr.balance, 0);
+    }, [activeWallet]);
+
     const [amountStr, setAmountStr] = useState('');
     const [swapAddress, setSwapAddress] = useState<string | null>(null);
     const [limits, setLimits] = useState<{ minSats: number; maxSats: number } | null>(null);
@@ -219,9 +224,18 @@ export const LightningTopUpScreen: React.FC = () => {
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     
+                    <View style={styles.balanceContainer}>
+                        <Text style={styles.balanceLabel}>Available to top up</Text>
+                        <Text style={styles.balanceText}>
+                            {new Intl.NumberFormat('en-US').format(onchainBalance)} sats
+                        </Text>
+                    </View>
+
                     <View style={styles.section}>
                         <Text style={styles.label}>Top-up destination</Text>
-                        {renderAddressChunks()}
+                        <View style={styles.addressWrapper}>
+                            {renderAddressChunks()}
+                        </View>
                     </View>
 
                     <View style={styles.section}>
@@ -359,6 +373,23 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         padding: 24,
         paddingBottom: 40,
     },
+    balanceContainer: {
+        alignItems: 'center',
+        paddingVertical: 16,
+        marginBottom: 16,
+    },
+    balanceLabel: {
+        fontSize: 16,
+        color: theme.colors.muted,
+    },
+    balanceText: {
+        fontSize: 36,
+        fontFamily: 'SpaceMono-Bold',
+        fontWeight: 'bold',
+        color: theme.colors.primary,
+        includeFontPadding: false,
+        textAlignVertical: 'center'
+    },
     section: {
         marginBottom: 24,
     },
@@ -366,6 +397,14 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 16,
         fontWeight: '500',
         color: theme.colors.primary,
+        marginBottom: 8,
+    },
+    addressWrapper: {
+        backgroundColor: theme.colors.surface,
+        padding: 16,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
         marginBottom: 8,
     },
     currencyLabel: {
