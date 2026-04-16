@@ -24,7 +24,7 @@ export const LightningTopUpScreen: React.FC = () => {
     const navigation = useNavigation();
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
-    
+
     const {
         activeWallet,
         isLightningInitialized,
@@ -43,11 +43,11 @@ export const LightningTopUpScreen: React.FC = () => {
     const [swapAddress, setSwapAddress] = useState<string | null>(null);
     const [limits, setLimits] = useState<{ minSats: number; maxSats: number } | null>(null);
     const [feeOptions, setFeeOptions] = useState<{ fast: number; normal: number; slow: number } | null>(null);
-    
+
     const [selectedKey, setSelectedKey] = useState<'slow' | 'normal' | 'fast' | 'custom'>('normal');
     const [currentRate, setCurrentRate] = useState<number>(1);
     const [customRate, setCustomRate] = useState<string>('1');
-    
+
     const [loadingData, setLoadingData] = useState(true);
     const [calculating, setCalculating] = useState(false);
     const [executing, setExecuting] = useState(false);
@@ -62,13 +62,13 @@ export const LightningTopUpScreen: React.FC = () => {
                     fetchFeeEstimates(),
                     getLightningTopUpAddress()
                 ]);
-                
+
                 setFeeOptions(fees);
                 setSwapAddress(fetchedAddress);
-                
+
                 setCurrentRate(fees.normal);
                 setCustomRate(fees.normal.toString());
-                
+
             } catch (err: any) {
                 console.error("[Breez Node UI] Init error:", err);
                 Alert.alert("Initialization error", err.message || "Failed to connect to lightning node parameters.");
@@ -77,7 +77,7 @@ export const LightningTopUpScreen: React.FC = () => {
                 setLoadingData(false);
             }
         };
-        
+
         initData();
     }, [isLightningInitialized]);
 
@@ -86,7 +86,7 @@ export const LightningTopUpScreen: React.FC = () => {
         const amountSats = parseInt(amountStr, 10);
 
         if (isNaN(amountSats) || amountSats <= 0) return;
-        
+
         const minRequired = limits ? limits.minSats : 546;
         if (amountSats < minRequired) {
             Alert.alert("Invalid Amount", `Amount is below the minimum limit of ${minRequired.toLocaleString()} sats.`);
@@ -104,25 +104,30 @@ export const LightningTopUpScreen: React.FC = () => {
             const fundedAddresses = activeWallet.derivedAddressInfoCache
                 .filter(a => a.balance > 0)
                 .map(a => a.address);
-                
+
             if (fundedAddresses.length === 0) throw new Error("No funds available in this wallet.");
-            
+
             const allUtxos = await fetchUTXOs(fundedAddresses);
             if (allUtxos.length === 0) throw new Error("No valid UTXOs found.");
 
             allUtxos.sort((a: any, b: any) => b.value - a.value);
             const selectedUtxos = [];
             let accumulated = 0;
-            const targetWithBuffer = amountSats + (amountSats * 0.05);
+            let estimatedVsize = 0;
+            let exactMinerFee = 0;
 
             for (const u of allUtxos) {
                 selectedUtxos.push(u);
                 accumulated += u.value;
-                if (accumulated >= targetWithBuffer) break;
+
+                estimatedVsize = Math.ceil((selectedUtxos.length * 68) + (2 * 31) + 10.5);
+                exactMinerFee = estimatedVsize * currentRate;
+
+                if (accumulated >= amountSats + exactMinerFee) break;
             }
 
-            if (accumulated < amountSats) {
-                throw new Error("Insufficient total balance to cover amount and miner fees.");
+            if (accumulated < amountSats + exactMinerFee) {
+                throw new Error(`Insufficient total balance. You need ${(amountSats + exactMinerFee).toLocaleString()} sats to cover the amount and exact miner fees.`);
             }
 
             const { txHex, usedChangeIndex } = await createAndSignTransaction(
@@ -134,8 +139,8 @@ export const LightningTopUpScreen: React.FC = () => {
 
             if (!txHex) throw new Error("Failed to generate transaction hex.");
 
-            const estimatedVsize = Math.ceil((selectedUtxos.length * 68) + (usedChangeIndex !== null ? 2 : 1) * 31 + 10.5);
-            const exactMinerFee = estimatedVsize * currentRate;
+            estimatedVsize = Math.ceil((selectedUtxos.length * 68) + (usedChangeIndex !== null ? 2 : 1) * 31 + 10.5);
+            exactMinerFee = estimatedVsize * currentRate;
 
             setTxMetrics({
                 fee: exactMinerFee,
@@ -155,7 +160,7 @@ export const LightningTopUpScreen: React.FC = () => {
     const handleExecuteTopUp = async () => {
         if (!txMetrics || !activeWallet) return;
         setExecuting(true);
-        
+
         try {
             await broadcastTransaction(txMetrics.hex);
             if (txMetrics.changeIndex !== null) {
@@ -163,7 +168,7 @@ export const LightningTopUpScreen: React.FC = () => {
             }
             triggerRefresh();
             Alert.alert(
-                "Top-Up Initiated", 
+                "Top-Up Initiated",
                 "Your on-chain transaction has been broadcast. Your Lightning balance will update automatically once the block confirms.",
                 [{ text: "OK", onPress: () => navigation.goBack() }]
             );
@@ -179,7 +184,7 @@ export const LightningTopUpScreen: React.FC = () => {
         if (key !== 'custom') {
             setCurrentRate(rate);
             setCustomRate(rate.toString());
-            setTxMetrics(null); 
+            setTxMetrics(null);
         }
     };
 
@@ -188,14 +193,14 @@ export const LightningTopUpScreen: React.FC = () => {
         const rate = parseInt(text, 10);
         if (!isNaN(rate) && rate > 0) {
             setCurrentRate(rate);
-            setTxMetrics(null); 
+            setTxMetrics(null);
         }
     };
 
     const renderAddressChunks = () => {
         if (!swapAddress) return <Text style={styles.addressPreview}>Fetching...</Text>;
         const chunks = swapAddress.match(/.{1,6}/g) || [swapAddress];
-        
+
         return (
             <Text style={styles.addressPreview} selectable>
                 {chunks.map((chunk, index) => {
@@ -223,7 +228,7 @@ export const LightningTopUpScreen: React.FC = () => {
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
-                    
+
                     <View style={styles.balanceContainer}>
                         <Text style={styles.balanceLabel}>Available to top up</Text>
                         <Text style={styles.balanceText}>
@@ -317,8 +322,8 @@ export const LightningTopUpScreen: React.FC = () => {
                                 </Text>
                             </View>
 
-                            <TouchableOpacity 
-                                style={[styles.confirmButton, executing && styles.buttonDisabled]} 
+                            <TouchableOpacity
+                                style={[styles.confirmButton, executing && styles.buttonDisabled]}
                                 onPress={handleExecuteTopUp}
                                 disabled={executing}
                             >
@@ -333,8 +338,8 @@ export const LightningTopUpScreen: React.FC = () => {
                             </TouchableOpacity>
                         </View>
                     ) : (
-                        <TouchableOpacity 
-                            style={[styles.confirmButton, styles.calculateButton, (!amountStr || !isLightningInitialized) && styles.buttonDisabled]} 
+                        <TouchableOpacity
+                            style={[styles.confirmButton, styles.calculateButton, (!amountStr || !isLightningInitialized) && styles.buttonDisabled]}
                             onPress={handleCalculate}
                             disabled={calculating || !amountStr || !isLightningInitialized || !swapAddress}
                         >
@@ -356,7 +361,7 @@ export const LightningTopUpScreen: React.FC = () => {
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background, 
+        backgroundColor: theme.colors.background,
     },
     centered: {
         flex: 1,
@@ -411,13 +416,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 16,
         color: theme.colors.primary,
         fontFamily: 'SpaceMono-Bold',
-        marginRight: 16, 
+        marginRight: 16,
     },
     limitText: {
         fontSize: 12,
         color: theme.colors.muted,
         marginTop: 8,
-        textAlign: 'left', 
+        textAlign: 'left',
     },
     addressPreview: {
         fontSize: 14,
@@ -438,51 +443,51 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         paddingHorizontal: 2,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: theme.colors.border, 
-        backgroundColor: theme.colors.surface, 
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
         alignItems: 'center',
     },
     feeOptionActive: {
-        backgroundColor: theme.colors.primary, 
-        borderColor: theme.colors.primary, 
+        backgroundColor: theme.colors.primary,
+        borderColor: theme.colors.primary,
     },
     feeOptionText: {
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontWeight: '600',
         fontSize: 12,
     },
     feeOptionTextActive: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
     },
     feeOptionRate: {
-        color: theme.colors.muted, 
+        color: theme.colors.muted,
         fontSize: 11,
         marginTop: 2,
     },
     feeOptionRateActive: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
     },
     customFeeContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         marginTop: 12,
-        backgroundColor: theme.colors.surface, 
+        backgroundColor: theme.colors.surface,
         padding: 12,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: theme.colors.border, 
+        borderColor: theme.colors.border,
     },
     customFeeLabel: {
         fontSize: 14,
         marginRight: 12,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     customFeeInput: {
         flex: 1,
-        backgroundColor: theme.colors.background, 
+        backgroundColor: theme.colors.background,
         borderWidth: 1,
-        borderColor: theme.colors.border, 
-        color: theme.colors.primary, 
+        borderColor: theme.colors.border,
+        color: theme.colors.primary,
         borderRadius: 4,
         paddingVertical: 4,
         paddingHorizontal: 8,
@@ -492,7 +497,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     summaryBox: {
         paddingTop: 16,
         borderTopWidth: 1,
-        borderColor: theme.colors.border, 
+        borderColor: theme.colors.border,
     },
     detailRow: {
         flexDirection: 'row',
@@ -502,7 +507,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     value: {
         fontSize: 16,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontFamily: 'monospace',
     },
     valueContainer: {
@@ -510,24 +515,24 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     separator: {
         height: 1,
-        backgroundColor: theme.colors.border, 
+        backgroundColor: theme.colors.border,
         marginBottom: 16,
         marginTop: 8,
     },
     totalLabel: {
         fontSize: 18,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     totalValue: {
         fontSize: 18,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     orangeSymbol: {
-      color: theme.colors.bitcoin,
-      fontWeight: 'bold',
+        color: theme.colors.bitcoin,
+        fontWeight: 'bold',
     },
     confirmButton: {
-        backgroundColor: theme.colors.primary, 
+        backgroundColor: theme.colors.primary,
         paddingVertical: 16,
         borderRadius: 8,
         alignItems: 'center',
@@ -539,10 +544,10 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         marginTop: 24,
     },
     buttonDisabled: {
-        opacity: 0.5, 
+        opacity: 0.5,
     },
     buttonText: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
         fontSize: 16,
         fontWeight: '600',
     },

@@ -368,10 +368,19 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             try {
                 const prepareResponse = await activeSdkInstance.prepareSendPayment(prepareRequest);
-                const msat = prepareResponse.feesMsat || prepareResponse.routingFeeMsat || 0;
-                return Math.ceil(Number(msat) / 1000);
+                let totalFeeSats = 0;
+
+                if (prepareResponse.paymentMethod) {
+                    if (prepareResponse.paymentMethod.type === 'bolt11Invoice') {
+                        totalFeeSats = Number(prepareResponse.paymentMethod.lightningFeeSats || 0) + Number(prepareResponse.paymentMethod.sparkTransferFeeSats || 0);
+                    } else if (prepareResponse.paymentMethod.type === 'sparkAddress') {
+                        totalFeeSats = Number(prepareResponse.paymentMethod.fee || 0);
+                    }
+                }
+
+                return totalFeeSats;
             } catch (error) {
-                return null; // Estimation failed (e.g. no route or insufficient funds)
+                return null;
             }
         }
         return null;
@@ -409,11 +418,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 paymentRequest: address,
                 amount: amountSats
             };
-            // Spark treats on-chain addresses like any other payment request
             const res = await activeSdkInstance.prepareSendPayment(prepareRequest as any);
 
+            let feeSats = 0;
+            if (res.paymentMethod && res.paymentMethod.type === 'bitcoinAddress') {
+                feeSats = Number(res.paymentMethod.feeQuote?.speedMedium?.totalFeeSat || 0);
+            }
+
             return {
-                senderFeeMsat: Number(res.feesMsat || res.routingFeeMsat || 0),
+                senderFeeMsat: feeSats * 1000,
                 recipientFeeMsat: 0
             };
         } catch (error: any) {
