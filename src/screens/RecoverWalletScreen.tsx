@@ -132,6 +132,7 @@ const RecoverWalletScreen = () => {
                             showsHorizontalScrollIndicator={false} 
                             keyboardShouldPersistTaps="always"
                             contentContainerStyle={styles.suggestions_scroll_content}
+                            bounces={false}
                         >
                             {suggestions.map((word) => (
                                 <TouchableOpacity 

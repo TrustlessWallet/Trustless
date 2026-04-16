@@ -153,6 +153,7 @@ const AddressBookScreen = () => {
           <FlatList
             data={savedAddresses}
             renderItem={renderItem}
+            bounces={false}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
             style={styles.list}

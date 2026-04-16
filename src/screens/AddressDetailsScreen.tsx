@@ -170,6 +170,7 @@ const AddressDetailsScreen = () => {
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={true}
       keyboardShouldPersistTaps="handled"
+      bounces={false}
     >
       <View style={styles.header}>
         <Text style={styles.balanceText}>

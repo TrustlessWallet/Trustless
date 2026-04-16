@@ -133,7 +133,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                <ScrollView contentContainerStyle={styles.scrollContent}>
+                <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
                     
                     <View style={styles.balanceContainer}>
                         <Text style={styles.balanceLabel}>Available to withdraw</Text>

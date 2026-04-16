@@ -228,6 +228,7 @@ const CoinControlScreen = () => {
         data={utxos}
         renderItem={renderItem}
         keyExtractor={item => `${item.txid}:${item.vout}`}
+        bounces={false}
         contentContainerStyle={styles.listContent}
         style={styles.list}
         keyboardShouldPersistTaps="handled"

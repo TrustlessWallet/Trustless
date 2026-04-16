@@ -269,7 +269,7 @@ const handle_save_node_url = async () => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.content_container} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.container} contentContainerStyle={styles.content_container} keyboardShouldPersistTaps="handled" bounces={false}>
         
         <View style={styles.section}>
           <Text style={styles.section_title}>App Settings</Text>

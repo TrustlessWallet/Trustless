@@ -109,9 +109,9 @@ export type RootStackParamList = {
   AuthCheck: undefined;
   AddAddress: undefined;
   BackupIntro: undefined;
-  ShowMnemonic: undefined;
+  ShowMnemonic: { mnemonic: string; mode?: string };
   ShowMnemonicQR: undefined;
-  VerifyMnemonic: undefined;
+  VerifyMnemonic: { mnemonic: string };
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
   LightningTopUp: undefined;
@@ -149,9 +149,9 @@ export type RootStackParamList = {
     unsignedPsbtBase64: string;
   };
   WalletSwitcher: undefined;
-  WalletOptions: undefined;
+  WalletOptions: { wallet_id: string };
   AddWalletOptions: undefined;
-  BackupDisclaimer: undefined;
+  BackupDisclaimer: { walletId: string };
   AddressBook: { returnScreen?: keyof RootStackParamList };
   AddSavedAddress: undefined;
   CoinControl: { targetAmount: number; onSelect: (utxos: UTXO[]) => void };

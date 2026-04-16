@@ -7,7 +7,7 @@ const TermsConditionsScreen = () => {
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} bounces={false}>
       <Text style={styles.heading}>1. Non-Custodial Service</Text>
       <Text style={styles.paragraph}>
         This software is a self-custodial Bitcoin wallet. You have sole control over your private keys and funds. The developers of this app never have access to your funds and cannot retrieve them for you.

@@ -104,7 +104,7 @@ const TransactionDetailsScreen = () => {
     ? Math.max(0, tipHeight - tx.status.block_height + 1)
     : 0;
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} bounces={false}>
       <View style={styles.header}>
         <Text style={styles.amountText}>
           {hideBalance ? '*******' : (
