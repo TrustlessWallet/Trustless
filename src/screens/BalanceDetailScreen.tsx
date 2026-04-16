@@ -203,6 +203,7 @@ const BalanceDetailScreen = () => {
           ref={flatListRef}
           data={sortedUtxos}
           renderItem={renderItem}
+          bounces={false}
           keyExtractor={(item) => `${item.txid}:${item.vout}`}
           style={styles.flatList}
           contentContainerStyle={styles.scrollContent}

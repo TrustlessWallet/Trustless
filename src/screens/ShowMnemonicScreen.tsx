@@ -35,13 +35,13 @@ const ShowMnemonicScreen = () => {
             <View style={styles.mnemonicContainer}>
                 {}
                 <View style={styles.column}>
-                    {firstColumnWords.map((word, index) => (
+                    {firstColumnWords.map((word: string, index: number) => (
                         <Text key={index} style={styles.word}>{index + 1}. {word}</Text>
                     ))}
                 </View>
                 {}
                 <View style={styles.column}>
-                    {secondColumnWords.map((word, index) => {
+                    {secondColumnWords.map((word: string, index: number) => {
                         const wordNumber = index + firstColumnWords.length + 1;
                         return (
                             <Text key={wordNumber} style={styles.word}>{wordNumber}. {word}</Text>

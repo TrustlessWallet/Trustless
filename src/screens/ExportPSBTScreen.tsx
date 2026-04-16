@@ -77,7 +77,7 @@ const ExportPSBTScreen = () => {
     }
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} bounces={false}>
             <View style={styles.instructionContainer}>
                 <Text style={styles.instructionText}>1. Scan this QR code with your signing device.</Text>
                 <Text style={styles.instructionText}>2. Review and sign the transaction.</Text>

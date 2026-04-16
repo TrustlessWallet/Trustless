@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, ScrollView, Linking, KeyboardAvoidingView, Platform, Pressable, Modal } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Pressable, Modal, ScrollView } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
 import QRCode from 'react-native-qrcode-svg';
@@ -342,6 +342,7 @@ const ReceiveScreen = () => {
         ref={scroll_ref}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={true}
+        bounces={false}
       >
         {mode === 'onchain' ? (
           <>

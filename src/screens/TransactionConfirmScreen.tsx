@@ -149,7 +149,7 @@ const TransactionConfirmScreen = () => {
     };
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} bounces={false}>
             <View style={styles.section}>
                 <Text style={styles.label}>Sending to:</Text>
                 <AddressText
@@ -158,8 +158,8 @@ const TransactionConfirmScreen = () => {
                     address={recipientAddress}
                 />
             </View>
-            <View style={[styles.section, route.params.isImported && styles.sectionReducedMargin]}>
-                <Text style={styles.label}>Sending from:</Text>
+            <View style={[styles.section, route.params.isImported && { marginBottom: 0 }]}>
+                <Text style={[styles.label, { marginTop: 8 }]}>Sending from:</Text>
                 {inputDetails.map((item, index) => (
                     <View key={item.address} style={styles.inputRow}>
                         <View>
@@ -176,6 +176,7 @@ const TransactionConfirmScreen = () => {
             </View>
             {!route.params.isImported && (
                 <View style={styles.feeSelectorContainer}>
+                    <View style={styles.feeRateSeparator} />
                     <Text style={styles.label}>Fee rate</Text>
                     <View style={styles.feeOptionsRow}>
                         {(['slow', 'normal', 'fast'] as const).map((key) => (
@@ -236,19 +237,32 @@ const TransactionConfirmScreen = () => {
                         </View>
                     </>
                 )}
-                <View style={styles.detailRow}>
+                <View style={styles.detailRowTopAligned}>
                     <Text style={styles.label}>Total fee</Text>
                     <View style={styles.valueContainer}>
                         <Text style={styles.value}>{currentFee} sats</Text>
                         {feePercentage > 0.1 && <Text style={styles.subValue}>({feePercentage.toFixed(1)}% of amount)</Text>}
                     </View>
                 </View>
-                <View style={styles.detailRow}>
+                <View style={styles.detailRowTopAligned}>
                     <Text style={styles.label}>Transaction size</Text>
-                    <Text style={styles.value}>{calculatedVSize} vbytes</Text>
+                    <View style={styles.valueContainer}>
+                        <Text style={styles.value}>{calculatedVSize} vbytes</Text>
+                        <Text style={[styles.subValue, styles.subValuePlaceholder]}>0</Text>
+                    </View>
                 </View>
                 
-                <View style={styles.detailRow}>
+                <View style={styles.detailRowTopAligned}>
+                    <Text style={styles.label}>Subtotal</Text>
+                    <View style={styles.valueContainer}>
+                        <Text style={styles.value}>
+                            {formatBtc(amountInSatoshis)} <Text style={styles.orangeSymbol}>₿</Text>
+                        </Text>
+                        <Text style={styles.subValue}>{amountInSatoshis} sats</Text>
+                    </View>
+                </View>
+
+                <View style={styles.detailRowTopAligned}>
                     <Text style={styles.label}>Change</Text>
                     <View style={styles.valueContainer}>
                         <Text style={[styles.value, isDust ? styles.valueDust : {}]}>
@@ -294,10 +308,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         paddingBottom: 40,
     },
     section: {
-        marginBottom: 24,
-    },
-    sectionReducedMargin: {
-        marginBottom: 0,
+        marginBottom: 8,
     },
     fullAddress: {
         fontFamily: 'monospace',
@@ -348,6 +359,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         marginBottom: 12,
     },
+    detailRowTopAligned: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
     value: {
         fontSize: 16,
         color: theme.colors.primary, 
@@ -364,6 +381,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.muted, 
         fontFamily: 'monospace',
     },
+    subValuePlaceholder: {
+        opacity: 0,
+    },
     summaryBox: {
         paddingTop: 16,
         borderTopWidth: 1,
@@ -375,10 +395,15 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     separator: {
         height: 1,
         backgroundColor: theme.colors.border, 
-        marginBottom: 16,
+        marginBottom: 8,
     },
     feeSelectorContainer: {
         marginBottom: 16,
+    },
+    feeRateSeparator: {
+        height: 1,
+        backgroundColor: theme.colors.border,
+        marginBottom: 8,
     },
     feeOptionsRow: {
         flexDirection: 'row',

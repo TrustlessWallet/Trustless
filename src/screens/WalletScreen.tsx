@@ -328,6 +328,7 @@ const WalletScreen = () => {
             <ScrollView
                 style={styles.bottomSection}
                 refreshControl={<RefreshControl refreshing={!isLightningMode && isRefetchingTxs} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
+                bounces={false}
             >
                 {(!isLightningMode && loadingTxs) ? <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : (
                     hasTransactions ? (

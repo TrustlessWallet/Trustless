@@ -521,7 +521,7 @@ const SendScreen = () => {
     const isBalanceLoading = mode === 'onchain' && loadingBalance;
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" bounces={false}>
 
                 <View style={styles.balanceContainer}>
                     <Text style={styles.balanceLabel}>Available to send</Text>
@@ -736,7 +736,7 @@ const SendScreen = () => {
 
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
-    scrollContent: { padding: 24, paddingBottom: 350, flexGrow: 1 },
+    scrollContent: { padding: 24, paddingBottom: 460, flexGrow: 1 },
     balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
     balanceLabel: { fontSize: 16, color: theme.colors.muted },
     balanceText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary, padding: 0 },

@@ -111,7 +111,7 @@ const ShowPublicKeyScreen = () => {
     }
 
     return (
-        <ScrollView contentContainerStyle={styles.scroll_content} showsVerticalScrollIndicator={true}>
+        <ScrollView contentContainerStyle={styles.scroll_content} showsVerticalScrollIndicator={true} bounces={false}>
             <View style={styles.qr_container}>
                 <Text style={styles.description_text}>
                     This extended public key can be used to generate all your wallet's addresses.

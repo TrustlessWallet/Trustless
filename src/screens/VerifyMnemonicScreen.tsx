@@ -55,7 +55,7 @@ const VerifyMnemonicScreen = () => {
         setUserInputs(newInputs);
     };
     return (
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} bounces={false}>
             <Text style={styles.subtitle}>
                 To ensure you have saved your phrase correctly, please enter the missing words.
             </Text>

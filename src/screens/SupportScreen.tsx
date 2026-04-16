@@ -22,7 +22,7 @@ const SupportScreen = () => {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} bounces={false}>
       <Text style={styles.heading}>Ways to support us</Text>
       <Text style={styles.introText}>
         Trustless is a free, open-source project. Here is how you can help:

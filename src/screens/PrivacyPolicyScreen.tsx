@@ -7,7 +7,7 @@ const PrivacyPolicyScreen = () => {
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} bounces={false}>
       <Text style={styles.heading}>1. No Data Collection</Text>
       <Text style={styles.paragraph}>
         We do not collect, store, or transmit any personal information. We do not have servers, a backend, or a database. Your wallet's private keys, transaction history, and settings are stored entirely on your local device.

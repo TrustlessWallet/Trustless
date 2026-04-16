@@ -82,6 +82,7 @@ const WalletSwitcherScreen = () => {
             <FlatList
                 data={wallets}
                 renderItem={render_wallet_item}
+                bounces={false}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.list_content}
                 style={styles.list}
