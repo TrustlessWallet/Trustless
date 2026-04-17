@@ -32,7 +32,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const navigation = useNavigation();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
-    
+
     const {
         activeWallet,
         isLightningInitialized,
@@ -46,13 +46,13 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const [destMode, setDestMode] = useState<'own' | 'custom'>('own');
     const [ownAddress, setOwnAddress] = useState<string>('');
     const [customAddress, setCustomAddress] = useState<string>('');
-    
+
     const [selectedFeeTier, setSelectedFeeTier] = useState<'slow' | 'normal' | 'fast'>('normal');
-    
+
     const [calculating, setCalculating] = useState(false);
     const [executing, setExecuting] = useState(false);
-    
-    const [txMetrics, setTxMetrics] = useState<{ totalFeeSats: number } | null>(null);
+
+    const [txMetrics, setTxMetrics] = useState<{ totalFeeSats: number; prepareResponse: any } | null>(null);
 
     useEffect(() => {
         if (activeWallet) {
@@ -67,7 +67,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         const amountSats = parseInt(amountStr, 10);
 
         if (isNaN(amountSats) || amountSats <= 0) return;
-        
+
         if (amountSats > lightningBalance) {
             Alert.alert("Insufficient balance", `You only have ${lightningBalance.toLocaleString()} sats available.`);
             return;
@@ -79,12 +79,12 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         try {
             const estimate = await prepareWithdrawToOnchain(activeDestination, amountSats, selectedFeeTier);
             const totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
-            
+
             if (amountSats + totalFeeSats > lightningBalance) {
                 throw new Error(`Insufficient balance to cover swap fees. Total required: ${(amountSats + totalFeeSats).toLocaleString()} sats.`);
             }
 
-            setTxMetrics({ totalFeeSats });
+            setTxMetrics({ totalFeeSats, prepareResponse: estimate.prepareResponse });
         } catch (err: any) {
             Alert.alert("Calculation failed", err.message || "Could not prepare the withdrawal transaction.");
         } finally {
@@ -95,14 +95,12 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const handleExecuteWithdrawal = async () => {
         if (!txMetrics || !activeWallet || !activeDestination) return;
         setExecuting(true);
-        
-        const amountSats = parseInt(amountStr, 10);
 
         try {
-            await withdrawToOnchain(activeDestination, amountSats, selectedFeeTier);
+            await withdrawToOnchain(txMetrics.prepareResponse, selectedFeeTier);
             triggerRefresh();
             Alert.alert(
-                "Withdrawal initiated", 
+                "Withdrawal initiated",
                 "Your swap is in progress. Funds will appear in the on-chain balance shortly.",
                 [{ text: "OK", onPress: () => navigation.goBack() }]
             );
@@ -134,7 +132,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
-                    
+
                     <View style={styles.balanceContainer}>
                         <Text style={styles.balanceLabel}>Available to withdraw</Text>
                         <Text style={styles.balanceText}>
@@ -145,13 +143,13 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                     <View style={styles.section}>
                         <Text style={styles.label}>Withdraw to</Text>
                         <View style={styles.toggleContainer}>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.toggleButton, destMode === 'own' && styles.toggleButtonActive]}
                                 onPress={() => { setDestMode('own'); setTxMetrics(null); }}
                             >
                                 <Text style={[styles.toggleText, destMode === 'own' && styles.toggleTextActive]}>My wallet</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.toggleButton, destMode === 'custom' && styles.toggleButtonActive]}
                                 onPress={() => { setDestMode('custom'); setTxMetrics(null); }}
                             >
@@ -235,8 +233,8 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 </Text>
                             </View>
 
-                            <TouchableOpacity 
-                                style={[styles.confirmButton, executing && styles.buttonDisabled]} 
+                            <TouchableOpacity
+                                style={[styles.confirmButton, executing && styles.buttonDisabled]}
                                 onPress={handleExecuteWithdrawal}
                                 disabled={executing}
                             >
@@ -251,8 +249,8 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                             </TouchableOpacity>
                         </View>
                     ) : (
-                        <TouchableOpacity 
-                            style={[styles.confirmButton, styles.calculateButton, (!amountStr || !isLightningInitialized || !activeDestination) && styles.buttonDisabled]} 
+                        <TouchableOpacity
+                            style={[styles.confirmButton, styles.calculateButton, (!amountStr || !isLightningInitialized || !activeDestination) && styles.buttonDisabled]}
                             onPress={handleCalculate}
                             disabled={calculating || !amountStr || !isLightningInitialized || !activeDestination}
                         >
@@ -274,7 +272,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background, 
+        backgroundColor: theme.colors.background,
     },
     centered: {
         flex: 1,
@@ -322,7 +320,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 16,
         color: theme.colors.primary,
         fontFamily: 'SpaceMono-Bold',
-        marginRight: 16, 
+        marginRight: 16,
     },
     toggleContainer: {
         flexDirection: 'row',
@@ -387,26 +385,26 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         paddingVertical: 12,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: theme.colors.border, 
-        backgroundColor: theme.colors.surface, 
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
         alignItems: 'center',
     },
     feeOptionActive: {
-        backgroundColor: theme.colors.primary, 
-        borderColor: theme.colors.primary, 
+        backgroundColor: theme.colors.primary,
+        borderColor: theme.colors.primary,
     },
     feeOptionText: {
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontWeight: '600',
         fontSize: 14,
     },
     feeOptionTextActive: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
     },
     summaryBox: {
         paddingTop: 16,
         borderTopWidth: 1,
-        borderColor: theme.colors.border, 
+        borderColor: theme.colors.border,
         marginTop: 24,
     },
     detailRow: {
@@ -417,7 +415,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     value: {
         fontSize: 16,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontFamily: 'monospace',
     },
     valueContainer: {
@@ -425,27 +423,27 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     separator: {
         height: 1,
-        backgroundColor: theme.colors.border, 
+        backgroundColor: theme.colors.border,
         marginBottom: 16,
         marginTop: 8,
     },
     totalLabel: {
         fontSize: 18,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontWeight: 'bold',
     },
     totalValue: {
         fontSize: 18,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontFamily: 'monospace',
         fontWeight: 'bold',
     },
     orangeSymbol: {
-      color: theme.colors.bitcoin,
-      fontWeight: 'bold',
+        color: theme.colors.bitcoin,
+        fontWeight: 'bold',
     },
     confirmButton: {
-        backgroundColor: theme.colors.primary, 
+        backgroundColor: theme.colors.primary,
         paddingVertical: 16,
         borderRadius: 8,
         alignItems: 'center',
@@ -457,10 +455,10 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         marginTop: 24,
     },
     buttonDisabled: {
-        opacity: 0.5, 
+        opacity: 0.5,
     },
     buttonText: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
         fontSize: 16,
         fontWeight: '600',
     },

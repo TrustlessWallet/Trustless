@@ -103,8 +103,8 @@ interface WalletContextType {
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<void>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
     getLightningTopUpAddress: () => Promise<string>;
-    prepareWithdrawToOnchain: (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => Promise<{ senderFeeMsat: number; recipientFeeMsat: number }>;
-    withdrawToOnchain: (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => Promise<void>;
+    prepareWithdrawToOnchain: (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => Promise<{ senderFeeMsat: number; recipientFeeMsat: number; prepareResponse: any }>;
+    withdrawToOnchain: (prepareResponse: any, feeTier: 'fast' | 'normal' | 'slow') => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -434,14 +434,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             return {
                 senderFeeMsat: feeSats * 1000,
-                recipientFeeMsat: 0
+                recipientFeeMsat: 0,
+                prepareResponse: res // MUST return the raw response
             };
         } catch (error: any) {
             throw new Error(`Preparation failed: ${error.message}`);
         }
     };
 
-    const withdrawToOnchain = async (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => {
+    const withdrawToOnchain = async (prepareResponse: any, feeTier: 'fast' | 'normal' | 'slow') => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
 
         let speed = 'medium';
@@ -449,12 +450,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (feeTier === 'slow') speed = 'slow';
 
         try {
-            const prepareRequest = {
-                paymentRequest: address,
-                amount: amountSats
-            };
-            const prepareResponse = await activeSdkInstance.prepareSendPayment(prepareRequest as any);
-
             await activeSdkInstance.sendPayment({
                 prepareResponse: prepareResponse,
                 options: {
