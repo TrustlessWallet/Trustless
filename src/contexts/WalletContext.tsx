@@ -103,7 +103,7 @@ interface WalletContextType {
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<void>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
     getLightningTopUpAddress: () => Promise<string>;
-    prepareWithdrawToOnchain: (address: string, amountSats: number) => Promise<{ senderFeeMsat: number; recipientFeeMsat: number }>;
+    prepareWithdrawToOnchain: (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => Promise<{ senderFeeMsat: number; recipientFeeMsat: number }>;
     withdrawToOnchain: (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => Promise<void>;
 }
 
@@ -411,18 +411,25 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    const prepareWithdrawToOnchain = async (address: string, amountSats: number) => {
+    const prepareWithdrawToOnchain = async (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
         try {
             const prepareRequest = {
                 paymentRequest: address,
-                amount: amountSats
+                amount: BigInt(amountSats)
             };
             const res = await activeSdkInstance.prepareSendPayment(prepareRequest as any);
 
             let feeSats = 0;
             if (res.paymentMethod && res.paymentMethod.type === 'bitcoinAddress') {
-                feeSats = Number(res.paymentMethod.feeQuote?.speedMedium?.totalFeeSat || 0);
+                const quote = res.paymentMethod.feeQuote;
+                if (feeTier === 'fast') {
+                    feeSats = Number(quote?.speedFast?.totalFeeSat || 0);
+                } else if (feeTier === 'slow') {
+                    feeSats = Number(quote?.speedSlow?.totalFeeSat || 0);
+                } else {
+                    feeSats = Number(quote?.speedMedium?.totalFeeSat || 0);
+                }
             }
 
             return {
