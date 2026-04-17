@@ -328,13 +328,12 @@ const WalletScreen = () => {
             <ScrollView
                 style={styles.bottomSection}
                 refreshControl={<RefreshControl refreshing={!isLightningMode && isRefetchingTxs} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
-                bounces={false}
             >
                 {(!isLightningMode && loadingTxs) ? <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : (
                     hasTransactions ? (
                         <View style={styles.historyContainer}>
                             {recentTxs.map((tx) => renderTransactionItem({ item: tx }))}
-                            {displayTransactions.length > 5 && (
+                            {displayTransactions.length > 1 && (
                                 <TouchableOpacity style={styles.showMoreButton} onPress={() => navigation.navigate('TransactionHistory')}>
                                     <Text style={styles.showMoreText}>Show full history</Text>
                                 </TouchableOpacity>
