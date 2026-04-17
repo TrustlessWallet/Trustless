@@ -77,7 +77,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         setTxMetrics(null);
 
         try {
-            const estimate = await prepareWithdrawToOnchain(activeDestination, amountSats);
+            const estimate = await prepareWithdrawToOnchain(activeDestination, amountSats, selectedFeeTier);
             const totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
             
             if (amountSats + totalFeeSats > lightningBalance) {
