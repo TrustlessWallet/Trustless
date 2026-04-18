@@ -215,7 +215,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const typeVal = typeof p.paymentType === 'object' ? p.paymentType?.type?.toLowerCase() : String(p.paymentType).toLowerCase();
                 const statusVal = typeof p.status === 'object' ? p.status?.type?.toLowerCase() : String(p.status).toLowerCase();
 
-                const isReceive = typeVal === 'receive' || typeVal === 'received' || typeVal === '0';
+                const isReceive = typeVal === 'receive' || typeVal === 'received' || typeVal === '1';
                 const isComplete = statusVal === 'complete' || statusVal === 'succeeded' || statusVal === '1';
 
                 // Explicitly cast BigInt to Number before applying math
