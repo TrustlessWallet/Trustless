@@ -29,9 +29,9 @@ const formatBalance = (sats: number) => {
 
 const WalletScreen = () => {
     const navigation = useNavigation<NavigationProp>();
-    const { 
-        activeWallet, 
-        loading: walletLoading, 
+    const {
+        activeWallet,
+        loading: walletLoading,
         triggerRefresh,
         lightningBalance,
         lightningTransactions,
@@ -101,7 +101,7 @@ const WalletScreen = () => {
     const toggleMode = () => {
         const nextMode = !isLightningMode;
         setIsLightningMode(nextMode);
-        
+
         Animated.spring(lightningAnim, {
             toValue: nextMode ? 1 : 0,
             useNativeDriver: false,
@@ -136,7 +136,11 @@ const WalletScreen = () => {
             const amountSats = Math.floor(lnTx.amountMsat / 1000);
 
             return (
-                <View key={lnTx.paymentHash} style={styles.txRow}>
+                <TouchableOpacity
+                    key={lnTx.paymentHash}
+                    style={styles.txRow}
+                    onPress={() => navigation.navigate('TransactionDetails', { transaction: lnTx })}
+                >
                     <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
                     <View style={styles.txDetails}>
                         <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
@@ -151,7 +155,7 @@ const WalletScreen = () => {
                         </Text>
                         <Text style={styles.txStatus}>{lnTx.status === 'complete' ? 'Complete' : 'Pending'}</Text>
                     </View>
-                </View>
+                </TouchableOpacity>
             );
         }
 
@@ -242,9 +246,9 @@ const WalletScreen = () => {
     return (
         <SafeAreaView style={styles.container} edges={['right', 'left']}>
             <View style={styles.topSection}>
-                
+
                 <View style={styles.headerRow}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.toggleTouchable}
                         onPress={toggleMode}
                         activeOpacity={0.8}
@@ -252,7 +256,7 @@ const WalletScreen = () => {
                     >
                         {activeWallet.type !== 'watch-only' && <ToggleIconElement />}
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
                         <Text style={styles.walletName}>{activeWallet.name}</Text>
                         <Feather name="chevron-down" size={20} color={theme.colors.muted} />
@@ -285,7 +289,7 @@ const WalletScreen = () => {
                             <Feather name="arrow-down-circle" size={16} color={theme.colors.inversePrimary} />
                             <Text style={styles.actionButtonText}>Receive</Text>
                         </TouchableOpacity>
-                        
+
                         <Animated.View style={{ position: 'absolute', top: 60, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
                             <Animated.View style={{ transform: [{ translateY }] }}>
                                 <TouchableOpacity

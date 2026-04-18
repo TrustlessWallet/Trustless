@@ -118,37 +118,53 @@ const TransactionHistoryScreen = () => {
 
     const onRefresh = () => fetchData({ showSpinner: true, bypassCache: true });
 
-    const renderTransactionItem = useCallback(({ item }: { item: Transaction }) => {
+const renderTransactionItem = useCallback(({ item }: { item: any }) => {
+      const isLightning = 'paymentHash' in item;
       const isSend = item.type === 'send';
-      let otherAddress = 'Multiple';
       
-      if (isSend) {
-        const externalOutputs = item.vout.filter(o => !walletAddressesSet.has(o.scriptpubkey_address));
-        if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
-      } else {
-        const externalInputs = item.vin.filter(i => !walletAddressesSet.has(i.prevout?.scriptpubkey_address));
-        if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
+      const txId = isLightning ? item.paymentHash : item.txid;
+      const amountSats = isLightning ? Math.floor(item.amountMsat / 1000) : item.amount;
+      const timestamp = isLightning ? item.paymentTime : item.status?.block_time;
+      const isConfirmed = isLightning ? item.status === 'complete' : item.status?.confirmed;
+
+      let otherAddress = isLightning ? 'Lightning Payment' : 'Multiple';
+      
+      if (!isLightning) {
+        if (isSend && item.vout) {
+          const externalOutputs = item.vout.filter((o: any) => !walletAddressesSet.has(o.scriptpubkey_address));
+          if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
+        } else if (!isSend && item.vin) {
+          const externalInputs = item.vin.filter((i: any) => !walletAddressesSet.has(i.prevout?.scriptpubkey_address));
+          if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
+        }
       }
 
-      const txDate = item.status.block_time
-        ? new Date(item.status.block_time * 1000).toLocaleString()
+      const txDate = timestamp
+        ? new Date(timestamp * 1000).toLocaleString()
         : 'Pending confirmation';
 
       return (
         <TouchableOpacity style={styles.txRow} onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}>
-            <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
+            <Feather 
+                name={isLightning ? "zap" : (isSend ? "arrow-up" : "arrow-down")} 
+                size={24} 
+                color={theme.colors.primary} 
+                style={styles.txIcon} 
+            />
             <View style={styles.txDetails}>
                 <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
-                <Text style={styles.txAddress}>{isSend ? "To" : "From"} {formatBitcoinAddressShort(otherAddress || 'Unknown')}</Text>
+                <Text style={styles.txAddress}>
+                    {isLightning ? (item.description || otherAddress) : `${isSend ? "To" : "From"} ${formatBitcoinAddressShort(otherAddress || 'Unknown')}`}
+                </Text>
                 <Text style={styles.txDate}>{txDate}</Text>
             </View>
             <View style={styles.txAmountContainer}>
                 <Text style={styles.txAmount}>
                     {hideBalance ? '*******' : (
-                        <>{isSend ? '-' : '+'} {formatBalance(item.amount)} <Text style={styles.orangeSymbol}>₿</Text></>
+                        <>{isSend ? '-' : '+'} {formatBalance(amountSats)} <Text style={styles.orangeSymbol}>₿</Text></>
                     )}
                 </Text>
-                <Text style={styles.txStatus}>{item.status.confirmed ? 'Confirmed' : 'Pending'}</Text>
+                <Text style={styles.txStatus}>{isConfirmed ? 'Confirmed' : 'Pending'}</Text>
             </View>
         </TouchableOpacity>
       );
