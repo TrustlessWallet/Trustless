@@ -211,16 +211,32 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const paymentsResponse = await activeSdkInstance.listPayments({ limit: 100 });
             const paymentsList = Array.isArray(paymentsResponse) ? paymentsResponse : (paymentsResponse?.payments || []);
 
-            const formattedTxs: LightningTransaction[] = paymentsList.map((p: any) => ({
-                paymentHash: p.id,
-                paymentTime: p.paymentTime,
-                // CAST TO NUMBER HERE
-                amountMsat: Number(p.amountMsat || (p.amountSats * 1000)),
-                feeMsat: Number(p.feeMsat || (p.feeSats * 1000) || 0),
-                status: (p.status === 'pending' || p.status === 0) ? 'pending' : 'complete',
-                type: (p.paymentType === 'received' || p.paymentType === 0) ? 'receive' : 'send',
-                description: p.description
-            }));
+            const formattedTxs: LightningTransaction[] = paymentsList.map((p: any) => {
+                const typeVal = typeof p.paymentType === 'object' ? p.paymentType?.type?.toLowerCase() : String(p.paymentType).toLowerCase();
+                const statusVal = typeof p.status === 'object' ? p.status?.type?.toLowerCase() : String(p.status).toLowerCase();
+
+                const isReceive = typeVal === 'receive' || typeVal === 'received' || typeVal === '0';
+                const isComplete = statusVal === 'complete' || statusVal === 'succeeded' || statusVal === '1';
+
+                // Explicitly cast BigInt to Number before applying math
+                const rawAmountSats = Number(p.amountSat ?? p.amountSats ?? p.amount ?? 0);
+                const amountMsat = p.amountMsat !== undefined ? Number(p.amountMsat) : rawAmountSats * 1000;
+
+                const rawFeeSats = Number(p.feeSat ?? p.feeSats ?? p.fee ?? 0);
+                const feeMsat = p.feeMsat !== undefined ? Number(p.feeMsat) : rawFeeSats * 1000;
+
+                const paymentTime = Number(p.paymentTime ?? p.timestamp ?? p.time ?? 0);
+
+                return {
+                    paymentHash: p.id || p.paymentHash || '',
+                    paymentTime: paymentTime,
+                    amountMsat: amountMsat,
+                    feeMsat: feeMsat,
+                    status: isComplete ? 'complete' : 'pending',
+                    type: isReceive ? 'receive' : 'send',
+                    description: p.description || ''
+                };
+            });
 
             setLightningTransactions(formattedTxs);
         } catch (error) {
