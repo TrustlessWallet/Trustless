@@ -406,48 +406,71 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
         if (!activeSdkInstance) return null;
 
-        const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
+        let cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
 
-        let parsedInput;
-        try {
-            parsedInput = await activeSdkInstance.parseInput(cleanStr);
-        } catch (error: any) {
-            if (cleanStr.toLowerCase().startsWith('lnbc')) {
-                parsedInput = { type: 'bolt11Invoice' };
-            } else {
-                return null;
-            }
-        }
-
-        const type = parsedInput.type || parsedInput.tag;
-
-        if (type === 'bolt11Invoice' || type === 'Bolt11' || type === 'bolt11') {
-            const prepareRequest: any = {
-                paymentRequest: cleanStr
-            };
-
-            if (amountSats && amountSats > 0) {
-                prepareRequest.amount = amountSats;
-            }
-
+        // Check if it's a Lightning address (contains @)
+        if (cleanStr.includes('@')) {
             try {
-                const prepareResponse = await activeSdkInstance.prepareSendPayment(prepareRequest);
-                let totalFeeSats = 0;
-
-                if (prepareResponse.paymentMethod) {
-                    if (prepareResponse.paymentMethod.type === 'bolt11Invoice') {
-                        totalFeeSats = Number(prepareResponse.paymentMethod.lightningFeeSats || 0) + Number(prepareResponse.paymentMethod.sparkTransferFeeSats || 0);
-                    } else if (prepareResponse.paymentMethod.type === 'sparkAddress') {
-                        totalFeeSats = Number(prepareResponse.paymentMethod.fee || 0);
+                // First parse the Lightning address to get LnurlPayRequestDetails
+                const parsedInput = await activeSdkInstance.parse(cleanStr);
+                
+                if (parsedInput.tag === 'LightningAddress' && parsedInput.inner && parsedInput.inner[0]) {
+                    const lightningAddressDetails = parsedInput.inner[0];
+                    const payRequestDetails = lightningAddressDetails.payRequest;
+                    
+                    // Now prepare the LNURL pay request with the extracted payRequest details
+                    const prepareLnurlPayRequest: any = {
+                        amountSats: BigInt(amountSats || 0),
+                        payRequest: payRequestDetails,
+                        comment: undefined,
+                        validateSuccessActionUrl: undefined,
+                        conversionOptions: undefined,
+                        feePolicy: undefined
+                    };
+                    
+                    const prepareResponse = await activeSdkInstance.prepareLnurlPay(prepareLnurlPayRequest);
+                    
+                    if (prepareResponse && prepareResponse.feeSats) {
+                        // Convert fee from BigInt to number
+                        return Number(prepareResponse.feeSats);
                     }
                 }
-
-                return totalFeeSats;
             } catch (error) {
                 return null;
             }
+            return null;
         }
-        return null;
+
+        // Now handle as bolt11 invoice
+        const prepareRequest: any = {
+            paymentRequest: cleanStr
+        };
+
+        if (amountSats && amountSats > 0) {
+            prepareRequest.amount = amountSats;
+        }
+
+        try {
+            const prepareResponse = await activeSdkInstance.prepareSendPayment(prepareRequest);
+            let totalFeeSats = 0;
+
+            if (prepareResponse.paymentMethod) {
+                // Handle both direct paymentMethod and nested paymentMethod.inner structure
+                const paymentMethod = prepareResponse.paymentMethod.inner || prepareResponse.paymentMethod;
+                
+                if (prepareResponse.paymentMethod.tag === 'Bolt11Invoice' || paymentMethod.lightningFeeSats !== undefined) {
+                    const lightningFee = Number(paymentMethod.lightningFeeSats || 0);
+                    const sparkFee = Number(paymentMethod.sparkTransferFeeSats || 0);
+                    totalFeeSats = lightningFee + sparkFee;
+                } else if (paymentMethod.fee !== undefined) {
+                    totalFeeSats = Number(paymentMethod.fee || 0);
+                }
+            }
+
+            return totalFeeSats;
+        } catch (error) {
+            return null;
+        }
     };
 
     const getLightningTopUpAddress = async (): Promise<string> => {
@@ -499,7 +522,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             return {
                 senderFeeMsat: feeSats * 1000,
                 recipientFeeMsat: 0,
-                prepareResponse: res // MUST return the raw response
+                prepareResponse: res
             };
         } catch (error: any) {
             throw new Error(`Preparation failed: ${error.message}`);
