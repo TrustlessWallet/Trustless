@@ -361,12 +361,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         let parsedInput;
         try {
-            parsedInput = await activeSdkInstance.parseInput(cleanStr);
+            parsedInput = await activeSdkInstance.parse(cleanStr);
         } catch (error: any) {
             if (cleanStr.toLowerCase().startsWith('lnbc')) {
                 parsedInput = { type: 'bolt11Invoice' };
             } else {
-                throw new Error(`Parse failed: ${error.message || 'Invalid format'}`);
+                throw new Error(`Parse failed: ${error.message}`);
             }
         }
 
@@ -394,6 +394,37 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 } as any);
             } catch (error: any) {
                 throw new Error(`Send Error (${error.message}).`);
+            }
+
+        } else if (type === 'LightningAddress' && parsedInput.inner && parsedInput.inner[0]) {
+            const lightningAddressDetails = parsedInput.inner[0];
+            const payRequestDetails = lightningAddressDetails.payRequest;
+            
+            // Prepare LNURL pay request with the extracted payRequest details
+            const prepareLnurlPayRequest: any = {
+                amountSats: BigInt(amountSats || 0),
+                payRequest: payRequestDetails,
+                comment: undefined,
+                validateSuccessActionUrl: undefined,
+                conversionOptions: undefined,
+                feePolicy: undefined
+            };
+
+            let prepareResponse;
+            try {
+                prepareResponse = await activeSdkInstance.prepareLnurlPay(prepareLnurlPayRequest);
+            } catch (error: any) {
+                throw new Error(`Prepare LNURL Error (${error.message}).`);
+            }
+
+            try {
+                // For LNURL payments, use the LNURL-specific sendPayment method
+                await activeSdkInstance.lnurlPay({
+                    prepareResponse: prepareResponse,
+                    idempotencyKey: undefined
+                } as any);
+            } catch (error: any) {
+                throw new Error(`Send LNURL Error (${error.message}).`);
             }
 
         } else {
