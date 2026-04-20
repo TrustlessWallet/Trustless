@@ -81,6 +81,7 @@ export type LightningTransaction = {
   status: 'pending' | 'complete' | 'failed';
   type: 'send' | 'receive';
   description?: string;
+  paymentMethod?: number;
 };
 
 export interface Wallet {
