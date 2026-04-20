@@ -106,11 +106,29 @@ const TransactionDetailsScreen = () => {
   const txId = isLightning ? lnTx.paymentHash : ocTx.txid;
   const amountSats = isLightning ? Math.floor(lnTx.amountMsat / 1000) : ocTx.amount;
   const feeSats = isLightning ? Math.floor(lnTx.feeMsat / 1000) : ocTx.fee;
+  const lightningMethod = typeof lnTx.paymentMethod === 'number' ? lnTx.paymentMethod : null;
+  const lightningFeeLabel = lightningMethod === 4 || lightningMethod === 5 ? "Swap / Setup fee" : "Fee";
   const timestamp = isLightning ? lnTx.paymentTime : ocTx.status?.block_time;
   const isConfirmed = isLightning ? lnTx.status === 'complete' : ocTx.status?.confirmed;
   const dateStr = timestamp ? new Date(timestamp * 1000).toLocaleString() : 'Pending';
 
-  let otherAddress = isLightning ? (tx.description || 'Lightning Invoice') : 'Multiple Addresses';
+  // Debug logging for fee display verification
+  if (isLightning) {
+    console.log('[LightningFeeDebug] TransactionDetails:', {
+      paymentHash: lnTx.paymentHash,
+      amountMsat: lnTx.amountMsat,
+      feeMsat: lnTx.feeMsat,
+      amountSats,
+      feeSats,
+      paymentMethod: lightningMethod,
+      feeLabel: lightningFeeLabel,
+      description: tx.description,
+      type: tx.type,
+      status: lnTx.status
+    });
+  }
+
+  let otherAddress = isLightning ? (tx.description || 'Lightning invoice') : 'Multiple addresses';
   let isOtherAddressValid = false;
 
   if (!isLightning) {
@@ -140,7 +158,6 @@ const TransactionDetailsScreen = () => {
             <>{isSend ? '-' : '+'} {formatBtc(amountSats)} <Text style={styles.orangeSymbol}>₿</Text></>
           )}
         </Text>
-        {isLightning && <Text style={styles.statusText}>⚡ Lightning Network</Text>}
       </View>
       <View style={styles.detailsContainer}>
         <DetailRow label="Date" value={dateStr} styles={styles} />
@@ -156,14 +173,14 @@ const TransactionDetailsScreen = () => {
           <DetailRow label="Confirmations" value={`${confirmations}`} styles={styles} />
         )}
 
-        <DetailRow label={isLightning ? "Routing Fee" : "Network Fee"} value={`${feeSats} sats`} styles={styles} />
-        <DetailRow label={isLightning ? "Payment Hash" : "Transaction ID"} value={txId} valueStyle={styles.addressValue} styles={styles} />
+        <DetailRow label={isLightning ? lightningFeeLabel : "Network fee"} value={`${feeSats} sats`} styles={styles} />
+        <DetailRow label={isLightning ? "Payment hash" : "Transaction ID"} value={txId} valueStyle={styles.addressValue} styles={styles} />
       </View>
 
       {!isLightning && (
         <TouchableOpacity style={styles.explorerButton} onPress={handleOpenExplorer}>
           <Feather name="external-link" size={18} color={theme.colors.inversePrimary} />
-          <Text style={styles.explorerButtonText}>View on Block Explorer</Text>
+          <Text style={styles.explorerButtonText}>View on block explorer</Text>
         </TouchableOpacity>
       )}
     </ScrollView>

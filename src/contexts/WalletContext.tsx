@@ -211,30 +211,78 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const paymentsResponse = await activeSdkInstance.listPayments({ limit: 100 });
             const paymentsList = Array.isArray(paymentsResponse) ? paymentsResponse : (paymentsResponse?.payments || []);
 
+            const u128ToNumber = (v: any): number => {
+                try {
+                    if (typeof v === 'bigint') {
+                        if (v > BigInt(Number.MAX_SAFE_INTEGER)) return Number.MAX_SAFE_INTEGER;
+                        return Number(v);
+                    }
+                    const n = Number(v);
+                    return Number.isFinite(n) ? n : 0;
+                } catch {
+                    return 0;
+                }
+            };
+
             const formattedTxs: LightningTransaction[] = paymentsList.map((p: any) => {
-                const typeVal = typeof p.paymentType === 'object' ? p.paymentType?.type?.toLowerCase() : String(p.paymentType).toLowerCase();
-                const statusVal = typeof p.status === 'object' ? p.status?.type?.toLowerCase() : String(p.status).toLowerCase();
+                const SDK_STATUS = breezSdk.PaymentStatus as any;
+                const SDK_TYPE = breezSdk.PaymentType as any;
 
-                const isReceive = typeVal === 'receive' || typeVal === 'received' || typeVal === '1';
-                const isComplete = statusVal === 'complete' || statusVal === 'succeeded' || statusVal === '1';
+                // Strictly evaluate against the SDK's exported enums to guarantee accuracy
+                const isComplete = p.status === SDK_STATUS.COMPLETED ||
+                    p.status === SDK_STATUS.Completed ||
+                    p.status === SDK_STATUS.COMPLETE;
 
-                // Explicitly cast BigInt to Number before applying math
-                const rawAmountSats = Number(p.amountSat ?? p.amountSats ?? p.amount ?? 0);
-                const amountMsat = p.amountMsat !== undefined ? Number(p.amountMsat) : rawAmountSats * 1000;
+                const isPending = p.status === SDK_STATUS.PENDING ||
+                    p.status === SDK_STATUS.Pending;
 
-                const rawFeeSats = Number(p.feeSat ?? p.feeSats ?? p.fee ?? 0);
-                const feeMsat = p.feeMsat !== undefined ? Number(p.feeMsat) : rawFeeSats * 1000;
+                const isReceive = p.paymentType === SDK_TYPE.RECEIVE ||
+                    p.paymentType === SDK_TYPE.Receive ||
+                    p.paymentType === SDK_TYPE.RECEIVED;
+
+                // Priority fallback resolution
+                let finalStatus: 'complete' | 'pending' = 'pending';
+                if (isComplete) {
+                    finalStatus = 'complete';
+                } else if (isPending) {
+                    finalStatus = 'pending';
+                } else if (String(p.status).toLowerCase().includes('complete') || p.status === 1) {
+                    finalStatus = 'complete';
+                }
+
+                let finalType: 'receive' | 'send' = 'send';
+                if (isReceive) {
+                    finalType = 'receive';
+                } else if (String(p.paymentType).toLowerCase().includes('receive') || p.paymentType === 1) {
+                    finalType = 'receive';
+                }
+
+                const amountSats = u128ToNumber(p.amount ?? p.amountSat ?? p.amountSats ?? 0);
+                const feeSats = u128ToNumber(p.fees ?? p.fee ?? p.feeSat ?? p.feeSats ?? 0);
+                const amountMsat = p.amountMsat !== undefined ? Number(p.amountMsat) : amountSats * 1000;
+                const feeMsat = p.feeMsat !== undefined ? Number(p.feeMsat) : feeSats * 1000;
 
                 const paymentTime = Number(p.paymentTime ?? p.timestamp ?? p.time ?? 0);
+
+                const detailsTag = p.details?.tag;
+                const detailsInner = p.details?.inner;
+                const description =
+                    p.description ||
+                    detailsInner?.description ||
+                    detailsInner?.invoiceDetails?.description ||
+                    (detailsTag === 'Deposit' ? 'Top-up' : '') ||
+                    (detailsTag === 'Withdraw' ? 'Withdraw' : '') ||
+                    '';
 
                 return {
                     paymentHash: p.id || p.paymentHash || '',
                     paymentTime: paymentTime,
                     amountMsat: amountMsat,
                     feeMsat: feeMsat,
-                    status: isComplete ? 'complete' : 'pending',
-                    type: isReceive ? 'receive' : 'send',
-                    description: p.description || ''
+                    status: finalStatus,
+                    type: finalType,
+                    description,
+                    paymentMethod: typeof p.method === 'number' ? p.method : Number(p.method)
                 };
             });
 
@@ -299,7 +347,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // In getLightningInvoice:
         const req = await activeSdkInstance.receivePayment({
             paymentMethod: breezSdk.ReceivePaymentMethod.Bolt11Invoice.new({
-                description: "Trustless Wallet Spark Payment",
+                description: "Send to Trustless Wallet",
                 amountSats: BigInt(amountSats)
             } as any)
         });

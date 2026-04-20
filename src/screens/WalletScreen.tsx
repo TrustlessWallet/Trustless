@@ -144,7 +144,7 @@ const WalletScreen = () => {
                     <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
                     <View style={styles.txDetails}>
                         <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
-                        <Text style={styles.txAddress}>{lnTx.description || 'Lightning Payment'}</Text>
+                        <Text style={styles.txAddress}>{lnTx.description || 'Lightning payment'}</Text>
                         <Text style={styles.txDate}>{txDate}</Text>
                     </View>
                     <View style={styles.txAmountContainer}>
@@ -321,7 +321,7 @@ const WalletScreen = () => {
                                     disabled={!isLightningMode}
                                 >
                                     <Feather name="plus" size={14} color={theme.colors.primary} />
-                                    <Text style={styles.secondaryActionButtonText}>Top up</Text>
+                                    <Text style={styles.secondaryActionButtonText}>Top-up</Text>
                                 </TouchableOpacity>
                             </Animated.View>
                         </Animated.View>
