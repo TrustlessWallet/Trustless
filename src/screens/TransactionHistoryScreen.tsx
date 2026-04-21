@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, SafeAreaView } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, Transaction } from '../types';
 import { useWallet } from '../contexts/WalletContext';
@@ -17,6 +17,7 @@ const TX_CACHE_PREFIX = '@txCache:';
 const TX_CACHE_STALE_MS = 240000; 
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'TransactionHistory'>;
+type TransactionHistoryRouteProp = RouteProp<RootStackParamList, 'TransactionHistory'>;
 
 const btcFormatter = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 8,
@@ -30,10 +31,13 @@ const formatBalance = (sats: number) => {
 
 const TransactionHistoryScreen = () => {
     const navigation = useNavigation<NavigationProp>();
-    const { activeWallet, loading: walletLoading, lastRefreshTime } = useWallet();
+    const route = useRoute<TransactionHistoryRouteProp>();
+    const mode = route.params?.mode || 'onchain';
+    
+    const { activeWallet, loading: walletLoading, lastRefreshTime, lightningTransactions } = useWallet();
     const { theme } = useTheme(); 
     const styles = useMemo(() => getStyles(theme), [theme]); 
-    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [onchainTransactions, setOnchainTransactions] = useState<Transaction[]>([]);
     const [loadingData, setLoadingData] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [hideBalance, setHideBalance] = useState(false);
@@ -70,11 +74,11 @@ const TransactionHistoryScreen = () => {
               const cached = JSON.parse(cachedStr) as { transactions: Transaction[]; timestamp: number };
               const isFresh = Date.now() - cached.timestamp < TX_CACHE_STALE_MS;
               if (isFresh) {
-                setTransactions(cached.transactions);
+                setOnchainTransactions(cached.transactions);
                 setLoadingData(false);
                 return; 
               } else {
-                setTransactions(cached.transactions);
+                setOnchainTransactions(cached.transactions);
               }
             }
           }
@@ -84,7 +88,7 @@ const TransactionHistoryScreen = () => {
           }
         }
         const fetchedTxs = await fetchAddressTransactions(allAddresses);
-        setTransactions(fetchedTxs);
+        setOnchainTransactions(fetchedTxs);
         await AsyncStorage.setItem(cacheKey, JSON.stringify({ transactions: fetchedTxs, timestamp: Date.now() }));
       } catch (e) {
         console.error("TransactionHistoryScreen: Failed to fetch wallet data", e);
@@ -97,14 +101,18 @@ const TransactionHistoryScreen = () => {
     }, [activeWallet]);
 
     useEffect(() => {
-        fetchData({ showSpinner: false, bypassCache: false });
-    }, [fetchData]);
+        if (mode === 'onchain') {
+            fetchData({ showSpinner: false, bypassCache: false });
+        } else {
+            setLoadingData(false);
+        }
+    }, [fetchData, mode]);
 
     useEffect(() => {
-      if (activeWallet) {
+      if (activeWallet && mode === 'onchain') {
         fetchData({ showSpinner: false, bypassCache: true });
       }
-    }, [lastRefreshTime, activeWallet?.id]);
+    }, [lastRefreshTime, activeWallet?.id, mode]);
 
     useEffect(() => {
       const loadPreference = async () => {
@@ -116,9 +124,17 @@ const TransactionHistoryScreen = () => {
       }
     }, [isFocused]);
 
-    const onRefresh = () => fetchData({ showSpinner: true, bypassCache: true });
+    const onRefresh = () => {
+        if (mode === 'onchain') {
+            fetchData({ showSpinner: true, bypassCache: true });
+        }
+    };
 
-const renderTransactionItem = useCallback(({ item }: { item: any }) => {
+    const transactionsToDisplay = useMemo(() => {
+        return mode === 'lightning' ? lightningTransactions : onchainTransactions;
+    }, [mode, lightningTransactions, onchainTransactions]);
+
+    const renderTransactionItem = useCallback(({ item }: { item: any }) => {
       const isLightning = 'paymentHash' in item;
       const isSend = item.type === 'send';
       
@@ -146,7 +162,7 @@ const renderTransactionItem = useCallback(({ item }: { item: any }) => {
       return (
         <TouchableOpacity style={styles.txRow} onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}>
             <Feather 
-                name={isLightning ? "zap" : (isSend ? "arrow-up" : "arrow-down")} 
+                name={(isSend ? "arrow-up" : "arrow-down")} 
                 size={24} 
                 color={theme.colors.primary} 
                 style={styles.txIcon} 
@@ -170,7 +186,7 @@ const renderTransactionItem = useCallback(({ item }: { item: any }) => {
       );
     }, [walletAddressesSet, hideBalance, theme, navigation, styles]);
 
-    if (walletLoading || (loadingData && !refreshing)) {
+    if (walletLoading || (loadingData && !refreshing && mode === 'onchain')) {
         return <View style={styles.centeredContainer}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
     }
 
@@ -185,9 +201,9 @@ const renderTransactionItem = useCallback(({ item }: { item: any }) => {
     return (
         <View style={styles.container}>
             <FlatList
-                data={transactions}
+                data={transactionsToDisplay}
                 renderItem={renderTransactionItem}
-                keyExtractor={(item) => item.txid}
+                keyExtractor={(item) => item.paymentHash || item.txid}
                 contentContainerStyle={styles.list}
                 style={styles.scrollView}
                 showsVerticalScrollIndicator={true}

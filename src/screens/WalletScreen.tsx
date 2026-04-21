@@ -340,7 +340,10 @@ const WalletScreen = () => {
                             <View style={styles.historyContainer}>
                                 {recentTxs.map((tx) => renderTransactionItem({ item: tx }))}
                                 {displayTransactions.length > 1 && (
-                                    <TouchableOpacity style={styles.showMoreButton} onPress={() => navigation.navigate('TransactionHistory')}>
+                                    <TouchableOpacity
+                                        style={styles.showMoreButton}
+                                        onPress={() => navigation.navigate('TransactionHistory', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
+                                    >
                                         <Text style={styles.showMoreText}>Show full history</Text>
                                     </TouchableOpacity>
                                 )}
