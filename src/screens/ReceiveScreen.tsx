@@ -44,7 +44,8 @@ const ReceiveScreen = () => {
     loading: wallet_loading, 
     getOrCreateNextUnusedReceiveAddress,
     getLightningInvoice,
-    isLightningInitialized
+    isLightningInitialized,
+    defaultLightningInvoice
   } = useWallet();
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
@@ -98,20 +99,31 @@ const ReceiveScreen = () => {
   useEffect(() => {
     setAppliedAmountSats(0);
     setModalAmountStr('');
-  }, [mode]);
+    if (mode === 'lightning' && defaultLightningInvoice) {
+        setLightningInvoice(defaultLightningInvoice);
+        setIsGeneratingLightning(false);
+    } else {
+        setLightningInvoice('');
+    }
+  }, [mode, defaultLightningInvoice]);
 
   useEffect(() => {
-    if (mode === 'lightning' && isLightningInitialized && !lightningInvoice && !isGeneratingLightning) {
-      setIsGeneratingLightning(true);
-      getLightningInvoice(appliedAmountSats)
-        .then(setLightningInvoice)
-        .catch(err => {
-            console.error("Failed to fetch initial BOLT11 invoice", err);
-            setLightningInvoice('lnbc1...'); 
-        })
-        .finally(() => setIsGeneratingLightning(false));
+    if (mode === 'lightning' && isLightningInitialized) {
+      if (appliedAmountSats === 0 && defaultLightningInvoice) {
+        setLightningInvoice(defaultLightningInvoice);
+        setIsGeneratingLightning(false);
+      } else if (!lightningInvoice && !isGeneratingLightning) {
+        setIsGeneratingLightning(true);
+        getLightningInvoice(appliedAmountSats)
+          .then(setLightningInvoice)
+          .catch(err => {
+              console.error("Failed to fetch initial BOLT11 invoice", err);
+              setLightningInvoice('lnbc1...'); 
+          })
+          .finally(() => setIsGeneratingLightning(false));
+      }
     }
-  }, [mode, isLightningInitialized, lightningInvoice, getLightningInvoice, appliedAmountSats]);
+  }, [mode, isLightningInitialized, lightningInvoice, getLightningInvoice, appliedAmountSats, defaultLightningInvoice]);
 
   const path_prefix = useMemo(() => {
     if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
@@ -196,15 +208,8 @@ const ReceiveScreen = () => {
         setAppliedAmountSats(0);
         setIsAmountModalVisible(false);
         if (mode === 'lightning' && isLightningInitialized) {
-            setIsGeneratingLightning(true);
-            try {
-                const invoice = await getLightningInvoice(0);
-                setLightningInvoice(invoice);
-            } catch (e) {
-                console.error(e);
-            } finally {
-                setIsGeneratingLightning(false);
-            }
+            setLightningInvoice(defaultLightningInvoice);
+            setIsGeneratingLightning(false);
         }
         return;
     }
