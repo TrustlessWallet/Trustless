@@ -347,7 +347,7 @@ export const LightningTopUpScreen: React.FC = () => {
                                 <ActivityIndicator color={theme.colors.inversePrimary} />
                             ) : (
                                 <View style={styles.buttonContentRowCentered}>
-                                    <Text style={styles.buttonText}>Calculate Route</Text>
+                                    <Text style={styles.buttonText}>Calculate route</Text>
                                 </View>
                             )}
                         </TouchableOpacity>

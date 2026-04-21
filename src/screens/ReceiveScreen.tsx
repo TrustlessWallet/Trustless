@@ -17,23 +17,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 type ReceiveScreenRouteProp = RouteProp<RootStackParamList, 'Receive'>;
-type Unit = 'BTC' | 'sats';
 
 const QR_SIZE = 240;
 const UNUSED_BUFFER_SIZE = 20;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
 const format_btc = (sats: number) => (sats / 100000000).toFixed(8);
-
-const formatAmountDisplay = (sats: number, unit: Unit) => {
-    if (unit === 'BTC') {
-        let btc = (sats / 100000000).toFixed(8);
-        btc = btc.replace(/0+$/, ''); 
-        btc = btc.replace(/\.$/, ''); 
-        return btc;
-    }
-    return sats.toLocaleString();
-};
 
 const ReceiveScreen = () => {
   const route = useRoute<ReceiveScreenRouteProp>();
@@ -63,7 +52,6 @@ const ReceiveScreen = () => {
 
   const [isAmountModalVisible, setIsAmountModalVisible] = useState(false);
   const [modalAmountStr, setModalAmountStr] = useState('');
-  const [modalUnit, setModalUnit] = useState<Unit>('sats');
   const [appliedAmountSats, setAppliedAmountSats] = useState<number>(0);
 
   useEffect(() => {
@@ -194,9 +182,7 @@ const ReceiveScreen = () => {
   };
 
   const handleOpenAmountModal = () => {
-    setModalAmountStr(appliedAmountSats > 0 ? 
-       (modalUnit === 'BTC' ? (appliedAmountSats / 100000000).toString() : appliedAmountSats.toString()) 
-       : '');
+    setModalAmountStr(appliedAmountSats > 0 ? appliedAmountSats.toString() : '');
     setIsAmountModalVisible(true);
   };
 
@@ -214,7 +200,7 @@ const ReceiveScreen = () => {
         return;
     }
 
-    const sats = modalUnit === 'BTC' ? Math.round(amountNum * 100000000) : parseInt(cleanAmount, 10);
+    const sats = parseInt(cleanAmount, 10);
     setAppliedAmountSats(sats);
     setIsAmountModalVisible(false);
 
@@ -324,14 +310,7 @@ const ReceiveScreen = () => {
                           keyboardType="numeric"
                           autoFocus
                           rightElement={
-                              <View style={styles.unitSelector}>
-                                  <TouchableOpacity onPress={() => setModalUnit('BTC')} style={[styles.unitButton, modalUnit === 'BTC' && styles.unitButtonActive]}>
-                                      <Text style={[styles.unitText, modalUnit === 'BTC' && styles.unitTextActive]}>BTC</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity onPress={() => setModalUnit('sats')} style={[styles.unitButton, modalUnit === 'sats' && styles.unitButtonActive]}>
-                                      <Text style={[styles.unitText, modalUnit === 'sats' && styles.unitTextActive]}>sats</Text>
-                                  </TouchableOpacity>
-                              </View>
+                              <Text style={styles.currencyLabel}>sats</Text>
                           }
                       />
 
@@ -472,12 +451,8 @@ const ReceiveScreen = () => {
 
                   {appliedAmountSats > 0 && !isGeneratingLightning && (
                       <Text style={styles.amountValue}>
-                          {formatAmountDisplay(appliedAmountSats, modalUnit)}
-                          {modalUnit === 'BTC' ? (
-                              <Text style={styles.amountBitcoin}> ₿</Text>
-                          ) : (
-                              <Text style={styles.amountUnit}> sats</Text>
-                          )}
+                          {appliedAmountSats.toLocaleString()}
+                          <Text style={styles.amountUnit}> sats</Text>
                       </Text>
                   )}
                 </View>
@@ -733,29 +708,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     fontWeight: 'bold',
     color: theme.colors.primary,
   },
-  unitSelector: { 
-    flexDirection: 'row', 
-    backgroundColor: theme.colors.border, 
-    borderRadius: 6, 
-    marginRight: 8, 
-    padding: 2 
-  },
-  unitButton: { 
-    paddingVertical: 6, 
-    paddingHorizontal: 12, 
-    borderRadius: 5 
-  },
-  unitButtonActive: { 
-    backgroundColor: theme.colors.primary 
-  },
-  unitText: { 
-    fontWeight: '600', 
-    color: theme.colors.muted 
-  },
-  unitTextActive: { 
-    color: theme.colors.inversePrimary 
-  },
-  modalButtonPrimary: {
+    modalButtonPrimary: {
     backgroundColor: theme.colors.primary,
     paddingVertical: 14,
     borderRadius: 8,
@@ -766,6 +719,12 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.inversePrimary,
     fontSize: 16,
     fontWeight: '600',
+  },
+  currencyLabel: {
+    fontSize: 16,
+    color: theme.colors.primary,
+    fontFamily: 'SpaceMono-Bold',
+    marginRight: 16, 
   }
 });
 
