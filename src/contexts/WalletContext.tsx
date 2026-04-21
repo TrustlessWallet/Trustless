@@ -99,6 +99,7 @@ interface WalletContextType {
     isLightningInitialized: boolean;
     lightningBalance: number;
     lightningTransactions: LightningTransaction[];
+    defaultLightningInvoice: string;
     getLightningInvoice: (amountSats: number) => Promise<string>;
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<void>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
@@ -198,8 +199,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [syncedSavedBalances]);
 
     // ------------------------------------------------------------------
-    // LIGHTNING NETWORK LOGIC (PHASE 1)
+    // LIGHTNING NETWORK LOGIC
     // ------------------------------------------------------------------
+
+    const [defaultLightningInvoice, setDefaultLightningInvoice] = useState<string>('');
+
+    // Pre-generates the invoice in the background
+    useEffect(() => {
+        let isMounted = true;
+        if (isLightningInitialized && !defaultLightningInvoice) {
+            getLightningInvoice(0)
+                .then(invoice => {
+                    if (isMounted) setDefaultLightningInvoice(invoice);
+                })
+                .catch(err => console.error("Background invoice generation failed:", err));
+        }
+        return () => { isMounted = false; };
+    }, [isLightningInitialized, defaultLightningInvoice]);
 
     const refreshLightningState = async () => {
         if (!activeSdkInstance) return;
@@ -330,6 +346,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     onEvent: async (e: any) => {
                         if (e && (e.type === "invoicePaid" || e.type === "paymentSucceed" || e.type === "swapUpdated")) {
                             await refreshLightningState();
+                            setDefaultLightningInvoice('');
                         }
                     }
                 });
@@ -399,7 +416,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } else if (type === 'LightningAddress' && parsedInput.inner && parsedInput.inner[0]) {
             const lightningAddressDetails = parsedInput.inner[0];
             const payRequestDetails = lightningAddressDetails.payRequest;
-            
+
             // Prepare LNURL pay request with the extracted payRequest details
             const prepareLnurlPayRequest: any = {
                 amountSats: BigInt(amountSats || 0),
@@ -444,11 +461,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             try {
                 // First parse the Lightning address to get LnurlPayRequestDetails
                 const parsedInput = await activeSdkInstance.parse(cleanStr);
-                
+
                 if (parsedInput.tag === 'LightningAddress' && parsedInput.inner && parsedInput.inner[0]) {
                     const lightningAddressDetails = parsedInput.inner[0];
                     const payRequestDetails = lightningAddressDetails.payRequest;
-                    
+
                     // Now prepare the LNURL pay request with the extracted payRequest details
                     const prepareLnurlPayRequest: any = {
                         amountSats: BigInt(amountSats || 0),
@@ -458,9 +475,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                         conversionOptions: undefined,
                         feePolicy: undefined
                     };
-                    
+
                     const prepareResponse = await activeSdkInstance.prepareLnurlPay(prepareLnurlPayRequest);
-                    
+
                     if (prepareResponse && prepareResponse.feeSats) {
                         // Convert fee from BigInt to number
                         return Number(prepareResponse.feeSats);
@@ -488,7 +505,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (prepareResponse.paymentMethod) {
                 // Handle both direct paymentMethod and nested paymentMethod.inner structure
                 const paymentMethod = prepareResponse.paymentMethod.inner || prepareResponse.paymentMethod;
-                
+
                 if (prepareResponse.paymentMethod.tag === 'Bolt11Invoice' || paymentMethod.lightningFeeSats !== undefined) {
                     const lightningFee = Number(paymentMethod.lightningFeeSats || 0);
                     const sparkFee = Number(paymentMethod.sparkTransferFeeSats || 0);
@@ -1150,6 +1167,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (error) {
             console.error("Failed to switch wallet:", error);
         }
+        setDefaultLightningInvoice('');
     };
 
     const updateWalletName = async (walletId: string, newName: string) => {
@@ -1402,6 +1420,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isLightningInitialized,
         lightningBalance,
         lightningTransactions,
+        defaultLightningInvoice,
         getLightningInvoice,
         payLightningInvoice,
         estimateLightningFee,
