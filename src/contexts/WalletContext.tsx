@@ -410,7 +410,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     prepareResponse: prepareResponse
                 } as any);
             } catch (error: any) {
-                throw new Error(`Send Error (${error.message}).`);
+                throw new Error(`Send error (${error.message}).`);
             }
 
         } else if (type === 'LightningAddress' && parsedInput.inner && parsedInput.inner[0]) {
@@ -431,7 +431,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             try {
                 prepareResponse = await activeSdkInstance.prepareLnurlPay(prepareLnurlPayRequest);
             } catch (error: any) {
-                throw new Error(`Prepare LNURL Error (${error.message}).`);
+                throw new Error(`Prepare LNURL error (${error.message}).`);
             }
 
             try {
@@ -441,7 +441,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     idempotencyKey: undefined
                 } as any);
             } catch (error: any) {
-                throw new Error(`Send LNURL Error (${error.message}).`);
+                throw new Error(`Send LNURL error (${error.message}).`);
             }
 
         } else {
