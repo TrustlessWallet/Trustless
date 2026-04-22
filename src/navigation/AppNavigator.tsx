@@ -22,7 +22,6 @@ import ReceiveScreen from '../screens/ReceiveScreen';
 import SendScreen from '../screens/SendScreen';
 import TransactionConfirmScreen from '../screens/TransactionConfirmScreen';
 import TransactionDetailsScreen from '../screens/TransactionDetailsScreen';
-import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import WalletSwitcherScreen from '../screens/WalletSwitcherScreen';
 import WalletOptionsScreen from '../screens/WalletOptionsScreen';
 import ShowPublicKeyScreen from '../screens/ShowPublicKeyScreen';
@@ -443,14 +442,6 @@ const AppNavigator = () => {
               name="QRScanner"
               component={QRScannerScreen}
               options={{ title: 'Scan QR code' }}
-            />
-            <Stack.Screen
-              name="TransactionHistory"
-              component={TransactionHistoryScreen}
-              options={({ navigation }) => ({
-                title: 'Transaction history',
-                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-              })}
             />
             <Stack.Screen
               name="TransactionDetails"

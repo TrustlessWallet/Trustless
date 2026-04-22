@@ -1,6 +1,7 @@
+// src/screens/WalletScreen.tsx
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Animated } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl, Animated, Dimensions } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -14,6 +15,7 @@ import { useWalletTransactions, useWalletUTXOs } from '../hooks/useBalance';
 import { formatBitcoinAddressShort } from '../constants/format';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
@@ -29,6 +31,7 @@ const formatBalance = (sats: number) => {
 
 const WalletScreen = () => {
     const navigation = useNavigation<NavigationProp>();
+    const insets = useSafeAreaInsets();
     const {
         activeWallet,
         loading: walletLoading,
@@ -38,7 +41,7 @@ const WalletScreen = () => {
         isLightningInitialized
     } = useWallet();
     const { theme } = useTheme();
-    const styles = useMemo(() => getStyles(theme), [theme]);
+    const styles = useMemo(() => getStyles(theme, insets.top), [theme, insets.top]);
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const isFocused = useIsFocused();
@@ -137,7 +140,6 @@ const WalletScreen = () => {
 
             return (
                 <TouchableOpacity
-                    key={lnTx.paymentHash}
                     style={styles.txRow}
                     onPress={() => navigation.navigate('TransactionDetails', { transaction: lnTx })}
                 >
@@ -177,7 +179,6 @@ const WalletScreen = () => {
 
         return (
             <TouchableOpacity
-                key={ocTx.txid}
                 style={styles.txRow}
                 onPress={() => navigation.navigate('TransactionDetails', { transaction: ocTx })}
             >
@@ -200,8 +201,6 @@ const WalletScreen = () => {
     }, [walletAddressesSet, hideBalance, theme, navigation, styles]);
 
     const displayTransactions = isLightningMode ? lightningTransactions : (onchainTransactions || []);
-    const recentTxs = displayTransactions.slice(0, 3);
-    const hasTransactions = displayTransactions.length > 0;
 
     const ToggleIconElement = () => (
         <View style={styles.iconToggleInner}>
@@ -245,126 +244,126 @@ const WalletScreen = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['right', 'left']}>
-            <ScrollView
-                style={styles.container}
-                contentContainerStyle={styles.scrollContent}
-                refreshControl={<RefreshControl refreshing={!isLightningMode && isRefetchingTxs} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
-            >
-                <View style={styles.topSection}>
-
-                    <View style={styles.headerRow}>
-                        <TouchableOpacity
-                            style={styles.toggleTouchable}
-                            onPress={toggleMode}
-                            activeOpacity={0.8}
-                            disabled={!isLightningInitialized || activeWallet.type === 'watch-only'}
-                        >
-                            {activeWallet.type !== 'watch-only' && <ToggleIconElement />}
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
-                            <Text style={styles.walletName}>{activeWallet.name}</Text>
-                            <Feather name="chevron-down" size={20} color={theme.colors.muted} />
-                        </TouchableOpacity>
-
-                        <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
-                            {activeWallet.type !== 'watch-only' && <ToggleIconElement />}
-                        </View>
-                    </View>
-
-                    <TouchableOpacity
-                        style={styles.balanceContainer}
-                        onPress={() => !isLightningMode && navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
-                        disabled={isLightningMode}
-                    >
-                        <Text style={styles.balanceText}>
-                            {hideBalance ? '*******' : (
-                                isLightningMode ? (
-                                    <>{new Intl.NumberFormat('en-US').format(displayBalance)} sats</>
-                                ) : (
-                                    <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>
-                                )
-                            )}
-                        </Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.actionsContainer}>
-                        <View style={styles.actionColumn}>
-                            <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}>
-                                <Feather name="arrow-down-circle" size={16} color={theme.colors.inversePrimary} />
-                                <Text style={styles.actionButtonText}>Receive</Text>
-                            </TouchableOpacity>
-
-                            <Animated.View style={{ position: 'absolute', top: 60, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
-                                <Animated.View style={{ transform: [{ translateY }] }}>
-                                    <TouchableOpacity
-                                        style={styles.secondaryActionButton}
-                                        onPress={() => navigation.navigate('WithdrawToOnchain' as any)}
-                                        disabled={!isLightningMode}
-                                    >
-                                        <Feather name="minus" size={14} color={theme.colors.primary} />
-                                        <Text style={styles.secondaryActionButtonText}>Withdraw</Text>
-                                    </TouchableOpacity>
-                                </Animated.View>
-                            </Animated.View>
-                        </View>
-
-                        <View style={styles.actionColumn}>
+            <FlatList
+                data={displayTransactions}
+                renderItem={renderTransactionItem}
+                keyExtractor={(item: any) => item.paymentHash || item.txid}
+                ListHeaderComponent={
+                    <View style={styles.topSection}>
+                        <View style={styles.headerRow}>
                             <TouchableOpacity
-                                style={styles.actionButton}
-                                onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
+                                style={styles.toggleTouchable}
+                                onPress={toggleMode}
+                                activeOpacity={0.8}
+                                disabled={!isLightningInitialized || activeWallet?.type === 'watch-only'}
                             >
-                                <Feather name="arrow-up-circle" size={16} color={theme.colors.inversePrimary} />
-                                <Text style={styles.actionButtonText}>Send</Text>
+                                {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
                             </TouchableOpacity>
 
-                            <Animated.View style={{ position: 'absolute', top: 60, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
-                                <Animated.View style={{ transform: [{ translateY }] }}>
-                                    <TouchableOpacity
-                                        style={styles.secondaryActionButton}
-                                        onPress={() => navigation.navigate('LightningTopUp' as any)}
-                                        disabled={!isLightningMode}
-                                    >
-                                        <Feather name="plus" size={14} color={theme.colors.primary} />
-                                        <Text style={styles.secondaryActionButtonText}>Top-up</Text>
-                                    </TouchableOpacity>
+                            <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
+                                <Text style={styles.walletName}>{activeWallet?.name}</Text>
+                                <Feather name="chevron-down" size={20} color={theme.colors.muted} />
+                            </TouchableOpacity>
+
+                            <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
+                                {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
+                            </View>
+                        </View>
+
+                        <TouchableOpacity
+                            style={styles.balanceContainer}
+                            onPress={() => !isLightningMode && navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
+                            disabled={isLightningMode}
+                        >
+                            <Text style={styles.balanceText}>
+                                {hideBalance ? '*******' : (
+                                    isLightningMode ? (
+                                        <>{new Intl.NumberFormat('en-US').format(displayBalance)} sats</>
+                                    ) : (
+                                        <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>
+                                    )
+                                )}
+                            </Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.actionsContainer}>
+                            <View style={styles.actionColumn}>
+                                <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}>
+                                    <Feather name="arrow-down-circle" size={16} color={theme.colors.inversePrimary} />
+                                    <Text style={styles.actionButtonText}>Receive</Text>
+                                </TouchableOpacity>
+
+                                <Animated.View style={{ position: 'absolute', top: 56, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
+                                    <Animated.View style={{ transform: [{ translateY }] }}>
+                                        <TouchableOpacity
+                                            style={styles.secondaryActionButton}
+                                            onPress={() => navigation.navigate('WithdrawToOnchain' as any)}
+                                            disabled={!isLightningMode}
+                                        >
+                                            <Feather name="minus" size={14} color={theme.colors.primary} />
+                                            <Text style={styles.secondaryActionButtonText}>Withdraw</Text>
+                                        </TouchableOpacity>
+                                    </Animated.View>
                                 </Animated.View>
-                            </Animated.View>
+                            </View>
+
+                            <View style={styles.actionColumn}>
+                                <TouchableOpacity
+                                    style={styles.actionButton}
+                                    onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
+                                >
+                                    <Feather name="arrow-up-circle" size={16} color={theme.colors.inversePrimary} />
+                                    <Text style={styles.actionButtonText}>Send</Text>
+                                </TouchableOpacity>
+
+                                <Animated.View style={{ position: 'absolute', top: 56, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
+                                    <Animated.View style={{ transform: [{ translateY }] }}>
+                                        <TouchableOpacity
+                                            style={styles.secondaryActionButton}
+                                            onPress={() => navigation.navigate('LightningTopUp' as any)}
+                                            disabled={!isLightningMode}
+                                        >
+                                            <Feather name="plus" size={14} color={theme.colors.primary} />
+                                            <Text style={styles.secondaryActionButtonText}>Top-up</Text>
+                                        </TouchableOpacity>
+                                    </Animated.View>
+                                </Animated.View>
+                            </View>
                         </View>
                     </View>
-                </View>
-
-                <View style={styles.bottomSection}>
-                    {(!isLightningMode && loadingTxs) ? <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : (
-                        hasTransactions ? (
-                            <View style={styles.historyContainer}>
-                                {recentTxs.map((tx) => renderTransactionItem({ item: tx }))}
-                                {displayTransactions.length > 1 && (
-                                    <TouchableOpacity
-                                        style={styles.showMoreButton}
-                                        onPress={() => navigation.navigate('TransactionHistory', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
-                                    >
-                                        <Text style={styles.showMoreText}>Show full history</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        ) : (
-                            <Text style={styles.noTxText}>No transactions yet</Text>
-                        )
-                    )}
-                </View>
-            </ScrollView>
+                }
+                ListEmptyComponent={
+                    (!isLightningMode && loadingTxs) ? 
+                        <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : 
+                        <Text style={styles.noTxText}>No transactions yet</Text>
+                }
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl 
+                        refreshing={!isLightningMode && isRefetchingTxs} 
+                        onRefresh={onRefresh} 
+                        tintColor={theme.colors.primary} 
+                    />
+                }
+                removeClippedSubviews={true}
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                windowSize={5}
+                updateCellsBatchingPeriod={50}
+            />
         </SafeAreaView>
     );
 };
 
-const getStyles = (theme: Theme) => StyleSheet.create({
+const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.colors.background
     },
-    scrollContent: {
+    listContent: {
         flexGrow: 1,
+        paddingBottom: 20
     },
     centeredContainer: {
         flex: 1,
@@ -419,15 +418,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontWeight: '600'
     },
     topSection: {
-        minHeight: '55%',
+        height: SCREEN_HEIGHT * 0.5,
+        paddingTop: topInset,
         justifyContent: 'center',
         alignItems: 'center',
-    },
-    bottomSection: {
-        minHeight: '45%',
-        borderTopWidth: 1,
-        borderTopColor: theme.colors.border,
-        zIndex: -1,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
+        paddingBottom: 80,
     },
     headerRow: {
         flexDirection: 'row',
@@ -435,7 +432,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         justifyContent: 'center',
         width: '100%',
         paddingHorizontal: 16,
-        marginBottom: 16,
+        marginBottom: 20,
     },
     toggleTouchable: {
         width: 68,
@@ -471,9 +468,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     balanceContainer: {
         alignItems: 'center',
-        height: 44,
+        height: 50,
         justifyContent: 'center',
-        marginBottom: 8,
+        marginBottom: 16,
     },
     balanceText: {
         fontSize: 36,
@@ -491,8 +488,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         justifyContent: 'center',
         width: '100%',
         paddingHorizontal: 16,
-        paddingTop: 16,
-        paddingBottom: 24,
         gap: 12,
         zIndex: 10,
     },
@@ -537,10 +532,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         includeFontPadding: false,
         textAlignVertical: 'center'
     },
-    historyContainer: {
-        paddingHorizontal: 20,
-        paddingBottom: 20
-    },
     noTxText: {
         textAlign: 'center',
         paddingVertical: 40,
@@ -554,6 +545,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 10,
+        paddingHorizontal: 20,
         borderBottomWidth: 1,
         borderColor: theme.colors.border
     },
@@ -587,15 +579,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     txStatus: {
         fontSize: 14,
         color: theme.colors.muted
-    },
-    showMoreButton: {
-        alignItems: 'center',
-        padding: 16
-    },
-    showMoreText: {
-        color: theme.colors.primary,
-        fontSize: 16
-    },
+    }
 });
 
 export default WalletScreen;
