@@ -23,11 +23,6 @@ const btcFormatter = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 8,
 });
 
-const formatBalance = (sats: number) => {
-    const btc = (sats || 0) / 100000000;
-    return btcFormatter.format(btc).replace(/,/g, ' ');
-};
-
 export const WithdrawToOnchainScreen: React.FC = () => {
     const navigation = useNavigation();
     const { theme } = useTheme();
@@ -78,7 +73,28 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
         try {
             const estimate = await prepareWithdrawToOnchain(activeDestination, amountSats, selectedFeeTier);
-            const totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
+            let totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
+
+            // Robust fallback to extract fee directly from Breez SDK response if default parsing yields 0
+            if (totalFeeSats === 0 && estimate.prepareResponse) {
+                const pr = estimate.prepareResponse;
+                const pm = pr.paymentMethod?.inner || pr.paymentMethod;
+
+                const possibleFees = [
+                    pr.feeSats, pr.fee, pr.fees,
+                    pm?.fee, pm?.totalFeeSat, pm?.fees, pm?.lightningFeeSats
+                ];
+
+                for (const fee of possibleFees) {
+                    if (fee !== undefined && fee !== null) {
+                        const parsedFee = Number(fee);
+                        if (parsedFee > 0) {
+                            totalFeeSats = parsedFee;
+                            break;
+                        }
+                    }
+                }
+            }
 
             if (amountSats + totalFeeSats > lightningBalance) {
                 throw new Error(`Insufficient balance to cover swap fees. Total required: ${(amountSats + totalFeeSats).toLocaleString()} sats.`);
@@ -130,7 +146,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+
                 <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
 
                     <View style={styles.balanceContainer}>
@@ -219,7 +235,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                     {txMetrics ? (
                         <View style={styles.summaryBox}>
                             <View style={styles.detailRow}>
-                                <Text style={styles.label}>LSP & routing fees</Text>
+                                <Text style={styles.summaryLabel}>LSP & routing fees</Text>
                                 <View style={styles.valueContainer}>
                                     <Text style={styles.value}>{txMetrics.totalFeeSats.toLocaleString()} sats</Text>
                                 </View>
@@ -264,7 +280,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                         </TouchableOpacity>
                     )}
                 </ScrollView>
-            </KeyboardAvoidingView>
+
         </SafeAreaView>
     );
 };
@@ -274,19 +290,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flex: 1,
         backgroundColor: theme.colors.background,
     },
-    centered: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: theme.colors.background,
-    },
     scrollContent: {
         padding: 24,
-        paddingBottom: 40,
+        paddingBottom: 400, 
     },
     balanceContainer: {
         alignItems: 'center',
-        paddingVertical: 16,
         marginBottom: 16,
     },
     balanceLabel: {
@@ -413,8 +422,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         marginBottom: 12,
     },
+    summaryLabel: {
+        fontSize: 15,
+        color: theme.colors.primary,
+    },
     value: {
-        fontSize: 16,
+        fontSize: 15,
         color: theme.colors.primary,
         fontFamily: 'monospace',
     },
@@ -428,15 +441,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         marginTop: 8,
     },
     totalLabel: {
-        fontSize: 18,
+        fontSize: 16,
         color: theme.colors.primary,
-        fontWeight: 'bold',
     },
     totalValue: {
-        fontSize: 18,
+        fontSize: 16,
         color: theme.colors.primary,
         fontFamily: 'monospace',
-        fontWeight: 'bold',
     },
     orangeSymbol: {
         color: theme.colors.bitcoin,
@@ -449,7 +460,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
-        marginTop: 32,
+        marginTop: 24,
     },
     calculateButton: {
         marginTop: 24,
