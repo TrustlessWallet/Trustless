@@ -80,15 +80,22 @@ export const useWalletTransactions = (walletId: string | undefined, addresses: s
     queryFn: async () => {
          if (!walletId || addresses.length === 0) return [];
          const newTxs = await fetchAddressTransactions(addresses);
-         await dbSaveTransactions(walletId, newTxs, NETWORK_NAME);
+         
+         // Immediately cache to SQLite for subsequent instant loads
+         if (newTxs.length > 0) {
+             await dbSaveTransactions(walletId, newTxs, NETWORK_NAME);
+         }
          return newTxs;
     },
     enabled: !!walletId && addresses.length > 0,
-    staleTime: 30000,
+    staleTime: 60000, // Increased to 60s to prevent excessive refetching during list scrolling
+    refetchOnMount: false,
+    refetchOnWindowFocus: true,
     retry: false,
   });
 
-  const transactions = query.data || cachedTxs;
+  // Ensure DB transactions show immediately, replaced by query data when fetch completes
+  const transactions = (query.data && query.data.length > 0) ? query.data : cachedTxs;
   
   const isLoading = !isDbLoaded || (query.isLoading && transactions.length === 0);
 
