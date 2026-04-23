@@ -371,7 +371,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return req.paymentRequest;
     };
 
-    const payLightningInvoice = async (invoiceStr: string, amountSats?: number) => {
+const payLightningInvoice = async (invoiceStr: string, amountSats?: number) => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
 
         const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
@@ -381,15 +381,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             parsedInput = await activeSdkInstance.parse(cleanStr);
         } catch (error: any) {
             if (cleanStr.toLowerCase().startsWith('lnbc')) {
-                parsedInput = { type: 'bolt11Invoice' };
+                parsedInput = { type: 'bolt11invoice' };
             } else {
                 throw new Error(`Parse failed: ${error.message}`);
             }
         }
 
-        const type = parsedInput.type || parsedInput.tag;
+        const rawType = parsedInput.type || parsedInput.tag || '';
+        const type = String(rawType).toLowerCase();
 
-        if (type === 'bolt11Invoice' || type === 'Bolt11' || type === 'bolt11') {
+        if (type === 'bolt11invoice' || type === 'bolt11') {
             const prepareRequest: any = {
                 paymentRequest: cleanStr
             };
@@ -413,11 +414,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 throw new Error(`Send error (${error.message}).`);
             }
 
-        } else if (type === 'LightningAddress' && parsedInput.inner && parsedInput.inner[0]) {
-            const lightningAddressDetails = parsedInput.inner[0];
-            const payRequestDetails = lightningAddressDetails.payRequest;
+        } else if (type === 'lightningaddress' || type === 'lnurlpay') {
+            let payRequestDetails;
+            if (type === 'lightningaddress') {
+                payRequestDetails = parsedInput.inner?.[0]?.payRequest || parsedInput.data?.payRequest;
+            } else {
+                payRequestDetails = parsedInput.data || parsedInput.inner?.[0] || parsedInput;
+            }
 
-            // Prepare LNURL pay request with the extracted payRequest details
+            if (!payRequestDetails) throw new Error("Failed to extract LNURL pay request details.");
+
             const prepareLnurlPayRequest: any = {
                 amountSats: BigInt(amountSats || 0),
                 payRequest: payRequestDetails,
@@ -435,7 +441,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
 
             try {
-                // For LNURL payments, use the LNURL-specific sendPayment method
                 await activeSdkInstance.lnurlPay({
                     prepareResponse: prepareResponse,
                     idempotencyKey: undefined
@@ -445,28 +450,31 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
 
         } else {
-            throw new Error(`Unsupported lightning format. Parsed type: ${type}`);
+            throw new Error(`Unsupported lightning format. Parsed type: ${rawType}`);
         }
 
         await refreshLightningState();
     };
 
-    const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
+const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
         if (!activeSdkInstance) return null;
 
         let cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
 
-        // Check if it's a Lightning address (contains @)
-        if (cleanStr.includes('@')) {
-            try {
-                // First parse the Lightning address to get LnurlPayRequestDetails
-                const parsedInput = await activeSdkInstance.parse(cleanStr);
+        try {
+            const parsedInput = await activeSdkInstance.parse(cleanStr);
+            const rawType = parsedInput.type || parsedInput.tag || '';
+            const type = String(rawType).toLowerCase();
 
-                if (parsedInput.tag === 'LightningAddress' && parsedInput.inner && parsedInput.inner[0]) {
-                    const lightningAddressDetails = parsedInput.inner[0];
-                    const payRequestDetails = lightningAddressDetails.payRequest;
+            if (type === 'lightningaddress' || type === 'lnurlpay') {
+                let payRequestDetails;
+                if (type === 'lightningaddress') {
+                    payRequestDetails = parsedInput.inner?.[0]?.payRequest || parsedInput.data?.payRequest;
+                } else {
+                    payRequestDetails = parsedInput.data || parsedInput.inner?.[0] || parsedInput;
+                }
 
-                    // Now prepare the LNURL pay request with the extracted payRequest details
+                if (payRequestDetails) {
                     const prepareLnurlPayRequest: any = {
                         amountSats: BigInt(amountSats || 0),
                         payRequest: payRequestDetails,
@@ -477,16 +485,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     };
 
                     const prepareResponse = await activeSdkInstance.prepareLnurlPay(prepareLnurlPayRequest);
-
                     if (prepareResponse && prepareResponse.feeSats) {
-                        // Convert fee from BigInt to number
                         return Number(prepareResponse.feeSats);
                     }
                 }
-            } catch (error) {
                 return null;
             }
-            return null;
+        } catch (error) {
+            // Fall through to handle as raw bolt11 if parsing fails
         }
 
         // Now handle as bolt11 invoice
@@ -503,7 +509,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             let totalFeeSats = 0;
 
             if (prepareResponse.paymentMethod) {
-                // Handle both direct paymentMethod and nested paymentMethod.inner structure
                 const paymentMethod = prepareResponse.paymentMethod.inner || prepareResponse.paymentMethod;
 
                 if (prepareResponse.paymentMethod.tag === 'Bolt11Invoice' || paymentMethod.lightningFeeSats !== undefined) {
