@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -10,14 +10,19 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme'; 
 type QRScannerScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'QRScanner'>;
 type QRScannerScreenRouteProp = RouteProp<RootStackParamList, 'QRScanner'>;
+
 const QRScannerScreen = () => {
   const [permission, requestPermission] = useCameraPermissions();
+  const [isScanned, setIsScanned] = useState(false);
   const navigation = useNavigation<QRScannerScreenNavigationProp>();
   const route = useRoute<QRScannerScreenRouteProp>();
   const { onScanSuccess } = route.params;
   const { theme } = useTheme(); 
   const styles = useMemo(() => getStyles(theme), [theme]); 
   const handleBarCodeScanned = (scanningResult: BarcodeScanningResult) => {
+    if (isScanned) return; 
+    setIsScanned(true);
+    
     const address = scanningResult.data.replace(/^(bitcoin:)/, '');
     onScanSuccess(address);
     navigation.goBack();
