@@ -17,6 +17,7 @@ import { StyledInput } from '../components/StyledInput';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
+import { validateBitcoinAddress } from '../services/bitcoin';
 
 const btcFormatter = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 8,
@@ -24,7 +25,7 @@ const btcFormatter = new Intl.NumberFormat('en-US', {
 });
 
 export const WithdrawToOnchainScreen: React.FC = () => {
-    const navigation = useNavigation();
+    const navigation = useNavigation<any>();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
@@ -46,6 +47,8 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
     const [calculating, setCalculating] = useState(false);
     const [executing, setExecuting] = useState(false);
+    const [autoCalculateTrigger, setAutoCalculateTrigger] = useState(0);
+    const [calculationError, setCalculationError] = useState<string | null>(null);
 
     const [txMetrics, setTxMetrics] = useState<{ totalFeeSats: number; prepareResponse: any } | null>(null);
 
@@ -57,31 +60,54 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
     const activeDestination = destMode === 'own' ? ownAddress : customAddress;
 
+    // Auto-calculate fees when amount or fee tier changes
+    useEffect(() => {
+        if (amountStr && activeDestination && !executing) {
+            const amountSats = parseInt(amountStr, 10);
+            if (!isNaN(amountSats)) {
+                const timer = setTimeout(() => {
+                    handleCalculate();
+                }, 800); // Debounce for 800ms
+                return () => clearTimeout(timer);
+            } else {
+                setTxMetrics(null);
+                setCalculationError(null);
+            }
+        } else {
+            setTxMetrics(null);
+            setCalculationError(null);
+        }
+    }, [amountStr, selectedFeeTier, activeDestination, autoCalculateTrigger]);
+
     const handleCalculate = async () => {
         if (!activeWallet || !activeDestination) return;
         const amountSats = parseInt(amountStr, 10);
 
         if (isNaN(amountSats) || amountSats <= 0) return;
 
+        console.log('=== WITHDRAW FEE CALCULATION ===');
+        console.log('Amount:', amountSats, 'sats');
+        console.log('Destination:', activeDestination);
+        console.log('Fee tier:', selectedFeeTier);
+
+        if (!validateBitcoinAddress(activeDestination)) {
+            setCalculationError("Address is invalid");
+            return;
+        }
+
         if (amountSats > lightningBalance) {
-            Alert.alert("Insufficient balance", `You only have ${lightningBalance.toLocaleString()} sats available.`);
+            setCalculationError("Amount exceeds balance");
             return;
         }
 
         setCalculating(true);
         setTxMetrics(null);
+        setCalculationError(null);
 
         try {
             const estimate = await prepareWithdrawToOnchain(activeDestination, amountSats, selectedFeeTier);
-            let totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
             
-            // Debug logging
-            console.log('Fee estimate:', {
-                senderFeeMsat: estimate.senderFeeMsat,
-                recipientFeeMsat: estimate.recipientFeeMsat,
-                calculatedTotalFeeSats: totalFeeSats,
-                selectedFeeTier
-            });
+            let totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
 
             if (totalFeeSats === 0 && estimate.prepareResponse) {
                 const pr = estimate.prepareResponse;
@@ -110,16 +136,17 @@ export const WithdrawToOnchainScreen: React.FC = () => {
             }
 
             if (amountSats + totalFeeSats > lightningBalance) {
-                throw new Error(`Insufficient balance to cover swap fees. Total required: ${(amountSats + totalFeeSats).toLocaleString()} sats.`);
+                setCalculationError("Insufficient funds for fees");
+                return;
             }
 
             setTxMetrics({ totalFeeSats, prepareResponse: estimate.prepareResponse });
         } catch (err: any) {
             let errorMsg = err.message || "Could not prepare the withdrawal transaction.";
             if (errorMsg.toLowerCase().includes("invalidinput") || errorMsg.toLowerCase().includes("invalid input")) {
-                errorMsg = "The amount is too small. On-chain withdrawals require a minimum amount to cover base routing and network dust limits.";
+                errorMsg = "Amount is too low";
             }
-            Alert.alert("Calculation failed", errorMsg);
+            setCalculationError(errorMsg);
         } finally {
             setCalculating(false);
         }
@@ -163,8 +190,13 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-
-                <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
+            <KeyboardAvoidingView>
+                <ScrollView 
+                    contentContainerStyle={styles.scrollContent} 
+                    bounces={false}
+                    keyboardShouldPersistTaps="handled"
+                    automaticallyAdjustKeyboardInsets={true}
+                >
 
                     <View style={styles.balanceContainer}>
                         <Text style={styles.balanceLabel}>Available to withdraw</Text>
@@ -209,29 +241,27 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                     placeholder="bc1q..."
                                     autoCapitalize="none"
                                     autoCorrect={false}
+                                    rightElement={
+                                        <TouchableOpacity onPress={() => {
+                                            const params = { 
+                                                onScanSuccess: (data: string) => {
+                                                    setCustomAddress(data);
+                                                    setTxMetrics(null);
+                                                }
+                                            };
+                                            navigation.navigate('QRScanner', params);
+                                        }} style={styles.iconButton}>
+                                            <Feather name="camera" size={20} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                    }
                                 />
+                                {customAddress.length > 0 && (
+                                    <View style={{ marginTop: 8 }}>
+                                        {renderAddressChunks(customAddress)}
+                                    </View>
+                                )}
                             </View>
                         )}
-
-                        <View style={[styles.feeSelectorContainer, { marginTop: 24 }]}>
-                            <Text style={styles.label}>On-chain settlement priority</Text>
-                            <View style={styles.feeOptionsContainer}>
-                                <View style={styles.feeOptionsRow}>
-                                    {(['slow', 'normal', 'fast'] as const).map((key) => (
-                                        <TouchableOpacity
-                                            key={key}
-                                            onPress={() => { setSelectedFeeTier(key); setTxMetrics(null); }}
-                                            style={[styles.feeOption, selectedFeeTier === key && styles.feeOptionActive]}
-                                            disabled={executing || calculating}
-                                        >
-                                            <Text style={[styles.feeOptionText, selectedFeeTier === key ? styles.feeOptionTextActive : {}]}>
-                                                {key.charAt(0).toUpperCase() + key.slice(1)}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            </View>
-                        </View>
                     </View>
 
                     <View style={styles.section}>
@@ -244,60 +274,98 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 setTxMetrics(null);
                             }}
                             placeholder="0"
-                            editable={!executing && !calculating}
+                            editable={!executing}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
+                            blurOnSubmit={false}
                         />
-                    </View>
-
-                    {txMetrics ? (
-                        <View style={styles.summaryBox}>
-                            <View style={styles.detailRow}>
-                                <Text style={styles.summaryLabel}>LSP & routing fees</Text>
-                                <View style={styles.valueContainer}>
-                                    <Text style={styles.value}>{txMetrics.totalFeeSats.toLocaleString()} sats</Text>
+                        
+                        {/* Always rendered to prevent height jumping */}
+                        <View style={styles.feeEstimateRow}>
+                            {calculationError ? (
+                                <View style={styles.feeEstimateContent}>
+                                    <Feather name="alert-circle" size={14} color={theme.colors.muted} />
+                                    <Text style={styles.feeEstimateText}>
+                                        {calculationError}
+                                    </Text>
                                 </View>
-                            </View>
-
-                            <View style={styles.separator} />
-                            <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>Total deducted</Text>
-                                <Text style={styles.totalValue}>
-                                    {((parseInt(amountStr, 10) + txMetrics.totalFeeSats) / 100000000).toFixed(8)} <Text style={styles.orangeSymbol}>₿</Text>
-                                </Text>
-                            </View>
-
-                            <TouchableOpacity
-                                style={[styles.confirmButton, executing && styles.buttonDisabled]}
-                                onPress={handleExecuteWithdrawal}
-                                disabled={executing}
-                            >
-                                {executing ? (
-                                    <ActivityIndicator color={theme.colors.inversePrimary} />
-                                ) : (
-                                    <View style={styles.buttonContentRowCentered}>
-                                        <Feather name="minus-circle" size={18} color={theme.colors.inversePrimary} />
-                                        <Text style={styles.buttonText}>Confirm withdrawal</Text>
-                                    </View>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        <TouchableOpacity
-                            style={[styles.confirmButton, (!amountStr || !isLightningInitialized || !activeDestination) && styles.buttonDisabled]}
-                            onPress={handleCalculate}
-                            disabled={calculating || !amountStr || !isLightningInitialized || !activeDestination}
-                        >
-                            {calculating ? (
-                                <ActivityIndicator color={theme.colors.inversePrimary} />
                             ) : (
-                                <View style={styles.buttonContentRowCentered}>
-                                    <Text style={styles.buttonText}>Calculate fees</Text>
+                                <View style={styles.feeEstimateContent}>
+                                    <Feather name="zap" size={14} color={theme.colors.muted} />
+                                    <Text style={styles.feeEstimateText}>
+                                        {calculating 
+                                            ? 'Estimating fees...' 
+                                            : (txMetrics !== null 
+                                                ? (() => {
+                                                    const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
+                                                    let tierKey = 'speedMedium';
+                                                    if (selectedFeeTier === 'fast') tierKey = 'speedFast';
+                                                    if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
+                                                    
+                                                    const speedObj = quote?.[tierKey];
+                                                    const l1Fee = Number(speedObj?.l1BroadcastFeeSat || 0);
+                                                    const lspFee = Number(speedObj?.userFeeSat || 0);
+                                                    
+                                                    if (l1Fee > 0 && lspFee > 0) {
+                                                        return `Fees: ${l1Fee} (L1) + ${lspFee} (LSP) = ${txMetrics.totalFeeSats} sats`;
+                                                    } else {
+                                                        return `Fees: ~${txMetrics.totalFeeSats} sats`;
+                                                    }
+                                                })()
+                                                : 'Fees: ~')}
+                                    </Text>
                                 </View>
                             )}
-                        </TouchableOpacity>
-                    )}
-                </ScrollView>
+                        </View>
 
+                    <View style={[styles.feeSelectorContainer, { marginBottom: 16 }]}>
+                        <Text style={styles.label}>On-chain settlement priority</Text>
+                        <View style={styles.feeOptionsContainer}>
+                            <View style={styles.feeOptionsRow}>
+                                {(['slow', 'normal', 'fast'] as const).map((key) => (
+                                    <TouchableOpacity
+                                        key={key}
+                                        onPress={() => { setSelectedFeeTier(key); setTxMetrics(null); }}
+                                        style={[styles.feeOption, selectedFeeTier === key && styles.feeOptionActive]}
+                                        disabled={executing || calculating}
+                                    >
+                                        <Text style={[styles.feeOptionText, selectedFeeTier === key ? styles.feeOptionTextActive : {}]}>
+                                            {key.charAt(0).toUpperCase() + key.slice(1)}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </View>
+                    </View>
+                        
+                        {/* Always rendered to prevent height jumping */}
+                        <View style={styles.totalAmountContainer}>
+                            <View style={styles.detailRow}>
+                                <Text style={styles.totalLabel}>Total</Text>
+                                <Text style={styles.totalValue}>
+                                    {txMetrics && amountStr 
+                                        ? `${(parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()} sats` 
+                                        : '~ sats'}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    <TouchableOpacity
+                        style={[styles.confirmButton, (!amountStr || !isLightningInitialized || !activeDestination || !txMetrics) && styles.buttonDisabled]}
+                        onPress={handleExecuteWithdrawal}
+                        disabled={!amountStr || !isLightningInitialized || !activeDestination || !txMetrics || executing}
+                    >
+                        {executing ? (
+                            <ActivityIndicator color={theme.colors.inversePrimary} />
+                        ) : (
+                            <View style={styles.buttonContentRowCentered}>
+                                <Feather name="minus-circle" size={18} color={theme.colors.inversePrimary} />
+                                <Text style={styles.buttonText}>Confirm withdrawal</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };
@@ -309,7 +377,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     scrollContent: {
         padding: 24,
-        paddingBottom: 400, 
+        paddingBottom: 350,
     },
     balanceContainer: {
         alignItems: 'center',
@@ -359,7 +427,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     toggleButton: {
         flex: 1,
-        paddingVertical: 10,
+        paddingVertical: 12,
         alignItems: 'center',
         borderRadius: 6,
     },
@@ -387,6 +455,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     customAddressWrapper: {
         marginTop: 4,
+    },
+    iconButton: {
+        padding: 8,
     },
     addressPreview: {
         fontSize: 14,
@@ -417,7 +488,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flex: 1,
         paddingVertical: 12,
         borderRadius: 8,
-
         backgroundColor: theme.colors.surface,
         alignItems: 'center',
     },
@@ -433,35 +503,46 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     feeOptionTextActive: {
         color: theme.colors.inversePrimary,
     },
-    summaryBox: {
+    confirmButton: {
+        backgroundColor: theme.colors.primary,
+        paddingVertical: 16,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 56,
+        marginTop: 6,
+    },
+    feeEstimateRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 8,
+        marginBottom: 16,
+        minHeight: 20, // Prevents collapse when content switches
+    },
+    feeEstimateContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    feeEstimateText: {
+        fontSize: 13,
+        color: theme.colors.muted,
+    },
+    errorText: {
+        fontSize: 13,
+        color: theme.colors.muted,
+    },
+    totalAmountContainer: {
         paddingTop: 16,
         borderTopWidth: 1,
         borderColor: theme.colors.border,
-        marginTop: 24,
+        marginTop: 8,
     },
     detailRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 12,
-    },
-    summaryLabel: {
-        fontSize: 15,
-        color: theme.colors.primary,
-    },
-    value: {
-        fontSize: 15,
-        color: theme.colors.primary,
-        fontFamily: 'monospace',
-    },
-    valueContainer: {
-        alignItems: 'flex-end',
-    },
-    separator: {
-        height: 1,
-        backgroundColor: theme.colors.border,
-        marginBottom: 16,
-        marginTop: 8,
     },
     totalLabel: {
         fontSize: 16,
@@ -475,15 +556,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     orangeSymbol: {
         color: theme.colors.bitcoin,
         fontWeight: 'bold',
-    },
-    confirmButton: {
-        backgroundColor: theme.colors.primary,
-        paddingVertical: 16,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 56,
-        marginTop: 8,
     },
     buttonDisabled: {
         opacity: 0.5,
