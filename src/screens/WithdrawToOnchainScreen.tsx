@@ -377,7 +377,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     scrollContent: {
         padding: 24,
-        paddingBottom: 350,
+        paddingBottom: 200,
     },
     balanceContainer: {
         alignItems: 'center',

@@ -140,6 +140,23 @@ const SendScreen = () => {
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
 
+    const renderAddressChunks = (address: string) => {
+        if (!address) return null;
+        const chunks = address.match(/.{1,6}/g) || [address];
+        return (
+            <Text style={styles.addressPreview} selectable>
+                {chunks.map((chunk, index) => {
+                    const isEdge = index === 0 || index === chunks.length - 1;
+                    return (
+                        <Text key={index} style={isEdge ? styles.orangeSymbol : undefined}>
+                            {chunk}{index < chunks.length - 1 ? ' ' : ''}
+                        </Text>
+                    );
+                })}
+            </Text>
+        );
+    };
+
     useEffect(() => {
         if (route.params?.selectedAddress) {
             setRecipientAddress(route.params.selectedAddress);
@@ -561,7 +578,7 @@ const SendScreen = () => {
                                 </View>
                             }
                         />
-                        {!!recipientAddressPreview && <AddressText style={styles.addressPreview} address={recipientAddressPreview} />}
+                        {!!recipientAddressPreview && renderAddressChunks(recipientAddressPreview)}
                         </View>
 
                         <Text style={styles.label}>Amount</Text>
@@ -775,7 +792,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     buttonDisabled: { opacity: 0.5 },
     sendButtonText: { color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '600' },
     buttonContentRowCentered: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-    orangeSymbol: { color: theme.colors.bitcoin },
+    orangeSymbol: { color: theme.colors.bitcoin, fontWeight: 'bold' },
     feeSelectorContainer: {
         marginBottom: 16,
     },
