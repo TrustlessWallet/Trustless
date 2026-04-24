@@ -52,6 +52,7 @@ export const LightningTopUpScreen: React.FC = () => {
     const [calculating, setCalculating] = useState(false);
     const [executing, setExecuting] = useState(false);
     const [txMetrics, setTxMetrics] = useState<{ fee: number; hex: string; changeIndex: number | null, vsize: number } | null>(null);
+    const [calculationError, setCalculationError] = useState<string | null>(null);
 
     useEffect(() => {
         const initData = async () => {
@@ -81,6 +82,20 @@ export const LightningTopUpScreen: React.FC = () => {
         initData();
     }, [isLightningInitialized]);
 
+    useEffect(() => {
+        if (!amountStr || !activeWallet || !swapAddress) {
+            setTxMetrics(null);
+            setCalculationError(null);
+            return;
+        }
+        
+        const timer = setTimeout(() => {
+            handleCalculate();
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [amountStr, activeWallet, swapAddress, currentRate]);
+
     const handleCalculate = async () => {
         if (!activeWallet || !swapAddress) return;
         const amountSats = parseInt(amountStr, 10);
@@ -89,26 +104,27 @@ export const LightningTopUpScreen: React.FC = () => {
 
         const minRequired = limits ? limits.minSats : 546;
         if (amountSats < minRequired) {
-            Alert.alert("Invalid Amount", `Amount is below the minimum limit of ${minRequired.toLocaleString()} sats.`);
+            setCalculationError(`Minimum: ${minRequired.toLocaleString()} sats`);
             return;
         }
         if (limits && amountSats > limits.maxSats) {
-            Alert.alert("Invalid Amount", `Amount exceeds the maximum limit of ${limits.maxSats.toLocaleString()} sats.`);
+            setCalculationError(`Maximum: ${limits.maxSats.toLocaleString()} sats`);
             return;
         }
 
         setCalculating(true);
         setTxMetrics(null);
+        setCalculationError(null);
 
         try {
             const fundedAddresses = activeWallet.derivedAddressInfoCache
                 .filter(a => a.balance > 0)
                 .map(a => a.address);
 
-            if (fundedAddresses.length === 0) throw new Error("No funds available in this wallet.");
+            if (fundedAddresses.length === 0) throw new Error("No funds available");
 
             const allUtxos = await fetchUTXOs(fundedAddresses);
-            if (allUtxos.length === 0) throw new Error("No valid UTXOs found.");
+            if (allUtxos.length === 0) throw new Error("No UTXOs found");
 
             allUtxos.sort((a: any, b: any) => b.value - a.value);
             const selectedUtxos = [];
@@ -127,7 +143,7 @@ export const LightningTopUpScreen: React.FC = () => {
             }
 
             if (accumulated < amountSats + exactMinerFee) {
-                throw new Error(`Insufficient total balance. You need ${(amountSats + exactMinerFee).toLocaleString()} sats to cover the amount and exact miner fees.`);
+                throw new Error(`Insufficient balance. Need ${(amountSats + exactMinerFee).toLocaleString()} sats`);
             }
 
             const { txHex, usedChangeIndex } = await createAndSignTransaction(
@@ -151,7 +167,7 @@ export const LightningTopUpScreen: React.FC = () => {
 
         } catch (err: any) {
             console.error("[Breez Node UI] Calculation Failed:", err);
-            Alert.alert("Calculation Failed", err.message || "Could not prepare the swap transaction.");
+            setCalculationError(err.message || "Transaction preparation failed");
         } finally {
             setCalculating(false);
         }
@@ -256,6 +272,18 @@ export const LightningTopUpScreen: React.FC = () => {
                             editable={!executing && !calculating}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                         />
+                        
+                        {/* Status messages moved here */}
+                        {calculationError ? (
+                            <View style={styles.statusMessageContainer}>
+                                <Feather name="alert-circle" size={14} color={theme.colors.muted} />
+                                <Text style={styles.statusText}>{calculationError}</Text>
+                            </View>
+                        ) : calculating ? (
+                            <View style={styles.statusMessageContainer}>
+                                <Text style={styles.statusText}>Calculating...</Text>
+                            </View>
+                        ) : null}
                     </View>
 
                     <View style={styles.feeSelectorContainer}>
@@ -301,57 +329,54 @@ export const LightningTopUpScreen: React.FC = () => {
                         )}
                     </View>
 
-                    {txMetrics ? (
-                        <View style={styles.summaryBox}>
-                            <View style={styles.detailRow}>
-                                <Text style={styles.label}>Transaction size</Text>
-                                <Text style={styles.value}>{txMetrics.vsize} vbytes</Text>
-                            </View>
-                            <View style={styles.detailRow}>
-                                <Text style={styles.label}>Total miner fee</Text>
-                                <View style={styles.valueContainer}>
-                                    <Text style={styles.value}>{txMetrics.fee.toLocaleString()} sats</Text>
+                    <View style={styles.summaryBox}>
+                        {txMetrics ? (
+                            <>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.label}>Transaction size</Text>
+                                    <Text style={styles.value}>{txMetrics.vsize} vbytes</Text>
                                 </View>
-                            </View>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.label}>Total miner fee</Text>
+                                    <View style={styles.valueContainer}>
+                                        <Text style={styles.value}>{txMetrics.fee.toLocaleString()} sats</Text>
+                                    </View>
+                                </View>
 
-                            <View style={styles.separator} />
-                            <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>Total Send</Text>
-                                <Text style={styles.totalValue}>
-                                    {((parseInt(amountStr, 10) + txMetrics.fee) / 100000000).toFixed(8)} <Text style={styles.orangeSymbol}>₿</Text>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.totalLabel}>Total Send</Text>
+                                    <Text style={styles.totalValue}>
+                                        {((parseInt(amountStr, 10) + txMetrics.fee) / 100000000).toFixed(8)} <Text style={styles.orangeSymbol}>₿</Text>
+                                    </Text>
+                                </View>
+                            </>
+                        ): null}
+
+                        <View style={styles.detailRow}>
+                            <Text style={styles.totalLabel}>Total</Text>
+                            <Text style={styles.totalValue}>
+                                {txMetrics && amountStr 
+                                    ? `${(parseInt(amountStr, 10) + txMetrics.fee).toLocaleString()} sats` 
+                                    : '~ sats'}
                                 </Text>
                             </View>
 
-                            <TouchableOpacity
-                                style={[styles.confirmButton, executing && styles.buttonDisabled]}
-                                onPress={handleExecuteTopUp}
-                                disabled={executing}
-                            >
-                                {executing ? (
-                                    <ActivityIndicator color={theme.colors.inversePrimary} />
-                                ) : (
-                                    <View style={styles.buttonContentRowCentered}>
-                                        <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
-                                        <Text style={styles.buttonText}>Confirm & Top-up</Text>
-                                    </View>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
                         <TouchableOpacity
-                            style={[styles.confirmButton, styles.calculateButton, (!amountStr || !isLightningInitialized) && styles.buttonDisabled]}
-                            onPress={handleCalculate}
-                            disabled={calculating || !amountStr || !isLightningInitialized || !swapAddress}
+                            style={[styles.confirmButton, (!txMetrics || executing) && styles.buttonDisabled]}
+                            onPress={handleExecuteTopUp}
+                            disabled={!txMetrics || executing}
                         >
-                            {calculating ? (
+                            {executing ? (
                                 <ActivityIndicator color={theme.colors.inversePrimary} />
                             ) : (
                                 <View style={styles.buttonContentRowCentered}>
-                                    <Text style={styles.buttonText}>Calculate route</Text>
+                                    <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
+                                    <Text style={styles.buttonText}>Confirm & Top-up</Text>
                                 </View>
                             )}
                         </TouchableOpacity>
-                    )}
+                    </View>
+
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -396,7 +421,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         textAlignVertical: 'center'
     },
     section: {
-        marginBottom: 24,
+        marginBottom: 16,
     },
     label: {
         fontSize: 16,
@@ -498,6 +523,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         paddingTop: 16,
         borderTopWidth: 1,
         borderColor: theme.colors.border,
+        marginTop: 16,
     },
     detailRow: {
         flexDirection: 'row',
@@ -513,18 +539,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     valueContainer: {
         alignItems: 'flex-end',
     },
-    separator: {
-        height: 1,
-        backgroundColor: theme.colors.border,
-        marginBottom: 16,
-        marginTop: 8,
-    },
     totalLabel: {
-        fontSize: 18,
+        fontSize: 16,
         color: theme.colors.primary,
     },
     totalValue: {
-        fontSize: 18,
+        fontSize: 16,
         color: theme.colors.primary,
     },
     orangeSymbol: {
@@ -538,12 +558,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
-        marginTop: 32,
+        marginTop: 16,
     },
-    calculateButton: {
-        marginTop: 24,
-    },
-    buttonDisabled: {
+        buttonDisabled: {
         opacity: 0.5,
     },
     buttonText: {
@@ -556,5 +573,17 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-    }
+    },
+    statusMessageContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 8,
+        paddingHorizontal: 4,
+    },
+    statusText: {
+        fontSize: 14,
+        color: theme.colors.muted,
+        marginLeft: 6,
+        flex: 1,
+    },
 });

@@ -518,7 +518,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         gap: 6,
         marginTop: 8,
         marginBottom: 16,
-        minHeight: 20, // Prevents collapse when content switches
+        minHeight: 20,
     },
     feeEstimateContent: {
         flexDirection: 'row',
@@ -526,7 +526,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         gap: 6,
     },
     feeEstimateText: {
-        fontSize: 13,
+        fontSize: 14,
         color: theme.colors.muted,
     },
     errorText: {
