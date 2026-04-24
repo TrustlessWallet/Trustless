@@ -556,20 +556,30 @@ const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Pr
         try {
             const prepareRequest = {
                 paymentRequest: address,
-                amount: BigInt(amountSats)
+                amount: amountSats
             };
             const res = await activeSdkInstance.prepareSendPayment(prepareRequest as any);
 
             let feeSats = 0;
-            if (res.paymentMethod && res.paymentMethod.type === 'bitcoinAddress') {
-                const quote = res.paymentMethod.feeQuote;
+            
+            // Fixed structure: paymentMethod.inner contains the data, paymentMethod.tag is the type
+            if (res.paymentMethod && res.paymentMethod.tag === 'BitcoinAddress') {
+                const quote = res.paymentMethod.inner.feeQuote;
+                console.log('Fee quote exists:', !!quote);
+                console.log('Available fee tiers:', quote ? Object.keys(quote) : 'none');
+                
                 if (feeTier === 'fast') {
-                    feeSats = Number(quote?.speedFast?.totalFeeSat || 0);
+                    const speedObj = quote?.speedFast;
+                    feeSats = Number(speedObj?.l1BroadcastFeeSat || 0) + Number(speedObj?.userFeeSat || 0);
                 } else if (feeTier === 'slow') {
-                    feeSats = Number(quote?.speedSlow?.totalFeeSat || 0);
+                    const speedObj = quote?.speedSlow;
+                    feeSats = Number(speedObj?.l1BroadcastFeeSat || 0) + Number(speedObj?.userFeeSat || 0);
                 } else {
-                    feeSats = Number(quote?.speedMedium?.totalFeeSat || 0);
+                    const speedObj = quote?.speedMedium;
+                    feeSats = Number(speedObj?.l1BroadcastFeeSat || 0) + Number(speedObj?.userFeeSat || 0);
                 }
+                
+                console.log('Extracted feeSats:', feeSats);
             }
 
             return {

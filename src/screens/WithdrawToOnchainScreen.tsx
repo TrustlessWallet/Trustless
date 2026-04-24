@@ -74,14 +74,27 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         try {
             const estimate = await prepareWithdrawToOnchain(activeDestination, amountSats, selectedFeeTier);
             let totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
+            
+            // Debug logging
+            console.log('Fee estimate:', {
+                senderFeeMsat: estimate.senderFeeMsat,
+                recipientFeeMsat: estimate.recipientFeeMsat,
+                calculatedTotalFeeSats: totalFeeSats,
+                selectedFeeTier
+            });
 
-            // Robust fallback to extract fee directly from Breez SDK response if default parsing yields 0
             if (totalFeeSats === 0 && estimate.prepareResponse) {
                 const pr = estimate.prepareResponse;
                 const pm = pr.paymentMethod?.inner || pr.paymentMethod;
 
+                let tierKey = 'speedMedium';
+                if (selectedFeeTier === 'fast') tierKey = 'speedFast';
+                if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
+
                 const possibleFees = [
-                    pr.feeSats, pr.fee, pr.fees,
+                    pm?.feeQuote?.[tierKey]?.totalFeeSat,
+                    pm?.feeQuote?.[tierKey]?.fee,
+                    pr.feeSats, pr.feesFeeSats, pr.fee, pr.fees,
                     pm?.fee, pm?.totalFeeSat, pm?.fees, pm?.lightningFeeSats
                 ];
 
@@ -102,7 +115,11 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
             setTxMetrics({ totalFeeSats, prepareResponse: estimate.prepareResponse });
         } catch (err: any) {
-            Alert.alert("Calculation failed", err.message || "Could not prepare the withdrawal transaction.");
+            let errorMsg = err.message || "Could not prepare the withdrawal transaction.";
+            if (errorMsg.toLowerCase().includes("invalidinput") || errorMsg.toLowerCase().includes("invalid input")) {
+                errorMsg = "The amount is too small. On-chain withdrawals require a minimum amount to cover base routing and network dust limits.";
+            }
+            Alert.alert("Calculation failed", errorMsg);
         } finally {
             setCalculating(false);
         }
@@ -195,12 +212,30 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 />
                             </View>
                         )}
+
+                        <View style={[styles.feeSelectorContainer, { marginTop: 24 }]}>
+                            <Text style={styles.label}>On-chain settlement priority</Text>
+                            <View style={styles.feeOptionsContainer}>
+                                <View style={styles.feeOptionsRow}>
+                                    {(['slow', 'normal', 'fast'] as const).map((key) => (
+                                        <TouchableOpacity
+                                            key={key}
+                                            onPress={() => { setSelectedFeeTier(key); setTxMetrics(null); }}
+                                            style={[styles.feeOption, selectedFeeTier === key && styles.feeOptionActive]}
+                                            disabled={executing || calculating}
+                                        >
+                                            <Text style={[styles.feeOptionText, selectedFeeTier === key ? styles.feeOptionTextActive : {}]}>
+                                                {key.charAt(0).toUpperCase() + key.slice(1)}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </View>
+                        </View>
                     </View>
 
                     <View style={styles.section}>
-                        <View style={styles.balanceRow}>
-                            <Text style={styles.label}>Amount</Text>
-                        </View>
+                        <Text style={styles.label}>Amount</Text>
                         <StyledInput
                             keyboardType="numeric"
                             value={amountStr}
@@ -212,24 +247,6 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                             editable={!executing && !calculating}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                         />
-                    </View>
-
-                    <View style={styles.feeSelectorContainer}>
-                        <Text style={styles.label}>On-chain settlement priority</Text>
-                        <View style={styles.feeOptionsRow}>
-                            {(['slow', 'normal', 'fast'] as const).map((key) => (
-                                <TouchableOpacity
-                                    key={key}
-                                    onPress={() => { setSelectedFeeTier(key); setTxMetrics(null); }}
-                                    style={[styles.feeOption, selectedFeeTier === key && styles.feeOptionActive]}
-                                    disabled={executing || calculating}
-                                >
-                                    <Text style={[styles.feeOptionText, selectedFeeTier === key ? styles.feeOptionTextActive : {}]}>
-                                        {key.charAt(0).toUpperCase() + key.slice(1)}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
                     </View>
 
                     {txMetrics ? (
@@ -266,7 +283,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                         </View>
                     ) : (
                         <TouchableOpacity
-                            style={[styles.confirmButton, styles.calculateButton, (!amountStr || !isLightningInitialized || !activeDestination) && styles.buttonDisabled]}
+                            style={[styles.confirmButton, (!amountStr || !isLightningInitialized || !activeDestination) && styles.buttonDisabled]}
                             onPress={handleCalculate}
                             disabled={calculating || !amountStr || !isLightningInitialized || !activeDestination}
                         >
@@ -385,6 +402,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     feeSelectorContainer: {
         marginBottom: 0,
     },
+    feeOptionsContainer: {
+        backgroundColor: theme.colors.surface,
+        borderRadius: 8,
+        padding: 4,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
     feeOptionsRow: {
         flexDirection: 'row',
         gap: 8,
@@ -393,8 +417,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flex: 1,
         paddingVertical: 12,
         borderRadius: 8,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
+
         backgroundColor: theme.colors.surface,
         alignItems: 'center',
     },
@@ -460,10 +483,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
-        marginTop: 24,
-    },
-    calculateButton: {
-        marginTop: 24,
+        marginTop: 8,
     },
     buttonDisabled: {
         opacity: 0.5,

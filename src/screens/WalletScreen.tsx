@@ -363,7 +363,6 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     },
     listContent: {
         flexGrow: 1,
-        paddingBottom: 20
     },
     centeredContainer: {
         flex: 1,
