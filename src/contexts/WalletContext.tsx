@@ -562,26 +562,30 @@ const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Pr
 
             let feeSats = 0;
             
-            // Fixed structure: paymentMethod.inner contains the data, paymentMethod.tag is the type
             if (res.paymentMethod && res.paymentMethod.tag === 'BitcoinAddress') {
                 const quote = res.paymentMethod.inner.feeQuote;
-                console.log('Fee quote exists:', !!quote);
-                console.log('Available fee tiers:', quote ? Object.keys(quote) : 'none');
                 
                 if (feeTier === 'fast') {
                     const speedObj = quote?.speedFast;
-                    feeSats = Number(speedObj?.l1BroadcastFeeSat || 0) + Number(speedObj?.userFeeSat || 0);
+                    const l1Fee = Number(speedObj?.l1BroadcastFeeSat || 0);
+                    const userFee = Number(speedObj?.userFeeSat || 0);
+                    feeSats = l1Fee + userFee;
                 } else if (feeTier === 'slow') {
                     const speedObj = quote?.speedSlow;
-                    feeSats = Number(speedObj?.l1BroadcastFeeSat || 0) + Number(speedObj?.userFeeSat || 0);
+                    const l1Fee = Number(speedObj?.l1BroadcastFeeSat || 0);
+                    const userFee = Number(speedObj?.userFeeSat || 0);
+                    feeSats = l1Fee + userFee;
                 } else {
                     const speedObj = quote?.speedMedium;
-                    feeSats = Number(speedObj?.l1BroadcastFeeSat || 0) + Number(speedObj?.userFeeSat || 0);
+                    const l1Fee = Number(speedObj?.l1BroadcastFeeSat || 0);
+                    const userFee = Number(speedObj?.userFeeSat || 0);
+                    feeSats = l1Fee + userFee;
                 }
-                
-                console.log('Extracted feeSats:', feeSats);
+            } else {
+                // Payment method not BitcoinAddress
             }
-
+            
+            
             return {
                 senderFeeMsat: feeSats * 1000,
                 recipientFeeMsat: 0,
