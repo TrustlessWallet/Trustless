@@ -371,7 +371,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return req.paymentRequest;
     };
 
-const payLightningInvoice = async (invoiceStr: string, amountSats?: number) => {
+    const payLightningInvoice = async (invoiceStr: string, amountSats?: number) => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
 
         const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
@@ -456,7 +456,7 @@ const payLightningInvoice = async (invoiceStr: string, amountSats?: number) => {
         await refreshLightningState();
     };
 
-const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
+    const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
         if (!activeSdkInstance) return null;
 
         let cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
@@ -1408,7 +1408,7 @@ const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Pr
         queryClient.invalidateQueries({ queryKey: ['saved', 'balances'] });
     };
 
-    const value = {
+    const value: WalletContextType = {
         wallets,
         activeWallet,
         loading,
