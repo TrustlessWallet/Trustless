@@ -279,45 +279,15 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                             blurOnSubmit={false}
                         />
                         
-                        {/* Always rendered to prevent height jumping */}
-                        <View style={styles.feeEstimateRow}>
-                            {calculationError ? (
-                                <View style={styles.feeEstimateContent}>
-                                    <Feather name="alert-circle" size={14} color={theme.colors.muted} />
-                                    <Text style={styles.feeEstimateText}>
-                                        {calculationError}
-                                    </Text>
-                                </View>
-                            ) : (
-                                <View style={styles.feeEstimateContent}>
-                                    <Feather name="zap" size={14} color={theme.colors.muted} />
-                                    <Text style={styles.feeEstimateText}>
-                                        {calculating 
-                                            ? 'Estimating fees...' 
-                                            : (txMetrics !== null 
-                                                ? (() => {
-                                                    const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
-                                                    let tierKey = 'speedMedium';
-                                                    if (selectedFeeTier === 'fast') tierKey = 'speedFast';
-                                                    if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
-                                                    
-                                                    const speedObj = quote?.[tierKey];
-                                                    const l1Fee = Number(speedObj?.l1BroadcastFeeSat || 0);
-                                                    const lspFee = Number(speedObj?.userFeeSat || 0);
-                                                    
-                                                    if (l1Fee > 0 && lspFee > 0) {
-                                                        return `Fees: ${l1Fee} (L1) + ${lspFee} (LSP) = ${txMetrics.totalFeeSats} sats`;
-                                                    } else {
-                                                        return `Fees: ~${txMetrics.totalFeeSats} sats`;
-                                                    }
-                                                })()
-                                                : 'Fees: ~')}
-                                    </Text>
-                                </View>
-                            )}
-                        </View>
+                        {calculationError ? (
+                            <View style={styles.statusMessageContainer}>
+                                <Feather name="alert-circle" size={14} color={theme.colors.muted} />
+                                <Text style={styles.statusText}>{calculationError}</Text>
+                            </View>
+                        ) : null}
+                    </View>
 
-                    <View style={[styles.feeSelectorContainer, { marginBottom: 16 }]}>
+                    <View style={[styles.feeSelectorContainer]}>
                         <Text style={styles.label}>On-chain settlement priority</Text>
                         <View style={styles.feeOptionsContainer}>
                             <View style={styles.feeOptionsRow}>
@@ -337,17 +307,63 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                         </View>
                     </View>
                         
-                        {/* Always rendered to prevent height jumping */}
-                        <View style={styles.totalAmountContainer}>
+                        <View style={styles.summaryBox}>
+                        {txMetrics ? (
+                            <>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.totalLabel}>Miner fee</Text>
+                                    <View style={styles.valueContainer}>
+                                        <Text style={styles.value}>
+                                            {(() => {
+                                                const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
+                                                let tierKey = 'speedMedium';
+                                                if (selectedFeeTier === 'fast') tierKey = 'speedFast';
+                                                if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
+                                                
+                                                const speedObj = quote?.[tierKey];
+                                                return Number(speedObj?.l1BroadcastFeeSat || 0).toLocaleString();
+                                            })()} sats
+                                        </Text>
+                                    </View>
+                                </View>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.totalLabel}>LSP fee</Text>
+                                    <View style={styles.valueContainer}>
+                                        <Text style={styles.value}>
+                                            {(() => {
+                                                const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
+                                                let tierKey = 'speedMedium';
+                                                if (selectedFeeTier === 'fast') tierKey = 'speedFast';
+                                                if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
+                                                
+                                                const speedObj = quote?.[tierKey];
+                                                return Number(speedObj?.userFeeSat || 0).toLocaleString();
+                                            })()} sats
+                                        </Text>
+                                    </View>
+                                </View>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.totalLabel}>Total fees</Text>
+                                    <Text style={styles.totalValue}>
+                                        {txMetrics.totalFeeSats.toLocaleString()} sats
+                                    </Text>
+                                </View>
+                                <View style={styles.detailRow}>
+                                    <Text style={styles.totalLabel}>Total</Text>
+                                    <Text style={styles.totalValue}>
+                                        {amountStr 
+                                            ? `${(parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()} sats` 
+                                            : '~ sats'}
+                                    </Text>
+                                </View>
+                            </>
+                        ) : null}
+
+                        {!calculationError && calculating ? (
                             <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>Total</Text>
-                                <Text style={styles.totalValue}>
-                                    {txMetrics && amountStr 
-                                        ? `${(parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()} sats` 
-                                        : '~ sats'}
-                                </Text>
+                                <Text style={styles.statusText}>Calculating...</Text>
                             </View>
-                        </View>
+                        ) : null}
                     </View>
 
                     <TouchableOpacity
@@ -359,7 +375,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                             <ActivityIndicator color={theme.colors.inversePrimary} />
                         ) : (
                             <View style={styles.buttonContentRowCentered}>
-                                <Feather name="minus-circle" size={18} color={theme.colors.inversePrimary} />
+                                <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />
                                 <Text style={styles.buttonText}>Confirm withdrawal</Text>
                             </View>
                         )}
@@ -471,7 +487,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontFamily: 'monospace',
     },
     feeSelectorContainer: {
-        marginBottom: 0,
+        marginBottom: 8,
     },
     feeOptionsContainer: {
         backgroundColor: theme.colors.surface,
@@ -533,16 +549,35 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 13,
         color: theme.colors.muted,
     },
-    totalAmountContainer: {
+    statusText: {
+        fontSize: 14,
+        color: theme.colors.muted,
+    },
+    statusMessageContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 8,
+        gap: 6
+    },
+    summaryBox: {
         paddingTop: 16,
         borderTopWidth: 1,
         borderColor: theme.colors.border,
-        marginTop: 8,
+        marginTop: 16,
     },
     detailRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginBottom: 12,
+    },
+    value: {
+        fontSize: 16,
+        color: theme.colors.primary,
+        fontFamily: 'monospace',
+    },
+    valueContainer: {
+        alignItems: 'flex-end',
     },
     totalLabel: {
         fontSize: 16,

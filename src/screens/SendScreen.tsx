@@ -645,7 +645,7 @@ const SendScreen = () => {
                                 <View style={styles.feeEstimateContent}>
                                     <Feather name="zap" size={14} color={theme.colors.muted} />
                                     <Text style={styles.feeEstimateText}>
-                                        {feeOptions?.normal ? `Network fee: ~${feeOptions.normal} sat/vB` : 'Estimating network fees...'}
+                                        {feeOptions?.normal ? `Fees: ~${feeOptions.normal} sat/vB` : 'Estimating fees...'}
                                     </Text>
                                 </View>
                             </View>
