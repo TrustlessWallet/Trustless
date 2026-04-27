@@ -34,8 +34,8 @@ const RecoverWalletScreen = () => {
         const last_word = words_array[words_array.length - 1].toLowerCase();
 
         if (last_word.length > 0) {
-            const english_words = bip39.wordlists.english || bip39.wordlists.EN;
-            if (english_words) {
+            const english_words = bip39.wordlists?.english || bip39.wordlists?.EN;
+            if (english_words && Array.isArray(english_words)) {
                 const matches = english_words.filter((word: string) => word.startsWith(last_word));
                 set_suggestions(matches.slice(0, 5));
             }
@@ -88,65 +88,72 @@ const RecoverWalletScreen = () => {
 
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
-            <View style={styles.top_content}>
-                <Text style={styles.subtitle}>
-                    Enter your 12, 18, or 24-word recovery phrase to restore your wallet.
-                </Text>
-                
-                <StyledInput
-                    containerStyle={styles.input_container}
-                    placeholder="Enter words separated by spaces"
-                    value={phrase}
-                    onChangeText={handle_text_change}
-                    multiline
-                    autoComplete="off"
-                    spellCheck={false}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardAppearance={is_dark ? 'dark' : 'light'}
-                    placeholderTextColor={theme.colors.muted}
-                    rightElement={
-                        <TouchableOpacity onPress={open_qr_scanner} style={styles.scanner_button}>
-                            <Feather name="camera" size={24} color={theme.colors.primary} />
-                        </TouchableOpacity>
-                    }
-                />
-            </View>
+            <ScrollView 
+                contentContainerStyle={styles.scroll_container}
+                keyboardShouldPersistTaps="handled"
+                bounces={false}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={styles.top_content}>
+                    <Text style={styles.subtitle}>
+                        Enter your 12, 18, or 24-word recovery phrase to restore your wallet.
+                    </Text>
+                    
+                    <StyledInput
+                        containerStyle={styles.input_container}
+                        placeholder="Enter words separated by spaces"
+                        value={phrase}
+                        onChangeText={handle_text_change}
+                        multiline
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardAppearance={is_dark ? 'dark' : 'light'}
+                        placeholderTextColor={theme.colors.muted}
+                        rightElement={
+                            <TouchableOpacity onPress={open_qr_scanner} style={styles.scanner_button}>
+                                <Feather name="camera" size={24} color={theme.colors.primary} />
+                            </TouchableOpacity>
+                        }
+                    />
+                </View>
 
-            <View style={styles.bottom_content}>
-                <TouchableOpacity style={styles.button} onPress={handle_recover} disabled={loading}>
-                    {loading ? (
-                        <ActivityIndicator color={theme.colors.inversePrimary} />
-                    ) : (
-                        <View style={styles.button_content_row_centered}>
-                            <Feather name="key" size={18} color={theme.colors.inversePrimary} />
-                            <Text style={styles.button_text}>Recover wallet</Text>
-                        </View>
-                    )}
-                </TouchableOpacity>
-
-                {suggestions.length > 0 && (
+                <View style={styles.bottom_content}>
                     <View style={styles.suggestions_wrapper}>
-                        <ScrollView 
-                            horizontal 
-                            showsHorizontalScrollIndicator={false} 
-                            keyboardShouldPersistTaps="always"
-                            contentContainerStyle={styles.suggestions_scroll_content}
-                            bounces={false}
-                        >
-                            {suggestions.map((word) => (
-                                <TouchableOpacity 
-                                    key={word} 
-                                    style={styles.suggestion_button} 
-                                    onPress={() => handle_suggestion_press(word)}
-                                >
-                                    <Text style={styles.suggestion_text}>{word}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
+                        {suggestions.length > 0 && (
+                            <ScrollView 
+                                horizontal 
+                                showsHorizontalScrollIndicator={false} 
+                                keyboardShouldPersistTaps="always"
+                                contentContainerStyle={styles.suggestions_scroll_content}
+                                bounces={false}
+                            >
+                                {suggestions.map((word) => (
+                                    <TouchableOpacity 
+                                        key={word} 
+                                        style={styles.suggestion_button} 
+                                        onPress={() => handle_suggestion_press(word)}
+                                    >
+                                        <Text style={styles.suggestion_text}>{word}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        )}
                     </View>
-                )}
-            </View>
+
+                    <TouchableOpacity style={styles.button} onPress={handle_recover} disabled={loading}>
+                        {loading ? (
+                            <ActivityIndicator color={theme.colors.inversePrimary} />
+                        ) : (
+                            <View style={styles.button_content_row_centered}>
+                                <Feather name="key" size={18} color={theme.colors.inversePrimary} />
+                                <Text style={styles.button_text}>Recover wallet</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
         </KeyboardAvoidingView>
     );
 };
@@ -154,8 +161,11 @@ const RecoverWalletScreen = () => {
 const get_styles = (theme: Theme) => StyleSheet.create({
   container: { 
     flex: 1, 
-    padding: 24, 
     backgroundColor: theme.colors.background 
+  },
+  scroll_container: {
+    flexGrow: 1,
+    padding: 24,
   },
   top_content: {
     flex: 1,
@@ -180,7 +190,7 @@ const get_styles = (theme: Theme) => StyleSheet.create({
   },
   suggestions_wrapper: {
     height: 50,
-    marginTop: 16,
+    marginBottom: 16,
   },
   suggestions_scroll_content: {
     alignItems: 'center',
