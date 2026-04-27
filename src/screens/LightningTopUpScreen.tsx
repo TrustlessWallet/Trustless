@@ -94,7 +94,7 @@ export const LightningTopUpScreen: React.FC = () => {
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [amountStr, activeWallet, swapAddress, currentRate]);
+    }, [amountStr, activeWallet, swapAddress, currentRate, selectedKey]);
 
     const handleCalculate = async () => {
         if (!activeWallet || !swapAddress) return;
@@ -206,10 +206,13 @@ export const LightningTopUpScreen: React.FC = () => {
 
     const handleCustomRateChange = (text: string) => {
         setCustomRate(text);
-        const rate = parseInt(text, 10);
-        if (!isNaN(rate) && rate > 0) {
-            setCurrentRate(rate);
-            setTxMetrics(null);
+        // Only parse and update if we have a valid numeric input
+        if (text && text.trim() !== '') {
+            const rate = parseInt(text, 10);
+            if (!isNaN(rate) && rate > 0) {
+                setCurrentRate(rate);
+                setTxMetrics(null);
+            }
         }
     };
 
@@ -242,8 +245,16 @@ export const LightningTopUpScreen: React.FC = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            >
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={true}
+                    bounces={false}
+                >
 
                     <View style={styles.balanceContainer}>
                         <Text style={styles.balanceLabel}>Available to top up</Text>
@@ -273,15 +284,10 @@ export const LightningTopUpScreen: React.FC = () => {
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                         />
                         
-                        {/* Status messages moved here */}
                         {calculationError ? (
                             <View style={styles.statusMessageContainer}>
                                 <Feather name="alert-circle" size={14} color={theme.colors.muted} />
                                 <Text style={styles.statusText}>{calculationError}</Text>
-                            </View>
-                        ) : calculating ? (
-                            <View style={styles.statusMessageContainer}>
-                                <Text style={styles.statusText}>Calculating...</Text>
                             </View>
                         ) : null}
                     </View>
@@ -333,33 +339,32 @@ export const LightningTopUpScreen: React.FC = () => {
                         {txMetrics ? (
                             <>
                                 <View style={styles.detailRow}>
-                                    <Text style={styles.label}>Transaction size</Text>
+                                    <Text style={styles.totalLabel}>Transaction size</Text>
                                     <Text style={styles.value}>{txMetrics.vsize} vbytes</Text>
                                 </View>
                                 <View style={styles.detailRow}>
-                                    <Text style={styles.label}>Total miner fee</Text>
+                                    <Text style={styles.totalLabel}>Total miner fee</Text>
                                     <View style={styles.valueContainer}>
                                         <Text style={styles.value}>{txMetrics.fee.toLocaleString()} sats</Text>
                                     </View>
                                 </View>
-
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.totalLabel}>Total Send</Text>
-                                    <Text style={styles.totalValue}>
-                                        {((parseInt(amountStr, 10) + txMetrics.fee) / 100000000).toFixed(8)} <Text style={styles.orangeSymbol}>₿</Text>
-                                    </Text>
-                                </View>
                             </>
                         ): null}
 
-                        <View style={styles.detailRow}>
-                            <Text style={styles.totalLabel}>Total</Text>
-                            <Text style={styles.totalValue}>
-                                {txMetrics && amountStr 
-                                    ? `${(parseInt(amountStr, 10) + txMetrics.fee).toLocaleString()} sats` 
-                                    : '~ sats'}
-                                </Text>
+                        {!calculationError && calculating ? (
+                            <View style={styles.detailRow}>
+                                <Text style={styles.statusText}>Calculating...</Text>
                             </View>
+                        ) : txMetrics ? (
+                            <View style={styles.detailRow}>
+                                <Text style={styles.totalLabel}>Total</Text>
+                                <Text style={styles.totalValue}>
+                                    {amountStr 
+                                        ? `${(parseInt(amountStr, 10) + txMetrics.fee).toLocaleString()} sats` 
+                                        : '~ sats'}
+                                    </Text>
+                                </View>
+                        ) : null}
 
                         <TouchableOpacity
                             style={[styles.confirmButton, (!txMetrics || executing) && styles.buttonDisabled]}
@@ -371,7 +376,7 @@ export const LightningTopUpScreen: React.FC = () => {
                             ) : (
                                 <View style={styles.buttonContentRowCentered}>
                                     <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
-                                    <Text style={styles.buttonText}>Confirm & Top-up</Text>
+                                    <Text style={styles.buttonText}>Confirm & top-up</Text>
                                 </View>
                             )}
                         </TouchableOpacity>
@@ -401,7 +406,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     scrollContent: {
         padding: 24,
-        paddingBottom: 40,
+        paddingBottom: 400,
+        flexGrow: 1,
     },
     balanceContainer: {
         alignItems: 'center',
@@ -435,7 +441,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         borderRadius: 8,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        marginBottom: 8,
     },
     currencyLabel: {
         fontSize: 16,
@@ -456,7 +461,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         lineHeight: 22,
     },
     feeSelectorContainer: {
-        marginBottom: 0,
+        marginBottom: 8,
     },
     feeOptionsRow: {
         flexDirection: 'row',
@@ -558,9 +563,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
-        marginTop: 16,
+        marginTop: 8,
     },
-        buttonDisabled: {
+    buttonDisabled: {
         opacity: 0.5,
     },
     buttonText: {
@@ -578,12 +583,10 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         marginTop: 8,
-        paddingHorizontal: 4,
     },
     statusText: {
         fontSize: 14,
         color: theme.colors.muted,
-        marginLeft: 6,
         flex: 1,
     },
 });
