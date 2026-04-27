@@ -287,7 +287,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     detailsInner?.description ||
                     detailsInner?.invoiceDetails?.description ||
                     (detailsTag === 'Deposit' ? 'Top-up' : '') ||
-                    (detailsTag === 'Withdraw' ? 'Withdraw' : '') ||
+                    (detailsTag === 'Withdraw' ? 'Withdraw to on-chain' : '') ||
                     '';
 
                 return {
@@ -599,18 +599,35 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const withdrawToOnchain = async (prepareResponse: any, feeTier: 'fast' | 'normal' | 'slow') => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
 
-        let speed = 'medium';
-        if (feeTier === 'fast') speed = 'fast';
-        if (feeTier === 'slow') speed = 'slow';
+        let speed;
+        try {
+            // Try to access the enum values directly
+            const OnchainConfirmationSpeed = breezSdk.OnchainConfirmationSpeed;
+            if (feeTier === 'fast') {
+                speed = OnchainConfirmationSpeed.Fast;
+            } else if (feeTier === 'slow') {
+                speed = OnchainConfirmationSpeed.Slow;
+            } else {
+                speed = OnchainConfirmationSpeed.Medium;
+            }
+        } catch (enumError) {
+            console.error('Failed to access OnchainConfirmationSpeed enum:', enumError);
+            throw new Error(`Invalid fee tier: ${feeTier}`);
+        }
+
+        // Debug log to help identify enum issues
+        console.log('Withdrawal fee tier:', feeTier, '-> speed:', speed, 'type:', typeof speed);
+        console.log('Available enum values:', breezSdk.OnchainConfirmationSpeed);
 
         try {
+            const options = new breezSdk.SendPaymentOptions.BitcoinAddress({
+                confirmationSpeed: speed
+            });
+            
             await activeSdkInstance.sendPayment({
                 prepareResponse: prepareResponse,
-                options: {
-                    type: 'bitcoinAddress',
-                    confirmationSpeed: speed
-                }
-            } as any);
+                options: options
+            });
 
             await refreshLightningState();
         } catch (error: any) {
