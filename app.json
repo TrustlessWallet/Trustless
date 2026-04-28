@@ -37,6 +37,7 @@
     "plugins": [
       "@breeztech/breez-sdk-spark-react-native",
       "./src/scripts/withAndroidDisplaySettings",
+      "./withTrustlessIcon.js",
       [
         "expo-font",
         {
