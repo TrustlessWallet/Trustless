@@ -49,6 +49,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const [executing, setExecuting] = useState(false);
     const [autoCalculateTrigger, setAutoCalculateTrigger] = useState(0);
     const [calculationError, setCalculationError] = useState<string | null>(null);
+    const [feeEstimates, setFeeEstimates] = useState<{ slow: number; normal: number; fast: number } | null>(null);
 
     const [txMetrics, setTxMetrics] = useState<{ totalFeeSats: number; prepareResponse: any } | null>(null);
 
@@ -57,6 +58,64 @@ export const WithdrawToOnchainScreen: React.FC = () => {
             setOwnAddress(activeWallet.address);
         }
     }, [activeWallet]);
+
+    // Fetch fee estimates on component mount
+    useEffect(() => {
+        const fetchFeeEstimates = async () => {
+            if (!activeWallet || !isLightningInitialized) return;
+            
+            try {
+                // Use a small sample amount to get fee estimates
+                const sampleAmount = 10000; // 10k sats sample
+                const sampleAddress = activeWallet.address;
+                
+                const estimates = await Promise.all([
+                    prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'slow').catch(() => null),
+                    prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'normal').catch(() => null),
+                    prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'fast').catch(() => null)
+                ]);
+
+                const extractFee = (estimate: any) => {
+                    if (!estimate || !estimate.prepareResponse) return 0;
+                    const quote = estimate.prepareResponse?.paymentMethod?.inner?.feeQuote;
+                    
+                    const tierKey = estimate.feeTier === 'fast' ? 'speedFast' : 
+                                  estimate.feeTier === 'slow' ? 'speedSlow' : 'speedMedium';
+                    const speedObj = quote?.[tierKey];
+                    
+                    // Only show on-chain (L1) fees, not LSP fees
+                    return Number(speedObj?.l1BroadcastFeeSat || 0);
+                };
+
+                // Extract fees using the successful estimates
+                const slowFee = extractFee({ ...estimates[0], feeTier: 'slow' });
+                const normalFee = extractFee({ ...estimates[1], feeTier: 'normal' });
+                
+                // For fast fee, try the direct estimate first, but if it failed,
+                // use the fast fee data from the successful slow/normal estimates
+                let fastFee = 0;
+                if (estimates[2]) {
+                    fastFee = extractFee({ ...estimates[2], feeTier: 'fast' });
+                } else if (estimates[0] || estimates[1]) {
+                    // Use the quote from a successful estimate to get fast fee
+                    const successfulEstimate = estimates[0] || estimates[1];
+                    const quote = successfulEstimate?.prepareResponse?.paymentMethod?.inner?.feeQuote;
+                    const fastSpeedObj = quote?.speedFast;
+                    fastFee = Number(fastSpeedObj?.l1BroadcastFeeSat || 0);
+                                    }
+                
+                setFeeEstimates({
+                    slow: slowFee,
+                    normal: normalFee,
+                    fast: fastFee
+                });
+            } catch (error) {
+                console.error('Failed to fetch fee estimates:', error);
+            }
+        };
+
+        fetchFeeEstimates();
+    }, [activeWallet, isLightningInitialized]);
 
     const activeDestination = destMode === 'own' ? ownAddress : customAddress;
 
@@ -85,11 +144,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
         if (isNaN(amountSats) || amountSats <= 0) return;
 
-        console.log('=== WITHDRAW FEE CALCULATION ===');
-        console.log('Amount:', amountSats, 'sats');
-        console.log('Destination:', activeDestination);
-        console.log('Fee tier:', selectedFeeTier);
-
+        
         if (!validateBitcoinAddress(activeDestination)) {
             setCalculationError("Address is invalid");
             return;
@@ -190,12 +245,15 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <KeyboardAvoidingView>
-                <ScrollView 
-                    contentContainerStyle={styles.scrollContent} 
-                    bounces={false}
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            >
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
                     keyboardShouldPersistTaps="handled"
-                    automaticallyAdjustKeyboardInsets={true}
+                    showsVerticalScrollIndicator={true}
+                    bounces={false}
                 >
 
                     <View style={styles.balanceContainer}>
@@ -264,7 +322,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                         )}
                     </View>
 
-                    <View style={styles.section}>
+                    <View style={[styles.section, styles.amountSection]}>
                         <Text style={styles.label}>Amount</Text>
                         <StyledInput
                             keyboardType="numeric"
@@ -279,12 +337,13 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                             blurOnSubmit={false}
                         />
                         
-                        {calculationError ? (
+                        {/* Alert is absolutely positioned to prevent any layout shifts */}
+                        {calculationError && (
                             <View style={styles.statusMessageContainer}>
                                 <Feather name="alert-circle" size={14} color={theme.colors.muted} />
-                                <Text style={styles.statusText}>{calculationError}</Text>
+                                <Text style={styles.statusText}> {calculationError}</Text>
                             </View>
-                        ) : null}
+                        )}
                     </View>
 
                     <View style={[styles.feeSelectorContainer]}>
@@ -301,6 +360,9 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                         <Text style={[styles.feeOptionText, selectedFeeTier === key ? styles.feeOptionTextActive : {}]}>
                                             {key.charAt(0).toUpperCase() + key.slice(1)}
                                         </Text>
+                                        <Text style={[styles.feeOptionRate, selectedFeeTier === key ? styles.feeOptionRateActive : {}]}>
+                                            {feeEstimates ? `${feeEstimates[key].toLocaleString()} sats` : '~ sats'}
+                                        </Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -316,6 +378,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                         <Text style={styles.value}>
                                             {(() => {
                                                 const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
+                                                
                                                 let tierKey = 'speedMedium';
                                                 if (selectedFeeTier === 'fast') tierKey = 'speedFast';
                                                 if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
@@ -364,22 +427,23 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 <Text style={styles.statusText}>Calculating...</Text>
                             </View>
                         ) : null}
-                    </View>
 
-                    <TouchableOpacity
-                        style={[styles.confirmButton, (!amountStr || !isLightningInitialized || !activeDestination || !txMetrics) && styles.buttonDisabled]}
-                        onPress={handleExecuteWithdrawal}
-                        disabled={!amountStr || !isLightningInitialized || !activeDestination || !txMetrics || executing}
-                    >
-                        {executing ? (
-                            <ActivityIndicator color={theme.colors.inversePrimary} />
-                        ) : (
-                            <View style={styles.buttonContentRowCentered}>
-                                <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />
-                                <Text style={styles.buttonText}>Confirm withdrawal</Text>
-                            </View>
-                        )}
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            key={`confirm-button-${txMetrics ? 'enabled' : 'disabled'}-${executing ? 'executing' : 'idle'}`}
+                            style={[styles.confirmButton, (!amountStr || !isLightningInitialized || !activeDestination || !txMetrics) && styles.buttonDisabled]}
+                            onPress={handleExecuteWithdrawal}
+                            disabled={!amountStr || !isLightningInitialized || !activeDestination || !txMetrics || executing}
+                        >
+                            {executing ? (
+                                <ActivityIndicator color={theme.colors.inversePrimary} />
+                            ) : (
+                                <View style={styles.buttonContentRowCentered}>
+                                    <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />
+                                    <Text style={styles.buttonText}>Confirm withdrawal</Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    </View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -393,11 +457,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     scrollContent: {
         padding: 24,
-        paddingBottom: 200,
+        paddingBottom: 400,
+        flexGrow: 1,
     },
     balanceContainer: {
         alignItems: 'center',
-        marginBottom: 16,
+        paddingTop: 16,
+        paddingBottom: 32,
     },
     balanceLabel: {
         fontSize: 16,
@@ -412,7 +478,11 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         textAlignVertical: 'center'
     },
     section: {
-        marginBottom: 24,
+        marginBottom: 32,
+        position: 'relative',
+    },
+    amountSection: {
+        zIndex: 10,
     },
     label: {
         fontSize: 16,
@@ -487,7 +557,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontFamily: 'monospace',
     },
     feeSelectorContainer: {
-        marginBottom: 8,
+        marginBottom: 32,
+        zIndex: 1,
     },
     feeOptionsContainer: {
         backgroundColor: theme.colors.surface,
@@ -502,21 +573,29 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     feeOption: {
         flex: 1,
-        paddingVertical: 12,
+        paddingVertical: 8,
+        paddingHorizontal: 2,
         borderRadius: 8,
         backgroundColor: theme.colors.surface,
         alignItems: 'center',
     },
     feeOptionActive: {
         backgroundColor: theme.colors.primary,
-        borderColor: theme.colors.primary,
     },
     feeOptionText: {
         color: theme.colors.primary,
         fontWeight: '600',
-        fontSize: 14,
+        fontSize: 12,
     },
     feeOptionTextActive: {
+        color: theme.colors.inversePrimary,
+    },
+    feeOptionRate: {
+        color: theme.colors.muted,
+        fontSize: 11,
+        marginTop: 2,
+    },
+    feeOptionRateActive: {
         color: theme.colors.inversePrimary,
     },
     confirmButton: {
@@ -526,7 +605,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
-        marginTop: 6,
+        marginTop: 8,
     },
     feeEstimateRow: {
         flexDirection: 'row',
@@ -554,16 +633,18 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.muted,
     },
     statusMessageContainer: {
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        right: 0,
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 8,
-        gap: 6
+        marginTop: 6,
     },
     summaryBox: {
-        paddingTop: 16,
+        paddingTop: 24,
         borderTopWidth: 1,
         borderColor: theme.colors.border,
-        marginTop: 16,
     },
     detailRow: {
         flexDirection: 'row',
