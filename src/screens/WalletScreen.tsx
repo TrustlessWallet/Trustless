@@ -15,6 +15,7 @@ import { useWalletTransactions, useWalletUTXOs } from '../hooks/useBalance';
 import { formatBitcoinAddressShort } from '../constants/format';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
+const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -92,6 +93,17 @@ const WalletScreen = () => {
             loadPreference();
         }
     }, [isFocused]);
+
+    useEffect(() => {
+        const loadInitialWalletMode = async () => {
+            const savedMode = await AsyncStorage.getItem(DEFAULT_WALLET_MODE_KEY);
+            if (savedMode === 'Lightning') {
+                setIsLightningMode(true);
+                lightningAnim.setValue(1);
+            }
+        };
+        loadInitialWalletMode();
+    }, []);
 
     const onRefresh = () => {
         triggerRefresh();

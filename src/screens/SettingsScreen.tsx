@@ -25,6 +25,7 @@ const DEFAULT_SCREEN_KEY = '@defaultScreen';
 const NETWORK_PREF_KEY = '@network_preference';
 const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
 const ALLOW_SELF_SIGNED_KEY = '@allowSelfSigned';
+const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
 
 const auto_lock_options = ['Off', 0, 1, 5, 30, 60];
 
@@ -46,6 +47,7 @@ const SettingsScreen = () => {
   const [auto_lock_time_index, set_auto_lock_time_index] = useState(3);
   const [hide_wallet_balance, set_hide_wallet_balance] = useState(false);
   const [default_screen, set_default_screen] = useState<'Wallet'>('Wallet');
+  const [default_wallet_mode, set_default_wallet_mode] = useState<'On-chain' | 'Lightning'>('On-chain');
   
   const [custom_node_url, set_custom_node_url] = useState('');
   const [allow_self_signed, set_allow_self_signed] = useState(false);
@@ -80,6 +82,12 @@ const SettingsScreen = () => {
       const saved_wallet_pref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
       set_hide_wallet_balance(saved_wallet_pref === 'true');
 
+      const saved_wallet_mode = await AsyncStorage.getItem(DEFAULT_WALLET_MODE_KEY);
+      if (saved_wallet_mode === 'Lightning') {
+        set_default_wallet_mode('Lightning');
+      } else {
+        set_default_wallet_mode('On-chain');
+      }
 
       const saved_node = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY);
       const saved_self_signed = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_KEY);
@@ -152,6 +160,7 @@ const SettingsScreen = () => {
               await AsyncStorage.multiRemove([
                 '@hasCompletedOnboarding',
                 DEFAULT_SCREEN_KEY,
+                DEFAULT_WALLET_MODE_KEY,
                 BIOMETRICS_ENABLED_KEY,
                 AUTO_LOCK_TIME_KEY, 
                 HIDE_WALLET_BALANCE_KEY,
@@ -164,6 +173,7 @@ const SettingsScreen = () => {
               set_custom_node_url('');
               set_allow_self_signed(false);
               set_connection_status('idle');
+              set_default_wallet_mode('On-chain');
               resetActiveConnection();
 
               await resetWallet();
@@ -194,6 +204,12 @@ const SettingsScreen = () => {
     await AsyncStorage.setItem(HIDE_WALLET_BALANCE_KEY, new_value.toString());
   };
 
+  const toggle_default_wallet_mode = async () => {
+    const new_mode = default_wallet_mode === 'On-chain' ? 'Lightning' : 'On-chain';
+    set_default_wallet_mode(new_mode);
+    await AsyncStorage.setItem(DEFAULT_WALLET_MODE_KEY, new_mode);
+  };
+
   const handle_network_change = async () => {
     const new_network = IS_TESTNET ? 'mainnet' : 'testnet';
     const new_network_name = IS_TESTNET ? 'Mainnet' : 'Testnet';
@@ -214,55 +230,55 @@ const SettingsScreen = () => {
     );
   };
 
-const handle_save_node_url = async () => {
-  const trimmed = custom_node_url.trim().replace(/^https?:\/\//, '');
-  
-  if (trimmed.length === 0) {
-    await AsyncStorage.removeItem(CUSTOM_NODE_URL_KEY);
-    await AsyncStorage.removeItem(ALLOW_SELF_SIGNED_KEY);
-    set_connection_status('idle');
-    set_is_editing_node(false);
-    resetActiveConnection();
-    triggerRefresh();
-    setTimeout(() => set_active_host(getActiveHostName()), 1500);
-    Alert.alert("Reset", "Custom node removed. Reverted to default providers.");
-    return;
-  }
-
-  const parts = trimmed.split(':');
-  if (parts.length < 2) {
-    Alert.alert(
-      "Invalid Format", 
-      "Please use the format: host:port:protocol\n\nExample:\n192.168.1.50:50002:tls"
-    );
-    return;
-  }
-
-  set_connection_status('testing');
-  
-  const is_connected = await test_custom_node_connection(trimmed, allow_self_signed);
-
-  if (is_connected) {
-    await AsyncStorage.setItem(CUSTOM_NODE_URL_KEY, trimmed);
-    await AsyncStorage.setItem(ALLOW_SELF_SIGNED_KEY, allow_self_signed ? 'true' : 'false');
+  const handle_save_node_url = async () => {
+    const trimmed = custom_node_url.trim().replace(/^https?:\/\//, '');
     
-    resetActiveConnection();
-    await getElectrumClient(); 
+    if (trimmed.length === 0) {
+      await AsyncStorage.removeItem(CUSTOM_NODE_URL_KEY);
+      await AsyncStorage.removeItem(ALLOW_SELF_SIGNED_KEY);
+      set_connection_status('idle');
+      set_is_editing_node(false);
+      resetActiveConnection();
+      triggerRefresh();
+      setTimeout(() => set_active_host(getActiveHostName()), 1500);
+      Alert.alert("Reset", "Custom node removed. Reverted to default providers.");
+      return;
+    }
+
+    const parts = trimmed.split(':');
+    if (parts.length < 2) {
+      Alert.alert(
+        "Invalid Format", 
+        "Please use the format: host:port:protocol\n\nExample:\n192.168.1.50:50002:tls"
+      );
+      return;
+    }
+
+    set_connection_status('testing');
     
-    set_connection_status('connected');
-    set_is_editing_node(false);
-    Keyboard.dismiss();
-    triggerRefresh();
-    set_active_host(getActiveHostName());
-    Alert.alert("Success", "Connected to custom node successfully.");
-  } else {
-    set_connection_status('failed');
-    Alert.alert(
-      "Connection Failed", 
-      `Could not connect to ${trimmed}.\n\nThe node might be offline, or you have a typo. The app will continue using the active node.`
-    );
-  }
-};
+    const is_connected = await test_custom_node_connection(trimmed, allow_self_signed);
+
+    if (is_connected) {
+      await AsyncStorage.setItem(CUSTOM_NODE_URL_KEY, trimmed);
+      await AsyncStorage.setItem(ALLOW_SELF_SIGNED_KEY, allow_self_signed ? 'true' : 'false');
+      
+      resetActiveConnection();
+      await getElectrumClient(); 
+      
+      set_connection_status('connected');
+      set_is_editing_node(false);
+      Keyboard.dismiss();
+      triggerRefresh();
+      set_active_host(getActiveHostName());
+      Alert.alert("Success", "Connected to custom node successfully.");
+    } else {
+      set_connection_status('failed');
+      Alert.alert(
+        "Connection Failed", 
+        `Could not connect to ${trimmed}.\n\nThe node might be offline, or you have a typo. The app will continue using the active node.`
+      );
+    }
+  };
 
   return (
     <KeyboardAvoidingView 
@@ -281,6 +297,19 @@ const handle_save_node_url = async () => {
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
                   <Text style={styles.switcher_text}>{isDark ? 'Dark' : 'Light'}</Text>
+                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.row_wrapper}>
+            <View style={styles.row}>
+              <Text style={styles.row_label}>Default Wallet Mode</Text>
+              <TouchableOpacity onPress={toggle_default_wallet_mode}>
+                <View style={styles.switcher}>
+                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  <Text style={styles.switcher_text}>{default_wallet_mode}</Text>
                   <Feather name="chevron-right" size={24} color={theme.colors.primary} />
                 </View>
               </TouchableOpacity>
