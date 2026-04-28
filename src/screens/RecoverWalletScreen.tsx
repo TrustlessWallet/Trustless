@@ -120,6 +120,17 @@ const RecoverWalletScreen = () => {
                 </View>
 
                 <View style={styles.bottom_content}>
+                    <TouchableOpacity style={styles.button} onPress={handle_recover} disabled={loading}>
+                        {loading ? (
+                            <ActivityIndicator color={theme.colors.inversePrimary} />
+                        ) : (
+                            <View style={styles.button_content_row_centered}>
+                                <Feather name="key" size={18} color={theme.colors.inversePrimary} />
+                                <Text style={styles.button_text}>Recover wallet</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+
                     <View style={styles.suggestions_wrapper}>
                         {suggestions.length > 0 && (
                             <ScrollView 
@@ -141,17 +152,6 @@ const RecoverWalletScreen = () => {
                             </ScrollView>
                         )}
                     </View>
-
-                    <TouchableOpacity style={styles.button} onPress={handle_recover} disabled={loading}>
-                        {loading ? (
-                            <ActivityIndicator color={theme.colors.inversePrimary} />
-                        ) : (
-                            <View style={styles.button_content_row_centered}>
-                                <Feather name="key" size={18} color={theme.colors.inversePrimary} />
-                                <Text style={styles.button_text}>Recover wallet</Text>
-                            </View>
-                        )}
-                    </TouchableOpacity>
                 </View>
             </ScrollView>
         </KeyboardAvoidingView>
@@ -189,8 +189,8 @@ const get_styles = (theme: Theme) => StyleSheet.create({
     alignItems: 'center',
   },
   suggestions_wrapper: {
-    height: 50,
-    marginBottom: 16,
+
+    marginVertical: 16,
   },
   suggestions_scroll_content: {
     alignItems: 'center',
