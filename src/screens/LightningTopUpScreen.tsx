@@ -51,13 +51,13 @@ export const LightningTopUpScreen: React.FC = () => {
     const [loadingData, setLoadingData] = useState(true);
     const [calculating, setCalculating] = useState(false);
     const [executing, setExecuting] = useState(false);
-    const [txMetrics, setTxMetrics] = useState<{ fee: number; hex: string; changeIndex: number | null, vsize: number } | null>(null);
+    const [txMetrics, setTxMetrics] = useState<{ fee: number; hex: string; changeIndex: number | null, vsize: number, actualAmount: number } | null>(null);
     const [calculationError, setCalculationError] = useState<string | null>(null);
 
     useEffect(() => {
         const initData = async () => {
             try {
-                if (!isLightningInitialized) return; // Wait for node
+                if (!isLightningInitialized) return;
 
                 const [fees, fetchedAddress] = await Promise.all([
                     fetchFeeEstimates(),
@@ -96,6 +96,7 @@ export const LightningTopUpScreen: React.FC = () => {
         return () => clearTimeout(timer);
     }, [amountStr, activeWallet, swapAddress, currentRate, selectedKey]);
 
+    
     const handleCalculate = async () => {
         if (!activeWallet || !swapAddress) return;
         const amountSats = parseInt(amountStr, 10);
@@ -127,10 +128,11 @@ export const LightningTopUpScreen: React.FC = () => {
             if (allUtxos.length === 0) throw new Error("No UTXOs found");
 
             allUtxos.sort((a: any, b: any) => b.value - a.value);
-            const selectedUtxos = [];
+            let selectedUtxos = [];
             let accumulated = 0;
             let estimatedVsize = 0;
             let exactMinerFee = 0;
+            let actualSendAmount = amountSats;
 
             for (const u of allUtxos) {
                 selectedUtxos.push(u);
@@ -143,12 +145,27 @@ export const LightningTopUpScreen: React.FC = () => {
             }
 
             if (accumulated < amountSats + exactMinerFee) {
-                throw new Error(`Insufficient balance. Need ${(amountSats + exactMinerFee).toLocaleString()} sats`);
+                const totalBalance = allUtxos.reduce((sum, u) => sum + u.value, 0);
+                const sweepVsize = Math.ceil((allUtxos.length * 68) + (1 * 31) + 10.5);
+                const sweepFee = sweepVsize * currentRate;
+
+                if (amountSats > totalBalance - sweepFee && amountSats <= totalBalance) {
+                    actualSendAmount = amountSats - sweepFee;
+                    selectedUtxos = allUtxos;
+                    exactMinerFee = sweepFee;
+                    estimatedVsize = sweepVsize;
+
+                    if (actualSendAmount < minRequired) {
+                        throw new Error(`Amount after fees (${actualSendAmount.toLocaleString()} sats) is below the minimum required.`);
+                    }
+                } else {
+                    throw new Error(`Insufficient balance. Need ${(amountSats + exactMinerFee).toLocaleString()} sats`);
+                }
             }
 
             const { txHex, usedChangeIndex } = await createAndSignTransaction(
                 swapAddress,
-                amountSats,
+                actualSendAmount,
                 selectedUtxos,
                 currentRate
             );
@@ -162,7 +179,8 @@ export const LightningTopUpScreen: React.FC = () => {
                 fee: exactMinerFee,
                 hex: txHex,
                 changeIndex: usedChangeIndex,
-                vsize: estimatedVsize
+                vsize: estimatedVsize,
+                actualAmount: actualSendAmount
             });
 
         } catch (err: any) {
@@ -185,7 +203,7 @@ export const LightningTopUpScreen: React.FC = () => {
             triggerRefresh();
             Alert.alert(
                 "Top-Up Initiated",
-                "Your on-chain transaction has been broadcast. Your Lightning balance will update automatically once the block confirms.",
+                "Your on-chain transaction has been broadcast. Your Lightning balance will update after 3 on-chain confirmations.",
                 [{ text: "OK", onPress: () => navigation.goBack() }]
             );
         } catch (err: any) {
@@ -206,7 +224,6 @@ export const LightningTopUpScreen: React.FC = () => {
 
     const handleCustomRateChange = (text: string) => {
         setCustomRate(text);
-        // Only parse and update if we have a valid numeric input
         if (text && text.trim() !== '') {
             const rate = parseInt(text, 10);
             if (!isNaN(rate) && rate > 0) {
@@ -270,26 +287,30 @@ export const LightningTopUpScreen: React.FC = () => {
                         </View>
                     </View>
 
-                    <View style={styles.section}>
+                    <View style={[styles.section, styles.amountSection]}>
                         <Text style={styles.label}>Amount</Text>
                         <StyledInput
                             keyboardType="numeric"
                             value={amountStr}
                             onChangeText={(t) => {
-                                setAmountStr(t.replace(/[^0-9]/g, ''));
-                                setTxMetrics(null);
+                                const cleanText = t.replace(/[^0-9]/g, '');
+                                setAmountStr(cleanText);
+                                if (cleanText !== amountStr) {
+                                    setTxMetrics(null);
+                                }
                             }}
                             placeholder="0"
-                            editable={!executing && !calculating}
+                            editable={!executing}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                         />
                         
-                        {calculationError ? (
+                        {/* Alert is absolutely positioned to prevent any layout shifts */}
+                        {calculationError && (
                             <View style={styles.statusMessageContainer}>
                                 <Feather name="alert-circle" size={14} color={theme.colors.muted} />
-                                <Text style={styles.statusText}>{calculationError}</Text>
+                                <Text style={styles.statusText}> {calculationError}</Text>
                             </View>
-                        ) : null}
+                        )}
                     </View>
 
                     <View style={styles.feeSelectorContainer}>
@@ -359,14 +380,13 @@ export const LightningTopUpScreen: React.FC = () => {
                             <View style={styles.detailRow}>
                                 <Text style={styles.totalLabel}>Total</Text>
                                 <Text style={styles.totalValue}>
-                                    {amountStr 
-                                        ? `${(parseInt(amountStr, 10) + txMetrics.fee).toLocaleString()} sats` 
-                                        : '~ sats'}
-                                    </Text>
-                                </View>
+                                    {`${(txMetrics.actualAmount + txMetrics.fee).toLocaleString()} sats`}
+                                </Text>
+                            </View>
                         ) : null}
 
                         <TouchableOpacity
+                            key={`confirm-button-${txMetrics ? 'enabled' : 'disabled'}-${executing ? 'executing' : 'idle'}`}
                             style={[styles.confirmButton, (!txMetrics || executing) && styles.buttonDisabled]}
                             onPress={handleExecuteTopUp}
                             disabled={!txMetrics || executing}
@@ -411,8 +431,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     balanceContainer: {
         alignItems: 'center',
-        paddingVertical: 16,
-        marginBottom: 16,
+        paddingTop: 16,
+        paddingBottom: 32,
     },
     balanceLabel: {
         fontSize: 16,
@@ -427,7 +447,11 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         textAlignVertical: 'center'
     },
     section: {
-        marginBottom: 16,
+        marginBottom: 32,
+        position: 'relative',
+    },
+    amountSection: {
+        zIndex: 10,
     },
     label: {
         fontSize: 16,
@@ -461,7 +485,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         lineHeight: 22,
     },
     feeSelectorContainer: {
-        marginBottom: 8,
+        marginBottom: 32,
+        zIndex: 1,
     },
     feeOptionsRow: {
         flexDirection: 'row',
@@ -525,10 +550,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontFamily: 'SpaceMono-Regular',
     },
     summaryBox: {
-        paddingTop: 16,
+        paddingTop: 24,
         borderTopWidth: 1,
         borderColor: theme.colors.border,
-        marginTop: 16,
     },
     detailRow: {
         flexDirection: 'row',
@@ -580,9 +604,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         gap: 8,
     },
     statusMessageContainer: {
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        right: 0,
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 8,
+        marginTop: 6,
     },
     statusText: {
         fontSize: 14,
