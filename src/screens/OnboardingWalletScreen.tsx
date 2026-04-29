@@ -16,37 +16,37 @@ const slides = [
     key: '1',
     headline: 'Create your wallet',
     body: 'Generate non-custodial wallet in seconds. Your keys, your Bitcoin.',
-    image: require('../../assets/Wallet onboarding.png'),
+    image: require('../../assets/Wallet-onboarding.png'),
   },
   {
     key: '2',
     headline: 'Manage multiple wallets',
     body: 'Create, import, and switch between several wallets.',
-    image: require('../../assets/Wallets onboarding.png'),
+    image: require('../../assets/Wallets-onboarding.png'),
   },
   {
     key: '3',
     headline: 'Rotate addresses',
     body: 'Have 20 unused addresses at all times. Privacy above all else.',
-    image: require('../../assets/Receive onboarding.png'),
+    image: require('../../assets/Receive-onboarding.png'),
   },
-   {
+  {
     key: '4',
     headline: 'Control your coins',
     body: 'Manually select which UTXOs to spend. You are in charge.',
-    image: require('../../assets/Coin control onboarding.png'),
+    image: require('../../assets/Coin-control-onboarding.png'),
   },
   {
     key: '5',
     headline: 'Send Bitcoin',
     body: 'Adjust fees and review all details before broadcasting.',
-    image: require('../../assets/Transaction onboarding.png'),
+    image: require('../../assets/Transaction-onboarding.png'),
   },
   {
     key: '6',
     headline: 'Connect your node',
     body: 'Connect to your own Electrum node for maximum privacy.',
-    image: require('../../assets/Node onboarding.png'),
+    image: require('../../assets/Node-onboarding.png'),
   },
   {
     key: '7',
@@ -54,7 +54,7 @@ const slides = [
     body: 'Trustless is fully open source.\n',
     link_text: 'Audit the code yourself.',
     link: REPO_URL,
-    image: require('../../assets/Open source onboarding.png'),
+    image: require('../../assets/Open-source-onboarding.png'),
   },
 ];
 

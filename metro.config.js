@@ -1,6 +1,9 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const defaultConfig = getDefaultConfig(__dirname);
 
+// Fix for Metro double-encoding asset paths (./assets → .%2Fassets) in Expo 54
+defaultConfig.projectRoot = __dirname;
+
 // 1. Preserve your custom Source and Asset Extensions (WASM, Video, etc.)
 defaultConfig.resolver.sourceExts = [
   'expo.ts', 'expo.tsx', 'expo.js', 'expo.jsx',
@@ -22,18 +25,16 @@ defaultConfig.resolver.assetExts = [
 
 // 2. Merge your Node Modules with the new TCP Socket modules
 defaultConfig.resolver.extraNodeModules = {
-  ...require('node-libs-browser'), // Keep your existing base
-  crypto: require.resolve('crypto-browserify'), // Updated to resolve sha.js / hash errors
+  ...require('node-libs-browser'),
+  crypto: require.resolve('crypto-browserify'),
   stream: require.resolve('stream-browserify'),
-  buffer: require.resolve('buffer/'),           // Added trailing slash
+  buffer: require.resolve('buffer/'),
   process: require.resolve('process/browser'),
-  events: require.resolve('events/'),           // Added trailing slash
-  util: require.resolve('util/'),               // Added trailing slash
+  events: require.resolve('events/'),
+  util: require.resolve('util/'),
   vm: require.resolve('vm-browserify'),
   path: require.resolve('path-browserify'),
   os: require.resolve('os-browserify/browser'),
-
-  // --- NEW ADDITIONS FOR ELECTRUM (Privacy/Speed) ---
   net: require.resolve('react-native-tcp-socket'),
   tls: require.resolve('react-native-tcp-socket'),
 };

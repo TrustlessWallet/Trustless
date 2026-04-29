@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.btc.trustless",
+      "icon": "./assets/Trustless.icon",
       "infoPlist": {
         "NSCameraUsageDescription": "Trustless uses the camera to scan Bitcoin address QR codes.",
         "NSFaceIDUsageDescription": "Trustless uses Face ID to secure your wallet.",
@@ -37,7 +38,6 @@
     "plugins": [
       "@breeztech/breez-sdk-spark-react-native",
       "./src/scripts/withAndroidDisplaySettings",
-      "./withTrustlessIcon.js",
       [
         "expo-font",
         {
