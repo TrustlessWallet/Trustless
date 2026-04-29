@@ -21,16 +21,13 @@
       "blur-material" : null,
       "layers" : [
         {
-          "blend-mode" : "normal",
-          "glass" : true,
-          "image-name" : "tl.svg",
-          "name" : "tl",
-          "opacity" : 1,
+          "image-name" : "Group 10.svg",
+          "name" : "Group 10",
           "position" : {
-            "scale" : 1.6,
+            "scale" : 1.5,
             "translation-in-points" : [
-              0.32936799999993127,
-              0.6397680000001174
+              0.37478250000003754,
+              0.5997825000000603
             ]
           }
         }
