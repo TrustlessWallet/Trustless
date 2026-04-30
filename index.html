@@ -89,7 +89,6 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-top: 60px;
             text-align: center;
             text-decoration: none;
         }
@@ -99,6 +98,7 @@
             height: auto;
             border-radius: 8px;
             border: 2px solid var(--accent);
+            box-sizing: border-box;
         }
 
         .scrutiny-text {
@@ -106,6 +106,7 @@
             color: var(--link);
             text-decoration: underline;
             font-size: 1rem;
+            display: block;
         }
 
         .brand {
@@ -254,15 +255,10 @@
         .banner-row {
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             gap: 20px;
             margin-top: 60px;
-            flex-wrap: wrap; /* Allows wrapping on smaller screens */
-        }
-        
-        /* Adjusted scrutiny link style since it's now in a row */
-        .banner-row .scrutiny-link {
-           margin-top: 0; /* Reset margin since it's in a flex container */
+            flex-wrap: wrap;
         }
 
         footer {
@@ -336,7 +332,8 @@
                 </a>
                 
                 <a href="https://walletscrutiny.com/android/com.btc.trustless/" class="scrutiny-link" target="_blank" rel="noopener noreferrer">
-                    <img src="assets/Website images/Walletscrutiny.png" alt="Wallet Scrutiny verification link" height="62">
+                    <img src="assets/Website images/Walletscrutiny.png" alt="Wallet Scrutiny verification link" height="50">
+                    <span class="scrutiny-text">Trustless on WalletScrutiny</span>
                 </a>
                 
                 <a href="https://x.com/Trustlessbtc" target="_blank" rel="noopener noreferrer">
