@@ -102,8 +102,14 @@ const OnboardingWalletScreen = () => {
     }
   };
 
-  const handle_complete_onboarding = async () => {
-    await mark_onboarding_complete();
+  // Run this once as soon as the screen mounts. 
+  // It guarantees the flag is set even if the user swipes down to close the modal.
+  useEffect(() => {
+    mark_onboarding_complete();
+  }, []);
+
+  const handle_complete_onboarding = () => {
+    // Flag is already set by the useEffect, just route the user
     navigation.reset({
       index: 0,
       routes: [{ name: 'MainTabs' }],

@@ -15,15 +15,16 @@ import {
 } from '@expo-google-fonts/space-mono';
 import * as Font from 'expo-font';
 import { Feather } from '@expo/vector-icons';
-import 'react-native-get-random-values'; 
-import './shim'; 
+import 'react-native-get-random-values';
+
+import './shim';
+
 import { registerRootComponent } from 'expo';
 import { initDatabase } from './src/services/database';
 
 interface TextWithDefaultProps extends Text {
   defaultProps?: { allowFontScaling?: boolean };
 }
-
 interface TextInputWithDefaultProps extends TextInput {
   defaultProps?: { allowFontScaling?: boolean };
 }
@@ -48,25 +49,13 @@ const THEME_PREF_KEY = '@app_theme_preference';
 const ThemedStatusBar = () => {
   const { isDark, theme } = useTheme();
   const statusBarBg = isDark ? '#000000' : theme.colors.background;
-  const barStyle = isDark ? 'light-content' : 'dark-content'; 
+  const barStyle = isDark ? 'light-content' : 'dark-content';
 
   return (
     <StatusBar
       barStyle={barStyle}
-      backgroundColor={statusBarBg} 
-    />
-  );
-};
-
-const ThemedAppRoot = () => {
-  const { theme } = useTheme();
-  const rootBgColor = theme.colors.background;
-
-  return (
-    <View style={{ flex: 1, backgroundColor: rootBgColor }}>
-      <ThemedStatusBar />
-      <AppNavigator />
-    </View>
+      backgroundColor={statusBarBg}
+     />
   );
 };
 
@@ -91,17 +80,23 @@ export default function App() {
     const prepareApp = async () => {
       try {
         await initDatabase();
-        setDbReady(true);
-
+        
         try {
           await Font.loadAsync(Feather.font);
         } catch (fontError) {
           console.error('Error loading Feather font:', fontError);
         }
 
+        // 1. Register listener BEFORE hydrating the network
+        onNetworkChange(() => {
+          setAppKey(prev => prev + 1);
+        });
+
+        // 2. Hydrate network state
         const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
         setNetwork(savedNetwork === 'testnet' ? 'testnet' : 'mainnet');
-
+        
+        // 3. Hydrate theme state
         const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
         if (savedTheme) {
           setSplashTheme(savedTheme as 'light' | 'dark');
@@ -109,27 +104,25 @@ export default function App() {
           setSplashTheme('light');
         }
 
+        // 4. Mark DB as ready ONLY after hydration is complete
+        setDbReady(true);
       } catch (e) {
         console.warn('PREPARE APP ERROR:', e);
       } finally {
         setNetworkLoaded(true);
-        onNetworkChange(() => {
-          setAppKey(prev => prev + 1);
-        });
       }
     };
-
     prepareApp();
   }, []);
 
   useEffect(() => {
     const appReady = Boolean(fontsLoaded && networkLoaded && dbReady && navBootReady);
     if (!appReady) return;
-
+    
     const minSplashMs = 1000;
     const elapsed = Date.now() - splashStartMs;
     const remaining = Math.max(0, minSplashMs - elapsed);
-
+    
     const t = setTimeout(() => {
       Animated.timing(splashOpacity, {
         toValue: 0,
@@ -139,7 +132,7 @@ export default function App() {
         setShowSplashOverlay(false);
       });
     }, remaining);
-
+    
     return () => clearTimeout(t);
   }, [fontsLoaded, networkLoaded, dbReady, navBootReady, splashOpacity, splashStartMs]);
 
@@ -152,7 +145,8 @@ export default function App() {
     <View style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          {dbReady ? (
+          {/* Check BOTH dbReady and networkLoaded before mounting WalletProvider */}
+          {dbReady && networkLoaded ? (
             <WalletProvider key={appKey}>
               <View style={{ flex: 1 }}>
                 <ThemedStatusBar />

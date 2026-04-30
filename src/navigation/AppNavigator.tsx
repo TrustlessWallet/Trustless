@@ -66,7 +66,7 @@ const PrivacyOverlayScreen = () => {
 };
 
 const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
-  const { loading: wallet_loading } = useWallet();
+  const { wallets, loading: wallet_loading } = useWallet();
   const { theme, isDark } = useTheme();
   const navigation_ref = useNavigationContainerRef<RootStackParamList>();
   const [is_loading, set_is_loading] = useState(true);
@@ -83,11 +83,6 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const [nav_state_resolved, set_nav_state_resolved] = useState(false);
 
   const is_android = Platform.OS === 'android';
-
-  const splash_icon = isDark
-    ? require('../../assets/splash-icon-black.png')
-    : require('../../assets/splash-icon-white.png');
-  const splash_bg = isDark ? '#000000' : '#ffffff';
 
   const navigation_theme = {
     dark: isDark,
@@ -135,8 +130,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
   const check_auth_needed = async () => {
     try {
-      const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
-      if (!has_completed_onboarding) return;
+      if (wallets.length === 0) return;
 
       const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
       const is_enrolled = await LocalAuthentication.isEnrolledAsync();
@@ -168,17 +162,20 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     }
   };
 
-  useEffect(() => {
+useEffect(() => {
     const check_initial_status = async () => {
       try {
-        const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
         set_initial_tab('Wallet');
+
+        const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
 
         if (has_completed_onboarding === null) {
           set_needs_onboarding(true);
           set_is_loading(false);
           return;
         }
+        
+        set_needs_onboarding(false);
 
         const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
         const is_enrolled = await LocalAuthentication.isEnrolledAsync();
