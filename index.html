@@ -284,7 +284,7 @@
 
     <header class="container-limited">
         <div class="brand">
-            <img src="assets/icon.png" alt="Trustless Logo" class="logo" onerror="this.style.display='none'">
+            <img id="brand-logo" src="assets/Website images/Trustless-logo-dark.png" alt="Trustless Logo" class="logo" onerror="this.style.display='none'">
             <h1>Trustless</h1>
         </div>
         <button id="theme-toggle" onclick="toggleTheme()">Switch Theme</button>
@@ -373,7 +373,9 @@
         function initTheme() {
             const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
             const currentTheme = document.body.getAttribute('data-theme') || (prefersDark ? 'dark' : 'light');
+            document.body.setAttribute('data-theme', currentTheme);
             renderCarousel(currentTheme);
+            updateLogo(currentTheme);
         }
 
         function toggleTheme() {
@@ -382,6 +384,15 @@
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
             body.setAttribute('data-theme', newTheme);
             updateCarouselImages(newTheme);
+            updateLogo(newTheme);
+        }
+
+        function updateLogo(theme) {
+            const logo = document.getElementById('brand-logo');
+            if (logo) {
+                const type = theme === 'dark' ? 'dark' : 'white';
+                logo.src = `${BASE_PATH}/Trustless-logo-${type}${EXTENSION}`;
+            }
         }
 
         function renderCarousel(theme) {
