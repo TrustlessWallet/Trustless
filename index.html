@@ -233,42 +233,38 @@
             flex-direction: row;
             justify-content: center;
             align-items: center;
-            gap: 20px;
+            gap: 15px;
             margin-top: 40px;
-            width: 100%;
-            flex-wrap: wrap; /* Keeps it responsive on small screens */
+            width: 120%; /* Makes the row wider to fit the elements */
+            margin-left: -10%; /* Centers the widened row */
+            flex-wrap: nowrap; /* Forces them onto a single horizontal line */
         }
 
         .banner-row a {
-            display: block;
-            text-align: center;
+            display: flex;
+            align-items: center;
+            flex: 0 1 auto;
+            min-width: 0; /* Allows shrinking if the screen gets too small */
             text-decoration: none;
         }
 
         .banner-row img {
-            height: 55px; /* 10% bigger than the original 50px */
+            max-height: 55px; /* Constrains the height */
+            max-width: 100%; /* Ensures they scale down if space is tight */
+            height: auto;
             width: auto;
             border-radius: 8px;
             display: block;
-            margin: 0 auto;
         }
 
         .wallet-scrutiny-img {
-            border: 1px solid var(--accent); /* Smaller 1px border */
+            border: 1px solid var(--accent);
             box-sizing: border-box;
         }
 
         .x-logo-img {
-            border: 1px solid #ffffff; /* Added white border */
+            border: 1px solid #ffffff;
             box-sizing: border-box;
-        }
-
-        .scrutiny-text {
-            margin-top: 10px;
-            color: var(--link);
-            text-decoration: underline;
-            font-size: 0.9rem;
-            display: block;
         }
 
         footer {
@@ -304,6 +300,11 @@
             }
 
             .nav-btn { display: none; }
+            
+            .banner-row {
+                width: 100%;
+                margin-left: 0;
+            }
         }
     </style>
 </head>
@@ -343,7 +344,6 @@
                 
                 <a href="https://walletscrutiny.com/android/com.btc.trustless/" target="_blank" rel="noopener noreferrer">
                     <img src="assets/Website images/Walletscrutiny.png" alt="Wallet Scrutiny verification link" class="wallet-scrutiny-img">
-                    <span class="scrutiny-text">Trustless on WalletScrutiny</span>
                 </a>
                 
                 <a href="https://x.com/Trustlessbtc" target="_blank" rel="noopener noreferrer">
