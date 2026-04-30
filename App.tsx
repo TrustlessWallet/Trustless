@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { StatusBar, LogBox, View, Image, Text, TextInput } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StatusBar, LogBox, View, Image, Text, TextInput, Animated } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppNavigator from './src/navigation/AppNavigator';
 import { WalletProvider } from './src/contexts/WalletContext';
@@ -75,7 +75,10 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false);
   const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>('light');
   const [appKey, setAppKey] = useState(0);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [showSplashOverlay, setShowSplashOverlay] = useState(true);
+  const [navBootReady, setNavBootReady] = useState(false);
+  const splashOpacity = useRef(new Animated.Value(1)).current;
+  const splashStartMs = useRef<number>(Date.now()).current;
 
   let [fontsLoaded] = useFonts({
     'SpaceMono-Regular': SpaceMono_400Regular,
@@ -120,35 +123,70 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (fontsLoaded && networkLoaded && dbReady) {
-      setIsInitialLoading(false);
-    }
-  }, [fontsLoaded, networkLoaded, dbReady]);
+    const appReady = Boolean(fontsLoaded && networkLoaded && dbReady && navBootReady);
+    if (!appReady) return;
 
-  if (isInitialLoading) {
-    const splashBg = splashTheme === 'dark' ? '#000000' : '#ffffff';
-    const splashIcon = splashTheme === 'dark' 
-      ? require('./assets/splash-icon-black.png') 
-      : require('./assets/splash-icon-white.png');
+    const minSplashMs = 1000;
+    const elapsed = Date.now() - splashStartMs;
+    const remaining = Math.max(0, minSplashMs - elapsed);
 
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: splashBg }}>
-        <Image 
-          source={splashIcon}
-          style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
-        />
-      </View>
-    );
-  }
+    const t = setTimeout(() => {
+      Animated.timing(splashOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowSplashOverlay(false);
+      });
+    }, remaining);
+
+    return () => clearTimeout(t);
+  }, [fontsLoaded, networkLoaded, dbReady, navBootReady, splashOpacity, splashStartMs]);
+
+  const splashBg = splashTheme === 'dark' ? '#000000' : '#ffffff';
+  const splashIcon = splashTheme === 'dark'
+    ? require('./assets/splash-icon-black.png')
+    : require('./assets/splash-icon-white.png');
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <WalletProvider key={appKey}> 
-          <ThemedAppRoot />
-        </WalletProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <View style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          {dbReady ? (
+            <WalletProvider key={appKey}>
+              <View style={{ flex: 1 }}>
+                <ThemedStatusBar />
+                <AppNavigator onBootReady={() => setNavBootReady(true)} />
+              </View>
+            </WalletProvider>
+          ) : (
+            <View style={{ flex: 1 }}>
+              <ThemedStatusBar />
+            </View>
+          )}
+        </ThemeProvider>
+      </QueryClientProvider>
+
+      {showSplashOverlay && (
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: splashBg,
+            opacity: splashOpacity,
+          }}
+        >
+          <Image
+            source={splashIcon}
+            style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
+          />
+        </Animated.View>
+      )}
+    </View>
   );
 }
 

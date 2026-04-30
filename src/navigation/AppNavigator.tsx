@@ -4,7 +4,7 @@ import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react
 import { RootStackParamList, TabParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { View, TouchableOpacity, AppState, Text, Image, Animated, Platform, Modal, Dimensions } from 'react-native';
+import { View, TouchableOpacity, AppState, Text, Image, Platform, Dimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -65,14 +65,13 @@ const PrivacyOverlayScreen = () => {
   );
 };
 
-const AppNavigator = () => {
+const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const { loading: wallet_loading } = useWallet();
   const { theme, isDark } = useTheme();
   const navigation_ref = useNavigationContainerRef<RootStackParamList>();
   const [is_loading, set_is_loading] = useState(true);
   const [needs_onboarding, set_needs_onboarding] = useState(false);
   const [has_shown_onboarding, set_has_shown_onboarding] = useState(false);
-  const [show_splash, set_show_splash] = useState(true);
   const [is_backgrounded, set_is_backgrounded] = useState(false);
   const [initial_route, set_initial_route] = useState<keyof RootStackParamList>('MainTabs');
   const [initial_tab, set_initial_tab] = useState<keyof TabParamList>('Wallet');
@@ -80,9 +79,8 @@ const AppNavigator = () => {
   const [is_nav_ready, set_is_nav_ready] = useState(false);
   const app_state = useRef(AppState.currentState);
 
-  const [splash_visible, set_splash_visible] = useState(true);
-
-  const splash_opacity = useRef(new Animated.Value(1)).current;
+  const [initial_nav_state, set_initial_nav_state] = useState<any>(null);
+  const [nav_state_resolved, set_nav_state_resolved] = useState(false);
 
   const is_android = Platform.OS === 'android';
 
@@ -201,52 +199,32 @@ const AppNavigator = () => {
   }, [wallet_loading]);
 
   useEffect(() => {
-    if (!is_loading && needs_onboarding && navigation_ref.isReady() && !has_shown_onboarding) {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          if (navigation_ref.isReady()) {
-            navigation_ref.reset({
-              index: 2,
-              routes: [
-                { name: 'MainTabs' },
-                { name: 'OnboardingWallet' },
-                { name: 'OnboardingWelcome' },
-              ],
-            });
-            set_has_shown_onboarding(true);
-            setTimeout(() => {
-              set_show_splash(false);
-            }, 100);
-          }
-        }, 0);
-      });
-    } else if (!is_loading && !needs_onboarding) {
-      set_show_splash(false);
-    }
-  }, [is_loading, needs_onboarding, navigation_ref, has_shown_onboarding]);
+    if (nav_state_resolved) return;
+    if (wallet_loading || is_loading) return;
 
-  const should_show_initial_splash = wallet_loading || is_loading || show_splash;
+    if (needs_onboarding && !has_shown_onboarding) {
+      set_initial_nav_state({
+        stale: false,
+        type: 'stack',
+        key: 'root',
+        index: 2,
+        routeNames: ['MainTabs', 'OnboardingWallet', 'OnboardingWelcome', 'AuthCheck'],
+        routes: [
+          { key: 'MainTabs', name: 'MainTabs', params: { screen: initial_tab } },
+          { key: 'OnboardingWallet', name: 'OnboardingWallet' },
+          { key: 'OnboardingWelcome', name: 'OnboardingWelcome' },
+        ],
+      });
+      set_has_shown_onboarding(true);
+      set_nav_state_resolved(true);
+      return;
+    }
+
+    set_initial_nav_state(undefined);
+    set_nav_state_resolved(true);
+  }, [nav_state_resolved, wallet_loading, is_loading, needs_onboarding, has_shown_onboarding, initial_tab]);
 
   const is_privacy_active = is_backgrounded && !get_biometric_prompt_shown();
-
-  useEffect(() => {
-    if (should_show_initial_splash) {
-      set_splash_visible(true);
-      Animated.timing(splash_opacity, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(splash_opacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }).start(() => {
-        set_splash_visible(false);
-      });
-    }
-  }, [should_show_initial_splash]);
 
   useEffect(() => {
     if (!is_nav_ready || !navigation_ref.isReady()) return;
@@ -340,35 +318,26 @@ const AppNavigator = () => {
     animation: 'slide_from_bottom',
   } : {};
 
-  if (wallet_loading || is_loading) {
-    const { width, height } = Dimensions.get('screen');
-    return (
-      <View style={{ flex: 1, backgroundColor: splash_bg }}>
-        <Image
-          source={splash_icon}
-          style={{ width: width, height: height, resizeMode: 'cover', position: 'absolute' }}
-        />
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        </View>
-      </View>
-    );
+  if (wallet_loading || is_loading || !nav_state_resolved) {
+    return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
   }
 
   return (
-    <>
-      <NavigationContainer
-        ref={navigation_ref}
-        theme={navigation_theme}
-        onReady={() => {
-          set_is_nav_ready(true);
-          set_current_route_name(navigation_ref.getCurrentRoute()?.name);
-        }}
-        onStateChange={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
+    <NavigationContainer
+      ref={navigation_ref}
+      theme={navigation_theme}
+      initialState={initial_nav_state || undefined}
+      onReady={() => {
+        set_is_nav_ready(true);
+        set_current_route_name(navigation_ref.getCurrentRoute()?.name);
+        onBootReady?.();
+      }}
+      onStateChange={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
+    >
+      <Stack.Navigator
+        initialRouteName={initial_route}
+        screenOptions={screen_options}
       >
-        <Stack.Navigator
-          initialRouteName={initial_route}
-          screenOptions={screen_options}
-        >
           <Stack.Screen
             name="MainTabs"
             component={TabNavigator}
@@ -497,38 +466,8 @@ const AppNavigator = () => {
               gestureEnabled: false,
             }}
           />
-        </Stack.Navigator>
-      </NavigationContainer>
-
-      <Modal
-        visible={splash_visible}
-        transparent={true}
-        animationType="none"
-        statusBarTranslucent={true}
-        onRequestClose={() => { }}
-      >
-        <Animated.View style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: Dimensions.get('screen').width,
-          height: Dimensions.get('screen').height,
-          backgroundColor: splash_bg,
-          justifyContent: 'center',
-          alignItems: 'center',
-          opacity: splash_opacity,
-        }}>
-          <Image
-            source={splash_icon}
-            style={{
-              width: '100%',
-              height: '100%',
-              resizeMode: 'cover'
-            }}
-          />
-        </Animated.View>
-      </Modal>
-    </>
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 };
 
