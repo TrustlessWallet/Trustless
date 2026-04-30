@@ -110,12 +110,6 @@ const OnboardingWalletScreen = () => {
     });
   };
 
-  useEffect(() => {
-    return () => {
-      mark_onboarding_complete();
-    };
-  }, []);
-
   const handle_next = () => {
     if (current_index < slides.length - 1) {
       flat_list_ref.current?.scrollToIndex({ index: current_index + 1 });
