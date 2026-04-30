@@ -227,32 +227,48 @@
             text-decoration: underline;
         }
 
+        /* Banner Row Styles */
         .banner-row {
             display: flex;
+            flex-direction: row;
             justify-content: center;
             align-items: center;
-            gap: 15px;
+            gap: 20px;
             margin-top: 40px;
-            flex-wrap: nowrap;
             width: 100%;
+            flex-wrap: wrap; /* Keeps it responsive on small screens */
         }
 
         .banner-row a {
-            display: flex;
-            align-items: center;
-            flex-shrink: 1;
+            display: block;
+            text-align: center;
+            text-decoration: none;
         }
 
         .banner-row img {
-            height: 40px;
-            max-width: 100%;
-            object-fit: contain;
+            height: 55px; /* 10% bigger than the original 50px */
+            width: auto;
             border-radius: 8px;
+            display: block;
+            margin: 0 auto;
         }
 
         .wallet-scrutiny-img {
-            border: 2px solid var(--accent);
+            border: 1px solid var(--accent); /* Smaller 1px border */
             box-sizing: border-box;
+        }
+
+        .x-logo-img {
+            border: 1px solid #ffffff; /* Added white border */
+            box-sizing: border-box;
+        }
+
+        .scrutiny-text {
+            margin-top: 10px;
+            color: var(--link);
+            text-decoration: underline;
+            font-size: 0.9rem;
+            display: block;
         }
 
         footer {
@@ -327,10 +343,11 @@
                 
                 <a href="https://walletscrutiny.com/android/com.btc.trustless/" target="_blank" rel="noopener noreferrer">
                     <img src="assets/Website images/Walletscrutiny.png" alt="Wallet Scrutiny verification link" class="wallet-scrutiny-img">
+                    <span class="scrutiny-text">Trustless on WalletScrutiny</span>
                 </a>
                 
                 <a href="https://x.com/Trustlessbtc" target="_blank" rel="noopener noreferrer">
-                    <img src="https://github.com/user-attachments/assets/d97dcf22-345a-427d-961e-6f4ee308db76" alt="X-logo">
+                    <img src="https://github.com/user-attachments/assets/d97dcf22-345a-427d-961e-6f4ee308db76" alt="X-logo" class="x-logo-img">
                 </a>
             </div>
         </div>
