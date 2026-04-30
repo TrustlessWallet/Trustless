@@ -355,7 +355,7 @@ const WalletScreen = () => {
                     <RefreshControl 
                         refreshing={!isLightningMode && isRefetchingTxs} 
                         onRefresh={onRefresh} 
-                        tintColor={theme.colors.primary} 
+                        tintColor={theme.colors.primary}
                     />
                 }
                 removeClippedSubviews={true}
