@@ -321,12 +321,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 leewaySatPerVbyte: BigInt(1)
             });
 
-            const basePath = FileSystem.documentDirectory ? FileSystem.documentDirectory.replace('file://', '') : '';
-            const storageDir = `${basePath}breezSdkSpark`;
-
-            const dirInfo = await FileSystem.getInfoAsync(FileSystem.documentDirectory + 'breezSdkSpark');
+            const documentDir = FileSystem.Paths.document;
+            const storageDirPath = `${documentDir.uri}breezSdkSpark`;
+            const storageDir = new FileSystem.Directory(storageDirPath);
+            
+            const dirInfo = await storageDir.info();
             if (!dirInfo.exists) {
-                await FileSystem.makeDirectoryAsync(FileSystem.documentDirectory + 'breezSdkSpark', { intermediates: true });
+                await storageDir.create({ intermediates: true });
             }
 
             const seed = breezSdk.Seed.Mnemonic.new({
@@ -336,7 +337,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const sdk = await breezSdk.connect({
                 config,
                 seed,
-                storageDir
+                storageDir: storageDir.uri.replace('file://', '')
             });
 
             activeSdkInstance = sdk;
