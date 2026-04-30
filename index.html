@@ -85,30 +85,6 @@
             z-index: 10;
         }
 
-        .scrutiny-link {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            text-decoration: none;
-        }
-
-        .scrutiny-link img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            border: 2px solid var(--accent);
-            box-sizing: border-box;
-        }
-
-        .scrutiny-text {
-            margin-top: 15px;
-            color: var(--link);
-            text-decoration: underline;
-            font-size: 1rem;
-            display: block;
-        }
-
         .brand {
             display: flex;
             align-items: center;
@@ -251,14 +227,32 @@
             text-decoration: underline;
         }
 
-        /* Styles for the banner row */
         .banner-row {
             display: flex;
             justify-content: center;
-            align-items: flex-start;
-            gap: 20px;
-            margin-top: 60px;
-            flex-wrap: wrap;
+            align-items: center;
+            gap: 15px;
+            margin-top: 40px;
+            flex-wrap: nowrap;
+            width: 100%;
+        }
+
+        .banner-row a {
+            display: flex;
+            align-items: center;
+            flex-shrink: 1;
+        }
+
+        .banner-row img {
+            height: 40px;
+            max-width: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+
+        .wallet-scrutiny-img {
+            border: 2px solid var(--accent);
+            box-sizing: border-box;
         }
 
         footer {
@@ -328,16 +322,15 @@
             
             <div class="banner-row">
                  <a href="https://apple.co/4vpMOrh" target="_blank" rel="noopener noreferrer">
-                    <img src="https://github.com/user-attachments/assets/1c049492-6fb6-43cc-a5eb-0469bbef9b2c" alt="Download on the App Store" height="50" style="border-radius: 8px;">
+                    <img src="https://github.com/user-attachments/assets/1c049492-6fb6-43cc-a5eb-0469bbef9b2c" alt="Download on the App Store">
                 </a>
                 
-                <a href="https://walletscrutiny.com/android/com.btc.trustless/" class="scrutiny-link" target="_blank" rel="noopener noreferrer">
-                    <img src="assets/Website images/Walletscrutiny.png" alt="Wallet Scrutiny verification link" height="50">
-                    <span class="scrutiny-text">Trustless on WalletScrutiny</span>
+                <a href="https://walletscrutiny.com/android/com.btc.trustless/" target="_blank" rel="noopener noreferrer">
+                    <img src="assets/Website images/Walletscrutiny.png" alt="Wallet Scrutiny verification link" class="wallet-scrutiny-img">
                 </a>
                 
                 <a href="https://x.com/Trustlessbtc" target="_blank" rel="noopener noreferrer">
-                    <img src="https://github.com/user-attachments/assets/d97dcf22-345a-427d-961e-6f4ee308db76" alt="X-logo" height="50" style="border-radius: 8px;">
+                    <img src="https://github.com/user-attachments/assets/d97dcf22-345a-427d-961e-6f4ee308db76" alt="X-logo">
                 </a>
             </div>
         </div>
