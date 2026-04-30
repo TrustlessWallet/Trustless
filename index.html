@@ -235,26 +235,29 @@
             align-items: center;
             gap: 15px;
             margin-top: 40px;
-            width: 120%; /* Makes the row wider to fit the elements */
-            margin-left: -10%; /* Centers the widened row */
-            flex-wrap: nowrap; /* Forces them onto a single horizontal line */
+            width: 120%;
+            margin-left: -10%;
+            flex-wrap: nowrap; 
         }
 
         .banner-row a {
             display: flex;
             align-items: center;
             flex: 0 1 auto;
-            min-width: 0; /* Allows shrinking if the screen gets too small */
+            min-width: 0;
             text-decoration: none;
         }
 
         .banner-row img {
-            max-height: 55px; /* Constrains the height */
-            max-width: 100%; /* Ensures they scale down if space is tight */
-            height: auto;
+            height: 55px; 
             width: auto;
             border-radius: 8px;
             display: block;
+            margin: 0 auto;
+        }
+
+        .banner-row .app-store-img {
+            height: 68px; /* Compensates for transparent padding in the image file */
         }
 
         .wallet-scrutiny-img {
@@ -339,7 +342,7 @@
             
             <div class="banner-row">
                  <a href="https://apple.co/4vpMOrh" target="_blank" rel="noopener noreferrer">
-                    <img src="https://github.com/user-attachments/assets/1c049492-6fb6-43cc-a5eb-0469bbef9b2c" alt="Download on the App Store">
+                    <img src="https://github.com/user-attachments/assets/1c049492-6fb6-43cc-a5eb-0469bbef9b2c" alt="Download on the App Store" class="app-store-img">
                 </a>
                 
                 <a href="https://walletscrutiny.com/android/com.btc.trustless/" target="_blank" rel="noopener noreferrer">
