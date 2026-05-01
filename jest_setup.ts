@@ -10,3 +10,8 @@ jest.mock('react-native-tcp-socket', () => ({
     createConnection: jest.fn(),
     Server: jest.fn()
 }));
+
+Object.defineProperty(global, 'document', {
+    value: {},
+    writable: true
+});
