@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
     StyleSheet,
@@ -7,7 +7,8 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
-    ScrollView
+    ScrollView,
+    Keyboard
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +29,10 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const navigation = useNavigation<any>();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
+
+    const scrollViewRef = useRef<ScrollView>(null);
+
+    const MIN_WITHDRAW_SATS = 1000;
 
     const {
         activeWallet,
@@ -52,6 +57,36 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const [feeEstimates, setFeeEstimates] = useState<{ slow: number; normal: number; fast: number } | null>(null);
 
     const [txMetrics, setTxMetrics] = useState<{ totalFeeSats: number; prepareResponse: any } | null>(null);
+
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const onKeyboardShow = (e: any) => {
+            setKeyboardHeight(e.endCoordinates.height + 50);
+        };
+
+        const onKeyboardHide = () => {
+            setKeyboardHeight(0);
+        };
+
+        const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
+        const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
+    const handleAmountFocus = () => {
+        const delayMs = Platform.OS === 'ios' ? 50 : 100;
+        setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, delayMs);
+    };
 
     useEffect(() => {
         if (activeWallet) {
@@ -118,6 +153,8 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     }, [activeWallet, isLightningInitialized]);
 
     const activeDestination = destMode === 'own' ? ownAddress : customAddress;
+    const amountSats = parseInt(amountStr, 10);
+    const isMinAmountMet = !isNaN(amountSats) && amountSats >= MIN_WITHDRAW_SATS;
 
     // Auto-calculate fees when amount or fee tier changes
     useEffect(() => {
@@ -142,7 +179,17 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         if (!activeWallet || !activeDestination) return;
         const amountSats = parseInt(amountStr, 10);
 
-        if (isNaN(amountSats) || amountSats <= 0) return;
+        if (isNaN(amountSats) || amountSats <= 0) {
+            setTxMetrics(null);
+            setCalculationError(null);
+            return;
+        }
+
+        if (amountSats < MIN_WITHDRAW_SATS) {
+            setTxMetrics(null);
+            setCalculationError(`Minimum is ${MIN_WITHDRAW_SATS} sats`);
+            return;
+        }
 
         
         if (!validateBitcoinAddress(activeDestination)) {
@@ -209,6 +256,12 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
     const handleExecuteWithdrawal = async () => {
         if (!txMetrics || !activeWallet || !activeDestination) return;
+
+        if (!isMinAmountMet) {
+            Alert.alert('Amount too low', `Minimum withdrawal is ${MIN_WITHDRAW_SATS} sats.`);
+            return;
+        }
+
         setExecuting(true);
 
         try {
@@ -250,7 +303,11 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             >
                 <ScrollView
-                    contentContainerStyle={styles.scrollContent}
+                    ref={scrollViewRef}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 32 : styles.scrollContent.paddingBottom }
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     bounces={false}
@@ -331,14 +388,15 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 setAmountStr(t.replace(/[^0-9]/g, ''));
                                 setTxMetrics(null);
                             }}
-                            placeholder="0"
+                            onFocus={handleAmountFocus}
+                            placeholder={`Min ${MIN_WITHDRAW_SATS} sats`}
                             editable={!executing}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                             blurOnSubmit={false}
                         />
                         
                         {/* Alert is absolutely positioned to prevent any layout shifts */}
-                        {calculationError && (
+                        {false && calculationError && (
                             <View style={styles.statusMessageContainer}>
                                 <Feather name="alert-circle" size={14} color={theme.colors.muted} />
                                 <Text style={styles.statusText}> {calculationError}</Text>
@@ -430,9 +488,9 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
                         <TouchableOpacity
                             key={`confirm-button-${txMetrics ? 'enabled' : 'disabled'}-${executing ? 'executing' : 'idle'}`}
-                            style={[styles.confirmButton, (!amountStr || !isLightningInitialized || !activeDestination || !txMetrics) && styles.buttonDisabled]}
+                            style={[styles.confirmButton, (!amountStr || !isMinAmountMet || !isLightningInitialized || !activeDestination || !txMetrics) && styles.buttonDisabled]}
                             onPress={handleExecuteWithdrawal}
-                            disabled={!amountStr || !isLightningInitialized || !activeDestination || !txMetrics || executing}
+                            disabled={!amountStr || !isMinAmountMet || !isLightningInitialized || !activeDestination || !txMetrics || executing}
                         >
                             {executing ? (
                                 <ActivityIndicator color={theme.colors.inversePrimary} />

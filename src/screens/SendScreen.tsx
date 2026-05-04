@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput, Platform, Keyboard, LayoutAnimation, UIManager } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput'; 
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
@@ -100,6 +100,13 @@ const SendScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<SendScreenRouteProp>();
     const isFocused = useIsFocused(); 
+    const scrollViewRef = useRef<ScrollView>(null);
+
+    useEffect(() => {
+        if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+            UIManager.setLayoutAnimationEnabledExperimental(true);
+        }
+    }, []);
     
     const { 
         activeWallet, 
@@ -117,7 +124,7 @@ const SendScreen = () => {
     const mode = route.params?.mode || 'onchain';
 
     const [recipientAddress, setRecipientAddress] = useState('');
-    const [recipientAddressPreview, setRecipientAddressPreview] = useState('');
+    const [isRecipientAddressFocused, setIsRecipientAddressFocused] = useState(false);
     const [amount, setAmount] = useState('');
     const [unit, setUnit] = useState<Unit>('BTC');
     const [balance, setBalance] = useState(0);
@@ -136,25 +143,38 @@ const SendScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [hideBalance, setHideBalance] = useState(false);
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
 
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
 
-    const renderAddressChunks = (address: string) => {
-        if (!address) return null;
-        const chunks = address.match(/.{1,6}/g) || [address];
-        return (
-            <Text style={styles.addressPreview} selectable>
-                {chunks.map((chunk, index) => {
-                    const isEdge = index === 0 || index === chunks.length - 1;
-                    return (
-                        <Text key={index} style={isEdge ? styles.orangeSymbol : undefined}>
-                            {chunk}{index < chunks.length - 1 ? ' ' : ''}
-                        </Text>
-                    );
-                })}
-            </Text>
-        );
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const onKeyboardShow = (e: any) => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setKeyboardHeight(e.endCoordinates.height + 50);
+        };
+
+        const onKeyboardHide = () => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setKeyboardHeight(0);
+        };
+
+        const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
+        const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
+    const handleInputFocus = () => {
+        setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, Platform.OS === 'ios' ? 50 : 100);
     };
 
     useEffect(() => {
@@ -163,13 +183,6 @@ const SendScreen = () => {
             navigation.setParams({ selectedAddress: undefined });
         }
     }, [route.params?.selectedAddress, navigation]);
-
-    useEffect(() => {
-        const t = setTimeout(() => {
-            setRecipientAddressPreview(recipientAddress.trim());
-        }, 200);
-        return () => clearTimeout(t);
-    }, [recipientAddress]);
 
     useEffect(() => {
         if (mode === 'lightning' && lightningInvoice) {
@@ -538,7 +551,13 @@ const SendScreen = () => {
     const isBalanceLoading = mode === 'onchain' && loadingBalance;
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" bounces={false}>
+        <ScrollView 
+            ref={scrollViewRef}
+            style={styles.container} 
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 32 : 32 }]} 
+            keyboardShouldPersistTaps="handled" 
+            bounces={false}
+        >
 
                 <View style={styles.balanceContainer}>
                     <Text style={styles.balanceLabel}>Available to send</Text>
@@ -562,13 +581,26 @@ const SendScreen = () => {
                     <>
                         <Text style={styles.label}>Recipient address</Text>
                         <View style={styles.inputSpacing}>
-                        <StyledInput
-                            placeholder="Enter a bitcoin address"
-                            value={recipientAddress}
-                            onChangeText={setRecipientAddress}
-                            autoCapitalize="none"
-                            rightElement={
-                                <View style={styles.row}>
+                            <View style={[styles.addressInputWrapper, isRecipientAddressFocused && styles.addressInputWrapperFocused]}>
+                                <TextInput
+                                    style={styles.addressInput}
+                                    multiline={true}
+                                    numberOfLines={2}
+                                    scrollEnabled={true}
+                                    placeholder="Enter a bitcoin address"
+                                    placeholderTextColor={theme.colors.muted}
+                                    value={recipientAddress}
+                                    onChangeText={setRecipientAddress}
+                                    onFocus={() => {
+                                        setIsRecipientAddressFocused(true);
+                                        handleInputFocus();
+                                    }}
+                                    onBlur={() => setIsRecipientAddressFocused(false)}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    spellCheck={false}
+                                />
+                                <View style={styles.addressInputRightElements}>
                                     <TouchableOpacity onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} style={styles.iconButton}>
                                         <Feather name="book-open" size={20} color={theme.colors.primary} />
                                     </TouchableOpacity>
@@ -576,9 +608,7 @@ const SendScreen = () => {
                                         <Feather name="camera" size={20} color={theme.colors.primary} />
                                     </TouchableOpacity>
                                 </View>
-                            }
-                        />
-                        {!!recipientAddressPreview && renderAddressChunks(recipientAddressPreview)}
+                            </View>
                         </View>
 
                         <Text style={styles.label}>Amount</Text>
@@ -587,6 +617,7 @@ const SendScreen = () => {
                             value={amount}
                             onChangeText={setAmount}
                             keyboardType="numeric"
+                            onFocus={handleInputFocus}
                             rightElement={
                                 <View style={styles.unitSelector}>
                                     <TouchableOpacity onPress={() => setUnit('BTC')} style={[styles.unitButton, unit === 'BTC' && styles.unitButtonActive]}>
@@ -633,6 +664,7 @@ const SendScreen = () => {
                                             keyboardType="numeric"
                                             value={customRate}
                                             onChangeText={setCustomRate}
+                                            onFocus={handleInputFocus}
                                             placeholder="0"
                                             keyboardAppearance={isDark ? 'dark' : 'light'}
                                             placeholderTextColor={theme.colors.muted}
@@ -701,6 +733,7 @@ const SendScreen = () => {
                                 value={lightningInvoice}
                                 onChangeText={setLightningInvoice}
                                 autoCapitalize="none"
+                                onFocus={handleInputFocus}
                                 rightElement={
                                     <TouchableOpacity onPress={handleScanPress} style={styles.iconButton}>
                                         <Feather name="camera" size={20} color={theme.colors.primary} />
@@ -715,6 +748,7 @@ const SendScreen = () => {
                             value={lnAmount}
                             onChangeText={setLnAmount}
                             keyboardType="numeric"
+                            onFocus={handleInputFocus}
                             editable={!hasFixedAmount}
                             style={hasFixedAmount ? styles.inputDisabled : {}}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
@@ -753,14 +787,42 @@ const SendScreen = () => {
 
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
-    scrollContent: { padding: 24, paddingBottom: 460, flexGrow: 1 },
+    scrollContent: { padding: 24 },
     balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
     balanceLabel: { fontSize: 16, color: theme.colors.muted },
     balanceText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary, padding: 0 },
     label: { fontSize: 16, fontWeight: '500', marginBottom: 8, color: theme.colors.primary },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     inputSpacing: { marginBottom: 16 },
-    addressPreview: { fontSize: 14, fontFamily: 'monospace', marginTop: 8, color: theme.colors.muted },
+    addressInputWrapper: { 
+        flexDirection: 'row', 
+        borderWidth: 1, 
+        borderColor: theme.colors.border, 
+        borderRadius: 8, 
+        backgroundColor: theme.colors.surface || theme.colors.background,
+        height: 100
+    },
+    addressInputWrapperFocused: {
+        borderColor: theme.colors.bitcoin,
+    },
+    addressInput: { 
+        flex: 1, 
+        paddingHorizontal: 16, 
+        paddingVertical: 16, 
+        fontSize: 16,
+        fontFamily: 'monospace', 
+        color: theme.colors.primary, 
+        textAlignVertical: 'top' 
+    },
+    inputText: {
+        color: theme.colors.primary,
+    },
+    addressInputRightElements: { 
+        flexDirection: 'row', 
+        alignItems: 'flex-start', 
+        paddingRight: 8, 
+        paddingTop: 8 
+    },
     iconButton: { padding: 10 },
     unitSelector: { flexDirection: 'row', backgroundColor: theme.colors.border, borderRadius: 6, marginRight: 8, padding: 2 },
     unitButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
