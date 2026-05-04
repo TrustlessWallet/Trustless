@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
     StyleSheet,
@@ -8,7 +8,8 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
-    ScrollView
+    ScrollView,
+    Keyboard
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +25,10 @@ export const LightningTopUpScreen: React.FC = () => {
     const navigation = useNavigation();
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
+
+    const scrollViewRef = useRef<ScrollView>(null);
+
+    const MIN_TOPUP_SATS = 546;
 
     const {
         activeWallet,
@@ -53,6 +58,36 @@ export const LightningTopUpScreen: React.FC = () => {
     const [executing, setExecuting] = useState(false);
     const [txMetrics, setTxMetrics] = useState<{ fee: number; hex: string; changeIndex: number | null, vsize: number, actualAmount: number } | null>(null);
     const [calculationError, setCalculationError] = useState<string | null>(null);
+
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const onKeyboardShow = (e: any) => {
+            setKeyboardHeight(e.endCoordinates.height + 50);
+        };
+
+        const onKeyboardHide = () => {
+            setKeyboardHeight(0);
+        };
+
+        const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
+        const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
+    const handleAmountFocus = () => {
+        const delayMs = Platform.OS === 'ios' ? 50 : 100;
+        setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, delayMs);
+    };
 
     useEffect(() => {
         const initData = async () => {
@@ -101,14 +136,20 @@ export const LightningTopUpScreen: React.FC = () => {
         if (!activeWallet || !swapAddress) return;
         const amountSats = parseInt(amountStr, 10);
 
-        if (isNaN(amountSats) || amountSats <= 0) return;
+        if (isNaN(amountSats) || amountSats <= 0) {
+            setTxMetrics(null);
+            setCalculationError(null);
+            return;
+        }
 
-        const minRequired = limits ? limits.minSats : 546;
+        const minRequired = limits ? limits.minSats : MIN_TOPUP_SATS;
         if (amountSats < minRequired) {
+            setTxMetrics(null);
             setCalculationError(`Minimum: ${minRequired.toLocaleString()} sats`);
             return;
         }
         if (limits && amountSats > limits.maxSats) {
+            setTxMetrics(null);
             setCalculationError(`Maximum: ${limits.maxSats.toLocaleString()} sats`);
             return;
         }
@@ -267,7 +308,11 @@ export const LightningTopUpScreen: React.FC = () => {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             >
                 <ScrollView
-                    contentContainerStyle={styles.scrollContent}
+                    ref={scrollViewRef}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 32 : styles.scrollContent.paddingBottom }
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     bounces={false}
@@ -299,13 +344,14 @@ export const LightningTopUpScreen: React.FC = () => {
                                     setTxMetrics(null);
                                 }
                             }}
-                            placeholder="0"
+                            onFocus={handleAmountFocus}
+                            placeholder={`Min ${MIN_TOPUP_SATS} sats`}
                             editable={!executing}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                         />
                         
                         {/* Alert is absolutely positioned to prevent any layout shifts */}
-                        {calculationError && (
+                        {false && calculationError && (
                             <View style={styles.statusMessageContainer}>
                                 <Feather name="alert-circle" size={14} color={theme.colors.muted} />
                                 <Text style={styles.statusText}> {calculationError}</Text>
@@ -387,9 +433,9 @@ export const LightningTopUpScreen: React.FC = () => {
 
                         <TouchableOpacity
                             key={`confirm-button-${txMetrics ? 'enabled' : 'disabled'}-${executing ? 'executing' : 'idle'}`}
-                            style={[styles.confirmButton, (!txMetrics || executing) && styles.buttonDisabled]}
+                            style={[styles.confirmButton, (!txMetrics || executing || parseInt(amountStr, 10) < (limits ? limits.minSats : MIN_TOPUP_SATS)) && styles.buttonDisabled]}
                             onPress={handleExecuteTopUp}
-                            disabled={!txMetrics || executing}
+                            disabled={!txMetrics || executing || parseInt(amountStr, 10) < (limits ? limits.minSats : MIN_TOPUP_SATS)}
                         >
                             {executing ? (
                                 <ActivityIndicator color={theme.colors.inversePrimary} />
