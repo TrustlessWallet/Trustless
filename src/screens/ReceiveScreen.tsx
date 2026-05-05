@@ -428,7 +428,7 @@ const ReceiveScreen = () => {
             ) : (
               <>
                 <View style={styles.qrContainer}>
-                  <Text style={styles.derivationPathDisplay}>Lightning invoice</Text>
+                  <Text style={styles.derivationPathDisplay}>BOLT11 invoice</Text>
 
                   <Pressable 
                     style={({pressed}) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]} 

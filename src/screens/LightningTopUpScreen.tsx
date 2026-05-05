@@ -465,7 +465,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         textAlignVertical: 'center'
     },
     section: {
-        marginBottom: 32,
+        marginBottom: 24,
         position: 'relative',
     },
     amountSection: {

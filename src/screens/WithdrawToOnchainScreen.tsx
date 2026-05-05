@@ -508,7 +508,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         textAlignVertical: 'center'
     },
     section: {
-        marginBottom: 32,
+        marginBottom: 24,
         position: 'relative',
     },
     amountSection: {
@@ -537,7 +537,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         backgroundColor: theme.colors.surface,
         borderRadius: 8,
         padding: 4,
-        marginBottom: 16,
+        marginBottom: 24,
         borderWidth: 1,
         borderColor: theme.colors.border,
     },
@@ -567,7 +567,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         borderRadius: 8,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        marginBottom: 8,
+        marginBottom: 10,
     },
     customAddressWrapper: {
         marginTop: 4,
