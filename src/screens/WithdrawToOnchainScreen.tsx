@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     StyleSheet,
@@ -7,8 +7,7 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
-    ScrollView,
-    Keyboard
+    ScrollView
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +18,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { validateBitcoinAddress } from '../services/bitcoin';
+import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 
 const btcFormatter = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 8,
@@ -30,7 +30,9 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
-    const scrollViewRef = useRef<ScrollView>(null);
+    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
+        basePaddingBottom: styles.scrollContent.paddingBottom,
+    });
 
     const MIN_WITHDRAW_SATS = 1000;
 
@@ -57,36 +59,6 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const [feeEstimates, setFeeEstimates] = useState<{ slow: number; normal: number; fast: number } | null>(null);
 
     const [txMetrics, setTxMetrics] = useState<{ totalFeeSats: number; prepareResponse: any } | null>(null);
-
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-    useEffect(() => {
-        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-        const onKeyboardShow = (e: any) => {
-            setKeyboardHeight(e.endCoordinates.height + 50);
-        };
-
-        const onKeyboardHide = () => {
-            setKeyboardHeight(0);
-        };
-
-        const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
-        const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
-
-        return () => {
-            showSub.remove();
-            hideSub.remove();
-        };
-    }, []);
-
-    const handleAmountFocus = () => {
-        const delayMs = Platform.OS === 'ios' ? 50 : 100;
-        setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, delayMs);
-    };
 
     useEffect(() => {
         if (activeWallet) {
@@ -306,7 +278,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                     ref={scrollViewRef}
                     contentContainerStyle={[
                         styles.scrollContent,
-                        { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 32 : styles.scrollContent.paddingBottom }
+                        { paddingBottom }
                     ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
@@ -388,7 +360,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 setAmountStr(t.replace(/[^0-9]/g, ''));
                                 setTxMetrics(null);
                             }}
-                            onFocus={handleAmountFocus}
+                            onFocus={handleInputFocus}
                             placeholder={`Min ${MIN_WITHDRAW_SATS} sats`}
                             editable={!executing}
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}

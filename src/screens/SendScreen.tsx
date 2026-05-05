@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput, Platform, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput'; 
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
@@ -19,6 +19,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AddressText } from '../components/AddressText';
+import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Send'>;
 type SendScreenRouteProp = RouteProp<RootStackParamList, 'Send'>;
@@ -100,13 +101,10 @@ const SendScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<SendScreenRouteProp>();
     const isFocused = useIsFocused(); 
-    const scrollViewRef = useRef<ScrollView>(null);
-
-    useEffect(() => {
-        if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-            UIManager.setLayoutAnimationEnabledExperimental(true);
-        }
-    }, []);
+    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
+        basePaddingBottom: 32,
+        animateLayoutChanges: true,
+    });
     
     const { 
         activeWallet, 
@@ -143,39 +141,9 @@ const SendScreen = () => {
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
     const [hideBalance, setHideBalance] = useState(false);
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
 
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
-
-    useEffect(() => {
-        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-        const onKeyboardShow = (e: any) => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setKeyboardHeight(e.endCoordinates.height + 50);
-        };
-
-        const onKeyboardHide = () => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setKeyboardHeight(0);
-        };
-
-        const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
-        const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
-
-        return () => {
-            showSub.remove();
-            hideSub.remove();
-        };
-    }, []);
-
-    const handleInputFocus = () => {
-        setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, Platform.OS === 'ios' ? 50 : 100);
-    };
 
     useEffect(() => {
         if (route.params?.selectedAddress) {
@@ -554,7 +522,7 @@ const SendScreen = () => {
         <ScrollView 
             ref={scrollViewRef}
             style={styles.container} 
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 32 : 32 }]} 
+            contentContainerStyle={[styles.scrollContent, { paddingBottom }]} 
             keyboardShouldPersistTaps="handled" 
             bounces={false}
         >

@@ -9,6 +9,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { StyledInput } from '../components/StyledInput'; 
+import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'VerifyMnemonic'>;
 type RoutePropType = RouteProp<RootStackParamList, 'VerifyMnemonic'>;
 const VerifyMnemonicScreen = () => {
@@ -20,6 +21,10 @@ const VerifyMnemonicScreen = () => {
     const [loading, setLoading] = useState(false);
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
+
+    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
+        basePaddingBottom: styles.scrollContent.paddingBottom,
+    });
     const wordsToVerify = useMemo(() => {
         const indexes = new Set<number>();
         const maxAttempts = 100; 
@@ -31,6 +36,7 @@ const VerifyMnemonicScreen = () => {
         return Array.from(indexes).sort((a, b) => a - b);
     }, [originalWords.length]);
     const [userInputs, setUserInputs] = useState<string[]>(Array(3).fill(''));
+
     const handleVerify = async () => {
         const isCorrect = wordsToVerify.every((wordIndex, i) => userInputs[i].trim().toLowerCase() === originalWords[wordIndex]);
         if (isCorrect) {
@@ -55,38 +61,50 @@ const VerifyMnemonicScreen = () => {
         setUserInputs(newInputs);
     };
     return (
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} bounces={false}>
-            <Text style={styles.subtitle}>
-                To ensure you have saved your phrase correctly, please enter the missing words.
-            </Text>
-            {wordsToVerify.map((wordIndex, i) => (
-                <View key={wordIndex} style={styles.inputGroup}>
-                    <Text style={styles.label}>Word #{wordIndex + 1}</Text>
-                    <StyledInput
-                        value={userInputs[i]}
-                        onChangeText={(text) => handleInputChange(text, i)}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        autoComplete="off"
-                        spellCheck={false}
-                        keyboardAppearance={isDark ? 'dark' : 'light'}
-                        placeholderTextColor={theme.colors.muted}
-                        placeholder={`Enter word #${wordIndex + 1}`}
-                        editable={!loading}
-                    />
-                </View>
-            ))}
-            <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleVerify} disabled={loading}>
-                {loading ? (
-                     <ActivityIndicator color={theme.colors.inversePrimary} />
-                ) : (
-                    <View style={styles.buttonContentRowCentered}>
-                        <Feather name="check-circle" size={18} color={theme.colors.inversePrimary} />
-                        <Text style={styles.buttonText}>Verify</Text>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <ScrollView
+                ref={scrollViewRef}
+                style={styles.scrollView}
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    { paddingBottom }
+                ]}
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+            >
+                <Text style={styles.subtitle}>
+                    To ensure you have saved your phrase correctly, please enter the missing words.
+                </Text>
+                {wordsToVerify.map((wordIndex, i) => (
+                    <View key={wordIndex} style={styles.inputGroup}>
+                        <Text style={styles.label}>Word #{wordIndex + 1}</Text>
+                        <StyledInput
+                            value={userInputs[i]}
+                            onChangeText={(text) => handleInputChange(text, i)}
+                            onFocus={handleInputFocus}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            autoComplete="off"
+                            spellCheck={false}
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
+                            placeholderTextColor={theme.colors.muted}
+                            placeholder={`Enter word #${wordIndex + 1}`}
+                            editable={!loading}
+                        />
                     </View>
-                )}
-            </TouchableOpacity>
-        </ScrollView>
+                ))}
+                <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleVerify} disabled={loading}>
+                    {loading ? (
+                         <ActivityIndicator color={theme.colors.inversePrimary} />
+                    ) : (
+                        <View style={styles.buttonContentRowCentered}>
+                            <Feather name="check-circle" size={18} color={theme.colors.inversePrimary} />
+                            <Text style={styles.buttonText}>Verify</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+            </ScrollView>
+        </KeyboardAvoidingView>
     );
 };
 const getStyles = (theme: Theme) => StyleSheet.create({
