@@ -425,7 +425,7 @@ useEffect(() => {
             <Stack.Screen
               name="OnboardingWallet"
               component={OnboardingWalletScreen}
-              options={{ title: 'Wallet' }}
+              options={{ headerShown: false }}
             />
             <Stack.Screen
               name="PrivacyPolicy"

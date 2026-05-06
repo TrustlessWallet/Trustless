@@ -15,7 +15,7 @@ const slides = [
   {
     key: '1',
     headline: 'Create your wallet',
-    body: 'Generate non-custodial wallet in seconds. Your keys, your Bitcoin.',
+    body: 'Non-custodial wallet in seconds.\nYour keys, your Bitcoin.',
     image: require('../../assets/Wallet-onboarding.png'),
   },
   {
@@ -44,12 +44,18 @@ const slides = [
   },
   {
     key: '6',
+    headline: 'Send Lightning',
+    body: 'Instant payments with low fees.\nNon-custodial, of course.',
+    image: require('../../assets/Lightning-onboarding.png'),
+  },
+  {
+    key: '7',
     headline: 'Connect your node',
     body: 'Connect to your own Electrum node for maximum privacy.',
     image: require('../../assets/Node-onboarding.png'),
   },
   {
-    key: '7',
+    key: '8',
     headline: "Don't trust, verify",
     body: 'Trustless is fully open source.\n',
     link_text: 'Audit the code yourself.',
@@ -102,14 +108,11 @@ const OnboardingWalletScreen = () => {
     }
   };
 
-  // Run this once as soon as the screen mounts. 
-  // It guarantees the flag is set even if the user swipes down to close the modal.
   useEffect(() => {
     mark_onboarding_complete();
   }, []);
 
   const handle_complete_onboarding = () => {
-    // Flag is already set by the useEffect, just route the user
     navigation.reset({
       index: 0,
       routes: [{ name: 'MainTabs' }],
@@ -172,7 +175,7 @@ const OnboardingWalletScreen = () => {
         </View>
         <TouchableOpacity style={styles.button} onPress={handle_next}>
           <Text style={styles.button_text}>
-            {current_index === slides.length - 1 ? 'Get Started' : 'Next'}
+            {current_index === slides.length - 1 ? 'Get started' : 'Next'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -194,7 +197,7 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   phone_container: {
-    height: '80%',
+    height: '85%',
     aspectRatio: 9 / 19.5, 
     justifyContent: 'center',
     alignItems: 'center',
@@ -211,13 +214,14 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     fontWeight: 'bold',
     color: theme.colors.primary,
     textAlign: 'center',
+    marginTop: -8
   },
   body_text: {
     fontSize: 16,
     color: theme.colors.muted,
     textAlign: 'center',
     lineHeight: 24,
-    marginTop: 8,
+    marginTop: 4,
   },
   link_text: {
     color: theme.colors.bitcoin,
@@ -226,6 +230,7 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   footer: {
     paddingBottom: 32,
+    marginTop: 8,
     paddingHorizontal: 24,
   },
   dots_container: {
