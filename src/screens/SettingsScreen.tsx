@@ -38,7 +38,15 @@ const get_auto_lock_label = (value: string | number): string => {
 };
 
 const SettingsScreen = () => {
-  const { resetWallet, triggerRefresh } = useWallet();
+  const {
+    resetWallet,
+    triggerRefresh,
+    activeWallet,
+    isLightningInitialized,
+    lightningInitAttempted,
+    lightningApiKeyPresent,
+    lightningInitError,
+  } = useWallet();
   const { theme, isDark, toggleTheme } = useTheme();
   const styles = useMemo(() => get_styles(theme), [theme]);
   const navigation = useNavigation<navigation_prop>();
@@ -54,6 +62,7 @@ const SettingsScreen = () => {
   const [is_editing_node, set_is_editing_node] = useState(false);
   const [connection_status, set_connection_status] = useState<'idle' | 'testing' | 'connected' | 'failed'>('idle');
   const [active_host, set_active_host] = useState<string | null>(null);
+  const [is_viewing_lightning_status, set_is_viewing_lightning_status] = useState(false);
   
   const is_focused = useIsFocused();
   const is_toggling_ref = useRef(false);
@@ -334,6 +343,53 @@ const SettingsScreen = () => {
 
         <View style={styles.section}>
           <Text style={styles.section_title}>Security & Network</Text>
+
+          <View style={styles.col}>
+            <TouchableOpacity
+              style={styles.row_no_border}
+              onPress={() => set_is_viewing_lightning_status(!is_viewing_lightning_status)}
+            >
+              <Text style={styles.row_label}>Lightning status</Text>
+              <Feather
+                name={is_viewing_lightning_status ? 'chevron-up' : 'chevron-down'}
+                size={24}
+                color={theme.colors.primary}
+              />
+            </TouchableOpacity>
+
+            {is_viewing_lightning_status && (
+              <View style={styles.lightning_details_container}>
+                <Text style={styles.lightning_details_text}>
+                  Status: {(() => {
+                    if (!activeWallet) return 'No wallet';
+                    if (activeWallet.type === 'watch-only') return 'Disabled';
+                    if (isLightningInitialized) return 'Working';
+                    if (!lightningApiKeyPresent) return 'Needs API key';
+                    if (lightningInitError) return 'Needs attention';
+                    if (!lightningInitAttempted) return 'Not started';
+                    return 'Not ready';
+                  })()}
+                </Text>
+                <Text style={styles.lightning_details_text}>
+                  Wallet: {activeWallet ? (activeWallet.type === 'watch-only' ? 'Watch-only' : 'Standard') : 'None'}
+                </Text>
+                <Text style={styles.lightning_details_text}>
+                  Initialized: {isLightningInitialized ? 'Yes' : 'No'}
+                </Text>
+                <Text style={styles.lightning_details_text}>
+                  Breez API key: {lightningApiKeyPresent ? 'Present' : 'Missing'}
+                </Text>
+                <Text style={styles.lightning_details_text}>
+                  Init attempted: {lightningInitAttempted ? 'Yes' : 'No'}
+                </Text>
+                {!!lightningInitError && (
+                  <Text style={styles.lightning_details_text} numberOfLines={4}>
+                    Error: {lightningInitError}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
 
           <View style={styles.col}>
             <TouchableOpacity 
@@ -688,6 +744,16 @@ const get_styles = (theme: Theme) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: theme.colors.muted,
+  },
+  lightning_details_container: {
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  lightning_details_text: {
+    fontSize: 12,
+    color: theme.colors.muted,
+    fontFamily: 'monospace',
+    marginBottom: 6,
   },
   version_container: {
     alignItems: 'center',

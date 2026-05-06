@@ -263,27 +263,14 @@ const WalletScreen = () => {
                 ListHeaderComponent={
                     <View style={styles.topSection}>
                         <View style={styles.headerRow}>
-                            <View style={styles.toggleWithIndicator}>
-                                <View
-                                    style={[
-                                        styles.lightningStatusDot,
-                                        {
-                                            backgroundColor:
-                                                isLightningInitialized && activeWallet?.type !== 'watch-only'
-                                                    ? theme.colors.bitcoin
-                                                    : 'transparent'
-                                        }
-                                    ]}
-                                />
-                                <TouchableOpacity
-                                    style={styles.toggleTouchable}
-                                    onPress={toggleMode}
-                                    activeOpacity={0.8}
-                                    disabled={!isLightningInitialized || activeWallet?.type === 'watch-only'}
-                                >
-                                    {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
-                                </TouchableOpacity>
-                            </View>
+                            <TouchableOpacity
+                                style={styles.toggleTouchable}
+                                onPress={toggleMode}
+                                activeOpacity={0.8}
+                                disabled={!isLightningInitialized || activeWallet?.type === 'watch-only'}
+                            >
+                                {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
+                            </TouchableOpacity>
 
                             <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
                                 <Text style={styles.walletName}>{activeWallet?.name}</Text>
@@ -385,18 +372,6 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.colors.background
-    },
-    toggleWithIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    lightningStatusDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginRight: 10,
-        borderWidth: 1,
-        borderColor: theme.colors.surface,
     },
     listContent: {
         flexGrow: 1,

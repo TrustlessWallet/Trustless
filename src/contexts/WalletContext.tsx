@@ -97,6 +97,9 @@ interface WalletContextType {
     refreshSavedAddressBalances: () => Promise<void>;
 
     isLightningInitialized: boolean;
+    lightningInitAttempted: boolean;
+    lightningApiKeyPresent: boolean;
+    lightningInitError: string | null;
     lightningBalance: number;
     lightningTransactions: LightningTransaction[];
     defaultLightningInvoice: string;
@@ -129,6 +132,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // Phase 1 Lightning state
     const [isLightningInitialized, setIsLightningInitialized] = useState(false);
+    const [lightningInitAttempted, setLightningInitAttempted] = useState(false);
+    const [lightningApiKeyPresent, setLightningApiKeyPresent] = useState(false);
+    const [lightningInitError, setLightningInitError] = useState<string | null>(null);
     const [lightningBalance, setLightningBalance] = useState(0);
     const [lightningTransactions, setLightningTransactions] = useState<LightningTransaction[]>([]);
 
@@ -312,11 +318,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         try {
             const apiKey = process.env.EXPO_PUBLIC_BREEZ_API_KEY;
 
+            setLightningInitAttempted(true);
+            setLightningApiKeyPresent(Boolean(apiKey));
+
+            if (!apiKey) {
+                setIsLightningInitialized(false);
+                setLightningBalance(0);
+                setLightningTransactions([]);
+                setLightningInitError('Missing EXPO_PUBLIC_BREEZ_API_KEY at runtime');
+                return;
+            }
+
             let config = breezSdk.defaultConfig(breezSdk.Network.Mainnet);
 
-            if (apiKey) {
-                config.apiKey = apiKey;
-            }
+            config.apiKey = apiKey;
             config.maxDepositClaimFee = new breezSdk.MaxFee.NetworkRecommended({
                 leewaySatPerVbyte: BigInt(1)
             });
@@ -342,6 +357,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             activeSdkInstance = sdk;
             setIsLightningInitialized(true);
+            setLightningInitError(null);
             if (sdk && typeof sdk.addEventListener === 'function') {
                 sdk.addEventListener({
                     onEvent: async (e: any) => {
@@ -357,6 +373,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (error: any) {
             console.error("Breez initialization failed:", error.message || JSON.stringify(error));
             setIsLightningInitialized(false);
+            setLightningInitAttempted(true);
+            setLightningInitError(error?.message ? String(error.message) : JSON.stringify(error));
         }
     };
 
@@ -852,11 +870,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
                 if (credentials) {
                     await initLightningNode(credentials.password);
+                } else {
+                    setIsLightningInitialized(false);
+                    setLightningInitAttempted(false);
+                    setLightningApiKeyPresent(Boolean(process.env.EXPO_PUBLIC_BREEZ_API_KEY));
+                    setLightningBalance(0);
+                    setLightningTransactions([]);
+                    setLightningInitError('Mnemonic not found in Keychain for this wallet');
                 }
             } else {
                 setIsLightningInitialized(false);
+                setLightningInitAttempted(false);
+                setLightningApiKeyPresent(Boolean(process.env.EXPO_PUBLIC_BREEZ_API_KEY));
                 setLightningBalance(0);
                 setLightningTransactions([]);
+                setLightningInitError('Active wallet is watch-only');
             }
             // ----------------------
 
@@ -1455,6 +1483,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         refreshSavedAddressBalances,
 
         isLightningInitialized,
+        lightningInitAttempted,
+        lightningApiKeyPresent,
+        lightningInitError,
         lightningBalance,
         lightningTransactions,
         defaultLightningInvoice,
