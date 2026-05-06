@@ -36,6 +36,41 @@ import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
 
 let activeSdkInstance: any = null;
 
+const formatLightningInitError = (error: any): string => {
+    try {
+        if (!error) return 'Unknown error';
+        if (typeof error === 'string') return error;
+        const name = error?.name ? String(error.name) : '';
+        const message = error?.message ? String(error.message) : '';
+        const code = error?.code !== undefined ? String(error.code) : '';
+        const stack = error?.stack ? String(error.stack) : '';
+
+        let serialized = '';
+        try {
+            const props = Object.getOwnPropertyNames(error);
+            serialized = JSON.stringify(error, props);
+        } catch {
+            try {
+                serialized = JSON.stringify(error);
+            } catch {
+                serialized = String(error);
+            }
+        }
+
+        const parts = [
+            name && `name=${name}`,
+            code && `code=${code}`,
+            message && `message=${message}`,
+            serialized && `raw=${serialized}`,
+            stack && `stack=${stack}`,
+        ].filter(Boolean);
+
+        return parts.length > 0 ? parts.join(' | ') : 'Unknown error';
+    } catch {
+        return 'Unknown error';
+    }
+};
+
 // Initialize cryptographic libraries
 const bip32 = BIP32Factory(secp);
 const ECPair = ECPairFactory(secp);
@@ -371,10 +406,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             await refreshLightningState();
         } catch (error: any) {
-            console.error("Breez initialization failed:", error.message || JSON.stringify(error));
+            const formattedError = formatLightningInitError(error);
+            console.error("Breez initialization failed:", formattedError);
             setIsLightningInitialized(false);
             setLightningInitAttempted(true);
-            setLightningInitError(error?.message ? String(error.message) : JSON.stringify(error));
+            setLightningInitError(formattedError);
         }
     };
 
