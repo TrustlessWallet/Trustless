@@ -9,16 +9,10 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_BREEZ_API_KEY": "@EXPO_PUBLIC_BREEZ_API_KEY"
-      }
+      "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true,
-      "env": {
-        "EXPO_PUBLIC_BREEZ_API_KEY": "@EXPO_PUBLIC_BREEZ_API_KEY"
-      }
+      "autoIncrement": true
     }
   },
   "submit": {
