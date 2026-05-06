@@ -158,10 +158,10 @@ const OnboardingWalletScreen = () => {
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         keyExtractor={(item) => item.key}
         renderItem={render_item}
-        removeClippedSubviews={true} 
-        initialNumToRender={1}
-        maxToRenderPerBatch={1}
-        windowSize={3}
+        removeClippedSubviews={false} 
+        initialNumToRender={slides.length}
+        maxToRenderPerBatch={slides.length}
+        windowSize={21}
       />
       
       <View style={styles.footer}>

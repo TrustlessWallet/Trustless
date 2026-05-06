@@ -112,7 +112,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         next_app_state === 'active'
       ) {
         if (!is_prompt_active) {
-          await check_auth_needed();
+          await check_auth_needed_ref.current();
         }
         set_biometric_prompt_shown(false);
       } else if (next_app_state.match(/inactive|background/)) {
@@ -128,8 +128,39 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     };
   }, []);
 
+  // Check auth when wallets finish loading and app is active
+  useEffect(() => {
+    if (!wallet_loading && wallets.length > 0 && app_state.current === 'active') {
+      const check_pending_auth = async () => {
+        const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
+        const is_enrolled = await LocalAuthentication.isEnrolledAsync();
+        const auto_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
+        
+        if (is_biometrics_enabled === 'true' && is_enrolled && auto_lock_time !== null && auto_lock_time !== 'Off') {
+          const lock_time_minutes = parseInt(auto_lock_time, 10);
+          if (lock_time_minutes === 0) {
+            await check_auth_needed();
+          } else {
+            const last_active_time = await AsyncStorage.getItem('@lastActiveTime');
+            if (last_active_time) {
+              const time_since_last_active = Date.now() - parseInt(last_active_time, 10);
+              const lock_time_ms = lock_time_minutes * 60 * 1000;
+              if (time_since_last_active >= lock_time_ms) {
+                await check_auth_needed();
+              }
+            }
+          }
+        }
+      };
+      
+      check_pending_auth();
+    }
+  }, [wallet_loading, wallets.length]);
+
   const check_auth_needed = async () => {
     try {
+      if (wallet_loading) return;
+      
       if (wallets.length === 0) return;
 
       const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
@@ -161,6 +192,11 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       console.error("Failed to check auth needed", e);
     }
   };
+
+  const check_auth_needed_ref = useRef(check_auth_needed);
+  useEffect(() => {
+    check_auth_needed_ref.current = check_auth_needed;
+  });
 
 useEffect(() => {
     const check_initial_status = async () => {
@@ -235,7 +271,7 @@ useEffect(() => {
         navigation_ref.goBack();
       }
     }
-  }, [is_privacy_active, is_nav_ready]);
+  }, [is_privacy_active, is_nav_ready, current_route_name]);
 
   const screen_options: NativeStackNavigationOptions = {
     contentStyle: { backgroundColor: theme.colors.background },
