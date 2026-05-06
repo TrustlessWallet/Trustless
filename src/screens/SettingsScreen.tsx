@@ -371,6 +371,9 @@ const SettingsScreen = () => {
                   })()}
                 </Text>
                 <Text style={styles.lightning_details_text}>
+                  API Key Length: {process.env.EXPO_PUBLIC_BREEZ_API_KEY?.length || 0}
+                </Text>
+                <Text style={styles.lightning_details_text}>
                   Wallet: {activeWallet ? (activeWallet.type === 'watch-only' ? 'Watch-only' : 'Standard') : 'None'}
                 </Text>
                 <Text style={styles.lightning_details_text}>
