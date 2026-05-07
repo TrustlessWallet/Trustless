@@ -4,6 +4,7 @@ import { BitcoinAddress, Transaction } from '../types';
 import { dbGetTransactions, dbSaveTransactions } from '../services/database';
 import { NETWORK_NAME } from '../constants/network';
 import { useState, useEffect } from 'react';
+import { getTipHeight } from '../services/bitcoin'; 
 
 export const useBalance = (address: string) => {
   return useQuery({
@@ -112,6 +113,15 @@ export const useWalletUTXOs = (addresses: string[]) => {
     queryFn: () => fetchUTXOs(addresses),
     enabled: addresses.length > 0,
     staleTime: 30000,
+    retry: false,
+  });
+};
+
+export const useTipHeight = () => {
+  return useQuery({
+    queryKey: ['tip-height'],
+    queryFn: getTipHeight,
+    staleTime: 60000 * 5,
     retry: false,
   });
 };

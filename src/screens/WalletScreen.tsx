@@ -1,4 +1,3 @@
-// src/screens/WalletScreen.tsx
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl, Animated, Dimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,8 +10,8 @@ import { useWallet } from '../contexts/WalletContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { useWalletTransactions, useWalletUTXOs } from '../hooks/useBalance';
 import { formatBitcoinAddressShort } from '../constants/format';
+import { useWalletTransactions, useWalletUTXOs, useTipHeight } from '../hooks/useBalance';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
@@ -31,6 +30,7 @@ const formatBalance = (sats: number) => {
 };
 
 const WalletScreen = () => {
+    useTipHeight();
     const navigation = useNavigation<NavigationProp>();
     const insets = useSafeAreaInsets();
     const {
