@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl, Animated, Dimensions } from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl, Dimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -46,8 +46,6 @@ const WalletScreen = () => {
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const isFocused = useIsFocused();
-
-    const lightningAnim = useRef(new Animated.Value(0)).current;
 
     const onchainBalance = useMemo(() => {
         if (!activeWallet) return 0;
@@ -99,7 +97,6 @@ const WalletScreen = () => {
             const savedMode = await AsyncStorage.getItem(DEFAULT_WALLET_MODE_KEY);
             if (savedMode === 'Lightning') {
                 setIsLightningMode(true);
-                lightningAnim.setValue(1);
             }
         };
         loadInitialWalletMode();
@@ -114,32 +111,8 @@ const WalletScreen = () => {
     };
 
     const toggleMode = () => {
-        const nextMode = !isLightningMode;
-        setIsLightningMode(nextMode);
-
-        Animated.spring(lightningAnim, {
-            toValue: nextMode ? 1 : 0,
-            useNativeDriver: false,
-            friction: 9,
-            tension: 45
-        }).start();
+        setIsLightningMode(!isLightningMode);
     };
-
-    const expandedHeight = lightningAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 40]
-    });
-
-    const translateY = lightningAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [-20, 0]
-    });
-
-    const fadeAnim = lightningAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 1],
-        extrapolate: 'clamp'
-    });
 
     const renderTransactionItem = useCallback(({ item }: { item: any }) => {
         const isLightning = 'paymentHash' in item;
@@ -305,18 +278,17 @@ const WalletScreen = () => {
                                     <Text style={styles.actionButtonText}>Receive</Text>
                                 </TouchableOpacity>
 
-                                <Animated.View style={{ position: 'absolute', top: 56, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
-                                    <Animated.View style={{ transform: [{ translateY }] }}>
+                                {isLightningMode && (
+                                    <View style={styles.secondaryActionWrapper}>
                                         <TouchableOpacity
                                             style={styles.secondaryActionButton}
                                             onPress={() => navigation.navigate('WithdrawToOnchain' as any)}
-                                            disabled={!isLightningMode}
                                         >
                                             <Feather name="minus" size={14} color={theme.colors.primary} />
                                             <Text style={styles.secondaryActionButtonText}>Withdraw</Text>
                                         </TouchableOpacity>
-                                    </Animated.View>
-                                </Animated.View>
+                                    </View>
+                                )}
                             </View>
 
                             <View style={styles.actionColumn}>
@@ -328,18 +300,17 @@ const WalletScreen = () => {
                                     <Text style={styles.actionButtonText}>Send</Text>
                                 </TouchableOpacity>
 
-                                <Animated.View style={{ position: 'absolute', top: 56, left: 0, right: 0, height: expandedHeight, opacity: fadeAnim, overflow: 'hidden' }}>
-                                    <Animated.View style={{ transform: [{ translateY }] }}>
+                                {isLightningMode && (
+                                    <View style={styles.secondaryActionWrapper}>
                                         <TouchableOpacity
                                             style={styles.secondaryActionButton}
                                             onPress={() => navigation.navigate('LightningTopUp' as any)}
-                                            disabled={!isLightningMode}
                                         >
                                             <Feather name="plus" size={14} color={theme.colors.primary} />
                                             <Text style={styles.secondaryActionButtonText}>Top-up</Text>
                                         </TouchableOpacity>
-                                    </Animated.View>
-                                </Animated.View>
+                                    </View>
+                                )}
                             </View>
                         </View>
                     </View>
@@ -521,6 +492,13 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         color: theme.colors.inversePrimary,
         fontSize: 15,
         fontWeight: '600'
+    },
+    secondaryActionWrapper: {
+        position: 'absolute',
+        top: 56,
+        left: 0,
+        right: 0,
+        height: 40,
     },
     secondaryActionButton: {
         flexDirection: 'row',
