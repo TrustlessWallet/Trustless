@@ -1,20 +1,23 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Linking, Alert } from 'react-native';
+import React, { useMemo, useEffect, useState } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert } from 'react-native';
 import { Text } from '../components/StyledText';
 import { useRoute, RouteProp, useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
-import { RootStackParamList, Transaction } from '../types';
-import { getTransactionDetails, getTipHeight } from '../services/bitcoin';
-import { validateBitcoinAddress } from '../services/bitcoin';
+import { RootStackParamList, Transaction, LightningTransaction } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL } from '../constants/network';
 import { AddressText } from '../components/AddressText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { validateBitcoinAddress, getTransactionDetails } from '../services/bitcoin';
+import { useTipHeight } from '../hooks/useBalance';
+import { useQuery } from '@tanstack/react-query';
+
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionDetails'>;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
+
 const DetailRow = ({ label, value, isAddress, styles, valueStyle }: { label: string, value: string, isAddress?: boolean, styles: ReturnType<typeof getStyles>, valueStyle?: any }) => (
   <View style={styles.detailRow}>
     <Text style={styles.label}>{label}</Text>
@@ -25,6 +28,7 @@ const DetailRow = ({ label, value, isAddress, styles, valueStyle }: { label: str
     )}
   </View>
 );
+
 const TransactionDetailsScreen = () => {
   const route = useRoute<RoutePropType>();
   const isFocused = useIsFocused();
@@ -32,48 +36,32 @@ const TransactionDetailsScreen = () => {
   const { activeWallet } = useWallet();
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
-  const [tx, setTx] = useState<any>(txFromParams);
-  const [tipHeight, setTipHeight] = useState<number | null>(null);
-  const [loading, setLoading] = useState(!txFromParams);
   const [hideBalance, setHideBalance] = useState(false);
 
-  const isLightning = tx && 'paymentHash' in tx;
+  const isLightning = Boolean(txFromParams && 'paymentHash' in txFromParams);
 
-  useEffect(() => {
-    const fetchTx = async () => {
-      if (isLightning) {
-        setLoading(false);
-        return;
-      }
+  const { data: tipHeight } = useTipHeight();
 
-      const receiveAddresses = activeWallet?.derivedReceiveAddresses.map(a => a.address) ?? [];
-      const changeAddresses = activeWallet?.derivedChangeAddresses.map(a => a.address) ?? [];
-      const allAddresses = [...new Set([...receiveAddresses, ...changeAddresses])];
+  const allAddresses = useMemo(() => {
+    const receiveAddresses = activeWallet?.derivedReceiveAddresses.map(a => a.address) ?? [];
+    const changeAddresses = activeWallet?.derivedChangeAddresses.map(a => a.address) ?? [];
+    return [...new Set([...receiveAddresses, ...changeAddresses])];
+  }, [activeWallet]);
 
-      if (!isLightning && tx && !('vin' in tx) && txFromParams && 'txid' in txFromParams && allAddresses.length > 0) {
-        setLoading(true);
-        try {
-          const details = await getTransactionDetails(txFromParams.txid, allAddresses);
-          setTx(details);
-        } catch (error) {
-          Alert.alert("Error", "Could not fetch transaction details.");
-        } finally {
-          setLoading(false);
-        }
-      }
-    };
-    fetchTx();
-  }, [txFromParams, activeWallet, isLightning]);
+  const queryTxId = txFromParams ? (isLightning ? (txFromParams as unknown as LightningTransaction).paymentHash : (txFromParams as unknown as Transaction).txid) : undefined;
 
-  useEffect(() => {
-    const fetchTip = async () => {
+  const { data: tx } = useQuery({
+    queryKey: ['txDetails', queryTxId],
+    queryFn: async () => {
+      if (isLightning || !txFromParams || ('vin' in txFromParams)) return txFromParams;
       try {
-        const h = await getTipHeight();
-        setTipHeight(h);
-      } catch { }
-    };
-    if (!isLightning) fetchTip();
-  }, [isLightning]);
+        return await getTransactionDetails((txFromParams as unknown as Transaction).txid, allAddresses);
+      } catch {
+        return txFromParams; 
+      }
+    },
+    initialData: txFromParams,
+  });
 
   useEffect(() => {
     const loadPreference = async () => {
@@ -84,71 +72,48 @@ const TransactionDetailsScreen = () => {
   }, [isFocused]);
 
   const handleOpenExplorer = () => {
-    if (tx && 'txid' in tx) {
-      const url = `${EXPLORER_UI_URL}/tx/${tx.txid}`;
+    if (tx && !isLightning && 'txid' in tx) {
+      const url = `${EXPLORER_UI_URL}/tx/${(tx as unknown as Transaction).txid}`;
       Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open block explorer."));
     }
   };
 
-  if (loading) {
-    return <View style={styles.centered}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
-  }
   if (!tx) {
     return <View style={styles.centered}><Text style={{ color: theme.colors.primary }}>Transaction not found.</Text></View>;
   }
 
   const isSend = tx.type === 'send';
-
-// Dynamic Property Resolution
-  const lnTx = tx as any; 
-  const ocTx = tx as any; 
+  
+  const lnTx = tx as unknown as LightningTransaction; 
+  const ocTx = tx as unknown as Transaction; 
   
   const txId = isLightning ? lnTx.paymentHash : ocTx.txid;
   const amountSats = isLightning ? Math.floor(lnTx.amountMsat / 1000) : ocTx.amount;
-  const feeSats = isLightning ? Math.floor(lnTx.feeMsat / 1000) : ocTx.fee;
+  const feeSats = isLightning ? Math.floor(lnTx.feeMsat / 1000) : (ocTx.fee ?? '...');
   const lightningMethod = typeof lnTx.paymentMethod === 'number' ? lnTx.paymentMethod : null;
   const lightningFeeLabel = lightningMethod === 4 || lightningMethod === 5 ? "Swap / Setup fee" : "Fee";
   const timestamp = isLightning ? lnTx.paymentTime : ocTx.status?.block_time;
   const isConfirmed = isLightning ? lnTx.status === 'complete' : ocTx.status?.confirmed;
   const dateStr = timestamp ? new Date(timestamp * 1000).toLocaleString() : 'Pending';
 
-  // Debug logging for fee display verification
-  if (isLightning) {
-    console.log('[LightningFeeDebug] TransactionDetails:', {
-      paymentHash: lnTx.paymentHash,
-      amountMsat: lnTx.amountMsat,
-      feeMsat: lnTx.feeMsat,
-      amountSats,
-      feeSats,
-      paymentMethod: lightningMethod,
-      feeLabel: lightningFeeLabel,
-      description: tx.description,
-      type: tx.type,
-      status: lnTx.status
-    });
-  }
-
-  let otherAddress = isLightning ? (tx.description || 'Lightning invoice') : 'Multiple addresses';
+  let otherAddress: string | unknown = isLightning ? (lnTx.description || 'Lightning invoice') : 'Multiple addresses';
   let isOtherAddressValid = false;
 
   if (!isLightning) {
-    const walletAddresses = new Set([
-      ...(activeWallet?.derivedReceiveAddresses.map(a => a.address) ?? []),
-      ...(activeWallet?.derivedChangeAddresses.map(a => a.address) ?? [])
-    ]);
-    if (isSend && tx.vout) {
-      const externalOutputs = tx.vout.filter((o: any) => !walletAddresses.has(o.scriptpubkey_address));
+    const walletAddresses = new Set(allAddresses);
+    if (isSend && ocTx.vout) {
+      const externalOutputs = ocTx.vout.filter((o: any) => !walletAddresses.has(o.scriptpubkey_address));
       if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
-    } else if (!isSend && tx.vin) {
-      const externalInputs = tx.vin.filter((i: any) => !walletAddresses.has(i.prevout?.scriptpubkey_address));
+    } else if (!isSend && ocTx.vin) {
+      const externalInputs = ocTx.vin.filter((i: any) => !walletAddresses.has(i.prevout?.scriptpubkey_address));
       if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
     }
-    isOtherAddressValid = validateBitcoinAddress(otherAddress || '');
+    isOtherAddressValid = validateBitcoinAddress(otherAddress as string || '');
   }
 
-  const confirmations = !isLightning && isConfirmed && typeof tx.status.block_height === 'number' && tipHeight !== null
-    ? Math.max(0, tipHeight - tx.status.block_height + 1)
-    : null;
+  const confirmations = !isLightning && isConfirmed && typeof ocTx.status?.block_height === 'number' && tipHeight != null
+    ? Math.max(0, tipHeight - ocTx.status.block_height + 1)
+    : (isConfirmed ? '...' : null); 
 
   return (
     <ScrollView style={styles.container} bounces={false}>
@@ -164,9 +129,9 @@ const TransactionDetailsScreen = () => {
         <DetailRow label="Status" value={isConfirmed ? 'Completed' : 'Pending'} styles={styles} />
 
         {isLightning ? (
-          <DetailRow label="Description" value={otherAddress} styles={styles} />
+          <DetailRow label="Description" value={otherAddress as string} styles={styles} />
         ) : (
-          <DetailRow label={isSend ? "To" : "From"} value={otherAddress || 'Unknown'} isAddress={isOtherAddressValid} styles={styles} />
+          <DetailRow label={isSend ? "To" : "From"} value={(otherAddress as string) || 'Unknown'} isAddress={isOtherAddressValid} styles={styles} />
         )}
 
         {!isLightning && confirmations !== null && (
@@ -186,72 +151,21 @@ const TransactionDetailsScreen = () => {
     </ScrollView>
   );
 };
+
 const getStyles = (theme: Theme) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: theme.colors.background
-  },
-  header: {
-    alignItems: 'center',
-    padding: 24,
-    borderBottomWidth: 1,
-    borderColor: theme.colors.border
-  },
-  amountText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginVertical: 8,
-    color: theme.colors.primary
-  },
-  statusText: {
-    fontSize: 16,
-    color: theme.colors.muted,
-    fontWeight: '500'
-  },
-  detailsContainer: {
-    paddingHorizontal: 24,
-    paddingTop: 16
-  },
-  detailRow: {
-    marginBottom: 24
-  },
-  label: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    marginBottom: 4,
-    fontWeight: '500'
-  },
-  value: {
-    fontSize: 16,
-    color: theme.colors.muted
-  },
-  addressValue: {
-    fontFamily: 'monospace',
-    flexShrink: 1
-  },
-  explorerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: theme.colors.primary,
-    marginHorizontal: 24,
-    padding: 16,
-    borderRadius: 8
-  },
-  explorerButtonText: {
-    color: theme.colors.inversePrimary,
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  orangeSymbol: {
-    color: theme.colors.bitcoin,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background },
+  header: { alignItems: 'center', padding: 24, borderBottomWidth: 1, borderColor: theme.colors.border },
+  amountText: { fontSize: 32, fontWeight: 'bold', marginVertical: 8, color: theme.colors.primary },
+  statusText: { fontSize: 16, color: theme.colors.muted, fontWeight: '500' },
+  detailsContainer: { paddingHorizontal: 24, paddingTop: 16 },
+  detailRow: { marginBottom: 24 },
+  label: { fontSize: 16, color: theme.colors.primary, marginBottom: 4, fontWeight: '500' },
+  value: { fontSize: 16, color: theme.colors.muted },
+  addressValue: { fontFamily: 'monospace', flexShrink: 1 },
+  explorerButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.colors.primary, marginHorizontal: 24, padding: 16, borderRadius: 8 },
+  explorerButtonText: { color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '600' },
+  orangeSymbol: { color: theme.colors.bitcoin, },
 });
+
 export default TransactionDetailsScreen;

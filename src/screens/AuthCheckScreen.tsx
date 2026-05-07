@@ -1,4 +1,3 @@
-// src/screens/AuthCheckScreen.tsx
 import React, { useEffect, useState, useMemo } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
