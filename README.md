@@ -77,6 +77,12 @@ To run the project in development mode, you need node-js and a setup for ios (xc
         ```
         Then open a trustless workspace file in your ios folder to open the project in xcode. From there you can install the app manually.
 
+#### Making lightning work
+Trustless uses [Breez SDK](https://github.com/breez) to handle lightning operations. SDK requires an API key to work. For obvious reasons we don't push the .env file with the key to the GitHub repo. To make lightning work you will have to create your own .env file in the root of the directory and add your own Breez API key there like this:
+        ```
+        EXPO_PUBLIC_BREEZ_API_KEY=your_api_key
+        ```. To get the API key just fill out the [form](https://breez.technology/request-api-key/#contact-us-form-sdk) on Breez's website. You will receive a key to your email address. This is completely free.
+
 ## Reproducible build instructions
 
 <details>
@@ -102,7 +108,7 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 
 </details>
 
-To verify that the official binary was built exactly from the published source code, follow these steps. This process compares the internal contents of the official signed package against a locally built unsigned package.
+To verify that the official binary was built exactly from the published source code, follow these steps. This process compares the internal contents of the official signed package (published on GitHub) against a locally built unsigned package (your local build).
 
 1.  **Download the signed release:**
     Download the official signed file from the github releases page into a new testing directory. *(Replace the URL with the specific version you are testing)*.
@@ -144,6 +150,9 @@ To verify that the official binary was built exactly from the published source c
     ```
 
     If the `diff` command returns an empty output, the contents are identical bit-for-bit. The build is officially reproducible.
+
+#### Lightning reproducibility implications
+Trustless uses [Breez SDK](https://github.com/breez) to handle lightning operations. SDK requires an API key to work. For obvious reasons we don't push the .env file with the key to the GitHub repo. Therefore, proper code reproduction is only possible without an API key, meaning lightning won't work in such a build. With that said, even without the .env file, all lightning-related code is still being baked into the reproducible build, guaranteeing integrity.
 
 ## Contributing
 
