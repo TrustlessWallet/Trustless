@@ -81,7 +81,8 @@ To run the project in development mode, you need node-js and a setup for ios (xc
 Trustless uses [Breez SDK](https://github.com/breez) to handle lightning operations. SDK requires an API key to work. For obvious reasons we don't push the .env file with the key to the GitHub repo. To make lightning work you will have to create your own .env file in the root of the directory and add your own Breez API key there like this:
         ```
         EXPO_PUBLIC_BREEZ_API_KEY=your_api_key
-        ```. To get the API key just fill out the [form](https://breez.technology/request-api-key/#contact-us-form-sdk) on Breez's website. You will receive a key to your email address. This is completely free.
+        ```. 
+To get the API key just fill out the [form](https://breez.technology/request-api-key/#contact-us-form-sdk) on Breez's website. You will receive a key to your email address. This is completely free.
 
 ## Reproducible build instructions
 
