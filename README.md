@@ -12,10 +12,10 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 * [License](#license)
 
 ## Main features
-* **Bitcoin wallet:** Import or create new wallets, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets.
-
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/3595972b-36be-4229-9b71-82b0ac7d92e1" />
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/040f6a53-8312-4de8-9258-931e23016b1e" />
+* **Bitcoin wallet:** Import or create new wallets, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets and PSBT sigining.
+  
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/b8bd0f48-9d76-4abb-973d-487b01ea315c" />
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/530a7910-6012-4972-8531-d68e69db2e64" />
 
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 
