@@ -17,6 +17,11 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
   <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/b8bd0f48-9d76-4abb-973d-487b01ea315c" />
   <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/530a7910-6012-4972-8531-d68e69db2e64" />
 
+* **Non-custodial Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your lighning balance at anytime.
+
+  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/b67a6933-587a-4f9c-adeb-618e292061f3" />
+  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/545aadf1-b88d-459f-a9fe-1c9e2ace988a" />
+
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 
   <img width="250" alt="Balance details" src="https://github.com/user-attachments/assets/750c5fa2-805a-4e63-8624-2553446a4fa7" />
@@ -32,9 +37,10 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
   <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/e31ee43c-0383-4102-bf18-f0a1dafba201" />
   <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/02f25fcf-b16a-436a-88e5-e5b3e807304d" />
 
-* **Receive address switching:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
+* **Receive address rotation:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
 
   <img width="800" alt="Receive" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
+  
 * **Change address management:**  To protect user's privacy even more, all change addresses are automatically derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC.
 
   <img width="800" alt="Change" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
