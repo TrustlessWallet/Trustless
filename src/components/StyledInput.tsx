@@ -84,8 +84,8 @@ export const StyledInput: React.FC<StyledInputProps> = ({
         placeholderTextColor={placeholderTextColor || theme.colors.muted}
         {...props}
       />
-      {rightElement && (
-        <View style={styles.rightElement}>
+{rightElement && (
+        <View style={[styles.rightElement, multiline && styles.rightElementMultiline]}>
           {rightElement}
         </View>
       )}
@@ -111,9 +111,13 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     textAlignVertical: 'top',
   },
-  rightElement: {
-    paddingRight: 8,
+rightElement: {
+    paddingRight: 12,
     justifyContent: 'center',
     height: '100%',
+  },
+  rightElementMultiline: {
+    justifyContent: 'flex-start',
+    paddingTop: 12,
   },
 });
