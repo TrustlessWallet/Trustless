@@ -34,8 +34,8 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 
 * **Custom node and network:** Connect to your own node via Electrum and use testnet network for transaction testing / development.
 
-  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/e31ee43c-0383-4102-bf18-f0a1dafba201" />
-  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/02f25fcf-b16a-436a-88e5-e5b3e807304d" />
+  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/7ba270f0-f6bd-413d-80dc-2f0912736208" />
+  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/8e9a6cb5-07b9-4575-9af4-e8406b669708" />
 
 * **Receive address rotation:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
 
