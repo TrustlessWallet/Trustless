@@ -113,7 +113,7 @@ const RecoverWalletScreen = () => {
                         placeholderTextColor={theme.colors.muted}
                         rightElement={
                             <TouchableOpacity onPress={open_qr_scanner} style={styles.scanner_button}>
-                                <Feather name="camera" size={24} color={theme.colors.primary} />
+                                <Feather name="camera" size={20} color={theme.colors.primary} />
                             </TouchableOpacity>
                         }
                     />
