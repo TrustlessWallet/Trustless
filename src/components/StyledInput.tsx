@@ -12,6 +12,7 @@ import { useTheme } from '../contexts/ThemeContext';
 interface StyledInputProps extends TextInputProps {
   containerStyle?: ViewStyle;
   rightElement?: React.ReactNode;
+  inputAccessoryViewID?: string;
 }
 
 export const StyledInput: React.FC<StyledInputProps> = ({
@@ -75,6 +76,7 @@ export const StyledInput: React.FC<StyledInputProps> = ({
         onFocus={handleFocus}
         onBlur={handleBlur}
         multiline={multiline}
+        inputAccessoryViewID={props.inputAccessoryViewID}
         style={[
           styles.input, 
           { color: theme.colors.primary },
