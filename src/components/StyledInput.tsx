@@ -24,7 +24,7 @@ export const StyledInput: React.FC<StyledInputProps> = ({
   multiline,
   ...props
 }) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const [isFocused, setIsFocused] = useState(false);
   const focusAnim = useRef(new Animated.Value(0)).current;
 
@@ -82,6 +82,7 @@ export const StyledInput: React.FC<StyledInputProps> = ({
           style
         ]}
         placeholderTextColor={placeholderTextColor || theme.colors.muted}
+        keyboardAppearance={isDark ? 'dark' : 'light'}
         {...props}
       />
       {rightElement && (

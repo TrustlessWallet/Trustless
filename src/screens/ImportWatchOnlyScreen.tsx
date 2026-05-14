@@ -113,6 +113,7 @@ const ImportWatchOnlyScreen = () => {
                         onChangeText={set_xpub}
                         autoCapitalize="none"
                         autoCorrect={false}
+                        spellCheck={false}
                         editable={!loading}
                         keyboardAppearance={isDark ? 'dark' : 'light'}
                         multiline

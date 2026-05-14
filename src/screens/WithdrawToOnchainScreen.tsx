@@ -329,6 +329,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                     placeholder="bc1q..."
                                     autoCapitalize="none"
                                     autoCorrect={false}
+                                    spellCheck={false}
                                     rightElement={
                                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                             <TouchableOpacity
