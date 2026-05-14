@@ -20,6 +20,7 @@ import { Theme } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AddressText } from '../components/AddressText';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
+import * as Clipboard from 'expo-clipboard';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Send'>;
 type SendScreenRouteProp = RouteProp<RootStackParamList, 'Send'>;
@@ -144,6 +145,13 @@ const SendScreen = () => {
 
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
+
+    const handlePasteFromClipboard = async () => {
+        const text = await Clipboard.getStringAsync();
+        if (text) {
+            setRecipientAddress(text);
+        }
+    };
 
     useEffect(() => {
         if (route.params?.selectedAddress) {
@@ -569,6 +577,9 @@ const SendScreen = () => {
                                     spellCheck={false}
                                 />
                                 <View style={styles.addressInputRightElements}>
+                                    <TouchableOpacity onPress={handlePasteFromClipboard} style={styles.iconButton}>
+                                        <Feather name="clipboard" size={20} color={theme.colors.primary} />
+                                    </TouchableOpacity>
                                     <TouchableOpacity onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} style={styles.iconButton}>
                                         <Feather name="book-open" size={20} color={theme.colors.primary} />
                                     </TouchableOpacity>
@@ -789,9 +800,9 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
         flexDirection: 'row', 
         alignItems: 'flex-start', 
         paddingRight: 8, 
-        paddingTop: 8 
+        paddingTop: 8
     },
-    iconButton: { padding: 10 },
+    iconButton: { padding: 8 },
     unitSelector: { flexDirection: 'row', backgroundColor: theme.colors.border, borderRadius: 6, marginRight: 8, padding: 2 },
     unitButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
     unitButtonActive: { backgroundColor: theme.colors.primary },
