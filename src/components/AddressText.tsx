@@ -26,7 +26,7 @@ export const AddressText = ({
   groupsPerLine,
   padLastLine,
 }: Props) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const str = address ?? '';
   const minLengthToHighlight = head + tail + 1;

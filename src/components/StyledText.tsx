@@ -7,7 +7,7 @@ interface TextProps extends React.ComponentProps<typeof DefaultText> {
 }
 
 export function Text(props: TextProps) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { style, ...otherProps } = props;
 
   const flatStyle = StyleSheet.flatten(style);

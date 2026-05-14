@@ -575,6 +575,7 @@ const SendScreen = () => {
                                 autoCapitalize="none"
                                 autoCorrect={false}
                                 spellCheck={false}
+                                keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                             <View style={styles.addressInputRightElements}>
                                 <TouchableOpacity onPress={handlePasteFromClipboard} style={styles.iconButton}>
@@ -713,6 +714,8 @@ const SendScreen = () => {
                             onChangeText={setLightningInvoice}
                             autoCapitalize="none"
                             onFocus={handleInputFocus}
+                            spellCheck={false}
+                            autoCorrect={false}
                             rightElement={
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                     <TouchableOpacity onPress={async () => {
