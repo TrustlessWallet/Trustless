@@ -12,7 +12,6 @@ import { useTheme } from '../contexts/ThemeContext';
 interface StyledInputProps extends TextInputProps {
   containerStyle?: ViewStyle;
   rightElement?: React.ReactNode;
-  inputAccessoryViewID?: string;
 }
 
 export const StyledInput: React.FC<StyledInputProps> = ({
@@ -76,7 +75,6 @@ export const StyledInput: React.FC<StyledInputProps> = ({
         onFocus={handleFocus}
         onBlur={handleBlur}
         multiline={multiline}
-        inputAccessoryViewID={props.inputAccessoryViewID}
         style={[
           styles.input, 
           { color: theme.colors.primary },
@@ -86,8 +84,8 @@ export const StyledInput: React.FC<StyledInputProps> = ({
         placeholderTextColor={placeholderTextColor || theme.colors.muted}
         {...props}
       />
-{rightElement && (
-        <View style={[styles.rightElement, multiline && styles.rightElementMultiline]}>
+      {rightElement && (
+        <View style={styles.rightElement}>
           {rightElement}
         </View>
       )}
@@ -113,13 +111,9 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     textAlignVertical: 'top',
   },
-rightElement: {
-    paddingRight: 12,
+  rightElement: {
+    paddingRight: 8,
     justifyContent: 'center',
     height: '100%',
-  },
-  rightElementMultiline: {
-    justifyContent: 'flex-start',
-    paddingTop: 12,
   },
 });

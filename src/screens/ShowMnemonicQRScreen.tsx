@@ -30,7 +30,7 @@ const ShowMnemonicQRScreen = () => {
     return (
         <View style={styles.container}>
             <Text style={styles.warning}>
-                Scan this QR code to import your recovery phrase. Do not share this with anyone.
+                Scan this QR code to import your recovery phrase. Do not share it with anyone.
             </Text>
             
             <View style={styles.qr_wrapper}>
