@@ -19,6 +19,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { validateBitcoinAddress } from '../services/bitcoin';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
+import * as Clipboard from 'expo-clipboard';
 
 const btcFormatter = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 8,
@@ -70,12 +71,12 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     useEffect(() => {
         const fetchFeeEstimates = async () => {
             if (!activeWallet || !isLightningInitialized) return;
-            
+
             try {
                 // Use a small sample amount to get fee estimates
                 const sampleAmount = 10000; // 10k sats sample
                 const sampleAddress = activeWallet.address;
-                
+
                 const estimates = await Promise.all([
                     prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'slow').catch(() => null),
                     prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'normal').catch(() => null),
@@ -85,11 +86,11 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                 const extractFee = (estimate: any) => {
                     if (!estimate || !estimate.prepareResponse) return 0;
                     const quote = estimate.prepareResponse?.paymentMethod?.inner?.feeQuote;
-                    
-                    const tierKey = estimate.feeTier === 'fast' ? 'speedFast' : 
-                                  estimate.feeTier === 'slow' ? 'speedSlow' : 'speedMedium';
+
+                    const tierKey = estimate.feeTier === 'fast' ? 'speedFast' :
+                        estimate.feeTier === 'slow' ? 'speedSlow' : 'speedMedium';
                     const speedObj = quote?.[tierKey];
-                    
+
                     // Only show on-chain (L1) fees, not LSP fees
                     return Number(speedObj?.l1BroadcastFeeSat || 0);
                 };
@@ -97,7 +98,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                 // Extract fees using the successful estimates
                 const slowFee = extractFee({ ...estimates[0], feeTier: 'slow' });
                 const normalFee = extractFee({ ...estimates[1], feeTier: 'normal' });
-                
+
                 // For fast fee, try the direct estimate first, but if it failed,
                 // use the fast fee data from the successful slow/normal estimates
                 let fastFee = 0;
@@ -109,8 +110,8 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                     const quote = successfulEstimate?.prepareResponse?.paymentMethod?.inner?.feeQuote;
                     const fastSpeedObj = quote?.speedFast;
                     fastFee = Number(fastSpeedObj?.l1BroadcastFeeSat || 0);
-                                    }
-                
+                }
+
                 setFeeEstimates({
                     slow: slowFee,
                     normal: normalFee,
@@ -163,7 +164,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
             return;
         }
 
-        
+
         if (!validateBitcoinAddress(activeDestination)) {
             setCalculationError("Address is invalid");
             return;
@@ -180,7 +181,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
         try {
             const estimate = await prepareWithdrawToOnchain(activeDestination, amountSats, selectedFeeTier);
-            
+
             let totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
 
             if (totalFeeSats === 0 && estimate.prepareResponse) {
@@ -329,17 +330,32 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     rightElement={
-                                        <TouchableOpacity onPress={() => {
-                                            const params = { 
-                                                onScanSuccess: (data: string) => {
-                                                    setCustomAddress(data);
-                                                    setTxMetrics(null);
-                                                }
-                                            };
-                                            navigation.navigate('QRScanner', params);
-                                        }} style={styles.iconButton}>
-                                            <Feather name="camera" size={20} color={theme.colors.primary} />
-                                        </TouchableOpacity>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                            <TouchableOpacity
+                                                onPress={async () => {
+                                                    const text = await Clipboard.getStringAsync();
+                                                    if (text) {
+                                                        setCustomAddress(text);
+                                                        setTxMetrics(null);
+                                                    }
+                                                }}
+                                                style={styles.iconButton}
+                                            >
+                                                <Feather name="clipboard" size={20} color={theme.colors.primary} />
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity onPress={() => {
+                                                const params = {
+                                                    onScanSuccess: (data: string) => {
+                                                        setCustomAddress(data);
+                                                        setTxMetrics(null);
+                                                    }
+                                                };
+                                                navigation.navigate('QRScanner', params);
+                                            }} style={styles.iconButton}>
+                                                <Feather name="camera" size={20} color={theme.colors.primary} />
+                                            </TouchableOpacity>
+                                        </View>
                                     }
                                 />
                                 {customAddress.length > 0 && (
@@ -366,7 +382,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                             rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                             blurOnSubmit={false}
                         />
-                        
+
                         {/* Alert is absolutely positioned to prevent any layout shifts */}
                         {false && calculationError && (
                             <View style={styles.statusMessageContainer}>
@@ -398,8 +414,8 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                             </View>
                         </View>
                     </View>
-                        
-                        <View style={styles.summaryBox}>
+
+                    <View style={styles.summaryBox}>
                         {txMetrics ? (
                             <>
                                 <View style={styles.detailRow}>
@@ -408,11 +424,11 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                         <Text style={styles.value}>
                                             {(() => {
                                                 const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
-                                                
+
                                                 let tierKey = 'speedMedium';
                                                 if (selectedFeeTier === 'fast') tierKey = 'speedFast';
                                                 if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
-                                                
+
                                                 const speedObj = quote?.[tierKey];
                                                 return Number(speedObj?.l1BroadcastFeeSat || 0).toLocaleString();
                                             })()} sats
@@ -428,7 +444,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                                 let tierKey = 'speedMedium';
                                                 if (selectedFeeTier === 'fast') tierKey = 'speedFast';
                                                 if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
-                                                
+
                                                 const speedObj = quote?.[tierKey];
                                                 return Number(speedObj?.userFeeSat || 0).toLocaleString();
                                             })()} sats
@@ -444,8 +460,8 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 <View style={styles.detailRow}>
                                     <Text style={styles.totalLabel}>Total</Text>
                                     <Text style={styles.totalValue}>
-                                        {amountStr 
-                                            ? `${(parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()} sats` 
+                                        {amountStr
+                                            ? `${(parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()} sats`
                                             : '~ sats'}
                                     </Text>
                                 </View>

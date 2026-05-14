@@ -11,6 +11,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { StyledInput } from '../components/StyledInput';
 import { AddressText } from '../components/AddressText';
+import * as Clipboard from 'expo-clipboard';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'AddSavedAddress'>;
 
@@ -22,6 +23,12 @@ const AddSavedAddressScreen = () => {
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
   const navigation = useNavigation<NavigationProp>();
+  const handlePasteFromClipboard = async () => {
+    const text = await Clipboard.getStringAsync();
+    if (text) {
+      setAddress(text);
+    }
+  };
 
   const handleSaveAddress = async () => {
     const trimmedAddress = address.trim();
@@ -67,34 +74,43 @@ const AddSavedAddressScreen = () => {
   return (
     <View style={styles.container}>
 
-            <View style={styles.inputSpacing}>
-      <Text style={styles.label}>Bitcoin address</Text>
-      <StyledInput
-        placeholder="Enter a Bitcoin address"
-        value={address}
-        onChangeText={setAddress}
-        autoComplete="off"
-        spellCheck={false}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardAppearance={isDark ? 'dark' : 'light'}
-        editable={!loading}
-        rightElement={
-          <TouchableOpacity 
-            style={styles.scanButton} 
-            onPress={handleScanPress}
-            disabled={loading}
-          >
-            <Feather name="camera" size={20} color={theme.colors.primary} />
-          </TouchableOpacity>
-        }
-      />
-      {!!address.trim() && (
-        <AddressText
-          style={styles.addressPreview}
-          address={address.trim()}
+      <View style={styles.inputSpacing}>
+        <Text style={styles.label}>Bitcoin address</Text>
+        <StyledInput
+          placeholder="Enter a Bitcoin address"
+          value={address}
+          onChangeText={setAddress}
+          autoComplete="off"
+          spellCheck={false}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardAppearance={isDark ? 'dark' : 'light'}
+          editable={!loading}
+          rightElement={
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity
+                style={styles.scanButton}
+                onPress={handlePasteFromClipboard}
+                disabled={loading}
+              >
+                <Feather name="clipboard" size={20} color={theme.colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.scanButton}
+                onPress={handleScanPress}
+                disabled={loading}
+              >
+                <Feather name="camera" size={20} color={theme.colors.primary} />
+              </TouchableOpacity>
+            </View>
+          }
         />
-      )}
+        {!!address.trim() && (
+          <AddressText
+            style={styles.addressPreview}
+            address={address.trim()}
+          />
+        )}
       </View>
 
       <Text style={styles.label}>Label (optional)</Text>
@@ -106,8 +122,8 @@ const AddSavedAddressScreen = () => {
         keyboardAppearance={isDark ? 'dark' : 'light'}
         containerStyle={styles.inputSpacing}
       />
-      
-      
+
+
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleSaveAddress}
@@ -127,16 +143,16 @@ const AddSavedAddressScreen = () => {
 };
 
 const getStyles = (theme: Theme) => StyleSheet.create({
-  container: { 
-    flex: 1, 
+  container: {
+    flex: 1,
     backgroundColor: theme.colors.background,
-    padding: 24 
+    padding: 24
   },
-  label: { 
-    fontSize: 16, 
-    marginBottom: 8, 
+  label: {
+    fontSize: 16,
+    marginBottom: 8,
     color: theme.colors.primary,
-    fontWeight: '500' 
+    fontWeight: '500'
   },
   inputSpacing: {
     marginBottom: 24
@@ -147,30 +163,30 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     marginTop: 8,
     color: theme.colors.muted,
   },
-  scanButton: { 
-    padding: 10 
+  scanButton: {
+    padding: 10
   },
-  button: { 
+  button: {
     backgroundColor: theme.colors.primary,
-    borderRadius: 8, 
-    padding: 16, 
-    alignItems: 'center', 
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
     justifyContent: 'center',
     minHeight: 56
   },
-  buttonDisabled: { 
+  buttonDisabled: {
     opacity: 0.5,
   },
-  buttonText: { 
+  buttonText: {
     color: theme.colors.inversePrimary,
-    fontSize: 16, 
-    fontWeight: '600' 
+    fontSize: 16,
+    fontWeight: '600'
   },
-  buttonContentRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    gap: 8 
+  buttonContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8
   },
 });
 
