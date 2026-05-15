@@ -6,10 +6,10 @@ import {
     Alert,
     ActivityIndicator,
     TouchableWithoutFeedback,
-    Keyboard
+    Keyboard,
+    TextInput
 } from 'react-native';
 import { Text } from '../components/StyledText';
-import { StyledInput } from '../components/StyledInput';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -19,6 +19,7 @@ import { Feather } from '@expo/vector-icons';
 import { Theme } from '../constants/theme';
 import { NETWORK, NETWORK_NAME } from '../constants/network';
 import { getBip32Node } from '../services/bitcoin';
+import * as Clipboard from 'expo-clipboard';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ImportWatchOnly'>;
 
@@ -30,6 +31,7 @@ const ImportWatchOnlyScreen = () => {
 
     const [xpub, set_xpub] = useState('');
     const [loading, set_loading] = useState(false);
+    const [is_input_focused, set_is_input_focused] = useState(false);
 
     const handle_scan = () => {
         navigation.navigate('QRScanner', {
@@ -37,6 +39,13 @@ const ImportWatchOnlyScreen = () => {
                 set_xpub(data);
             }
         });
+    };
+
+    const handlePasteFromClipboard = async () => {
+        const text = await Clipboard.getStringAsync();
+        if (text) {
+            set_xpub(text);
+        }
     };
 
     const handle_import = async () => {
@@ -107,23 +116,33 @@ const ImportWatchOnlyScreen = () => {
             <View style={styles.container}>
                 <View>
                     <Text style={styles.label}>Extended public key</Text>
-                    <StyledInput
-                        placeholder="[95e61bfa/84'/1'/0']vpub5Z8P...vUsREK"
-                        value={xpub}
-                        onChangeText={set_xpub}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        spellCheck={false}
-                        editable={!loading}
-                        keyboardAppearance={isDark ? 'dark' : 'light'}
-                        multiline
-                        containerStyle={styles.multilineInput}
-                        rightElement={
-                            <TouchableOpacity style={styles.scanButton} onPress={handle_scan}>
+                    
+                    <View style={[styles.input_wrapper, is_input_focused && styles.input_wrapper_focused]}>
+                        <TextInput
+                            style={styles.phrase_input}
+                            placeholder="[95e61bfa/84'/1'/0']vpub5Z8P...vUsREK"
+                            placeholderTextColor={theme.colors.muted}
+                            value={xpub}
+                            onChangeText={set_xpub}
+                            multiline={true}
+                            onFocus={() => set_is_input_focused(true)}
+                            onBlur={() => set_is_input_focused(false)}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            spellCheck={false}
+                            editable={!loading}
+                            keyboardAppearance={isDark ? 'dark' : 'light'}
+                        />
+                        <View style={styles.right_elements}>
+                            <TouchableOpacity onPress={handlePasteFromClipboard} style={styles.icon_button} disabled={loading}>
+                                <Feather name="clipboard" size={20} color={theme.colors.primary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handle_scan} style={styles.icon_button} disabled={loading}>
                                 <Feather name="camera" size={20} color={theme.colors.primary} />
                             </TouchableOpacity>
-                        }
-                    />
+                        </View>
+                    </View>
+
                     <Text style={styles.helperText}>
                         Import from hardware wallet or other software to watch your balance.
                     </Text>
@@ -160,12 +179,35 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.primary,
         fontWeight: '500',
     },
-    multilineInput: {
+    input_wrapper: { 
+        flexDirection: 'row', 
+        borderWidth: 1, 
+        borderColor: theme.colors.border, 
+        borderRadius: 8, 
+        backgroundColor: theme.colors.surface,
         height: 120,
-        marginBottom: 8,
+        marginBottom: 8
     },
-    scanButton: {
-        padding: 10,
+    input_wrapper_focused: {
+        borderColor: theme.colors.bitcoin,
+    },
+    phrase_input: { 
+        flex: 1, 
+        paddingHorizontal: 16, 
+        paddingVertical: 16, 
+        fontSize: 16,
+        fontFamily: 'SpaceMono-Regular', 
+        color: theme.colors.primary, 
+        textAlignVertical: 'top' 
+    },
+    right_elements: { 
+        flexDirection: 'row', 
+        alignItems: 'flex-start', 
+        paddingRight: 8, 
+        paddingTop: 8 
+    },
+    icon_button: {
+        padding: 8,
     },
     helperText: {
         color: theme.colors.muted,

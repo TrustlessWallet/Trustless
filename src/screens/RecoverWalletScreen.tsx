@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -9,7 +9,6 @@ import { useWallet } from '../contexts/WalletContext';
 import * as bip39 from 'bip39';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { StyledInput } from '../components/StyledInput';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'RecoverWallet'>;
 
@@ -21,6 +20,8 @@ const RecoverWalletScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const { theme, isDark: is_dark } = useTheme();
     const styles = useMemo(() => get_styles(theme), [theme]);
+
+    const [is_input_focused, set_is_input_focused] = useState(false);
 
     const handle_text_change = (text: string) => {
         set_phrase(text);
@@ -99,24 +100,28 @@ const RecoverWalletScreen = () => {
                         Enter your 12, 18, or 24-word recovery phrase to restore your wallet.
                     </Text>
                     
-                    <StyledInput
-                        containerStyle={styles.input_container}
-                        placeholder="Enter words separated by spaces"
-                        value={phrase}
-                        onChangeText={handle_text_change}
-                        multiline
-                        autoComplete="off"
-                        spellCheck={false}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        keyboardAppearance={is_dark ? 'dark' : 'light'}
-                        placeholderTextColor={theme.colors.muted}
-                        rightElement={
-                            <TouchableOpacity onPress={open_qr_scanner} style={styles.scanner_button}>
+                    <View style={[styles.input_wrapper, is_input_focused && styles.input_wrapper_focused]}>
+                        <TextInput
+                            style={styles.phrase_input}
+                            placeholder="Enter words separated by spaces"
+                            placeholderTextColor={theme.colors.muted}
+                            value={phrase}
+                            onChangeText={handle_text_change}
+                            multiline={true}
+                            onFocus={() => set_is_input_focused(true)}
+                            onBlur={() => set_is_input_focused(false)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            keyboardAppearance={is_dark ? 'dark' : 'light'}
+                        />
+                        <View style={styles.right_elements}>
+                            <TouchableOpacity onPress={open_qr_scanner} style={styles.icon_button}>
                                 <Feather name="camera" size={20} color={theme.colors.primary} />
                             </TouchableOpacity>
-                        }
-                    />
+                        </View>
+                    </View>
                 </View>
 
                 <View style={styles.bottom_content}>
@@ -179,17 +184,37 @@ const get_styles = (theme: Theme) => StyleSheet.create({
     textAlign: 'center', 
     marginBottom: 24, 
   },
-  input_container: { 
-    height: 120, 
+  input_wrapper: { 
+    flexDirection: 'row', 
+    borderWidth: 1, 
+    borderColor: theme.colors.border, 
+    borderRadius: 8, 
+    backgroundColor: theme.colors.surface,
+    height: 120,
     marginBottom: 16
   },
-  scanner_button: {
-    padding: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
+  input_wrapper_focused: {
+    borderColor: theme.colors.bitcoin,
+  },
+  phrase_input: { 
+    flex: 1, 
+    paddingHorizontal: 16, 
+    paddingVertical: 16, 
+    fontSize: 16,
+    fontFamily: 'SpaceMono-Regular', 
+    color: theme.colors.primary, 
+    textAlignVertical: 'top' 
+  },
+  right_elements: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-start', 
+    paddingRight: 8, 
+    paddingTop: 8 
+  },
+  icon_button: {
+    padding: 8,
   },
   suggestions_wrapper: {
-
     marginVertical: 16,
   },
   suggestions_scroll_content: {

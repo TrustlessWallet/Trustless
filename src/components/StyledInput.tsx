@@ -45,14 +45,15 @@ export const StyledInput: React.FC<StyledInputProps> = ({
     setIsFocused(false);
     if (onBlur) onBlur(event);
   };
-
-  const baseContainerStyle = {
+  
+const baseContainerStyle: ViewStyle = {
     backgroundColor: theme.colors.surface,
     borderColor: isFocused ? 'transparent' : theme.colors.border,
     borderRadius: theme.LAYOUT.radius,
     borderWidth: 1,
+    alignItems: (multiline ? 'flex-start' : 'center') as 'flex-start' | 'center',
     ...(multiline ? { minHeight: theme.LAYOUT.inputHeight } : { height: theme.LAYOUT.inputHeight }),
-  };
+};
 
   return (
     <View style={[styles.container, baseContainerStyle, containerStyle]}>
@@ -97,7 +98,6 @@ export const StyledInput: React.FC<StyledInputProps> = ({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    alignItems: 'center',
     overflow: 'hidden',
   },
   input: {
