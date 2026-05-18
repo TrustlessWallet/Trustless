@@ -11,6 +11,7 @@ export type BitcoinAddress = {
 export type DerivedAddress = {
   address: string;
   index: number;
+  label?: string;
 };
 
 export type DerivedAddressInfo = {
@@ -18,6 +19,7 @@ export type DerivedAddressInfo = {
   index: number;
   balance: number;
   tx_count: number;
+  label?: string;
 };
 
 export type UTXO = {

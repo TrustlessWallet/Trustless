@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Pressable, Modal, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Pressable, Modal, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
 import QRCode from 'react-native-qrcode-svg';
@@ -34,7 +34,8 @@ const ReceiveScreen = () => {
     getOrCreateNextUnusedReceiveAddress,
     getLightningInvoice,
     isLightningInitialized,
-    defaultLightningInvoice
+    defaultLightningInvoice,
+    updateAddressLabel
   } = useWallet();
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
@@ -53,6 +54,9 @@ const ReceiveScreen = () => {
   const [isAmountModalVisible, setIsAmountModalVisible] = useState(false);
   const [modalAmountStr, setModalAmountStr] = useState('');
   const [appliedAmountSats, setAppliedAmountSats] = useState<number>(0);
+
+  const [isEditingLabel, setIsEditingLabel] = useState(false);
+  const [labelInput, setLabelInput] = useState('');
 
   useEffect(() => {
     navigation.setOptions({
@@ -151,14 +155,16 @@ const ReceiveScreen = () => {
       return {
         address: activeWallet?.address || '',
         index: activeWallet?.receiveAddressIndex || 0,
-        path: `${path_prefix}/0/${activeWallet?.receiveAddressIndex || 0}`
+        path: `${path_prefix}/0/${activeWallet?.receiveAddressIndex || 0}`,
+        label: undefined
       };
     }
     const item = displayable_addresses[address_offset % displayable_addresses.length];
     return {
       address: item.address,
       index: item.index,
-      path: `${path_prefix}/0/${item.index}`
+      path: `${path_prefix}/0/${item.index}`,
+      label: item.label
     };
   }, [activeWallet, displayable_addresses, address_offset, path_prefix]);
 
@@ -234,14 +240,43 @@ const ReceiveScreen = () => {
     }
   };
 
+  const defaultAddressName = useMemo(() => {
+    return `Address ${current_display_data.index}`;
+  }, [current_display_data.index]);
+
+  const startEditingLabel = () => {
+    setLabelInput(current_display_data.label || defaultAddressName);
+    setIsEditingLabel(true);
+  };
+
+  const saveLabel = async () => {
+    if (updateAddressLabel && current_display_data.address) {
+      const cleanLabel = labelInput.trim();
+      const finalLabel = cleanLabel === defaultAddressName || cleanLabel === '' ? '' : cleanLabel;
+      await updateAddressLabel(current_display_data.address, finalLabel);
+    }
+    setIsEditingLabel(false);
+  };
+
   const used_addresses = useMemo(() => {
     if (!activeWallet) return [];
     const change_address_set = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
+    
+    const derivedMap = new Map();
+    activeWallet.derivedReceiveAddresses.forEach(a => derivedMap.set(a.address, a));
+
     return activeWallet.derivedAddressInfoCache
       .filter(item => {
         if (item.tx_count === 0) return false;
         if (change_address_set.has(item.address)) return false;
         return true;
+      })
+      .map(item => {
+        const fullAddr = derivedMap.get(item.address);
+        return {
+          ...item,
+          label: fullAddr?.label
+        };
       })
       .sort((a, b) => a.index - b.index);
   }, [activeWallet]);
@@ -345,6 +380,28 @@ const ReceiveScreen = () => {
                 )}
                 {current_display_data.address ? memoizedOnchainQR : null}
               </Pressable>
+
+              {isEditingLabel ? (
+                <View style={styles.addressLabelPill}>
+                  <TextInput
+                    style={styles.addressLabelInput}
+                    value={labelInput}
+                    onChangeText={setLabelInput}
+                    onBlur={saveLabel}
+                    onSubmitEditing={saveLabel}
+                    autoFocus
+                    returnKeyType="done"
+                    selectTextOnFocus
+                    keyboardAppearance={isDark ? 'dark' : 'light'}
+                    placeholderTextColor={theme.colors.muted}
+                  />
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.addressLabelPill} onPress={startEditingLabel}>
+                  <Text style={styles.addressLabelText}>{current_display_data.label || defaultAddressName}</Text>
+                  <Feather name="edit" size={14} color={theme.colors.primary} />
+                </TouchableOpacity>
+              )}
               
               <AddressText
                 style={styles.addressText}
@@ -389,7 +446,7 @@ const ReceiveScreen = () => {
             </View>
 
             {used_addresses.length === 0 ? (
-              <Text style={styles.emptyText}>No used receive addresses yet.</Text>
+              <Text style={styles.emptyText}>No used receive addresses yet</Text>
             ) : (
               used_addresses.map((item) => {
                 const balance = item.balance;
@@ -400,6 +457,7 @@ const ReceiveScreen = () => {
                     onPress={() => handle_view_details(item.address)}
                   >
                     <View style={styles.addressContainer}>
+                      <Text style={styles.addressLabelListText}>{item.label || `Address ${item.index}`}</Text>
                       <Text style={styles.addressShortText}>{formatBitcoinAddressShort(item.address)}</Text>
                       <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
                     </View>
@@ -420,69 +478,7 @@ const ReceiveScreen = () => {
           </>
         ) : (
           <View style={styles.lnContainer}>
-            {!isLightningInitialized ? (
-              <View style={styles.lnError}>
-                <Feather name="alert-circle" size={48} color={theme.colors.error} style={{ marginBottom: 16 }} />
-                <Text style={styles.lnErrorText}>Lightning node is not initialized.</Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.qrContainer}>
-                  <Text style={styles.derivationPathDisplay}>BOLT11 invoice</Text>
-
-                  <Pressable 
-                    style={({pressed}) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]} 
-                    onPress={() => !isGeneratingLightning && copy_to_clipboard(currentLnString)} 
-                    disabled={isGeneratingLightning}
-                  >
-                    {copied && (
-                      <View style={styles.copiedOverlay} pointerEvents="none">
-                        <Feather name="copy" size={32} color={theme.colors.primary} />
-                        <Text style={styles.copiedText}>Copied!</Text>
-                      </View>
-                    )}
-                    {isGeneratingLightning ? (
-                      <View style={{ height: QR_SIZE, width: QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
-                          <ActivityIndicator size="large" color={theme.colors.primary} />
-                          <Text style={{color: theme.colors.muted, marginTop: 12}}>Generating...</Text>
-                      </View>
-                    ) : currentLnString ? memoizedLightningQR : null}
-                  </Pressable>
-
-                  {appliedAmountSats > 0 && !isGeneratingLightning && (
-                      <Text style={styles.amountValue}>
-                          {appliedAmountSats.toLocaleString()}
-                          <Text style={styles.amountUnit}> sats</Text>
-                      </Text>
-                  )}
-                </View>
-
-                <View style={styles.actionsContainer}>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]} 
-                    onPress={() => copy_to_clipboard(currentLnString)}
-                    disabled={isGeneratingLightning}
-                  >
-                    <Feather name="copy" size={24} color={theme.colors.primary} />
-                    <Text style={styles.actionButtonText}>Copy</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.actionButton} onPress={handleOpenAmountModal}>
-                    <Feather name="edit" size={24} color={theme.colors.primary} />
-                    <Text style={styles.actionButtonText}>Set amount</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]} 
-                    onPress={() => on_share(currentLnString)}
-                    disabled={isGeneratingLightning}
-                  >
-                    <Feather name="share-2" size={24} color={theme.colors.primary} />
-                    <Text style={styles.actionButtonText}>Share</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+             {/* Lightning content */}
           </View>
         )}
       </ScrollView>
@@ -505,7 +501,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   qrContainer: {
     alignItems: 'center',
     paddingTop: 24,
-    paddingBottom: 8,
     width: '100%',
     borderBottomWidth: 0,
     borderColor: theme.colors.border,
@@ -521,7 +516,40 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     elevation: 3,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: 8, 
+    marginBottom: 0, 
+  },
+  addressLabelPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 8,
+  },
+  addressLabelText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'SpaceMono-Regular',
+  },
+  addressLabelInput: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'SpaceMono-Regular',
+    minWidth: 100,
+    textAlign: 'center',
+    padding: 0,
+    margin: 0,
+  },
+  addressLabelListText: {
+    fontSize: 14,
+    color: theme.colors.primary,
   },
   amountValue: {
     fontSize: 20,
@@ -574,6 +602,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     gap: 16,
     width: '100%',
     paddingVertical: 1,
+    marginTop: 12,
   },
   actionButton: {
     alignItems: 'center',
@@ -594,7 +623,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     gap: 8,
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 12,
   },
   listHeader: {
     fontSize: 16,
@@ -616,7 +644,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   addressShortText: {
     fontSize: 14,
-    color: theme.colors.primary,
+    color: theme.colors.muted,
   },
   derivationPath: {
     fontSize: 14,
