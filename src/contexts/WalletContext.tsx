@@ -29,7 +29,8 @@ import {
     dbGetSavedAddresses, dbAddSavedAddress, dbRemoveSavedAddress, dbUpdateSavedAddress,
     dbUpdateChangeIndex,
     dbFindWalletByAddress,
-    dbFindWalletByXpub
+    dbFindWalletByXpub,
+    dbUpdateAddressLabel
 } from '../services/database';
 import { InteractionManager } from 'react-native';
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
@@ -130,6 +131,7 @@ interface WalletContextType {
     removeSavedAddress: (addressId: string) => Promise<void>;
     updateSavedAddressName: (addressId: string, newName: string) => Promise<void>;
     refreshSavedAddressBalances: () => Promise<void>;
+    updateAddressLabel: (address: string, label: string) => Promise<void>;
 
     isLightningInitialized: boolean;
     lightningInitAttempted: boolean;
@@ -191,6 +193,32 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         activeWallet?.derivedReceiveAddresses.length,
         activeWallet?.derivedChangeAddresses.length
     ]);
+
+    const updateAddressLabel = async (address: string, label: string) => {
+        try {
+            await dbUpdateAddressLabel(address, label);
+
+            setActiveWallet(prev => {
+                if (!prev) return prev;
+
+                const updatedReceive = prev.derivedReceiveAddresses.map(a =>
+                    a.address === address ? { ...a, label } : a
+                );
+
+                const updatedChange = prev.derivedChangeAddresses.map(a =>
+                    a.address === address ? { ...a, label } : a
+                );
+
+                return {
+                    ...prev,
+                    derivedReceiveAddresses: updatedReceive,
+                    derivedChangeAddresses: updatedChange
+                };
+            });
+        } catch (error) {
+            console.error("Failed to update address label inside context:", error);
+        }
+    };
 
     // Hook 1: Sync Balance for Active Wallet
     const { data: syncedWalletData } = useWalletBalanceSync(activeWallet?.id, activeWalletAddresses);
@@ -374,7 +402,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const documentDir = FileSystem.Paths.document;
             const storageDirPath = `${documentDir.uri}breezSdkSpark`;
             const storageDir = new FileSystem.Directory(storageDirPath);
-            
+
             const dirInfo = await storageDir.info();
             if (!dirInfo.exists) {
                 await storageDir.create({ intermediates: true });
@@ -616,10 +644,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const res = await activeSdkInstance.prepareSendPayment(prepareRequest as any);
 
             let feeSats = 0;
-            
+
             if (res.paymentMethod && res.paymentMethod.tag === 'BitcoinAddress') {
                 const quote = res.paymentMethod.inner.feeQuote;
-                
+
                 if (feeTier === 'fast') {
                     const speedObj = quote?.speedFast;
                     const l1Fee = Number(speedObj?.l1BroadcastFeeSat || 0);
@@ -639,8 +667,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             } else {
                 // Payment method not BitcoinAddress
             }
-            
-            
+
+
             return {
                 senderFeeMsat: feeSats * 1000,
                 recipientFeeMsat: 0,
@@ -678,7 +706,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const options = new breezSdk.SendPaymentOptions.BitcoinAddress({
                 confirmationSpeed: speed
             });
-            
+
             await activeSdkInstance.sendPayment({
                 prepareResponse: prepareResponse,
                 options: options
@@ -1517,6 +1545,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         removeSavedAddress,
         updateSavedAddressName,
         refreshSavedAddressBalances,
+        updateAddressLabel,
 
         isLightningInitialized,
         lightningInitAttempted,

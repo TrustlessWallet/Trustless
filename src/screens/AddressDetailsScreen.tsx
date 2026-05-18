@@ -36,7 +36,7 @@ const AddressDetailsScreen = () => {
   const isFocused = useIsFocused();
   const { address } = route.params;
   const scrollRef = useRef<ScrollView>(null);
-  const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
+  const { activeWallet, getUtxoLabel, updateUtxoLabel, updateAddressLabel } = useWallet();
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
   const [copied, set_copied] = useState(false);
@@ -49,6 +49,9 @@ const AddressDetailsScreen = () => {
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const editInputRef = useRef<TextInput>(null);
+
+  const [isEditingAddressLabel, setIsEditingAddressLabel] = useState(false);
+  const [addressLabelInput, setAddressLabelInput] = useState('');
 
   const receiveData = activeWallet?.derivedReceiveAddresses.find(a => a.address === address);
   const changeData = activeWallet?.derivedChangeAddresses.find(a => a.address === address);
@@ -65,6 +68,11 @@ const AddressDetailsScreen = () => {
       if (changeData) return `${path_prefix}/1/${changeData.index}`;
       return null;
   }, [receiveData, changeData, path_prefix]);
+
+  const defaultAddressName = useMemo(() => {
+    const idx = receiveData?.index ?? changeData?.index ?? 0;
+    return `Address ${idx}`;
+  }, [receiveData, changeData]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -133,6 +141,20 @@ const AddressDetailsScreen = () => {
     setEditingUtxoKey(null);
   };
 
+  const startEditingAddressLabel = () => {
+    setAddressLabelInput(receiveData?.label || changeData?.label || defaultAddressName);
+    setIsEditingAddressLabel(true);
+  };
+
+  const saveAddressLabel = async () => {
+    if (updateAddressLabel && address) {
+      const cleanLabel = addressLabelInput.trim();
+      const finalLabel = cleanLabel === defaultAddressName || cleanLabel === '' ? '' : cleanLabel;
+      await updateAddressLabel(address, finalLabel);
+    }
+    setIsEditingAddressLabel(false);
+  };
+
   const copy_to_clipboard = () => {
     if (address) {
       Clipboard.setString(address);
@@ -196,6 +218,29 @@ const AddressDetailsScreen = () => {
             color={theme.colors.primary}
           />
         </TouchableOpacity>
+
+        {isEditingAddressLabel ? (
+          <View style={styles.addressLabelPill}>
+            <TextInput
+              style={styles.addressLabelInput}
+              value={addressLabelInput}
+              onChangeText={setAddressLabelInput}
+              onBlur={saveAddressLabel}
+              onSubmitEditing={saveAddressLabel}
+              autoFocus
+              returnKeyType="done"
+              selectTextOnFocus
+              keyboardAppearance={isDark ? 'dark' : 'light'}
+              placeholderTextColor={theme.colors.muted}
+            />
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.addressLabelPill} onPress={startEditingAddressLabel}>
+            <Text style={styles.addressLabelText}>{receiveData?.label || changeData?.label || defaultAddressName}</Text>
+            <Feather name="edit" size={14} color={theme.colors.primary} />
+          </TouchableOpacity>
+        )}
+
         <AddressText
           style={styles.addressText}
           selectable
@@ -372,7 +417,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     padding: 16,
     backgroundColor: theme.colors.background, 
     borderRadius: 8,
-    marginBottom: 16,
+    marginBottom: 0,
     shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: isDark ? 0.3 : 0.1,
@@ -381,6 +426,35 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
+  addressLabelPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 8,
+  },
+  addressLabelText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'SpaceMono-Regular',
+  },
+  addressLabelInput: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'SpaceMono-Regular',
+    minWidth: 100,
+    textAlign: 'center',
+    padding: 0,
+    margin: 0,
+  },
   addressText: {
     fontFamily: 'monospace',
     fontSize: 14,
@@ -388,7 +462,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.primary,
     lineHeight: 24,
     paddingHorizontal: 72,
-    marginBottom: 12,
   },
   balanceText: {
     fontSize: 36,
@@ -403,6 +476,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 24,
+    marginTop: 12,
   },
   actionButton: {
     alignItems: 'center',

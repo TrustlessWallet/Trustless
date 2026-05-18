@@ -53,6 +53,7 @@ export const initDatabase = async () => {
       balance INTEGER DEFAULT 0,
       tx_count INTEGER DEFAULT 0,
       network TEXT NOT NULL,
+      label TEXT,
       FOREIGN KEY (wallet_id) REFERENCES wallets (id) ON DELETE CASCADE
     );
 
@@ -189,11 +190,11 @@ export const dbUpdateChangeIndex = async (id: string, index: number) => {
  * We use INSERT OR IGNORE because generating the same address twice is harmless,
  * but crashing on duplicate key is bad.
  */
-export const dbSaveAddress = async (wallet_id: string, addr: { address: string, index: number }, chain: number, network: string) => {
+export const dbSaveAddress = async (wallet_id: string, addr: { address: string, index: number, label?: string }, chain: number, network: string) => {
   const d = getDB();
   await d.runAsync(
-    'INSERT OR IGNORE INTO addresses (address, wallet_id, chain, idx, network) VALUES (?, ?, ?, ?, ?)',
-    [addr.address, wallet_id, chain, addr.index, network]
+    'INSERT OR IGNORE INTO addresses (address, wallet_id, chain, idx, network, label) VALUES (?, ?, ?, ?, ?, ?)',
+    [addr.address, wallet_id, chain, addr.index, network, addr.label || null]
   );
 };
 
@@ -221,25 +222,35 @@ export const dbFindWalletByXpub = async (xpub: string): Promise<string | null> =
 export const dbGetDerivedAddresses = async (wallet_id: string, chain: number): Promise<DerivedAddress[]> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(
-    'SELECT address, idx FROM addresses WHERE wallet_id = ? AND chain = ? ORDER BY idx ASC',
+    'SELECT address, idx, label FROM addresses WHERE wallet_id = ? AND chain = ? ORDER BY idx ASC',
     [wallet_id, chain]
   );
-  return rows.map((r: any) => ({ address: r.address, index: r.idx }));
+  return rows.map((r: any) => ({ address: r.address, index: r.idx, label: r.label }));
 };
 
 // Fetches the cached balance/tx_count for addresses to display instantly on load.
 export const dbGetAddressCache = async (wallet_id: string): Promise<DerivedAddressInfo[]> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(
-    'SELECT address, idx, balance, tx_count FROM addresses WHERE wallet_id = ?',
+    'SELECT address, idx, balance, tx_count, label FROM addresses WHERE wallet_id = ?',
     [wallet_id]
   );
   return rows.map((r: any) => ({
     address: r.address,
     index: r.idx,
     balance: r.balance,
-    tx_count: r.tx_count
+    tx_count: r.tx_count,
+    label: r.label
   }));
+};
+
+// Updates address label
+export const dbUpdateAddressLabel = async (address: string, label: string) => {
+  const d = getDB();
+  await d.runAsync(
+      'UPDATE addresses SET label = ? WHERE address = ?',
+      [label, address]
+  );
 };
 
 // Bulk update of address balances after a network sync.
