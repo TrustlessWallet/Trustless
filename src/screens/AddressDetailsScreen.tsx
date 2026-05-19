@@ -23,11 +23,11 @@ type RoutePropType = RouteProp<RootStackParamList, 'AddressDetails'>;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 const formatBalance = (sats: number) => {
-    const btc = (sats || 0) / 100000000;
-    return new Intl.NumberFormat('en-US', {
-      maximumFractionDigits: 8,
-      minimumFractionDigits: 8,
-    }).format(btc).replace(/,/g, ' ');
+  const btc = (sats || 0) / 100000000;
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 8,
+    minimumFractionDigits: 8,
+  }).format(btc).replace(/,/g, ' ');
 };
 
 const AddressDetailsScreen = () => {
@@ -45,7 +45,7 @@ const AddressDetailsScreen = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [hideBalance, setHideBalance] = useState(false);
-  
+
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const editInputRef = useRef<TextInput>(null);
@@ -64,9 +64,9 @@ const AddressDetailsScreen = () => {
   }, [activeWallet?.scriptType]);
 
   const derivation_path = useMemo(() => {
-      if (receiveData) return `${path_prefix}/0/${receiveData.index}`;
-      if (changeData) return `${path_prefix}/1/${changeData.index}`;
-      return null;
+    if (receiveData) return `${path_prefix}/0/${receiveData.index}`;
+    if (changeData) return `${path_prefix}/1/${changeData.index}`;
+    return null;
   }, [receiveData, changeData, path_prefix]);
 
   const defaultAddressName = useMemo(() => {
@@ -131,7 +131,7 @@ const AddressDetailsScreen = () => {
 
   const stopEditing = async (txid: string, vout: number) => {
     if (!editingUtxoKey) return;
-    
+
     if (editingLabel.trim().length === 0) {
       setEditingUtxoKey(null);
       return;
@@ -187,7 +187,7 @@ const AddressDetailsScreen = () => {
   }
 
   return (
-    <ScrollView 
+    <ScrollView
       ref={scrollRef}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={true}
@@ -211,13 +211,21 @@ const AddressDetailsScreen = () => {
               <Text style={styles.copiedText}>Copied!</Text>
             </View>
           )}
-          <QRCode 
-            value={address} 
-            size={QR_SIZE} 
+          <QRCode
+            value={address}
+            size={QR_SIZE}
             backgroundColor={theme.colors.background}
             color={theme.colors.primary}
           />
         </TouchableOpacity>
+
+        <AddressText
+          style={styles.addressText}
+          selectable
+          address={address}
+          groupSize={6}
+          padLastLine
+        />
 
         {isEditingAddressLabel ? (
           <View style={styles.addressLabelPill}>
@@ -241,14 +249,6 @@ const AddressDetailsScreen = () => {
           </TouchableOpacity>
         )}
 
-        <AddressText
-          style={styles.addressText}
-          selectable
-          address={address}
-          groupSize={6}
-          padLastLine
-        />
-
         <View style={styles.actionsContainer}>
           <TouchableOpacity style={styles.actionButton} onPress={copy_to_clipboard}>
             <Feather name="copy" size={24} color={theme.colors.primary} />
@@ -268,16 +268,16 @@ const AddressDetailsScreen = () => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Spendable coins (UTXOs)</Text>
+        <Text style={styles.sectionTitle}>Spendable coins</Text>
         {utxos.length === 0 ? (
-          <Text style={styles.emptyText}>No spendable coins (utxos) found.</Text>
+          <Text style={styles.emptyText}>No UTXOs found</Text>
         ) : (
           <>
             {utxos.map((item) => {
               const key = `${item.txid}:${item.vout}`;
               const label = getUtxoLabel(item.txid, item.vout) || 'UTXO';
               const isEditing = editingUtxoKey === key;
-              
+
               return (
                 <View key={key} style={styles.utxoRow}>
                   <View style={styles.itemDetails}>
@@ -299,7 +299,7 @@ const AddressDetailsScreen = () => {
                         placeholderTextColor={theme.colors.muted}
                       />
                     ) : (
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.utxoNameTouchable}
                         onPress={() => startEditing(item, label)}
                         activeOpacity={0.7}
@@ -334,7 +334,7 @@ const AddressDetailsScreen = () => {
             {transactions.map((item) => {
               const isSend = item.type === 'send';
               let otherAddress = 'Multiple';
-              
+
               if (isSend) {
                 const externalOutputs = item.vout.filter(o => o.scriptpubkey_address !== address);
                 if (externalOutputs.length === 1) otherAddress = externalOutputs[0].scriptpubkey_address;
@@ -348,16 +348,16 @@ const AddressDetailsScreen = () => {
                 : 'Pending confirmation';
 
               return (
-                <TouchableOpacity 
-                  key={item.txid} 
-                  style={styles.txRow} 
+                <TouchableOpacity
+                  key={item.txid}
+                  style={styles.txRow}
                   onPress={() => navigation.navigate('TransactionDetails', { transaction: item })}
                 >
-                  <Feather 
-                    name={isSend ? "arrow-up" : "arrow-down"} 
-                    size={24} 
-                    color={theme.colors.primary} 
-                    style={styles.txIcon} 
+                  <Feather
+                    name={isSend ? "arrow-up" : "arrow-down"}
+                    size={24}
+                    color={theme.colors.primary}
+                    style={styles.txIcon}
                   />
                   <View style={styles.txDetails}>
                     <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
@@ -405,17 +405,16 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     width: '100%',
     borderBottomWidth: 1,
     borderColor: theme.colors.border,
-    backgroundColor: theme.colors.background, 
+    backgroundColor: theme.colors.background,
   },
   derivationPathDisplay: {
-    fontFamily: 'monospace',
     fontSize: 14,
     color: theme.colors.muted,
     marginBottom: 8
   },
   qrWrapper: {
     padding: 16,
-    backgroundColor: theme.colors.background, 
+    backgroundColor: theme.colors.background,
     borderRadius: 8,
     marginBottom: 0,
     shadowColor: theme.colors.primary,
@@ -433,8 +432,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 6,
     borderRadius: 16,
-    marginTop: 16,
-    marginBottom: 10,
+    marginTop: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
     gap: 8,
@@ -461,6 +459,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     textAlign: 'center',
     color: theme.colors.primary,
     lineHeight: 24,
+    marginTop: 8,
     paddingHorizontal: 72,
   },
   balanceText: {
