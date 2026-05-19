@@ -7,7 +7,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types'; 
+import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE, IS_TESTNET } from '../constants/network';
@@ -28,9 +28,9 @@ const ReceiveScreen = () => {
   const route = useRoute<ReceiveScreenRouteProp>();
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
-  const { 
-    activeWallet, 
-    loading: wallet_loading, 
+  const {
+    activeWallet,
+    loading: wallet_loading,
     getOrCreateNextUnusedReceiveAddress,
     getLightningInvoice,
     isLightningInitialized,
@@ -39,7 +39,7 @@ const ReceiveScreen = () => {
   } = useWallet();
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
-  
+
   const mode = route.params?.mode || 'onchain';
 
   const [copied, set_copied] = useState(false);
@@ -92,10 +92,10 @@ const ReceiveScreen = () => {
     setAppliedAmountSats(0);
     setModalAmountStr('');
     if (mode === 'lightning' && defaultLightningInvoice) {
-        setLightningInvoice(defaultLightningInvoice);
-        setIsGeneratingLightning(false);
+      setLightningInvoice(defaultLightningInvoice);
+      setIsGeneratingLightning(false);
     } else {
-        setLightningInvoice('');
+      setLightningInvoice('');
     }
   }, [mode, defaultLightningInvoice]);
 
@@ -109,8 +109,8 @@ const ReceiveScreen = () => {
         getLightningInvoice(appliedAmountSats)
           .then(setLightningInvoice)
           .catch(err => {
-              console.error("Failed to fetch initial BOLT11 invoice", err);
-              setLightningInvoice('lnbc1...'); 
+            console.error("Failed to fetch initial BOLT11 invoice", err);
+            setLightningInvoice('lnbc1...');
           })
           .finally(() => setIsGeneratingLightning(false));
       }
@@ -195,15 +195,15 @@ const ReceiveScreen = () => {
   const handleSaveAmount = async () => {
     const cleanAmount = modalAmountStr.replace(',', '.');
     const amountNum = parseFloat(cleanAmount);
-    
+
     if (!modalAmountStr || isNaN(amountNum) || amountNum <= 0) {
-        setAppliedAmountSats(0);
-        setIsAmountModalVisible(false);
-        if (mode === 'lightning' && isLightningInitialized) {
-            setLightningInvoice(defaultLightningInvoice);
-            setIsGeneratingLightning(false);
-        }
-        return;
+      setAppliedAmountSats(0);
+      setIsAmountModalVisible(false);
+      if (mode === 'lightning' && isLightningInitialized) {
+        setLightningInvoice(defaultLightningInvoice);
+        setIsGeneratingLightning(false);
+      }
+      return;
     }
 
     const sats = parseInt(cleanAmount, 10);
@@ -211,15 +211,15 @@ const ReceiveScreen = () => {
     setIsAmountModalVisible(false);
 
     if (mode === 'lightning' && isLightningInitialized) {
-        setIsGeneratingLightning(true);
-        try {
-            const invoice = await getLightningInvoice(sats);
-            setLightningInvoice(invoice);
-        } catch (e) {
-            Alert.alert("Error", "Failed to generate lightning invoice with this amount.");
-        } finally {
-            setIsGeneratingLightning(false);
-        }
+      setIsGeneratingLightning(true);
+      try {
+        const invoice = await getLightningInvoice(sats);
+        setLightningInvoice(invoice);
+      } catch (e) {
+        Alert.alert("Error", "Failed to generate lightning invoice with this amount.");
+      } finally {
+        setIsGeneratingLightning(false);
+      }
     }
   };
 
@@ -261,7 +261,7 @@ const ReceiveScreen = () => {
   const used_addresses = useMemo(() => {
     if (!activeWallet) return [];
     const change_address_set = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
-    
+
     const derivedMap = new Map();
     activeWallet.derivedReceiveAddresses.forEach(a => derivedMap.set(a.address, a));
 
@@ -317,44 +317,44 @@ const ReceiveScreen = () => {
   }
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
       <Modal visible={isAmountModalVisible} transparent animationType="fade">
-          <Pressable style={styles.modalOverlay} onPress={() => setIsAmountModalVisible(false)}>
-              <KeyboardAvoidingView 
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
-                style={styles.keyboardAvoidingView}
-              >
-                  <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-                      <View style={styles.modalHeader}>
-                          <Text style={styles.modalTitle}>Set request amount</Text>
-                          <TouchableOpacity 
-                            onPress={() => setIsAmountModalVisible(false)} 
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          >
-                              <Feather name="x" size={24} color={theme.colors.primary} />
-                          </TouchableOpacity>
-                      </View>
-                      
-                      <StyledInput
-                          placeholder="0"
-                          value={modalAmountStr}
-                          onChangeText={setModalAmountStr}
-                          keyboardType="numeric"
-                          autoFocus
-                          rightElement={
-                              <Text style={styles.currencyLabel}>sats</Text>
-                          }
-                      />
+        <Pressable style={styles.modalOverlay} onPress={() => setIsAmountModalVisible(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.keyboardAvoidingView}
+          >
+            <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Set request amount</Text>
+                <TouchableOpacity
+                  onPress={() => setIsAmountModalVisible(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Feather name="x" size={24} color={theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
 
-                      <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleSaveAmount}>
-                          <Text style={styles.modalButtonTextPrimary}>Save amount</Text>
-                      </TouchableOpacity>
-                  </Pressable>
-              </KeyboardAvoidingView>
-          </Pressable>
+              <StyledInput
+                placeholder="0"
+                value={modalAmountStr}
+                onChangeText={setModalAmountStr}
+                keyboardType="numeric"
+                autoFocus
+                rightElement={
+                  <Text style={styles.currencyLabel}>sats</Text>
+                }
+              />
+
+              <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleSaveAmount}>
+                <Text style={styles.modalButtonTextPrimary}>Save amount</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
       </Modal>
 
       <ScrollView
@@ -368,9 +368,9 @@ const ReceiveScreen = () => {
             <View style={styles.qrContainer}>
               <Text style={styles.derivationPathDisplay}>{current_display_data.path}</Text>
 
-              <Pressable 
-                style={({pressed}) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]} 
-                onPress={() => copy_to_clipboard(current_display_data.address)} 
+              <Pressable
+                style={({ pressed }) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]}
+                onPress={() => copy_to_clipboard(current_display_data.address)}
               >
                 {copied && (
                   <View style={styles.copiedOverlay} pointerEvents="none">
@@ -380,6 +380,21 @@ const ReceiveScreen = () => {
                 )}
                 {current_display_data.address ? memoizedOnchainQR : null}
               </Pressable>
+
+              {IS_TESTNET && (
+                <View style={styles.warningBanner}>
+                  <Feather name="alert-triangle" size={14} color={theme.colors.muted} />
+                  <Text style={styles.warningText}>Send only testnet coins.</Text>
+                </View>
+              )}
+
+              <AddressText
+                style={styles.addressText}
+                selectable
+                address={current_display_data.address}
+                groupSize={6}
+                padLastLine
+              />
 
               {isEditingLabel ? (
                 <View style={styles.addressLabelPill}>
@@ -402,21 +417,7 @@ const ReceiveScreen = () => {
                   <Feather name="edit" size={14} color={theme.colors.primary} />
                 </TouchableOpacity>
               )}
-              
-              <AddressText
-                style={styles.addressText}
-                selectable
-                address={current_display_data.address}
-                groupSize={6}
-                padLastLine
-              />
 
-              {IS_TESTNET && (
-                <View style={styles.warningBanner}>
-                  <Feather name="alert-triangle" size={14} color={theme.colors.muted} />
-                  <Text style={styles.warningText}>Send only testnet coins.</Text>
-                </View>
-              )}
             </View>
 
             <View style={styles.actionsContainer}>
@@ -468,7 +469,7 @@ const ReceiveScreen = () => {
                         )}
                       </Text>
                       <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
-                        <Feather name="external-link" size={20} color={theme.colors.primary} />
+                        <Feather name="external-link" size={18} color={theme.colors.primary} />
                       </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
@@ -478,7 +479,7 @@ const ReceiveScreen = () => {
           </>
         ) : (
           <View style={styles.lnContainer}>
-             {/* Lightning content */}
+            {/* Lightning content */}
           </View>
         )}
       </ScrollView>
@@ -500,7 +501,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   qrContainer: {
     alignItems: 'center',
-    paddingTop: 24,
+    paddingTop: 16,
     width: '100%',
     borderBottomWidth: 0,
     borderColor: theme.colors.border,
@@ -516,7 +517,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     elevation: 3,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: 0, 
+    marginBottom: 0,
   },
   addressLabelPill: {
     flexDirection: 'row',
@@ -525,8 +526,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 6,
     borderRadius: 16,
-    marginTop: 16,
-    marginBottom: 10,
+    marginTop: 10,
     borderWidth: 1,
     borderColor: theme.colors.border,
     gap: 8,
@@ -571,6 +571,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     textAlign: 'center',
     color: theme.colors.primary,
     lineHeight: 24,
+    marginTop: 8,
     paddingHorizontal: 72,
   },
   derivationPathDisplay: {
@@ -681,7 +682,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     marginHorizontal: 20,
-    marginTop: 12,
+    marginTop: 16,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -736,7 +737,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     fontWeight: 'bold',
     color: theme.colors.primary,
   },
-    modalButtonPrimary: {
+  modalButtonPrimary: {
     backgroundColor: theme.colors.primary,
     paddingVertical: 14,
     borderRadius: 8,
@@ -752,7 +753,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     fontSize: 16,
     color: theme.colors.primary,
     fontFamily: 'SpaceMono-Bold',
-    marginRight: 16, 
+    marginRight: 16,
   }
 });
 
