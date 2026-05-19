@@ -21,7 +21,7 @@ describe('Database Service', () => {
     // Reset module registry to clear the singleton `db` instance in database.ts
     jest.resetModules();
     jest.clearAllMocks();
-    
+
     // Re-import the module fresh for every test
     dbService = require('../../services/database');
   });
@@ -37,11 +37,11 @@ describe('Database Service', () => {
       expect(mockOpenDatabaseAsync).toHaveBeenCalledWith('trustless_wallet.db');
       expect(mockExecAsync).toHaveBeenCalledWith('PRAGMA foreign_keys = ON;');
       expect(mockExecAsync).toHaveBeenCalledWith('PRAGMA journal_mode = WAL;');
-      
+
       // Should create tables
       expect(mockExecAsync).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS wallets'));
       expect(mockExecAsync).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS transactions'));
-      
+
       expect(() => dbService.getDB()).not.toThrow();
     });
   });
@@ -113,7 +113,7 @@ describe('Database Service', () => {
       await dbService.dbSaveAddress('w1', { address: 'bc1q...', index: 3 }, 0, 'mainnet');
       expect(mockRunAsync).toHaveBeenCalledWith(
         expect.stringContaining('INSERT OR IGNORE INTO addresses'),
-        ['bc1q...', 'w1', 0, 3, 'mainnet']
+        ['bc1q...', 'w1', 0, 3, 'mainnet', null]
       );
     });
 
@@ -132,7 +132,7 @@ describe('Database Service', () => {
     it('dbGetDerivedAddresses fetches and orders addresses', async () => {
       mockGetAllAsync.mockResolvedValueOnce([{ address: 'addr1', idx: 0 }, { address: 'addr2', idx: 1 }]);
       const addresses = await dbService.dbGetDerivedAddresses('w1', 1);
-      
+
       expect(mockGetAllAsync).toHaveBeenCalledWith(
         expect.stringContaining('ORDER BY idx ASC'),
         ['w1', 1]
@@ -192,7 +192,7 @@ describe('Database Service', () => {
 
       // Verify deletion of old state
       expect(mockRunAsync).toHaveBeenCalledWith('DELETE FROM utxos WHERE wallet_id = ?', ['w1']);
-      
+
       // Verify insertions
       expect(mockRunAsync).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO utxos'),
@@ -217,7 +217,7 @@ describe('Database Service', () => {
     it('dbGetTransactions parses JSON content', async () => {
       const mockTx = { txid: 'tx1', fee: 100 };
       mockGetAllAsync.mockResolvedValueOnce([{ json_content: JSON.stringify(mockTx) }]);
-      
+
       const txs = await dbService.dbGetTransactions('w1');
       expect(txs).toEqual([mockTx]);
       expect(mockGetAllAsync).toHaveBeenCalledWith(
@@ -237,7 +237,7 @@ describe('Database Service', () => {
       await dbService.dbSaveTransactions('w1', txs, 'mainnet');
 
       expect(mockRunAsync).toHaveBeenCalledTimes(2);
-      
+
       // Confirmed uses exact block_time
       expect(mockRunAsync).toHaveBeenNthCalledWith(1,
         expect.stringContaining('INSERT OR REPLACE INTO transactions'),
@@ -256,7 +256,7 @@ describe('Database Service', () => {
 
   describe('Address Book & Watchlist Operations', () => {
     const mockDate = new Date('2024-01-01T00:00:00.000Z');
-    
+
     beforeEach(async () => {
       await dbService.initDatabase();
     });
@@ -280,7 +280,7 @@ describe('Database Service', () => {
     it('dbUpdateSavedAddress updates fields', async () => {
       const item: BitcoinAddress = { id: '1', address: 'addr1', name: 'Bob', balance: 200, lastUpdated: mockDate };
       await dbService.dbUpdateSavedAddress('saved_addresses', item);
-      
+
       expect(mockRunAsync).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE saved_addresses SET name = ?, balance = ?, lastUpdated = ? WHERE id = ?'),
         ['Bob', 200, mockDate.getTime(), '1']
