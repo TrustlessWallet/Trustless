@@ -479,7 +479,71 @@ const ReceiveScreen = () => {
           </>
         ) : (
           <View style={styles.lnContainer}>
-            {/* Lightning content */}
+            <View style={styles.lnContainer}>
+              {!isLightningInitialized ? (
+                <View style={styles.lnError}>
+                  <Feather name="alert-circle" size={48} color={theme.colors.error} style={{ marginBottom: 16 }} />
+                  <Text style={styles.lnErrorText}>Lightning node is not initialized.</Text>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.qrContainer}>
+                    <Text style={styles.derivationPathDisplay}>BOLT11 invoice</Text>
+
+                    <Pressable
+                      style={({ pressed }) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]}
+                      onPress={() => !isGeneratingLightning && copy_to_clipboard(currentLnString)}
+                      disabled={isGeneratingLightning}
+                    >
+                      {copied && (
+                        <View style={styles.copiedOverlay} pointerEvents="none">
+                          <Feather name="copy" size={32} color={theme.colors.primary} />
+                          <Text style={styles.copiedText}>Copied!</Text>
+                        </View>
+                      )}
+                      {isGeneratingLightning ? (
+                        <View style={{ height: QR_SIZE, width: QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
+                          <ActivityIndicator size="large" color={theme.colors.primary} />
+                          <Text style={{ color: theme.colors.muted, marginTop: 12 }}>Generating...</Text>
+                        </View>
+                      ) : currentLnString ? memoizedLightningQR : null}
+                    </Pressable>
+
+                    {appliedAmountSats > 0 && !isGeneratingLightning && (
+                      <Text style={styles.amountValue}>
+                        {appliedAmountSats.toLocaleString()}
+                        <Text style={styles.amountUnit}> sats</Text>
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.actionsContainer}>
+                    <TouchableOpacity
+                      style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]}
+                      onPress={() => copy_to_clipboard(currentLnString)}
+                      disabled={isGeneratingLightning}
+                    >
+                      <Feather name="copy" size={24} color={theme.colors.primary} />
+                      <Text style={styles.actionButtonText}>Copy</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.actionButton} onPress={handleOpenAmountModal}>
+                      <Feather name="edit" size={24} color={theme.colors.primary} />
+                      <Text style={styles.actionButtonText}>Set amount</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]}
+                      onPress={() => on_share(currentLnString)}
+                      disabled={isGeneratingLightning}
+                    >
+                      <Feather name="share-2" size={24} color={theme.colors.primary} />
+                      <Text style={styles.actionButtonText}>Share</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
           </View>
         )}
       </ScrollView>
@@ -552,6 +616,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.primary,
   },
   amountValue: {
+    marginTop: 8,
     fontSize: 20,
     color: theme.colors.primary,
     textAlign: 'center',
