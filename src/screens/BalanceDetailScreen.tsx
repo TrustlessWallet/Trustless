@@ -6,7 +6,6 @@ import {
   Linking, 
   Alert, 
   TextInput, 
-  KeyboardAvoidingView,
   Platform,
   FlatList,
   Keyboard
@@ -22,6 +21,7 @@ import { Theme } from '../constants/theme';
 import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BalanceDetail'>;
@@ -43,6 +43,11 @@ const BalanceDetailScreen = () => {
   const [editingLabel, setEditingLabel] = useState('');
   
   const flatListRef = useRef<FlatList>(null);
+
+  const { paddingBottom } = useKeyboardScroll({
+    basePaddingBottom: 40,
+    animateLayoutChanges: Platform.OS === 'ios',
+  });
 
   const sortedUtxos = useMemo(() => 
     [...utxos].sort((a, b) => b.value - a.value), 
@@ -76,7 +81,6 @@ const BalanceDetailScreen = () => {
       );
       
       if (index !== -1) {
-
         const timer = setTimeout(() => {
           flatListRef.current?.scrollToIndex({
             index,
@@ -194,36 +198,30 @@ const BalanceDetailScreen = () => {
 
   return (
     <View style={styles.container}>
-      <KeyboardAvoidingView 
-        style={styles.keyboardAvoid} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0} 
-      >
-        <FlatList
-          ref={flatListRef}
-          data={sortedUtxos}
-          renderItem={renderItem}
-          bounces={false}
-          keyExtractor={(item) => `${item.txid}:${item.vout}`}
-          style={styles.flatList}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={true}
-          indicatorStyle={isDark ? 'white' : 'black'}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          onScrollToIndexFailed={(info) => {
-            flatListRef.current?.scrollToOffset({
-              offset: info.averageItemLength * info.index,
-              animated: true
-            });
-          }}
-          ListEmptyComponent={
-            <View style={styles.centered}>
-              <Text style={styles.emptyText}>No spendable coins (UTXOs) found.</Text>
-            </View>
-          }
-        />
-      </KeyboardAvoidingView>
+      <FlatList
+        ref={flatListRef}
+        data={sortedUtxos}
+        renderItem={renderItem}
+        bounces={false}
+        keyExtractor={(item) => `${item.txid}:${item.vout}`}
+        style={styles.flatList}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom }]}
+        showsVerticalScrollIndicator={true}
+        indicatorStyle={isDark ? 'white' : 'black'}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        onScrollToIndexFailed={(info) => {
+          flatListRef.current?.scrollToOffset({
+            offset: info.averageItemLength * info.index,
+            animated: true
+          });
+        }}
+        ListEmptyComponent={
+          <View style={styles.centered}>
+            <Text style={styles.emptyText}>No spendable coins (UTXOs) found.</Text>
+          </View>
+        }
+      />
     </View>
   );
 };
@@ -233,9 +231,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flex: 1, 
     backgroundColor: theme.colors.background,
   },
-  keyboardAvoid: {
-    flex: 1,
-  },
   flatList: {
     flex: 1,
   },
@@ -243,7 +238,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 40,
   },
   centered: { 
     flex: 1, 
