@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput, Keyboard } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
@@ -487,6 +487,8 @@ const SendScreen = () => {
     };
 
     const handleOpenCoinControl = () => {
+        Keyboard.dismiss();
+        setTimeout(() => { 
         const cleanAmount = amount.replace(',', '.');
         const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
         navigation.navigate('CoinControl', {
@@ -495,6 +497,7 @@ const SendScreen = () => {
                 setSelectedUtxos(utxos);
             }
         });
+        }, 200);
     };
 
     const handleScanPress = () => {
