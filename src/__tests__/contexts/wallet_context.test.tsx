@@ -16,7 +16,9 @@ import {
     dbGetDerivedAddresses as db_get_derived_addresses,
     dbGetSavedAddresses as db_get_saved_addresses,
     dbUpdateChangeIndex as db_update_change_index,
-    dbSyncUtxos as db_sync_utxos
+    dbSyncUtxos as db_sync_utxos,
+    dbSaveAddress as db_save_address,
+    dbGetAddressCache as db_get_address_cache,
 } from '../../services/database';
 
 import * as keychain from 'react-native-keychain';
@@ -472,6 +474,50 @@ describe('wallet_context_comprehensive_tests', () => {
         expect(db_delete_wallet).toHaveBeenCalledWith('wallet_1');
         expect(result.current.wallets.length).toBe(0);
         expect(result.current.activeWallet).toBeNull();
+        unmount();
+    });
+
+    it('recovers_gap_limit_by_deriving_addresses_beyond_last_used_index', async () => {
+        // Simulate a wallet where address index 19 has a transaction, but 0-18 are unused.
+        const mock_wallet = {
+            id: 'wallet_gap_test',
+            name: 'Gap Limit Wallet',
+            type: 'standard',
+            derivedReceiveAddresses: Array.from({ length: 20 }).map((_, i) => ({ address: `bc1q_rx_${i}`, index: i })),
+            derivedChangeAddresses: [],
+            derivedAddressInfoCache: Array.from({ length: 20 }).map((_, i) => ({
+                address: `bc1q_rx_${i}`,
+                index: i,
+                balance: i === 19 ? 1000 : 0,
+                tx_count: i === 19 ? 1 : 0
+            })),
+            utxoLabels: {}
+        };
+
+        (db_get_wallets as jest.Mock).mockResolvedValue([mock_wallet]);
+        (db_get_address_cache as jest.Mock).mockResolvedValue(mock_wallet.derivedAddressInfoCache);
+        (db_get_derived_addresses as jest.Mock).mockImplementation((_id, chain) => {
+            if (chain === 0) return Promise.resolve(mock_wallet.derivedReceiveAddresses);
+            return Promise.resolve([]);
+        });
+
+        const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
+        
+        await waitFor(() => expect(result.current.loading).toBe(false));
+
+        await act(async () => {
+            await result.current.switchWallet('wallet_gap_test');
+        });
+
+        // The gap limit is 20. Because index 19 is used, the consecutive unused count resets to 0.
+        // The derivation loop must fire for indices 20 through 39 to restore the 20-address gap.
+        expect(db_save_address).toHaveBeenCalledWith(
+            'wallet_gap_test',
+            expect.objectContaining({ index: 39 }),
+            0,
+            expect.any(String)
+        );
+
         unmount();
     });
 });
