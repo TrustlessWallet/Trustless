@@ -20,7 +20,9 @@ import {
     encodePSBTtoUR as encode_psbt_to_ur,
     finalizeAndBroadcastPSBT as finalize_and_broadcast_psbt
 } from '../../services/bitcoin';
-import { networks, Psbt } from 'bitcoinjs-lib';
+import { networks, Psbt, payments } from 'bitcoinjs-lib';
+import { Transaction as BitcoinTransaction } from 'bitcoinjs-lib';
+import * as electrum from '../../services/electrum';
 
 const mock_electrum_client = {
     request: jest.fn()
@@ -29,8 +31,8 @@ const mock_electrum_client = {
 jest.mock('../../services/electrum', () => ({
     getElectrumClient: jest.fn(() => Promise.resolve(mock_electrum_client)),
     addressToScriptHash: jest.fn(() => 'mock_script_hash'),
-    electrumBatchGetBalance: jest.fn(() => Promise.resolve([{ result: { confirmed: 1000, unconfirmed: 0 } }])),
-    electrumBatchGetHistory: jest.fn(() => Promise.resolve([{ result: [{ tx_hash: 'mock_tx_hash', height: 100 }] }])),
+    electrumBatchGetBalance: jest.fn(() => Promise.resolve([{ result: { confirmed: 1000, unconfirmed: 0 }, error: null }])),
+    electrumBatchGetHistory: jest.fn(() => Promise.resolve([{ result: [{ tx_hash: 'mock_tx_hash', height: 100 }], error: null }])),
     electrumListUnspent: jest.fn(() => Promise.resolve([{ tx_hash: 'mock_tx_hash', tx_pos: 0, value: 1000, height: 100 }])),
     electrumBatchGetTransactions: jest.fn(() => Promise.resolve([])),
     electrumBroadcast: jest.fn(() => Promise.resolve('mock_tx_id')),
@@ -191,7 +193,7 @@ describe('bitcoin_service_functions', () => {
         expect(() => build_psbt({ type: 'standard' }, 'address', '0.0001', 'BTC', 100, [])).toThrow("Invalid wallet type");
     });
 
-it('build_psbt_generates_valid_base64_string_with_change', () => {
+    it('build_psbt_generates_valid_base64_string_with_change', () => {
         const mock_wallet = {
             type: 'watch-only',
             fingerprint: 'deadbeef',
@@ -202,16 +204,15 @@ it('build_psbt_generates_valid_base64_string_with_change', () => {
             derivedChangeAddresses: [{ address: 'fake_change', index: 0 }],
             derivedAddressInfoCache: [{ address: 'fake_change', index: 0, tx_count: 0 }]
         };
-        const utxos = [{ 
-            txid: '0000000000000000000000000000000000000000000000000000000000000000', 
-            vout: 0, 
-            value: 100000, 
-            address: 'fake_address' 
+        const utxos = [{
+            txid: '0000000000000000000000000000000000000000000000000000000000000000',
+            vout: 0,
+            value: 100000,
+            address: 'fake_address'
         }];
-        
-        // Use a mathematically valid Bech32 address
+
         const psbt_base64 = build_psbt(mock_wallet, 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', '50000', 'sats', 1000, utxos);
-        
+
         expect(typeof psbt_base64).toBe('string');
         expect(psbt_base64.length).toBeGreaterThan(0);
     });
@@ -219,7 +220,7 @@ it('build_psbt_generates_valid_base64_string_with_change', () => {
     it('encode_psbt_to_ur_returns_array_of_ur_parts', () => {
         const mock_base64 = Buffer.from('mock_psbt_data').toString('base64');
         const ur_parts = encode_psbt_to_ur(mock_base64);
-        
+
         expect(Array.isArray(ur_parts)).toBe(true);
         expect(ur_parts[0].startsWith('ur:crypto-psbt')).toBe(true);
     });
@@ -236,11 +237,157 @@ it('build_psbt_generates_valid_base64_string_with_change', () => {
         } as any);
 
         const tx_id = await finalize_and_broadcast_psbt('unsigned_base64', 'signed_base64');
-        
+
         expect(combine_mock).toHaveBeenCalled();
         expect(finalize_mock).toHaveBeenCalled();
         expect(tx_id).toBe('mock_tx_id');
-        
+
         jest.restoreAllMocks();
+    });
+
+    it('classifies_self_transfer_correctly', async () => {
+        const parentTx = new BitcoinTransaction();
+        parentTx.addInput(Buffer.alloc(32, 2), 0); // Dummy input ensures successful fromHex parsing
+        parentTx.addOutput(Buffer.alloc(22, 1), 1500); // Forces fallback to 'unknown_script'
+        const parentHex = parentTx.toHex();
+        const parentId = parentTx.getId();
+
+        const childTx = new BitcoinTransaction();
+        childTx.addInput(Buffer.from(parentId, 'hex').reverse(), 0);
+        childTx.addOutput(Buffer.alloc(22, 1), 1000);
+        const childHex = childTx.toHex();
+        const childId = childTx.getId();
+
+        jest.spyOn(electrum, 'electrumBatchGetHistory').mockResolvedValueOnce([
+            { result: [{ tx_hash: childId, height: 100 }], error: null }
+        ]);
+
+        jest.spyOn(electrum, 'electrumBatchGetTransactions').mockImplementation(async (batch: any) => {
+            return batch.map((id: string) => {
+                if (id === childId) return { result: childHex, error: null };
+                if (id === parentId) return { result: parentHex, error: null };
+                return { result: null, error: 'Not found' };
+            });
+        });
+
+        const transactions = await fetch_address_transactions(['unknown_script']);
+
+        expect(transactions.length).toBe(1);
+        expect(transactions[0].type).toBe('send');
+        expect(transactions[0].amount).toBe(500);
+        expect(transactions[0].fee).toBe(500);
+    });
+
+    it('classifies_consolidation_transaction_correctly', async () => {
+        const parentHexMap = new Map<string, string>();
+        const childTx = new BitcoinTransaction();
+
+        for (let i = 0; i < 10; i++) {
+            const pTx = new BitcoinTransaction();
+            pTx.addInput(Buffer.alloc(32, i + 2), 0);
+            pTx.addOutput(Buffer.alloc(22, 1), 1000);
+            const pId = pTx.getId();
+            parentHexMap.set(pId, pTx.toHex());
+
+            childTx.addInput(Buffer.from(pId, 'hex').reverse(), 0);
+        }
+
+        childTx.addOutput(Buffer.alloc(22, 1), 9000);
+        const childHex = childTx.toHex();
+        const childId = childTx.getId();
+
+        jest.spyOn(electrum, 'electrumBatchGetHistory').mockResolvedValueOnce([
+            { result: [{ tx_hash: childId, height: 100 }], error: null }
+        ]);
+
+        jest.spyOn(electrum, 'electrumBatchGetTransactions').mockImplementation(async (batch: any) => {
+            return batch.map((id: string) => {
+                if (id === childId) return { result: childHex, error: null };
+                if (parentHexMap.has(id)) return { result: parentHexMap.get(id), error: null };
+                return { result: null, error: 'Not found' };
+            });
+        });
+
+        const transactions = await fetch_address_transactions(['unknown_script']);
+
+        expect(transactions.length).toBe(1);
+        expect(transactions[0].type).toBe('send');
+        expect(transactions[0].amount).toBe(1000);
+        expect(transactions[0].fee).toBe(1000);
+        expect(transactions[0].vin.length).toBe(10);
+    });
+
+    it('handles_input_hydration_failures_gracefully', async () => {
+        const childTx = new BitcoinTransaction();
+        childTx.addInput(Buffer.alloc(32, 1), 0);
+        const childHex = childTx.toHex();
+
+        jest.spyOn(electrum, 'electrumBatchGetHistory').mockResolvedValueOnce([
+            { result: [{ tx_hash: childTx.getId(), height: 100 }], error: null }
+        ]);
+
+        jest.spyOn(electrum, 'electrumBatchGetTransactions')
+            .mockResolvedValueOnce([{ result: childHex, error: null }])
+            .mockRejectedValueOnce(new Error('Parent fetch failed'));
+
+        const transactions = await fetch_address_transactions(['mock_addr']);
+
+        expect(transactions.length).toBe(1);
+        expect(transactions[0].vin[0].prevout.scriptpubkey_address).toBe('Unknown');
+        expect(transactions[0].vin[0].prevout.value).toBe(0);
+    });
+
+    it('fee_estimation_fallback_to_electrum', async () => {
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+        (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
+        const electrumEstimateFeeMock = jest.spyOn(electrum, 'electrumEstimateFee').mockResolvedValue(0.0001);
+
+        const fees = await fetch_fee_estimates();
+
+        expect(fees.fast).toBe(10);
+        expect(electrumEstimateFeeMock).toHaveBeenCalled();
+
+        warnSpy.mockRestore();
+    });
+
+    it('fee_estimation_fallback_to_defaults', async () => {
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+        (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
+        jest.spyOn(electrum, 'electrumEstimateFee').mockRejectedValue(new Error('Electrum error'));
+
+        const fees = await fetch_fee_estimates();
+
+        expect(fees.fast).toBeDefined();
+        expect(fees.normal).toBeDefined();
+        expect(fees.slow).toBeDefined();
+        expect([25, 2]).toContain(fees.fast);
+        expect([12, 1]).toContain(fees.normal);
+
+        warnSpy.mockRestore();
+    });
+
+    it('build_psbt_handles_non_standard_derivation_paths', () => {
+        const mock_wallet = {
+            type: 'watch-only',
+            fingerprint: 'deadbeef',
+            xpub: 'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8',
+            derivation_path: "m/84/0/1'",
+            changeAddressIndex: 0,
+            derivedReceiveAddresses: [{ address: 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', index: 0 }],
+            derivedChangeAddresses: [],
+            derivedAddressInfoCache: []
+        };
+        const utxos = [{
+            txid: '0000000000000000000000000000000000000000000000000000000000000000',
+            vout: 0,
+            value: 100000,
+            address: 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu'
+        }];
+
+        const psbt_base64 = build_psbt(mock_wallet as any, 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', '50000', 'sats', 1000, utxos);
+        const psbt = Psbt.fromBase64(psbt_base64);
+
+        expect(typeof psbt_base64).toBe('string');
+        expect(psbt.data.inputs[0].bip32Derivation![0].path).toBe("m/84/0/1'/0/0");
     });
 });
