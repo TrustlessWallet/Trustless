@@ -1,6 +1,5 @@
 import { UTXO, Transaction, BitcoinAddress } from '../../types';
 
-// 1. Mock expo-sqlite using persistent top-level variables
 const mockExecAsync = jest.fn();
 const mockGetAllAsync = jest.fn();
 const mockRunAsync = jest.fn();
@@ -285,6 +284,85 @@ describe('Database Service', () => {
         expect.stringContaining('UPDATE saved_addresses SET name = ?, balance = ?, lastUpdated = ? WHERE id = ?'),
         ['Bob', 200, mockDate.getTime(), '1']
       );
+    });
+  });
+
+  describe('Advanced Scenarios', () => {
+    beforeEach(async () => {
+      await dbService.initDatabase();
+    });
+
+    it('cascade_deletion_integrity_clears_related_tables', async () => {
+      // Provide a default empty array to prevent undefined errors in sub-queries like dbGetUtxoLabels
+      mockGetAllAsync.mockResolvedValue([]);
+
+      // Setup mock state
+      await dbService.dbCreateWallet('w1', 'Wallet', 'mainnet');
+      await dbService.dbSaveAddress('w1', { address: 'addr1', index: 0 }, 0, 'mainnet');
+      await dbService.dbSyncUtxos('w1', 'mainnet', [{ txid: 'tx1', vout: 0, address: 'addr1', value: 100, status: { confirmed: true } } as any], 1);
+      await dbService.dbSaveTransactions('w1', [{ txid: 'tx1', status: { block_time: 5000 } } as any], 'mainnet');
+
+      // Execute deletion
+      await dbService.dbDeleteWallet('w1');
+
+      // Verify the DELETE query was dispatched to the wallet table
+      expect(mockRunAsync).toHaveBeenCalledWith('DELETE FROM wallets WHERE id = ?', ['w1']);
+
+      const db = dbService.getDB();
+      const addresses = await (db as any).getAllAsync('SELECT * FROM addresses WHERE wallet_id = ?', ['w1']);
+      const utxos = await (db as any).getAllAsync('SELECT * FROM utxos WHERE wallet_id = ?', ['w1']);
+      const txs = await (db as any).getAllAsync('SELECT * FROM transactions WHERE wallet_id = ?', ['w1']);
+
+      expect(addresses.length).toBe(0);
+      expect(utxos.length).toBe(0);
+      expect(txs.length).toBe(0);
+    });
+
+    it('transaction_sorting_prioritizes_unconfirmed_blocks', async () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      jest.spyOn(Date, 'now').mockReturnValue(nowSeconds * 1000);
+
+      const confirmedTx = { txid: 'tx1', status: { block_time: 5000 } };
+      const unconfirmedTx = { txid: 'tx2', status: { block_time: null } };
+
+      await dbService.dbSaveTransactions('w1', [confirmedTx, unconfirmedTx] as any, 'mainnet');
+
+      // Verify unconfirmed transaction gets the future timestamp offset
+      const expectedFutureTimestamp = nowSeconds + 100000;
+      expect(mockRunAsync).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT OR REPLACE INTO transactions'),
+        ['tx2', 'w1', JSON.stringify(unconfirmedTx), expectedFutureTimestamp, 'mainnet']
+      );
+
+      // Mock database returning them ordered by block_time DESC
+      mockGetAllAsync.mockResolvedValueOnce([
+        { json_content: JSON.stringify(unconfirmedTx) }, // High future timestamp
+        { json_content: JSON.stringify(confirmedTx) }    // 5000
+      ]);
+
+      const txs = await dbService.dbGetTransactions('w1');
+
+      // Verify unconfirmed is strictly at the top
+      expect(txs[0].txid).toBe('tx2');
+      expect(txs[1].txid).toBe('tx1');
+
+      jest.restoreAllMocks();
+    });
+
+    it('address_cache_batch_updates_handles_massive_arrays', async () => {
+      const massiveArray = Array.from({ length: 2000 }, (_, i) => ({
+        address: `bc1q_test_addr_${i}`,
+        balance: 1000,
+        tx_count: 5
+      }));
+
+      const startTime = performance.now();
+      await dbService.dbUpdateAddressInfoBatch(massiveArray);
+      const executionTime = performance.now() - startTime;
+
+      expect(mockRunAsync).toHaveBeenCalledTimes(2000);
+
+      expect(executionTime).toBeLessThan(1000);
     });
   });
 });
