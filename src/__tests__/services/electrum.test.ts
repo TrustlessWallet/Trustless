@@ -275,20 +275,20 @@ describe('Electrum Service', () => {
         });
 
         it('electrumGetHistory sends correct format', async () => {
-            electrumGetHistory('hash123');
+            electrumGetHistory('hash123').catch(() => { });
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.scripthash.get_history'));
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('hash123'));
         });
 
         it('electrumListUnspent sends correct format', async () => {
-            electrumListUnspent('hash123');
+            electrumListUnspent('hash123').catch(() => { });
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.scripthash.listunspent'));
         });
 
         it('electrumGetTransaction sends correct format', async () => {
-            electrumGetTransaction('tx123');
+            electrumGetTransaction('tx123').catch(() => { });
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.transaction.get'));
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('tx123'));
@@ -296,21 +296,21 @@ describe('Electrum Service', () => {
         });
 
         it('electrumBroadcast sends correct format', async () => {
-            electrumBroadcast('rawtx');
+            electrumBroadcast('rawtx').catch(() => { });
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.transaction.broadcast'));
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('rawtx'));
         });
 
         it('electrumEstimateFee sends correct format', async () => {
-            electrumEstimateFee(6);
+            electrumEstimateFee(6).catch(() => { });
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.estimatefee'));
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('6'));
         });
 
         it('electrumGetHeader sends correct format', async () => {
-            electrumGetHeader();
+            electrumGetHeader().catch(() => { });
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.headers.subscribe'));
         });
@@ -347,14 +347,14 @@ describe('Electrum Service', () => {
         });
 
         it('executes electrumBatchGetHistory', async () => {
-            electrumBatchGetHistory(['hash1', 'hash2']);
+            electrumBatchGetHistory(['hash1', 'hash2']).catch(() => { });
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledTimes(2);
             expect(mockSocket.write.mock.calls[0][0]).toContain('blockchain.scripthash.get_history');
         });
 
         it('executes electrumBatchGetTransactions', async () => {
-            electrumBatchGetTransactions(['tx1', 'tx2']);
+            electrumBatchGetTransactions(['tx1', 'tx2']).catch(() => { });
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledTimes(2);
             expect(mockSocket.write.mock.calls[0][0]).toContain('blockchain.transaction.get');
@@ -388,6 +388,88 @@ describe('Electrum Service', () => {
             await flushPromises();
             const result = await resultPromise;
             expect(result).toBe(false);
+        });
+    });
+
+    describe('Advanced Edge Cases', () => {
+        beforeEach(() => {
+            resetActiveConnection();
+            mockTcp.connectTLS.mockClear();
+            mockSocket.write.mockClear();
+        });
+
+        it('attempts all hardcoded peers sequentially and throws if all fail (Peer Exhaustion Routing)', async () => {
+            (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+
+            // Use mockImplementationOnce twice to fail mainnet peers cleanly without breaking other tests
+            mockTcp.connectTLS
+                .mockImplementationOnce(() => {
+                    setTimeout(() => mockSocket.emitError(new Error('Connection refused 1')), 5);
+                    return mockSocket;
+                })
+                .mockImplementationOnce(() => {
+                    setTimeout(() => mockSocket.emitError(new Error('Connection refused 2')), 5);
+                    return mockSocket;
+                });
+
+            const clientPromise = getElectrumClient();
+
+            await flushPromises();
+            jest.advanceTimersByTime(10);
+            await flushPromises();
+            jest.advanceTimersByTime(10);
+            await flushPromises();
+
+            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(2);
+            await expect(clientPromise).rejects.toThrow('All peers failed');
+        });
+
+        it('rejects orphaned requests and removes them if connection closes (Orphaned Request Cleanup)', async () => {
+            (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+
+            // 1. Establish connection
+            const clientPromise = getElectrumClient();
+            await flushPromises();
+            jest.advanceTimersByTime(20);
+            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            const client = await clientPromise;
+
+            // 2. Fire off a request
+            const reqPromise = electrumGetBalance('dummy_hash');
+            await flushPromises();
+
+            expect((client as any).requests.size).toBe(1);
+
+            // 3. Simulate unexpected socket closure
+            mockSocket.emitClose();
+
+            await expect(reqPromise).rejects.toThrow('Connection closed prematurely');
+            expect((client as any).requests.size).toBe(0);
+        });
+
+        it('closes connection and sets isConnected to false if keep-alive ping fails (Keep-Alive Ping Interruption)', async () => {
+            (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+
+            // 1. Establish connection
+            const clientPromise = getElectrumClient();
+            await flushPromises();
+            jest.advanceTimersByTime(20);
+            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            const client = await clientPromise;
+
+            expect(client.isConnected).toBe(true);
+
+            // 2. Mock socket.write to throw an error on the ping
+            mockSocket.write.mockImplementationOnce(() => {
+                throw new Error('System error: socket is half-open');
+            });
+
+            // 3. Fast-forward 60s
+            jest.advanceTimersByTime(60000);
+            await flushPromises();
+
+            expect(client.isConnected).toBe(false);
+            expect(mockSocket.destroy).toHaveBeenCalled();
         });
     });
 });
