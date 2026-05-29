@@ -402,6 +402,14 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                     <View style={styles.summaryBoxWithBorder}>
                         <View style={styles.expandedSummary}>
                             <View style={styles.detailRow}>
+                                <Text style={styles.totalLabel}>Amount</Text>
+                                <View style={styles.valueContainer}>
+                                    <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
+                                        {reviewStatus === 'reviewed' && txMetrics ? amountStr : '--'} sats
+                                    </Text>
+                                </View>
+                            </View>
+                            <View style={styles.detailRow}>
                                 <Text style={styles.totalLabel}>Miner fee</Text>
                                 <View style={styles.valueContainer}>
                                     <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
@@ -418,13 +426,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 </View>
                             </View>
                             <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>Total fees</Text>
-                                <Text style={[styles.totalValue, reviewStatus !== 'reviewed' && styles.valueMuted]}>
-                                    {reviewStatus === 'reviewed' && txMetrics ? txMetrics.totalFeeSats.toLocaleString() : '--'} sats
-                                </Text>
-                            </View>
-                            <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>Total Deduction</Text>
+                                <Text style={styles.totalLabel}>Total</Text>
                                 <Text style={[styles.totalValue, reviewStatus !== 'reviewed' && styles.valueMuted]}>
                                     {reviewStatus === 'reviewed' && txMetrics && amountStr
                                         ? (parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()
