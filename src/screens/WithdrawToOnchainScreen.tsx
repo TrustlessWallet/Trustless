@@ -50,7 +50,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
     const [reviewStatus, setReviewStatus] = useState<'idle' | 'reviewing' | 'reviewed'>('idle');
     const [executing, setExecuting] = useState(false);
-    
+
     const [localValidationErr, setLocalValidationErr] = useState<string | null>(null);
     const [calculationError, setCalculationError] = useState<string | null>(null);
     const [feeEstimates, setFeeEstimates] = useState<{ slow: number; normal: number; fast: number } | null>(null);
@@ -68,7 +68,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
             if (!activeWallet || !isLightningInitialized) return;
 
             try {
-                const sampleAmount = 10000; 
+                const sampleAmount = 10000;
                 const sampleAddress = activeWallet.address;
 
                 const estimates = await Promise.all([
@@ -77,32 +77,17 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                     prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'fast').catch(() => null)
                 ]);
 
-                const extractFee = (estimate: any) => {
-                    if (!estimate || !estimate.prepareResponse) return 0;
-                    const quote = estimate.prepareResponse?.paymentMethod?.inner?.feeQuote;
-                    const tierKey = estimate.feeTier === 'fast' ? 'speedFast' :
-                        estimate.feeTier === 'slow' ? 'speedSlow' : 'speedMedium';
-                    const speedObj = quote?.[tierKey];
-                    return Number(speedObj?.l1BroadcastFeeSat || 0);
-                };
+                // Find the first request that successfully returned data
+                const validEstimate = estimates.find(e => e && e.prepareResponse);
+                if (!validEstimate) return;
 
-                const slowFee = extractFee({ ...estimates[0], feeTier: 'slow' });
-                const normalFee = extractFee({ ...estimates[1], feeTier: 'normal' });
+                const quote = validEstimate.prepareResponse?.paymentMethod?.inner?.feeQuote;
 
-                let fastFee = 0;
-                if (estimates[2]) {
-                    fastFee = extractFee({ ...estimates[2], feeTier: 'fast' });
-                } else if (estimates[0] || estimates[1]) {
-                    const successfulEstimate = estimates[0] || estimates[1];
-                    const quote = successfulEstimate?.prepareResponse?.paymentMethod?.inner?.feeQuote;
-                    const fastSpeedObj = quote?.speedFast;
-                    fastFee = Number(fastSpeedObj?.l1BroadcastFeeSat || 0);
-                }
-
+                // Extract all three tiers from the single successful payload
                 setFeeEstimates({
-                    slow: slowFee,
-                    normal: normalFee,
-                    fast: fastFee
+                    slow: Number(quote?.speedSlow?.l1BroadcastFeeSat || 0),
+                    normal: Number(quote?.speedMedium?.l1BroadcastFeeSat || 0),
+                    fast: Number(quote?.speedFast?.l1BroadcastFeeSat || 0)
                 });
             } catch (error) {
                 console.error('Failed to fetch fee estimates:', error);
@@ -123,7 +108,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     }, [reviewStatus]);
 
     const activeDestination = destMode === 'own' ? ownAddress : customAddress;
-    
+
     const resetReviewState = () => {
         setTxMetrics(null);
         setCalculationError(null);
@@ -134,12 +119,10 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         const numericStr = val.replace(/[^0-9]/g, '');
         setAmountStr(numericStr);
         resetReviewState();
-        
+
         const numSats = parseInt(numericStr, 10);
         if (!numericStr || isNaN(numSats)) {
             setLocalValidationErr(null);
-        } else if (numSats < MIN_WITHDRAW_SATS) {
-            setLocalValidationErr(`Minimum is ${MIN_WITHDRAW_SATS} sats`);
         } else if (numSats > lightningBalance) {
             setLocalValidationErr("Amount exceeds balance");
         } else {
@@ -250,18 +233,33 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         );
     };
 
+    const getMinerFee = () => {
+        if (!txMetrics) return 0;
+        const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
+        let tierKey = 'speedMedium';
+        if (selectedFeeTier === 'fast') tierKey = 'speedFast';
+        if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
+        return Number(quote?.[tierKey]?.l1BroadcastFeeSat || 0);
+    };
+
+    const getLspFee = () => {
+        if (!txMetrics) return 0;
+        const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
+        let tierKey = 'speedMedium';
+        if (selectedFeeTier === 'fast') tierKey = 'speedFast';
+        if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
+        return Number(quote?.[tierKey]?.userFeeSat || 0);
+    };
+
     const displayError = localValidationErr || calculationError;
-    const canReview = amountStr.length > 0 && !localValidationErr && activeDestination;
+    const canReview = amountStr.length > 0 && !localValidationErr && activeDestination && parseInt(amountStr, 10) >= MIN_WITHDRAW_SATS;
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <KeyboardAvoidingView
-                style={{ flex: 1 }}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            >
+            <View style={{ flex: 1 }}>
                 <ScrollView
                     ref={scrollViewRef}
-                    contentContainerStyle={[styles.scrollContent, { paddingBottom }]}
+                    contentContainerStyle={[styles.scrollContent]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     bounces={false}
@@ -349,29 +347,6 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                         )}
                     </View>
 
-                    <View style={[styles.section, styles.amountSection]}>
-                        <Text style={styles.label}>Amount</Text>
-                        <StyledInput
-                            keyboardType="numeric"
-                            value={amountStr}
-                            onChangeText={handleAmountChange}
-                            onFocus={handleInputFocus}
-                            placeholder={`Min ${MIN_WITHDRAW_SATS} sats`}
-                            editable={!executing && reviewStatus !== 'reviewing'}
-                            rightElement={<Text style={styles.currencyLabel}>sats</Text>}
-                            blurOnSubmit={false}
-                        />
-
-                        <View style={styles.staticErrorContainer}>
-                            {displayError && (
-                                <>
-                                    <Feather name="alert-circle" size={14} color={theme.colors.muted} />
-                                    <Text style={styles.statusText}> {displayError}</Text>
-                                </>
-                            )}
-                        </View>
-                    </View>
-
                     <View style={styles.feeSelectorContainer}>
                         <Text style={styles.label}>On-chain settlement priority</Text>
                         <View style={styles.feeOptionsContainer}>
@@ -395,56 +370,68 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                         </View>
                     </View>
 
-                    <View style={styles.summaryBox}>
-                        {reviewStatus === 'reviewed' && txMetrics ? (
-                            <View style={styles.expandedSummary}>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.totalLabel}>Miner fee</Text>
-                                    <View style={styles.valueContainer}>
-                                        <Text style={styles.value}>
-                                            {(() => {
-                                                const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
+                    <View style={[styles.section, styles.amountSection]}>
+                        <Text style={styles.label}>Amount</Text>
+                        <StyledInput
+                            keyboardType="numeric"
+                            value={amountStr}
+                            onChangeText={handleAmountChange}
+                            onFocus={handleInputFocus}
+                            placeholder="0.00"
+                            editable={!executing && reviewStatus !== 'reviewing'}
+                            rightElement={<Text style={styles.currencyLabel}>sats</Text>}
+                            blurOnSubmit={false}
+                        />
 
-                                                let tierKey = 'speedMedium';
-                                                if (selectedFeeTier === 'fast') tierKey = 'speedFast';
-                                                if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
+                        <View style={styles.staticErrorContainer}>
+                            {!displayError && (!amountStr || parseInt(amountStr, 10) < MIN_WITHDRAW_SATS) && reviewStatus !== 'reviewed' && (
+                                <>
+                                    <Feather name="info" size={14} color={theme.colors.muted} />
+                                    <Text style={styles.statusText}> Minimum {MIN_WITHDRAW_SATS} sats</Text>
+                                </>
+                            )}
+                            {displayError && (
+                                <>
+                                    <Feather name="alert-circle" size={14} color={theme.colors.muted} />
+                                    <Text style={styles.statusText}> {displayError}</Text>
+                                </>
+                            )}
+                        </View>
+                    </View>
 
-                                                const speedObj = quote?.[tierKey];
-                                                return Number(speedObj?.l1BroadcastFeeSat || 0).toLocaleString();
-                                            })()} sats
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.totalLabel}>LSP fee</Text>
-                                    <View style={styles.valueContainer}>
-                                        <Text style={styles.value}>
-                                            {(() => {
-                                                const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
-                                                let tierKey = 'speedMedium';
-                                                if (selectedFeeTier === 'fast') tierKey = 'speedFast';
-                                                if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
-
-                                                const speedObj = quote?.[tierKey];
-                                                return Number(speedObj?.userFeeSat || 0).toLocaleString();
-                                            })()} sats
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.totalLabel}>Total fees</Text>
-                                    <Text style={styles.totalValue}>
-                                        {txMetrics.totalFeeSats.toLocaleString()} sats
-                                    </Text>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.totalLabel}>Total Deduction</Text>
-                                    <Text style={styles.totalValue}>
-                                        {(parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()} sats
+                    <View style={styles.summaryBoxWithBorder}>
+                        <View style={styles.expandedSummary}>
+                            <View style={styles.detailRow}>
+                                <Text style={styles.totalLabel}>Miner fee</Text>
+                                <View style={styles.valueContainer}>
+                                    <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
+                                        {reviewStatus === 'reviewed' && txMetrics ? getMinerFee().toLocaleString() : '--'} sats
                                     </Text>
                                 </View>
                             </View>
-                        ) : null}
+                            <View style={styles.detailRow}>
+                                <Text style={styles.totalLabel}>LSP fee</Text>
+                                <View style={styles.valueContainer}>
+                                    <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
+                                        {reviewStatus === 'reviewed' && txMetrics ? getLspFee().toLocaleString() : '--'} sats
+                                    </Text>
+                                </View>
+                            </View>
+                            <View style={styles.detailRow}>
+                                <Text style={styles.totalLabel}>Total fees</Text>
+                                <Text style={[styles.totalValue, reviewStatus !== 'reviewed' && styles.valueMuted]}>
+                                    {reviewStatus === 'reviewed' && txMetrics ? txMetrics.totalFeeSats.toLocaleString() : '--'} sats
+                                </Text>
+                            </View>
+                            <View style={styles.detailRow}>
+                                <Text style={styles.totalLabel}>Total Deduction</Text>
+                                <Text style={[styles.totalValue, reviewStatus !== 'reviewed' && styles.valueMuted]}>
+                                    {reviewStatus === 'reviewed' && txMetrics && amountStr
+                                        ? (parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()
+                                        : '--'} sats
+                                </Text>
+                            </View>
+                        </View>
 
                         {reviewStatus === 'idle' && (
                             <TouchableOpacity
@@ -483,7 +470,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                         )}
                     </View>
                 </ScrollView>
-            </KeyboardAvoidingView>
+            </View>
         </SafeAreaView>
     );
 };
@@ -495,7 +482,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     scrollContent: {
         padding: 24,
-        paddingBottom: 120,
+        paddingBottom: 400,
         flexGrow: 1,
     },
     balanceContainer: {
@@ -519,7 +506,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         marginBottom: 24,
     },
     amountSection: {
-        marginBottom: 8,
+        marginBottom: 0,
     },
     label: {
         fontSize: 16,
@@ -588,7 +575,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontFamily: 'monospace',
     },
     feeSelectorContainer: {
-        marginBottom: 32,
+        marginBottom: 24,
     },
     feeOptionsContainer: {
         backgroundColor: theme.colors.surface,
@@ -635,7 +622,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
-        marginTop: 8,
     },
     staticErrorContainer: {
         minHeight: 24,
@@ -647,13 +633,14 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 14,
         color: theme.colors.muted,
     },
-    summaryBox: {
+    summaryBoxWithBorder: {
+        marginTop: 6,
         paddingTop: 24,
         borderTopWidth: 1,
         borderColor: theme.colors.border,
     },
     expandedSummary: {
-        marginBottom: 16,
+        marginBottom: 4,
     },
     detailRow: {
         flexDirection: 'row',
@@ -665,6 +652,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 16,
         color: theme.colors.primary,
         fontFamily: 'monospace',
+    },
+    valueMuted: {
+        color: theme.colors.muted,
     },
     valueContainer: {
         alignItems: 'flex-end',
