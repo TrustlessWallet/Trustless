@@ -6,9 +6,9 @@ import {
     ActivityIndicator,
     TextInput,
     Alert,
-    KeyboardAvoidingView,
     Platform,
-    ScrollView
+    ScrollView,
+    Keyboard
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,7 +26,7 @@ export const LightningTopUpScreen: React.FC = () => {
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
-    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
+    const { scrollViewRef, handleInputFocus } = useKeyboardScroll({
         basePaddingBottom: styles.scrollContent.paddingBottom,
     });
 
@@ -56,9 +56,11 @@ export const LightningTopUpScreen: React.FC = () => {
     const [customRate, setCustomRate] = useState<string>('1');
 
     const [loadingData, setLoadingData] = useState(true);
-    const [calculating, setCalculating] = useState(false);
+    const [reviewStatus, setReviewStatus] = useState<'idle' | 'reviewing' | 'reviewed'>('idle');
     const [executing, setExecuting] = useState(false);
+
     const [txMetrics, setTxMetrics] = useState<{ fee: number; hex: string; changeIndex: number | null, vsize: number, actualAmount: number } | null>(null);
+    const [localValidationErr, setLocalValidationErr] = useState<string | null>(null);
     const [calculationError, setCalculationError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -90,44 +92,73 @@ export const LightningTopUpScreen: React.FC = () => {
     }, [isLightningInitialized]);
 
     useEffect(() => {
-        if (!amountStr || !activeWallet || !swapAddress) {
-            setTxMetrics(null);
-            setCalculationError(null);
-            return;
+        if (reviewStatus === 'reviewed') {
+            setTimeout(() => {
+                if (scrollViewRef.current) {
+                    scrollViewRef.current.scrollToEnd({ animated: true });
+                }
+            }, 150);
         }
-        
-        const timer = setTimeout(() => {
-            handleCalculate();
-        }, 500);
+    }, [reviewStatus]);
 
-        return () => clearTimeout(timer);
-    }, [amountStr, activeWallet, swapAddress, currentRate, selectedKey]);
+    const resetReviewState = () => {
+        setTxMetrics(null);
+        setCalculationError(null);
+        setReviewStatus('idle');
+    };
 
-    
-    const handleCalculate = async () => {
+    const handleAmountChange = (t: string) => {
+        const cleanText = t.replace(/[^0-9]/g, '');
+        setAmountStr(cleanText);
+        resetReviewState();
+
+        const numSats = parseInt(cleanText, 10);
+        const minRequired = limits ? limits.minSats : MIN_TOPUP_SATS;
+
+        if (!cleanText || isNaN(numSats)) {
+            setLocalValidationErr(null);
+        } else if (numSats < minRequired) {
+            setLocalValidationErr(`Minimum ${minRequired.toLocaleString()} sats`);
+        } else if (limits && numSats > limits.maxSats) {
+            setLocalValidationErr(`Maximum ${limits.maxSats.toLocaleString()} sats`);
+        } else if (numSats > onchainBalance) {
+            setLocalValidationErr("Amount exceeds available balance");
+        } else {
+            setLocalValidationErr(null);
+        }
+    };
+
+    const handleFeeSelection = (key: 'slow' | 'normal' | 'fast' | 'custom', rate: number) => {
+        setSelectedKey(key);
+        if (key !== 'custom') {
+            setCurrentRate(rate);
+            setCustomRate(rate.toString());
+        }
+        resetReviewState();
+    };
+
+    const handleCustomRateChange = (text: string) => {
+        setCustomRate(text);
+        if (text && text.trim() !== '') {
+            const rate = parseInt(text, 10);
+            if (!isNaN(rate) && rate > 0) {
+                setCurrentRate(rate);
+                resetReviewState();
+            }
+        }
+    };
+
+    const handleReview = async () => {
+        Keyboard.dismiss();
         if (!activeWallet || !swapAddress) return;
         const amountSats = parseInt(amountStr, 10);
-
-        if (isNaN(amountSats) || amountSats <= 0) {
-            setTxMetrics(null);
-            setCalculationError(null);
-            return;
-        }
-
         const minRequired = limits ? limits.minSats : MIN_TOPUP_SATS;
-        if (amountSats < minRequired) {
-            setTxMetrics(null);
-            setCalculationError(`Minimum: ${minRequired.toLocaleString()} sats`);
-            return;
-        }
-        if (limits && amountSats > limits.maxSats) {
-            setTxMetrics(null);
-            setCalculationError(`Maximum: ${limits.maxSats.toLocaleString()} sats`);
+
+        if (isNaN(amountSats) || amountSats <= 0 || localValidationErr || amountSats < minRequired) {
             return;
         }
 
-        setCalculating(true);
-        setTxMetrics(null);
+        setReviewStatus('reviewing');
         setCalculationError(null);
 
         try {
@@ -195,12 +226,12 @@ export const LightningTopUpScreen: React.FC = () => {
                 vsize: estimatedVsize,
                 actualAmount: actualSendAmount
             });
+            setReviewStatus('reviewed');
 
         } catch (err: any) {
             console.error("[Breez Node UI] Calculation Failed:", err);
             setCalculationError(err.message || "Transaction preparation failed");
-        } finally {
-            setCalculating(false);
+            setReviewStatus('idle');
         }
     };
 
@@ -223,26 +254,6 @@ export const LightningTopUpScreen: React.FC = () => {
             Alert.alert("Broadcast Failed", err.message || "Failed to push transaction to the network.");
         } finally {
             setExecuting(false);
-        }
-    };
-
-    const handleFeeSelection = (key: 'slow' | 'normal' | 'fast' | 'custom', rate: number) => {
-        setSelectedKey(key);
-        if (key !== 'custom') {
-            setCurrentRate(rate);
-            setCustomRate(rate.toString());
-            setTxMetrics(null);
-        }
-    };
-
-    const handleCustomRateChange = (text: string) => {
-        setCustomRate(text);
-        if (text && text.trim() !== '') {
-            const rate = parseInt(text, 10);
-            if (!isNaN(rate) && rate > 0) {
-                setCurrentRate(rate);
-                setTxMetrics(null);
-            }
         }
     };
 
@@ -273,18 +284,16 @@ export const LightningTopUpScreen: React.FC = () => {
         );
     }
 
+    const minRequired = limits ? limits.minSats : MIN_TOPUP_SATS;
+    const displayError = localValidationErr || calculationError;
+    const canReview = amountStr.length > 0 && !localValidationErr && swapAddress && parseInt(amountStr, 10) >= minRequired;
+
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <KeyboardAvoidingView
-                style={{ flex: 1 }}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            >
+            <View style={{ flex: 1 }}>
                 <ScrollView
                     ref={scrollViewRef}
-                    contentContainerStyle={[
-                        styles.scrollContent,
-                        { paddingBottom }
-                    ]}
+                    contentContainerStyle={styles.scrollContent}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     bounces={false}
@@ -304,33 +313,6 @@ export const LightningTopUpScreen: React.FC = () => {
                         </View>
                     </View>
 
-                    <View style={[styles.section, styles.amountSection]}>
-                        <Text style={styles.label}>Amount</Text>
-                        <StyledInput
-                            keyboardType="numeric"
-                            value={amountStr}
-                            onChangeText={(t) => {
-                                const cleanText = t.replace(/[^0-9]/g, '');
-                                setAmountStr(cleanText);
-                                if (cleanText !== amountStr) {
-                                    setTxMetrics(null);
-                                }
-                            }}
-                            onFocus={handleInputFocus}
-                            placeholder={`Min ${MIN_TOPUP_SATS} sats`}
-                            editable={!executing}
-                            rightElement={<Text style={styles.currencyLabel}>sats</Text>}
-                        />
-                        
-                        {/* Alert is absolutely positioned to prevent any layout shifts */}
-                        {false && calculationError && (
-                            <View style={styles.statusMessageContainer}>
-                                <Feather name="alert-circle" size={14} color={theme.colors.muted} />
-                                <Text style={styles.statusText}> {calculationError}</Text>
-                            </View>
-                        )}
-                    </View>
-
                     <View style={styles.feeSelectorContainer}>
                         <Text style={styles.label}>Fee</Text>
                         <View style={styles.feeOptionsRow}>
@@ -339,7 +321,7 @@ export const LightningTopUpScreen: React.FC = () => {
                                     key={key}
                                     onPress={() => handleFeeSelection(key, feeOptions[key])}
                                     style={[styles.feeOption, selectedKey === key && styles.feeOptionActive]}
-                                    disabled={executing || calculating}
+                                    disabled={executing || reviewStatus === 'reviewing'}
                                 >
                                     <Text style={[styles.feeOptionText, selectedKey === key ? styles.feeOptionTextActive : {}]}>
                                         {key.charAt(0).toUpperCase() + key.slice(1)}
@@ -352,7 +334,7 @@ export const LightningTopUpScreen: React.FC = () => {
                             <TouchableOpacity
                                 onPress={() => handleFeeSelection('custom', parseInt(customRate, 10) || 1)}
                                 style={[styles.feeOption, selectedKey === 'custom' && styles.feeOptionActive]}
-                                disabled={executing || calculating}
+                                disabled={executing || reviewStatus === 'reviewing'}
                             >
                                 <Text style={[styles.feeOptionText, selectedKey === 'custom' ? styles.feeOptionTextActive : {}]}>Custom</Text>
                                 <Text style={[styles.feeOptionRate, selectedKey === 'custom' ? styles.feeOptionRateActive : {}]}>Edit</Text>
@@ -369,59 +351,108 @@ export const LightningTopUpScreen: React.FC = () => {
                                     placeholder="0"
                                     keyboardAppearance={isDark ? 'dark' : 'light'}
                                     placeholderTextColor={theme.colors.muted}
+                                    editable={!executing && reviewStatus !== 'reviewing'}
                                 />
                             </View>
                         )}
                     </View>
 
-                    <View style={styles.summaryBox}>
-                        {txMetrics ? (
-                            <>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.totalLabel}>Transaction size</Text>
-                                    <Text style={styles.value}>{txMetrics.vsize} vbytes</Text>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.totalLabel}>Total miner fee</Text>
-                                    <View style={styles.valueContainer}>
-                                        <Text style={styles.value}>{txMetrics.fee.toLocaleString()} sats</Text>
-                                    </View>
-                                </View>
-                            </>
-                        ): null}
+                    <View style={[styles.section, styles.amountSection]}>
+                        <Text style={styles.label}>Amount</Text>
+                        <StyledInput
+                            keyboardType="numeric"
+                            value={amountStr}
+                            onChangeText={handleAmountChange}
+                            onFocus={handleInputFocus}
+                            placeholder={`0.00`}
+                            editable={!executing && reviewStatus !== 'reviewing'}
+                            rightElement={<Text style={styles.currencyLabel}>sats</Text>}
+                            blurOnSubmit={false}
+                        />
 
-                        {!calculationError && calculating ? (
+                        <View style={styles.staticErrorContainer}>
+                            {!displayError && (!amountStr || parseInt(amountStr, 10) < minRequired) && reviewStatus !== 'reviewed' && (
+                                <>
+                                    <Feather name="info" size={14} color={theme.colors.muted} />
+                                    <Text style={styles.statusText}> Minimum {minRequired.toLocaleString()} sats</Text>
+                                </>
+                            )}
+                            {displayError && (
+                                <>
+                                    <Feather name="alert-circle" size={14} color={theme.colors.muted} />
+                                    <Text style={styles.statusText}> {displayError}</Text>
+                                </>
+                            )}
+                        </View>
+                    </View>
+
+                    <View style={styles.summaryBoxWithBorder}>
+                        <View style={styles.expandedSummary}>
                             <View style={styles.detailRow}>
-                                <Text style={styles.statusText}>Calculating...</Text>
+                                <Text style={styles.totalLabel}>Amount</Text>
+                                <View style={styles.valueContainer}>
+                                    <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
+                                        {reviewStatus === 'reviewed' && txMetrics ? txMetrics.actualAmount.toLocaleString() : '--'} sats
+                                    </Text>
+                                </View>
                             </View>
-                        ) : txMetrics ? (
+                            <View style={styles.detailRow}>
+                                <Text style={styles.totalLabel}>Miner fee</Text>
+                                <View style={styles.valueContainer}>
+                                    <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
+                                        {reviewStatus === 'reviewed' && txMetrics ? txMetrics.fee.toLocaleString() : '--'} sats
+                                    </Text>
+                                </View>
+                            </View>
                             <View style={styles.detailRow}>
                                 <Text style={styles.totalLabel}>Total</Text>
-                                <Text style={styles.totalValue}>
-                                    {`${(txMetrics.actualAmount + txMetrics.fee).toLocaleString()} sats`}
+                                <Text style={[styles.totalValue, reviewStatus !== 'reviewed' && styles.valueMuted]}>
+                                    {reviewStatus === 'reviewed' && txMetrics
+                                        ? (txMetrics.actualAmount + txMetrics.fee).toLocaleString()
+                                        : '--'} sats
                                 </Text>
                             </View>
-                        ) : null}
+                        </View>
 
-                        <TouchableOpacity
-                            key={`confirm-button-${txMetrics ? 'enabled' : 'disabled'}-${executing ? 'executing' : 'idle'}`}
-                            style={[styles.confirmButton, (!txMetrics || executing || parseInt(amountStr, 10) < (limits ? limits.minSats : MIN_TOPUP_SATS)) && styles.buttonDisabled]}
-                            onPress={handleExecuteTopUp}
-                            disabled={!txMetrics || executing || parseInt(amountStr, 10) < (limits ? limits.minSats : MIN_TOPUP_SATS)}
-                        >
-                            {executing ? (
-                                <ActivityIndicator color={theme.colors.inversePrimary} />
-                            ) : (
+                        {reviewStatus === 'idle' && (
+                            <TouchableOpacity
+                                style={[styles.confirmButton, (!canReview || !isLightningInitialized) && styles.buttonDisabled]}
+                                onPress={handleReview}
+                                disabled={!canReview || !isLightningInitialized}
+                            >
                                 <View style={styles.buttonContentRowCentered}>
-                                    <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
-                                    <Text style={styles.buttonText}>Confirm & top-up</Text>
+                                    <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
+                                    <Text style={styles.buttonText}>Review top-up</Text>
                                 </View>
-                            )}
-                        </TouchableOpacity>
+                            </TouchableOpacity>
+                        )}
+
+                        {reviewStatus === 'reviewing' && (
+                            <View style={styles.confirmButton}>
+                                <ActivityIndicator color={theme.colors.inversePrimary} />
+                            </View>
+                        )}
+
+                        {reviewStatus === 'reviewed' && txMetrics && (
+                            <TouchableOpacity
+                                style={styles.confirmButton}
+                                onPress={handleExecuteTopUp}
+                                disabled={executing}
+                            >
+                                {executing ? (
+                                    <ActivityIndicator color={theme.colors.inversePrimary} />
+                                ) : (
+                                    <View style={styles.buttonContentRowCentered}>
+                                        <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
+                                        <Text style={styles.buttonText}>Confirm top-up</Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
+                        )}
                     </View>
 
                 </ScrollView>
-            </KeyboardAvoidingView>
+            </View>
         </SafeAreaView>
     );
 };
@@ -466,10 +497,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     section: {
         marginBottom: 24,
-        position: 'relative',
     },
     amountSection: {
-        zIndex: 10,
+        marginBottom: 0,
     },
     label: {
         fontSize: 16,
@@ -490,12 +520,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontFamily: 'SpaceMono-Bold',
         marginRight: 16,
     },
-    limitText: {
-        fontSize: 12,
-        color: theme.colors.muted,
-        marginTop: 8,
-        textAlign: 'left',
-    },
     addressPreview: {
         fontSize: 14,
         fontFamily: 'monospace',
@@ -503,8 +527,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         lineHeight: 22,
     },
     feeSelectorContainer: {
-        marginBottom: 32,
-        zIndex: 1,
+        marginBottom: 24,
     },
     feeOptionsRow: {
         flexDirection: 'row',
@@ -567,10 +590,14 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 16,
         fontFamily: 'SpaceMono-Regular',
     },
-    summaryBox: {
+    summaryBoxWithBorder: {
+        marginTop: 8,
         paddingTop: 24,
         borderTopWidth: 1,
         borderColor: theme.colors.border,
+    },
+    expandedSummary: {
+        marginBottom: 4,
     },
     detailRow: {
         flexDirection: 'row',
@@ -583,6 +610,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         color: theme.colors.primary,
         fontFamily: 'monospace',
     },
+    valueMuted: {
+        color: theme.colors.muted,
+    },
     valueContainer: {
         alignItems: 'flex-end',
     },
@@ -593,6 +623,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     totalValue: {
         fontSize: 16,
         color: theme.colors.primary,
+        fontFamily: 'monospace',
     },
     orangeSymbol: {
         color: theme.colors.bitcoin,
@@ -605,7 +636,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
-        marginTop: 8,
     },
     buttonDisabled: {
         opacity: 0.5,
@@ -621,11 +651,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         justifyContent: 'center',
         gap: 8,
     },
-    statusMessageContainer: {
-        position: 'absolute',
-        top: '100%',
-        left: 0,
-        right: 0,
+    staticErrorContainer: {
+        minHeight: 24,
         flexDirection: 'row',
         alignItems: 'center',
         marginTop: 6,
