@@ -41,7 +41,7 @@ const WalletScreen = () => {
         lightningTransactions,
         isLightningInitialized
     } = useWallet();
-    const { theme } = useTheme();
+    const { theme, isDark } = useTheme();
     const styles = useMemo(() => getStyles(theme, insets.top), [theme, insets.top]);
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
@@ -230,6 +230,7 @@ const WalletScreen = () => {
     return (
         <SafeAreaView style={styles.container} edges={['right', 'left']}>
             <FlatList
+                key={isDark ? 'dark-list' : 'light-list'}
                 data={displayTransactions}
                 renderItem={renderTransactionItem}
                 keyExtractor={(item: any) => item.paymentHash || item.txid}
@@ -316,17 +317,18 @@ const WalletScreen = () => {
                     </View>
                 }
                 ListEmptyComponent={
-                    (!isLightningMode && loadingTxs) ? 
-                        <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> : 
+                    (!isLightningMode && loadingTxs) ?
+                        <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> :
                         <Text style={styles.noTxText}>No transactions yet</Text>
                 }
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    <RefreshControl 
-                        refreshing={!isLightningMode && isRefetchingTxs} 
-                        onRefresh={onRefresh} 
+                    <RefreshControl
+                        refreshing={!isLightningMode && isRefetchingTxs}
+                        onRefresh={onRefresh}
                         tintColor={theme.colors.primary}
+                        colors={[theme.colors.primary]}
                     />
                 }
                 removeClippedSubviews={true}
@@ -527,7 +529,8 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         color: theme.colors.muted
     },
     loadingIndicator: {
-        marginTop: 40
+        marginTop: 40,
+        color: theme.colors.primary
     },
     txRow: {
         flexDirection: 'row',
