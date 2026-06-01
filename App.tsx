@@ -145,7 +145,6 @@ export default function App() {
     <View style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          {/* Check BOTH dbReady and networkLoaded before mounting WalletProvider */}
           {dbReady && networkLoaded ? (
             <WalletProvider key={appKey}>
               <View style={{ flex: 1 }}>
