@@ -59,6 +59,10 @@ export default function MerchantBottomSheet({ merchant, onClose }: Props) {
     return 'Business';
   };
 
+  // Define dynamic badge colors using theme
+  const badgeBgColor = theme.colors.bitcoin || theme.colors.primary;
+  const badgeTextColor = theme.colors.background;
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
       <View style={styles.headerRow}>
@@ -75,24 +79,31 @@ export default function MerchantBottomSheet({ merchant, onClose }: Props) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={[
+          styles.scrollContent, 
+          { borderTopColor: theme.colors.border, borderBottomColor: theme.colors.border }
+        ]} 
+        contentContainerStyle={styles.scrollInnerContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.badges}>
           {tags['payment:lightning'] === 'yes' && (
-            <View style={[styles.badge, { backgroundColor: '#F7931A' }]}>
-              <MaterialIcons name="bolt" size={14} color="#FFFFFF" />
-              <Text style={[styles.badgeText, { color: '#FFFFFF' }]}>Lightning</Text>
+            <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
+              <MaterialIcons name="bolt" size={14} color={badgeTextColor} />
+              <Text style={[styles.badgeText, { color: badgeTextColor }]}>Lightning</Text>
             </View>
           )}
           {tags['payment:onchain'] === 'yes' && (
-            <View style={[styles.badge, { backgroundColor: '#F7931A' }]}>
-              <MaterialIcons name="link" size={14} color="#FFFFFF" />
-              <Text style={[styles.badgeText, { color: '#FFFFFF' }]}>On-chain</Text>
+            <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
+              <MaterialIcons name="link" size={14} color={badgeTextColor} />
+              <Text style={[styles.badgeText, { color: badgeTextColor }]}>On-chain</Text>
             </View>
           )}
           {tags['payment:lightning_contactless'] === 'yes' && (
-            <View style={[styles.badge, { backgroundColor: '#F7931A' }]}>
-              <MaterialIcons name="contactless" size={14} color="#FFFFFF" />
-              <Text style={[styles.badgeText, { color: '#FFFFFF' }]}>NFC</Text>
+            <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
+              <MaterialIcons name="contactless" size={14} color={badgeTextColor} />
+              <Text style={[styles.badgeText, { color: badgeTextColor }]}>NFC</Text>
             </View>
           )}
         </View>
@@ -133,6 +144,7 @@ export default function MerchantBottomSheet({ merchant, onClose }: Props) {
         onPress={handleDirections}
         activeOpacity={0.8}
       >
+        <MaterialIcons name="directions" size={20} color={theme.colors.background} style={{ marginRight: 8 }} />
         <Text style={[styles.directionsText, { color: theme.colors.background }]}>Directions</Text>
       </TouchableOpacity>
     </View>
@@ -145,12 +157,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: Platform.OS === 'ios' ? 380 : 360,
+    height: '45%',
     padding: 24,
     borderTopWidth: 1,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
@@ -185,6 +196,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     flex: 1,
     marginBottom: 16,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+  },
+  scrollInnerContent: {
+    paddingVertical: 16,
   },
   badges: {
     flexDirection: 'row',
