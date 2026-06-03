@@ -16,19 +16,19 @@ const TabNavigator = () => {
   const isFocused = useIsFocused();
 
   return (
-    <View 
-      style={{ flex: 1, backgroundColor: theme.colors.background }} 
+    <View
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
       pointerEvents={isFocused ? 'auto' : 'none'}
     >
       <Tab.Navigator
         initialRouteName="Wallet"
         screenOptions={{
           sceneStyle: { backgroundColor: theme.colors.background },
-          headerShown: true, 
-          headerTitle: '', 
+          headerShown: true,
+          headerTitle: '',
           headerStyle: {
             backgroundColor: isDark ? theme.colors.background : theme.colors.background,
-            height: 58, 
+            height: 58,
           },
           headerShadowVisible: false,
           tabBarActiveTintColor: theme.colors.primary,
@@ -48,19 +48,20 @@ const TabNavigator = () => {
             fontWeight: '600',
             fontFamily: 'SpaceMono-Bold',
             ...(Platform.OS === 'android' ? {
-              marginBottom: 4 
+              marginBottom: 4
             } : {}),
           }
         }}
       >
-<Tab.Screen 
-          name="Map" 
+        <Tab.Screen
+          name="Map"
           component={MapScreen}
           options={{
+            headerShown: false,
             tabBarIcon: ({ color, focused }) => (
-              <Text style={{ 
-                color, 
-                fontSize: 24, 
+              <Text style={{
+                color,
+                fontSize: 24,
                 fontWeight: focused ? 'bold' : 'normal',
                 fontFamily: focused ? 'SpaceMono-Bold' : 'SpaceMono-Regular'
               }}>
@@ -69,14 +70,14 @@ const TabNavigator = () => {
             )
           }}
         />
-        <Tab.Screen 
-          name="Wallet" 
+        <Tab.Screen
+          name="Wallet"
           component={WalletScreen}
           options={{
             tabBarIcon: ({ color, focused }) => (
-              <Text style={{ 
-                color, 
-                fontSize: 24, 
+              <Text style={{
+                color,
+                fontSize: 24,
                 fontWeight: focused ? 'bold' : 'normal',
                 fontFamily: focused ? 'SpaceMono-Bold' : 'SpaceMono-Regular'
               }}>
@@ -85,14 +86,14 @@ const TabNavigator = () => {
             )
           }}
         />
-        <Tab.Screen 
-          name="Settings" 
+        <Tab.Screen
+          name="Settings"
           component={SettingsScreen}
           options={{
             tabBarIcon: ({ color, focused }) => (
-              <Text style={{ 
-                color, 
-                fontSize: 24, 
+              <Text style={{
+                color,
+                fontSize: 24,
                 fontWeight: focused ? 'bold' : 'normal',
                 fontFamily: focused ? 'SpaceMono-Bold' : 'SpaceMono-Regular'
               }}>
