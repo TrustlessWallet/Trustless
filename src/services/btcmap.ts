@@ -16,17 +16,26 @@ export interface BtcMapTags {
 
 export interface BtcMapElement {
   id: string | number;
-  lat: number;
-  lon: number;
+  osm_json?: {
+    lat?: number;
+    lon?: number;
+    center?: {
+      lat: number;
+      lon: number;
+    };
+    tags?: BtcMapTags;
+    [key: string]: any;
+  };
   tags?: BtcMapTags;
+  lat?: number | string;
+  lon?: number | string;
+  [key: string]: any;
 }
 
 export const BTC_MAP_API_URL = 'https://api.btcmap.org/v2/elements';
 
 export const btcMapFetcher = async (url: string): Promise<BtcMapElement[]> => {
   const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`BTCMap API Error: ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`BTCMap API Error: ${response.status}`);
   return response.json();
 };

@@ -4,6 +4,7 @@ import MapView, { Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import useSWR from 'swr';
 import Supercluster from 'supercluster';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { Text } from '../components/StyledText';
 
@@ -29,6 +30,7 @@ export default function MapScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [selectedMerchant, setSelectedMerchant] = useState<BtcMapElement | null>(null);
   const [clusters, setClusters] = useState<any[]>([]);
+  const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
   const [region, setRegion] = useState<Region>({
     latitude: 0,
     longitude: 0,
@@ -42,15 +44,31 @@ export default function MapScreen() {
     { revalidateOnFocus: false }
   );
 
-  // Initialize Supercluster when data arrives
   useEffect(() => {
-    if (!elements) return;
+    if (!elements || elements.length === 0) return;
 
-    const points = elements.map((el) => ({
-      type: 'Feature' as const,
-      properties: { cluster: false, element: el },
-      geometry: { type: 'Point' as const, coordinates: [el.lon, el.lat] },
-    }));
+    const points = elements.map((el) => {
+      const lat = el.osm_json?.lat ?? el.osm_json?.center?.lat ?? el.lat;
+      const lon = el.osm_json?.lon ?? el.osm_json?.center?.lon ?? el.lon;
+
+      const mergedTags = {
+        ...(el.osm_json?.tags || {}),
+        ...(el.tags || {})
+      };
+
+      const cleanElement = {
+        ...el,
+        lat: Number(lat),
+        lon: Number(lon),
+        tags: mergedTags
+      };
+
+      return {
+        type: 'Feature' as const,
+        properties: { cluster: false, element: cleanElement },
+        geometry: { type: 'Point' as const, coordinates: [Number(lon), Number(lat)] },
+      };
+    }).filter(p => !isNaN(p.geometry.coordinates[0]) && !isNaN(p.geometry.coordinates[1]));
 
     const supercluster = new Supercluster({
       radius: 40,
@@ -63,7 +81,6 @@ export default function MapScreen() {
     updateClusters(region);
   }, [elements]);
 
-  // Handle location permissions on mount
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -89,8 +106,13 @@ export default function MapScreen() {
     if (!clusterRef.current) return;
     const bbox = getBounds(newRegion);
     const zoom = getZoomLevel(newRegion);
-    const newClusters = clusterRef.current.getClusters(bbox, zoom);
-    setClusters(newClusters);
+    
+    try {
+      const newClusters = clusterRef.current.getClusters(bbox, zoom);
+      setClusters(newClusters);
+    } catch (e) {
+      // Math domain error fallback
+    }
   };
 
   const handleRegionChangeComplete = (newRegion: Region) => {
@@ -108,11 +130,15 @@ export default function MapScreen() {
     }, 1000);
   };
 
+  const toggleMapType = () => {
+    setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
+  };
+
   const handleMarkerPress = (merchant: BtcMapElement) => {
     setSelectedMerchant(merchant);
     mapRef.current?.animateToRegion({
-      latitude: merchant.lat,
-      longitude: merchant.lon,
+      latitude: merchant.lat as number,
+      longitude: merchant.lon as number,
       latitudeDelta: 0.005,
       longitudeDelta: 0.005,
     }, 500);
@@ -153,6 +179,7 @@ export default function MapScreen() {
       <MapView
         ref={mapRef}
         style={styles.map}
+        mapType={mapType}
         customMapStyle={mapStyle}
         showsUserLocation={true}
         showsMyLocationButton={false}
@@ -200,13 +227,23 @@ export default function MapScreen() {
         </View>
       )}
 
-      <TouchableOpacity 
-        style={[styles.fab, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]} 
-        onPress={centerOnUser}
-        activeOpacity={0.8}
-      >
-        <Text style={{ color: theme.colors.primary, fontSize: 18, fontFamily: 'SpaceMono-Bold' }}>O</Text>
-      </TouchableOpacity>
+      <View style={styles.fabContainer}>
+        <TouchableOpacity 
+          style={[styles.fab, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]} 
+          onPress={toggleMapType}
+          activeOpacity={0.8}
+        >
+          <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.fab, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]} 
+          onPress={centerOnUser}
+          activeOpacity={0.8}
+        >
+          <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
+        </TouchableOpacity>
+      </View>
 
       {selectedMerchant && (
         <MerchantBottomSheet 
@@ -241,10 +278,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
   },
-  fab: {
+  fabContainer: {
     position: 'absolute',
     bottom: 30,
     right: 20,
+    gap: 16,
+  },
+  fab: {
     width: 50,
     height: 50,
     borderRadius: 25,

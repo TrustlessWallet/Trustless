@@ -3,26 +3,20 @@ import { StyleSheet, View } from 'react-native';
 import { Marker } from 'react-native-maps';
 import { Text } from '../StyledText';
 
-export default function ClusterMarker({ geometry, properties, onPress, theme }: any) {
-  const points = properties.point_count;
-  
+export default function ClusterMarker({ coordinate, pointCount, onPress, theme }: any) {
   return (
     <Marker
-      coordinate={{
-        longitude: geometry.coordinates[0],
-        latitude: geometry.coordinates[1],
-      }}
+      coordinate={coordinate}
       onPress={onPress}
-      tracksViewChanges={false}
     >
       <View 
         style={[
           styles.cluster, 
-          { backgroundColor: theme.colors.text, borderColor: theme.colors.background }
+          { backgroundColor: theme.colors.primary, borderColor: theme.colors.background }
         ]}
       >
         <Text style={[styles.text, { color: theme.colors.background }]}>
-          {points > 99 ? '99+' : points}
+          {pointCount > 99 ? '99+' : pointCount}
         </Text>
       </View>
     </Marker>
