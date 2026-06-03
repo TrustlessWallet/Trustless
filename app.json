@@ -39,6 +39,12 @@
       ]
     },
     "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Trustless uses your location to show nearby Bitcoin merchants on the map."
+        }
+      ],
       "@breeztech/breez-sdk-spark-react-native",
       "./src/scripts/withAndroidDisplaySettings",
       [

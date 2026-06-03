@@ -1,29 +1,69 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { StyleSheet, View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import MapView, { Region } from 'react-native-maps';
-import MapViewCluster from 'react-native-map-clustering';
 import * as Location from 'expo-location';
 import useSWR from 'swr';
+import Supercluster from 'supercluster';
 import { useTheme } from '../contexts/ThemeContext';
 import { Text } from '../components/StyledText';
 
 import CustomMarker from '../components/Map/CustomMarker';
+import ClusterMarker from '../components/Map/ClusterMarker';
 import MerchantBottomSheet from '../components/Map/MerchantBottomSheet';
+import { BTC_MAP_API_URL, btcMapFetcher, BtcMapElement } from '../services/btcmap';
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const getBounds = (region: Region): [number, number, number, number] => [
+  region.longitude - region.longitudeDelta / 2,
+  region.latitude - region.latitudeDelta / 2,
+  region.longitude + region.longitudeDelta / 2,
+  region.latitude + region.latitudeDelta / 2,
+];
+
+const getZoomLevel = (region: Region): number => Math.max(0, Math.round(Math.log(360 / region.longitudeDelta) / Math.LN2));
 
 export default function MapScreen() {
   const { theme, isDark } = useTheme();
   const mapRef = useRef<MapView>(null);
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [selectedMerchant, setSelectedMerchant] = useState<any | null>(null);
+  const clusterRef = useRef<Supercluster | null>(null);
 
-  const { data: elements, error, isLoading } = useSWR(
-    'https://api.btcmap.org/v2/elements',
-    fetcher,
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [selectedMerchant, setSelectedMerchant] = useState<BtcMapElement | null>(null);
+  const [clusters, setClusters] = useState<any[]>([]);
+  const [region, setRegion] = useState<Region>({
+    latitude: 0,
+    longitude: 0,
+    latitudeDelta: 100,
+    longitudeDelta: 100,
+  });
+
+  const { data: elements, error, isLoading } = useSWR<BtcMapElement[]>(
+    BTC_MAP_API_URL,
+    btcMapFetcher,
     { revalidateOnFocus: false }
   );
 
+  // Initialize Supercluster when data arrives
+  useEffect(() => {
+    if (!elements) return;
+
+    const points = elements.map((el) => ({
+      type: 'Feature' as const,
+      properties: { cluster: false, element: el },
+      geometry: { type: 'Point' as const, coordinates: [el.lon, el.lat] },
+    }));
+
+    const supercluster = new Supercluster({
+      radius: 40,
+      maxZoom: 16,
+    });
+
+    supercluster.load(points);
+    clusterRef.current = supercluster;
+    
+    updateClusters(region);
+  }, [elements]);
+
+  // Handle location permissions on mount
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -32,16 +72,31 @@ export default function MapScreen() {
       let currentLocation = await Location.getCurrentPositionAsync({});
       setLocation(currentLocation);
 
+      const userRegion = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      };
+
       if (mapRef.current) {
-        mapRef.current.animateToRegion({
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }, 1000);
+        mapRef.current.animateToRegion(userRegion, 1000);
       }
     })();
   }, []);
+
+  const updateClusters = (newRegion: Region) => {
+    if (!clusterRef.current) return;
+    const bbox = getBounds(newRegion);
+    const zoom = getZoomLevel(newRegion);
+    const newClusters = clusterRef.current.getClusters(bbox, zoom);
+    setClusters(newClusters);
+  };
+
+  const handleRegionChangeComplete = (newRegion: Region) => {
+    setRegion(newRegion);
+    updateClusters(newRegion);
+  };
 
   const centerOnUser = async () => {
     if (!location) return;
@@ -53,13 +108,25 @@ export default function MapScreen() {
     }, 1000);
   };
 
-  const handleMarkerPress = (merchant: any) => {
+  const handleMarkerPress = (merchant: BtcMapElement) => {
     setSelectedMerchant(merchant);
     mapRef.current?.animateToRegion({
       latitude: merchant.lat,
       longitude: merchant.lon,
       latitudeDelta: 0.005,
       longitudeDelta: 0.005,
+    }, 500);
+  };
+
+  const handleClusterPress = (clusterId: number, lat: number, lon: number) => {
+    if (!clusterRef.current) return;
+    const expansionZoom = clusterRef.current.getClusterExpansionZoom(clusterId);
+    
+    mapRef.current?.animateToRegion({
+      latitude: lat,
+      longitude: lon,
+      latitudeDelta: region.latitudeDelta / 4,
+      longitudeDelta: region.longitudeDelta / 4,
     }, 500);
   };
 
@@ -83,7 +150,7 @@ export default function MapScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <MapViewCluster
+      <MapView
         ref={mapRef}
         style={styles.map}
         customMapStyle={mapStyle}
@@ -91,24 +158,35 @@ export default function MapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
-        clusterColor={theme.colors.primary}
-        clusterTextColor={theme.colors.background}
-        initialRegion={{
-          latitude: 0,
-          longitude: 0,
-          latitudeDelta: 100,
-          longitudeDelta: 100,
-        }}
+        onRegionChangeComplete={handleRegionChangeComplete}
+        initialRegion={region}
       >
-        {elements && elements.map((element: any) => (
-          <CustomMarker 
-            key={element.id} 
-            merchant={element} 
-            onPress={() => handleMarkerPress(element)}
-            theme={theme}
-          />
-        ))}
-      </MapViewCluster>
+        {clusters.map((cluster) => {
+          const [lon, lat] = cluster.geometry.coordinates;
+          const { cluster: isCluster, element, cluster_id, point_count } = cluster.properties;
+
+          if (isCluster) {
+            return (
+              <ClusterMarker
+                key={`cluster-${cluster_id}`}
+                coordinate={{ latitude: lat, longitude: lon }}
+                pointCount={point_count}
+                onPress={() => handleClusterPress(cluster_id, lat, lon)}
+                theme={theme}
+              />
+            );
+          }
+
+          return (
+            <CustomMarker
+              key={`merchant-${element.id}`}
+              merchant={element}
+              onPress={() => handleMarkerPress(element)}
+              theme={theme}
+            />
+          );
+        })}
+      </MapView>
 
       {isLoading && (
         <View style={styles.loadingContainer}>
