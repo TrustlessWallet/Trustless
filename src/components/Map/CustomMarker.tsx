@@ -7,7 +7,6 @@ export default function CustomMarker({ merchant, onPress, theme }: any) {
     <Marker
       coordinate={{ latitude: merchant.lat, longitude: merchant.lon }}
       onPress={onPress}
-      tracksViewChanges={false}
     >
       <View 
         style={[
