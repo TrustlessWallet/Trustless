@@ -103,6 +103,7 @@ export interface Wallet {
 }
 
 export type TabParamList = {
+  Map: undefined;
   Wallet: undefined;
   Settings: undefined;
 };
