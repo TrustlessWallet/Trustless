@@ -9,13 +9,8 @@ export default function ClusterMarker({ coordinate, pointCount, onPress, theme }
       coordinate={coordinate}
       onPress={onPress}
     >
-      <View 
-        style={[
-          styles.cluster, 
-          { backgroundColor: theme.colors.primary, borderColor: theme.colors.background }
-        ]}
-      >
-        <Text style={[styles.text, { color: theme.colors.background }]}>
+      <View style={[styles.cluster, { borderColor: theme.colors.background }]}>
+        <Text style={styles.text}>
           {pointCount > 99 ? '99+' : pointCount}
         </Text>
       </View>
@@ -25,15 +20,22 @@ export default function ClusterMarker({ coordinate, pointCount, onPress, theme }
 
 const styles = StyleSheet.create({
   cluster: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 3,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 2.5,
+    backgroundColor: '#F7931A', // Bitcoin Orange
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   text: {
-    fontSize: 12,
+    fontSize: 14,
+    color: '#FFFFFF',
     fontFamily: 'SpaceMono-Bold',
   },
 });
