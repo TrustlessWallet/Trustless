@@ -20,7 +20,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Trustless uses the camera to scan Bitcoin address QR codes.",
         "NSFaceIDUsageDescription": "Trustless uses Face ID to secure your wallet.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Trustless uses your location to show nearby Bitcoin merchants on the map."
       }
     },
     "android": {
@@ -32,7 +33,9 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "plugins": [

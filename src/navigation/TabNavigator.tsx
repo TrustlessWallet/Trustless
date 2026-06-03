@@ -7,6 +7,7 @@ import WalletScreen from '../screens/WalletScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import { Text } from '../components/StyledText';
 import { useIsFocused } from '@react-navigation/native';
+import MapScreen from '../screens/MapScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -52,6 +53,22 @@ const TabNavigator = () => {
           }
         }}
       >
+<Tab.Screen 
+          name="Map" 
+          component={MapScreen}
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <Text style={{ 
+                color, 
+                fontSize: 24, 
+                fontWeight: focused ? 'bold' : 'normal',
+                fontFamily: focused ? 'SpaceMono-Bold' : 'SpaceMono-Regular'
+              }}>
+                M
+              </Text>
+            )
+          }}
+        />
         <Tab.Screen 
           name="Wallet" 
           component={WalletScreen}
