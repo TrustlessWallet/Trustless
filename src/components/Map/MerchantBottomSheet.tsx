@@ -5,26 +5,67 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Text } from '../StyledText';
 import { useTheme } from '../../contexts/ThemeContext';
 import { BtcMapElement } from '../../services/btcmap';
+import { getCategoryIcon } from './CustomMarker';
 
 interface Props {
   merchant: BtcMapElement;
   onClose: () => void;
-  bottomSheetRef: React.RefObject<any>; // Using any to bypass rigid library type conflicts
+  bottomSheetRef: React.RefObject<any>;
 }
+
+const parseOpeningHours = (hoursString?: string): { status: 'open' | 'closed', time: string } | null => {
+  if (!hoursString) return null;
+  if (hoursString.toLowerCase() === '24/7') return { status: 'open', time: '24/7' };
+
+  try {
+    const now = new Date();
+    const days = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    const currentDay = days[now.getDay()];
+    const currentTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    const rules = hoursString.split(';');
+    
+    for (const rule of rules) {
+      const r = rule.trim();
+      const hasDay = r.includes(currentDay) || 
+                     r.includes('Mo-Su') || 
+                     (r.includes('Mo-Fr') && ['Mo', 'Tu', 'We', 'Th', 'Fr'].includes(currentDay)) ||
+                     (r.includes('Mo-Sa') && currentDay !== 'Su');
+
+      if (hasDay) {
+        const timeMatch = r.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
+        if (timeMatch) {
+          const open = timeMatch[1];
+          const close = timeMatch[2];
+          if (currentTimeStr >= open && currentTimeStr < close) {
+            return { status: 'open', time: close };
+          }
+          if (currentTimeStr < open) {
+            return { status: 'closed', time: open };
+          }
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
 
 export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef }: Props) {
   const { theme } = useTheme();
   const tags = merchant.tags || {};
 
-  // Snap points: 20% (Collapsed), 50% (Default), 80% (Expanded)
-  const snapPoints = useMemo(() => ['20%', '50%', '80%'], []);
+  const snapPoints = useMemo(() => ['20%', '50%', '90%'], []);
 
-  // Force the sheet to 50% the moment it mounts or the merchant changes
   useEffect(() => {
-    if (bottomSheetRef.current) {
-      bottomSheetRef.current.snapToIndex(1);
-    }
-  }, [merchant]);
+    const timer = setTimeout(() => {
+      if (bottomSheetRef.current) {
+        bottomSheetRef.current.snapToIndex(1);
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [merchant, bottomSheetRef]);
 
   const handleDirections = () => {
     const lat = merchant.lat;
@@ -66,48 +107,69 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
     return 'Business';
   };
 
-  const badgeBgColor = theme.colors.bitcoin || theme.colors.primary;
+  const badgeBgColor = theme.colors.bitcoin;
   const badgeTextColor = theme.colors.background;
+  
+  const categoryIcon = getCategoryIcon(tags);
+  const storeStatus = parseOpeningHours(tags.opening_hours);
 
   return (
     <BottomSheet
       ref={bottomSheetRef}
       index={1} 
       snapPoints={snapPoints}
+      enableDynamicSizing={false}
       enablePanDownToClose={false} 
       handleIndicatorStyle={{ backgroundColor: theme.colors.border, width: 40 }}
       backgroundStyle={{ backgroundColor: theme.colors.background }}
     >
-      {/* Strict Flex layout prevents overlapping */}
       <View style={styles.sheetWrapper}>
         
-        {/* FIXED HEADER: Title, Subtitle, Close, and Directions */}
         <View style={[styles.headerContainer, { borderBottomColor: theme.colors.border }]}>
-          <View style={styles.headerRow}>
-            <View style={styles.titleContainer}>
-              <Text style={styles.title} numberOfLines={1}>
-                {tags.name || 'Bitcoin Merchant'}
-              </Text>
-              <Text style={[styles.subtitle, { color: theme.colors.primary }]} numberOfLines={1}>
-                {getSubtitle()}
-              </Text>
-            </View>
+          <View style={styles.headerTopRow}>
+            <Text style={styles.title} numberOfLines={1}>
+              {tags.name || 'Bitcoin Merchant'}
+            </Text>
             <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.colors.surface }]}>
-              <MaterialIcons name="close" size={20} color={theme.colors.primary} />
+              <MaterialIcons name="close" size={16} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
+          
+          <View style={styles.infoRow}>
+            <MaterialIcons name={categoryIcon} size={14} color={theme.colors.primary} style={styles.inlineIcon} />
+            <Text style={[styles.subtitle, { color: theme.colors.primary }]} numberOfLines={1}>
+              {getSubtitle()}
+            </Text>
+          </View>
+
+          {storeStatus && (
+            <View style={styles.infoRow}>
+              <MaterialIcons 
+                name={storeStatus.status === 'open' ? 'schedule' : 'lock'} 
+                size={14} 
+                color={theme.colors.primary} 
+                style={styles.inlineIcon} 
+              />
+              <Text style={[styles.statusText, { color: theme.colors.primary }]}>
+                {storeStatus.status === 'open' 
+                  ? `Open • Closing at ${storeStatus.time}` 
+                  : `Closed • Opens at ${storeStatus.time}`}
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity 
-            style={[styles.directionsBtn, { backgroundColor: theme.colors.primary }]} 
+            style={[
+              styles.directionsBtn, 
+              { backgroundColor: theme.colors.primary }
+            ]} 
             onPress={handleDirections}
             activeOpacity={0.8}
           >
-            <MaterialIcons name="directions" size={18} color={theme.colors.background} style={{ marginRight: 8 }} />
             <Text style={[styles.directionsText, { color: theme.colors.background }]}>Directions</Text>
           </TouchableOpacity>
         </View>
 
-        {/* SCROLLABLE CONTENT: Badges and Contact Info */}
         <BottomSheetScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollInnerContent}>
           
           <View style={styles.badges}>
@@ -170,28 +232,33 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
 
 const styles = StyleSheet.create({
   sheetWrapper: {
-    flex: 1, // Crucial for preventing overlap
+    flex: 1, 
   },
   headerContainer: {
-    paddingHorizontal: 24,
-    paddingTop: 4, // Tightened space near drag handle
+    paddingHorizontal: 24, 
     paddingBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
   },
-  headerRow: {
+  headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center', // Aligns close button with title nicely
-    marginBottom: 16,
-  },
-  titleContainer: {
-    flex: 1,
-    paddingRight: 16,
+    alignItems: 'center',
+    marginBottom: 4,
   },
   title: {
+    flex: 1,
+    marginRight: 16,
     fontSize: 22,
     fontFamily: 'SpaceMono-Bold',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
+  },
+  inlineIcon: {
+    marginRight: 6,
+    opacity: 0.7,
   },
   subtitle: {
     fontSize: 14,
@@ -199,20 +266,27 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
     fontFamily: 'SpaceMono-Regular',
   },
+  statusText: {
+    fontSize: 14,
+    opacity: 0.7,
+    fontFamily: 'SpaceMono-Regular',
+  },
   closeBtn: {
-    padding: 8,
-    borderRadius: 20,
+    padding: 6,
+    borderRadius: 16,
   },
   directionsBtn: {
     flexDirection: 'row',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
+    alignSelf: 'flex-start',
   },
   directionsText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'SpaceMono-Bold',
   },
   scrollContainer: {
