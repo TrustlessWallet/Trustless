@@ -115,20 +115,17 @@ export default function MapScreen() {
   const toggleMapType = () => setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
 
   const handleMapInteraction = () => {
-    // Drop the card to "Peek" state (Index 0) when interacting with the map
-    if (selectedMerchant) {
-      bottomSheetRef.current?.snapToIndex(0);
+    // Snap to index 0 (20%) when user touches the map
+    if (selectedMerchant && bottomSheetRef.current) {
+      bottomSheetRef.current.snapToIndex(0);
     }
   };
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
     setSelectedMerchant(merchant);
     
-    // Ensure the sheet pops up to 50% if it was previously pushed down to the 20% peek state
-    bottomSheetRef.current?.snapToIndex(1);
-
-    const latDelta = 0.015;
-    const lonDelta = 0.015;
+    const latDelta = 0.003;
+    const lonDelta = 0.003;
     const targetLatitude = Number(merchant.lat) - (latDelta * 0.25);
 
     mapRef.current?.animateToRegion({
