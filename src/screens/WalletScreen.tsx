@@ -12,6 +12,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { useWalletTransactions, useWalletUTXOs, useTipHeight } from '../hooks/useBalance';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
@@ -190,10 +191,10 @@ const WalletScreen = () => {
     const ToggleIconElement = () => (
         <View style={styles.iconToggleInner}>
             <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
-                <Feather name="link" size={14} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
+                <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
             </View>
             <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
-                <Feather name="zap" size={14} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
+                <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
             </View>
         </View>
     );
@@ -431,8 +432,8 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         borderColor: theme.colors.border,
     },
     iconWrapper: {
-        paddingVertical: 6,
-        paddingHorizontal: 10,
+        paddingVertical: 3,
+        paddingHorizontal: 8,
         borderRadius: 16,
     },
     iconWrapperActive: {
