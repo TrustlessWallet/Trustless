@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, View, TouchableOpacity, Linking, Platform, ActionSheetIOS } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -9,14 +9,22 @@ import { BtcMapElement } from '../../services/btcmap';
 interface Props {
   merchant: BtcMapElement;
   onClose: () => void;
-  bottomSheetRef: React.RefObject<BottomSheet>;
+  bottomSheetRef: React.RefObject<any>; // Using any to bypass rigid library type conflicts
 }
 
 export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef }: Props) {
   const { theme } = useTheme();
   const tags = merchant.tags || {};
 
-  const snapPoints = useMemo(() => ['15%', '50%', '100%'], []);
+  // Snap points: 20% (Collapsed), 50% (Default), 80% (Expanded)
+  const snapPoints = useMemo(() => ['20%', '50%', '80%'], []);
+
+  // Force the sheet to 50% the moment it mounts or the merchant changes
+  useEffect(() => {
+    if (bottomSheetRef.current) {
+      bottomSheetRef.current.snapToIndex(1);
+    }
+  }, [merchant]);
 
   const handleDirections = () => {
     const lat = merchant.lat;
@@ -70,8 +78,10 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
       handleIndicatorStyle={{ backgroundColor: theme.colors.border, width: 40 }}
       backgroundStyle={{ backgroundColor: theme.colors.background }}
     >
+      {/* Strict Flex layout prevents overlapping */}
       <View style={styles.sheetWrapper}>
         
+        {/* FIXED HEADER: Title, Subtitle, Close, and Directions */}
         <View style={[styles.headerContainer, { borderBottomColor: theme.colors.border }]}>
           <View style={styles.headerRow}>
             <View style={styles.titleContainer}>
@@ -87,6 +97,19 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
             </TouchableOpacity>
           </View>
 
+          <TouchableOpacity 
+            style={[styles.directionsBtn, { backgroundColor: theme.colors.primary }]} 
+            onPress={handleDirections}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons name="directions" size={18} color={theme.colors.background} style={{ marginRight: 8 }} />
+            <Text style={[styles.directionsText, { color: theme.colors.background }]}>Directions</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* SCROLLABLE CONTENT: Badges and Contact Info */}
+        <BottomSheetScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollInnerContent}>
+          
           <View style={styles.badges}>
             {tags['payment:lightning'] === 'yes' && (
               <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
@@ -107,13 +130,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
               </View>
             )}
           </View>
-        </View>
 
-        <BottomSheetScrollView 
-          style={styles.scrollContainer} 
-          contentContainerStyle={styles.scrollInnerContent}
-          showsVerticalScrollIndicator={false}
-        >
           <View style={styles.detailSection}>
             {addressString && (
               <View style={styles.detailRow}>
@@ -143,18 +160,8 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
               </TouchableOpacity>
             )}
           </View>
+          
         </BottomSheetScrollView>
-
-        <View style={[styles.footerContainer, { borderTopColor: theme.colors.border }]}>
-          <TouchableOpacity 
-            style={[styles.directionsBtn, { backgroundColor: theme.colors.primary }]} 
-            onPress={handleDirections}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="directions" size={20} color={theme.colors.background} style={{ marginRight: 8 }} />
-            <Text style={[styles.directionsText, { color: theme.colors.background }]}>Directions</Text>
-          </TouchableOpacity>
-        </View>
 
       </View>
     </BottomSheet>
@@ -163,19 +170,19 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
 
 const styles = StyleSheet.create({
   sheetWrapper: {
-    flex: 1,
+    flex: 1, // Crucial for preventing overlap
   },
   headerContainer: {
     paddingHorizontal: 24,
-    paddingTop: 8,
+    paddingTop: 4, // Tightened space near drag handle
     paddingBottom: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center', // Aligns close button with title nicely
+    marginBottom: 16,
   },
   titleContainer: {
     flex: 1,
@@ -196,10 +203,30 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 20,
   },
+  directionsBtn: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  directionsText: {
+    fontSize: 16,
+    fontFamily: 'SpaceMono-Bold',
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollInnerContent: {
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+  },
   badges: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    marginBottom: 24,
   },
   badge: {
     flexDirection: 'row',
@@ -212,13 +239,6 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 12,
     fontFamily: 'SpaceMono-Bold',
-  },
-  scrollContainer: {
-    flex: 1,
-  },
-  scrollInnerContent: {
-    paddingHorizontal: 24,
-    paddingVertical: 20,
   },
   detailSection: {
     gap: 16,
@@ -235,22 +255,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'SpaceMono-Regular',
     flex: 1,
-  },
-  footerContainer: {
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  directionsBtn: {
-    flexDirection: 'row',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  directionsText: {
-    fontSize: 16,
-    fontFamily: 'SpaceMono-Bold',
   },
 });
