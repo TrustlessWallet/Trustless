@@ -69,7 +69,8 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
