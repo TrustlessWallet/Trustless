@@ -25,7 +25,7 @@ const getBounds = (region: Region): [number, number, number, number] => [
 const getZoomLevel = (region: Region): number => Math.max(0, Math.round(Math.log(360 / region.longitudeDelta) / Math.LN2));
 
 export default function MapScreen() {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
   const mapRef = useRef<MapView>(null);
   const clusterRef = useRef<Supercluster | null>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
@@ -115,7 +115,6 @@ export default function MapScreen() {
   const toggleMapType = () => setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
 
   const handleMapInteraction = () => {
-    // Snap to index 0 (20%) when user touches the map
     if (selectedMerchant && bottomSheetRef.current) {
       bottomSheetRef.current.snapToIndex(0);
     }
@@ -148,9 +147,9 @@ export default function MapScreen() {
   };
 
   const mapStyle = useMemo(() => {
-    const baseColor = isDark ? '#121212' : '#f5f5f5';
-    const roadColor = isDark ? '#2c2c2c' : '#ffffff';
-    const labelColor = isDark ? '#8a8a8a' : '#9e9e9e';
+    const baseColor = theme.colors.background;
+    const roadColor = theme.colors.surface;
+    const labelColor = theme.colors.muted;
 
     return [
       { elementType: 'geometry', stylers: [{ color: baseColor }] },
@@ -161,9 +160,9 @@ export default function MapScreen() {
       { featureType: 'road', elementType: 'geometry', stylers: [{ color: roadColor }] },
       { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: baseColor }] },
       { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-      { featureType: 'water', elementType: 'geometry', stylers: [{ color: isDark ? '#000000' : '#e0e0e0' }] },
+      { featureType: 'water', elementType: 'geometry', stylers: [{ color: theme.colors.border }] },
     ];
-  }, [isDark, theme]);
+  }, [theme]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -211,15 +210,19 @@ export default function MapScreen() {
 
         {isLoading && (
           <View style={styles.loadingOverlay}>
-            <View style={[styles.loadingBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <ActivityIndicator size="large" color="#F7931A" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.primary, opacity: 0.3 }]} />
+            <View style={[
+              styles.loadingBox, 
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, shadowColor: theme.colors.primary }
+            ]}>
+              <ActivityIndicator size="large" color={theme.colors.bitcoin} />
               <Text style={[styles.loadingText, { color: theme.colors.primary }]}>Syncing Map Data...</Text>
             </View>
           </View>
         )}
 
         {error && (
-          <View style={[styles.errorContainer, { backgroundColor: theme.colors.surface }]}>
+          <View style={[styles.errorContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.error }]}>
             <Text style={{ color: theme.colors.error }}>Failed to load map data.</Text>
           </View>
         )}
@@ -265,7 +268,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
     zIndex: 10,
   },
   loadingBox: {
@@ -274,7 +276,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
   },
   fabContainer: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 30,
+    bottom: 30,
     right: 20,
     gap: 16,
   },
@@ -305,11 +306,6 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    borderWidth: 2,
   },
 });
