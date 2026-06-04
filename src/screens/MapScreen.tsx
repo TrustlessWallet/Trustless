@@ -50,24 +50,29 @@ export default function MapScreen() {
   useEffect(() => {
     if (!elements || elements.length === 0) return;
 
-    const points = elements.map((el) => {
-      const lat = el.osm_json?.lat ?? el.osm_json?.center?.lat ?? el.lat;
-      const lon = el.osm_json?.lon ?? el.osm_json?.center?.lon ?? el.lon;
-      const mergedTags = { ...(el.osm_json?.tags || {}), ...(el.tags || {}) };
-      const cleanElement = { ...el, lat: Number(lat), lon: Number(lon), tags: mergedTags };
+    // Process massive datasets in a non-blocking macro-task to prevent UI freezing (faster perceived loading)
+    const timer = setTimeout(() => {
+      const points = elements.map((el) => {
+        const lat = el.osm_json?.lat ?? el.osm_json?.center?.lat ?? el.lat;
+        const lon = el.osm_json?.lon ?? el.osm_json?.center?.lon ?? el.lon;
+        const mergedTags = { ...(el.osm_json?.tags || {}), ...(el.tags || {}) };
+        const cleanElement = { ...el, lat: Number(lat), lon: Number(lon), tags: mergedTags };
 
-      return {
-        type: 'Feature' as const,
-        properties: { cluster: false, element: cleanElement },
-        geometry: { type: 'Point' as const, coordinates: [Number(lon), Number(lat)] },
-      };
-    }).filter(p => !isNaN(p.geometry.coordinates[0]) && !isNaN(p.geometry.coordinates[1]));
+        return {
+          type: 'Feature' as const,
+          properties: { cluster: false, element: cleanElement },
+          geometry: { type: 'Point' as const, coordinates: [Number(lon), Number(lat)] },
+        };
+      }).filter(p => !isNaN(p.geometry.coordinates[0]) && !isNaN(p.geometry.coordinates[1]));
 
-    const supercluster = new Supercluster({ radius: 70, maxZoom: 16 });
-    supercluster.load(points);
-    clusterRef.current = supercluster;
-    
-    updateClusters(region);
+      const supercluster = new Supercluster({ radius: 70, maxZoom: 16 });
+      supercluster.load(points);
+      clusterRef.current = supercluster;
+      
+      updateClusters(region);
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [elements]);
 
   useEffect(() => {
@@ -76,17 +81,20 @@ export default function MapScreen() {
       if (status !== 'granted') return;
       let currentLocation = await Location.getCurrentPositionAsync({});
       setLocation(currentLocation);
-
-      if (mapRef.current) {
-        mapRef.current.animateToRegion({
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }, 1000);
-      }
     })();
   }, []);
+
+  useEffect(() => {
+    // Automatically zoom to the user's location once data sync is finished and location is known
+    if (!isLoading && location && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      }, 1000);
+    }
+  }, [isLoading, location]);
 
   const updateClusters = (newRegion: Region) => {
     if (!clusterRef.current) return;

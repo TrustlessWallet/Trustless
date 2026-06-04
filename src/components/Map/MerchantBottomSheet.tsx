@@ -113,6 +113,9 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
   const categoryIcon = getCategoryIcon(tags);
   const storeStatus = parseOpeningHours(tags.opening_hours);
 
+  const hasPaymentMethods = tags['payment:lightning'] === 'yes' || tags['payment:onchain'] === 'yes' || tags['payment:lightning_contactless'] === 'yes';
+  const hasDetails = Boolean(addressString || tags.opening_hours || tags.phone || tags.website);
+
   return (
     <BottomSheet
       ref={bottomSheetRef}
@@ -172,56 +175,66 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
 
         <BottomSheetScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollInnerContent}>
           
-          <View style={styles.badges}>
-            {tags['payment:lightning'] === 'yes' && (
-              <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
-                <MaterialIcons name="bolt" size={14} color={badgeTextColor} />
-                <Text style={[styles.badgeText, { color: badgeTextColor }]}>Lightning</Text>
+          {hasPaymentMethods && (
+            <>
+              <Text style={[styles.sectionHeader, { color: theme.colors.primary }]}>Accepting</Text>
+              <View style={styles.badges}>
+                {tags['payment:lightning'] === 'yes' && (
+                  <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
+                    <MaterialIcons name="bolt" size={14} color={badgeTextColor} />
+                    <Text style={[styles.badgeText, { color: badgeTextColor }]}>Lightning</Text>
+                  </View>
+                )}
+                {tags['payment:onchain'] === 'yes' && (
+                  <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
+                    <MaterialIcons name="link" size={14} color={badgeTextColor} />
+                    <Text style={[styles.badgeText, { color: badgeTextColor }]}>On-chain</Text>
+                  </View>
+                )}
+                {tags['payment:lightning_contactless'] === 'yes' && (
+                  <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
+                    <MaterialIcons name="contactless" size={14} color={badgeTextColor} />
+                    <Text style={[styles.badgeText, { color: badgeTextColor }]}>NFC</Text>
+                  </View>
+                )}
               </View>
-            )}
-            {tags['payment:onchain'] === 'yes' && (
-              <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
-                <MaterialIcons name="link" size={14} color={badgeTextColor} />
-                <Text style={[styles.badgeText, { color: badgeTextColor }]}>On-chain</Text>
-              </View>
-            )}
-            {tags['payment:lightning_contactless'] === 'yes' && (
-              <View style={[styles.badge, { backgroundColor: badgeBgColor }]}>
-                <MaterialIcons name="contactless" size={14} color={badgeTextColor} />
-                <Text style={[styles.badgeText, { color: badgeTextColor }]}>NFC</Text>
-              </View>
-            )}
-          </View>
+            </>
+          )}
 
-          <View style={styles.detailSection}>
-            {addressString && (
-              <View style={styles.detailRow}>
-                <MaterialIcons name="location-pin" size={20} color={theme.colors.primary} style={styles.icon} />
-                <Text style={[styles.detailText, { color: theme.colors.primary }]}>{addressString}</Text>
-              </View>
-            )}
-            
-            {tags.opening_hours && (
-              <View style={styles.detailRow}>
-                <MaterialIcons name="schedule" size={20} color={theme.colors.primary} style={styles.icon} />
-                <Text style={[styles.detailText, { color: theme.colors.primary }]}>{tags.opening_hours}</Text>
-              </View>
-            )}
+          {hasDetails && (
+            <>
+              <Text style={[styles.sectionHeader, { color: theme.colors.primary }]}>Details</Text>
+              <View style={styles.detailSection}>
+                {addressString && (
+                  <View style={styles.detailRow}>
+                    <MaterialIcons name="location-pin" size={20} color={theme.colors.primary} style={styles.icon} />
+                    <Text style={[styles.detailText, { color: theme.colors.primary }]}>{addressString}</Text>
+                  </View>
+                )}
+                
+                {tags.opening_hours && (
+                  <View style={styles.detailRow}>
+                    <MaterialIcons name="schedule" size={20} color={theme.colors.primary} style={styles.icon} />
+                    <Text style={[styles.detailText, { color: theme.colors.primary }]}>{tags.opening_hours}</Text>
+                  </View>
+                )}
 
-            {tags.phone && (
-              <TouchableOpacity style={styles.detailRow} onPress={() => Linking.openURL(`tel:${tags.phone}`)}>
-                <MaterialIcons name="phone" size={20} color={theme.colors.primary} style={styles.icon} />
-                <Text style={[styles.detailText, { color: theme.colors.primary, textDecorationLine: 'underline' }]}>{tags.phone}</Text>
-              </TouchableOpacity>
-            )}
+                {tags.phone && (
+                  <TouchableOpacity style={styles.detailRow} onPress={() => Linking.openURL(`tel:${tags.phone}`)}>
+                    <MaterialIcons name="phone" size={20} color={theme.colors.primary} style={styles.icon} />
+                    <Text style={[styles.detailText, { color: theme.colors.primary, textDecorationLine: 'underline' }]}>{tags.phone}</Text>
+                  </TouchableOpacity>
+                )}
 
-            {tags.website && (
-              <TouchableOpacity style={styles.detailRow} onPress={() => openLink(tags.website!)}>
-                <MaterialIcons name="language" size={20} color={theme.colors.primary} style={styles.icon} />
-                <Text style={[styles.detailText, { color: theme.colors.primary, textDecorationLine: 'underline' }]} numberOfLines={1}>{tags.website}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+                {tags.website && (
+                  <TouchableOpacity style={styles.detailRow} onPress={() => openLink(tags.website!)}>
+                    <MaterialIcons name="language" size={20} color={theme.colors.primary} style={styles.icon} />
+                    <Text style={[styles.detailText, { color: theme.colors.primary, textDecorationLine: 'underline' }]} numberOfLines={1}>{tags.website}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </>
+          )}
           
         </BottomSheetScrollView>
 
@@ -295,6 +308,11 @@ const styles = StyleSheet.create({
   scrollInnerContent: {
     paddingHorizontal: 24,
     paddingVertical: 20,
+  },
+  sectionHeader: {
+    fontSize: 16,
+    fontFamily: 'SpaceMono-Bold',
+    marginBottom: 12,
   },
   badges: {
     flexDirection: 'row',
