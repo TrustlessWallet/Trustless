@@ -8,6 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
+
 type QRScannerScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'QRScanner'>;
 type QRScannerScreenRouteProp = RouteProp<RootStackParamList, 'QRScanner'>;
 
@@ -19,6 +20,7 @@ const QRScannerScreen = () => {
   const { onScanSuccess } = route.params;
   const { theme } = useTheme(); 
   const styles = useMemo(() => getStyles(theme), [theme]); 
+
   const handleBarCodeScanned = (scanningResult: BarcodeScanningResult) => {
     if (isScannedRef.current) return; 
     isScannedRef.current = true;
@@ -27,11 +29,13 @@ const QRScannerScreen = () => {
     onScanSuccess(address);
     navigation.goBack();
   };
+
   useEffect(() => {
     if (!permission || !permission.granted) {
       requestPermission();
     }
   }, [permission, requestPermission]);
+
   if (!permission) {
     return (
       <View style={styles.container}>
@@ -39,6 +43,7 @@ const QRScannerScreen = () => {
       </View>
     );
   }
+
   if (!permission.granted) {
     return (
       <View style={styles.container}>
@@ -52,6 +57,7 @@ const QRScannerScreen = () => {
       </View>
     );
   }
+
   return (
     <View style={styles.container}>
       <CameraView
@@ -69,6 +75,7 @@ const QRScannerScreen = () => {
     </View>
   );
 };
+
 const getStyles = (theme: Theme) => StyleSheet.create({
   container: { 
     flex: 1, 
@@ -100,7 +107,11 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     gap: 8 
   },
   overlay: { 
-    ...StyleSheet.absoluteFillObject, 
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center', 
     alignItems: 'center', 
   },
@@ -118,4 +129,5 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 16, 
   },
 });
+
 export default QRScannerScreen;
