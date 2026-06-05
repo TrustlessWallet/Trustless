@@ -9,7 +9,7 @@ import { useIsFocused } from '@react-navigation/native';
 import MapScreen from '../screens/MapScreen';
 
 import { Host, ZStack } from '@expo/ui/swift-ui';
-import { glassEffect, cornerRadius, frame } from '@expo/ui/swift-ui/modifiers';
+import { glassEffect, cornerRadius, frame, tint } from '@expo/ui/swift-ui/modifiers';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -19,7 +19,7 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
   const TAB_WIDTH = TAB_BAR_WIDTH / state.routes.length;
 
   const BUBBLE_W = TAB_WIDTH - 16;
-  const BUBBLE_H = 72 - 16;
+  const BUBBLE_H = 56;
 
   // +8 baked in so the bubble sits centred in its slot (avoids Animated.add in render)
   const translateX = useRef(new Animated.Value(state.index * TAB_WIDTH + 8)).current;
@@ -36,15 +36,24 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
   // scaleY: squishes slightly when stretched (liquid feel)
   const scaleY = dragDx.interpolate({
     inputRange: [-60, -20, 0, 20, 60],
-    outputRange: [0.82, 0.91, 1, 0.91, 0.82],
+    outputRange: [1.20, 1.1, 1, 1.1, 1.20],
     extrapolate: 'clamp',
   });
+
+  // Keep live refs so the panResponder (created once) always reads current values.
+  // Without this, state.index / TAB_WIDTH / navigation are stale closures.
+  const stateRef = useRef(state);
+  const navigationRef = useRef(navigation);
+  const tabWidthRef = useRef(TAB_WIDTH);
+  useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { navigationRef.current = navigation; }, [navigation]);
+  useEffect(() => { tabWidthRef.current = TAB_WIDTH; }, [TAB_WIDTH]);
 
   useEffect(() => {
     Animated.spring(translateX, {
       toValue: state.index * TAB_WIDTH + 8,
       useNativeDriver: true,
-      bounciness: 12,
+      bounciness: 14,
       speed: 14,
     }).start();
   }, [state.index, TAB_WIDTH]);
@@ -55,40 +64,46 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
       onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 5,
 
       onPanResponderGrant: (evt) => {
+        const TW = tabWidthRef.current;
+        const numRoutes = stateRef.current.routes.length;
         const touchX = evt.nativeEvent.pageX - 24;
-        const offset = touchX - TAB_WIDTH / 2;
+        const offset = touchX - TW / 2;
         dragDx.setValue(0);
         Animated.timing(translateX, {
-          toValue: Math.max(8, Math.min(offset + 8, TAB_WIDTH * (state.routes.length - 1) + 8)),
+          toValue: Math.max(8, Math.min(offset + 8, TW * (numRoutes - 1) + 8)),
           duration: 50,
           useNativeDriver: true,
         }).start();
       },
 
       onPanResponderMove: (evt, gestureState) => {
+        const TW = tabWidthRef.current;
+        const numRoutes = stateRef.current.routes.length;
         const touchX = evt.nativeEvent.pageX - 24;
-        const offset = touchX - TAB_WIDTH / 2;
-        translateX.setValue(Math.max(8, Math.min(offset + 8, TAB_WIDTH * (state.routes.length - 1) + 8)));
-        // Feed raw dx into stretch — clamp so it doesn't go wild
+        const offset = touchX - TW / 2;
+        translateX.setValue(Math.max(8, Math.min(offset + 8, TW * (numRoutes - 1) + 8)));
         dragDx.setValue(Math.max(-80, Math.min(80, gestureState.dx)));
       },
 
-      onPanResponderRelease: (evt) => {
-        const touchX = evt.nativeEvent.pageX - 24;
-        // FIX: Math.round (not Math.floor) so the centre of each tab snaps correctly,
-        // including Wallet which sits in the middle slot.
-        let index = Math.round(touchX / TAB_WIDTH - 0.5);
-        index = Math.max(0, Math.min(index, state.routes.length - 1));
+      onPanResponderRelease: () => {
+        const TW = tabWidthRef.current;
+        const currentState = stateRef.current;
+        const nav = navigationRef.current;
 
-        // Spring back to snapped position
+        // Read bubble position directly — unambiguous regardless of drag origin
+        const bubbleLeft = (translateX as any)._value - 8;
+        let index = Math.round(bubbleLeft / TW);
+        index = Math.max(0, Math.min(index, currentState.routes.length - 1));
+
+        // Snap bubble to resolved slot
         Animated.spring(translateX, {
-          toValue: index * TAB_WIDTH + 8,
+          toValue: index * TW + 8,
           useNativeDriver: true,
           bounciness: 12,
           speed: 14,
         }).start();
 
-        // Release the stretch
+        // Release stretch
         Animated.spring(dragDx, {
           toValue: 0,
           useNativeDriver: true,
@@ -96,23 +111,24 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
           speed: 16,
         }).start();
 
-        if (state.index !== index) {
-          const route = state.routes[index];
-          const event = navigation.emit({
+        if (currentState.index !== index) {
+          const route = currentState.routes[index];
+          const event = nav.emit({
             type: 'tabPress',
             target: route.key,
             canPreventDefault: true,
           });
-
           if (!event.defaultPrevented) {
-            navigation.navigate(route.name);
+            nav.navigate(route.name);
           }
         }
       },
 
       onPanResponderTerminate: () => {
+        const TW = tabWidthRef.current;
+        const currentState = stateRef.current;
         Animated.spring(translateX, {
-          toValue: state.index * TAB_WIDTH + 8,
+          toValue: currentState.index * TW + 8,
           useNativeDriver: true,
           bounciness: 12,
           speed: 14,
@@ -135,7 +151,7 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
           <ZStack
             modifiers={[
               frame({ width: TAB_BAR_WIDTH, height: 72 }),
-              glassEffect({ glass: { variant: 'regular' } }),
+              glassEffect({ glass: { tint: theme.colors.surface + '99', variant: 'clear', interactive: true } }),
               cornerRadius(36),
             ]}
           >
@@ -146,7 +162,7 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
         <View
           style={[
             styles.glassLayer,
-            { backgroundColor: theme.colors.surface, opacity: 0.95, borderRadius: 36 },
+            { opacity: 0.95, borderRadius: 36 },
           ]}
         />
       )}
@@ -173,7 +189,7 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
             <ZStack
               modifiers={[
                 frame({ width: BUBBLE_W, height: BUBBLE_H }),
-                glassEffect({ glass: { variant: 'regular' } }),
+                glassEffect({ glass: { variant: 'clear' } }),
                 cornerRadius(28),
               ]}
             >
