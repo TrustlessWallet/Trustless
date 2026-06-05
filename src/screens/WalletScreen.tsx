@@ -47,6 +47,7 @@ const WalletScreen = () => {
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const isFocused = useIsFocused();
+    const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
     const onchainBalance = useMemo(() => {
         if (!activeWallet) return 0;
@@ -103,13 +104,17 @@ const WalletScreen = () => {
         loadInitialWalletMode();
     }, []);
 
-    const onRefresh = () => {
-        triggerRefresh();
-        if (!isLightningMode) {
-            refetchTxs();
-            refetchUtxos();
+    const onRefresh = useCallback(async () => {
+        setIsManualRefreshing(true);
+        try {
+            triggerRefresh();
+            if (!isLightningMode) {
+                await Promise.all([refetchTxs(), refetchUtxos()]);
+            }
+        } finally {
+            setIsManualRefreshing(false);
         }
-    };
+    }, [isLightningMode, triggerRefresh, refetchTxs, refetchUtxos]);
 
     const toggleMode = () => {
         setIsLightningMode(!isLightningMode);
@@ -326,10 +331,11 @@ const WalletScreen = () => {
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                     <RefreshControl
-                        refreshing={!isLightningMode && isRefetchingTxs}
+                        refreshing={isManualRefreshing}
                         onRefresh={onRefresh}
                         tintColor={theme.colors.primary}
                         colors={[theme.colors.primary]}
+                        progressViewOffset={SCREEN_HEIGHT * 0.1}
                     />
                 }
                 removeClippedSubviews={true}
@@ -345,10 +351,11 @@ const WalletScreen = () => {
 const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background
+        backgroundColor: theme.colors.background,
     },
     listContent: {
         flexGrow: 1,
+        paddingVertical: 128,
     },
     centeredContainer: {
         flex: 1,

@@ -608,8 +608,7 @@ const get_styles = (theme: Theme) => StyleSheet.create({
   content_container: {
     padding: 24,
     flexGrow: 1,
-    paddingBottom: 40,
-    paddingTop: 32,
+    paddingVertical: 128,
   },
   section: {
     marginBottom: 32,
