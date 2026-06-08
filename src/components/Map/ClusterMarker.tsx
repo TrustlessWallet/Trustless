@@ -24,14 +24,9 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 19,
     borderWidth: 2.5,
-    backgroundColor: '#F7931A', // Bitcoin Orange
+    backgroundColor: '#F7931A',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
   },
   text: {
     fontSize: 14,
