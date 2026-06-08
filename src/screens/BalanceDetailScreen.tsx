@@ -1,11 +1,11 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  TouchableOpacity, 
-  Linking, 
-  Alert, 
-  TextInput, 
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  Linking,
+  Alert,
+  TextInput,
   Platform,
   FlatList,
   Keyboard
@@ -22,6 +22,7 @@ import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
+import { GlassView } from '../components/GlassView';
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BalanceDetail'>;
@@ -41,7 +42,7 @@ const BalanceDetailScreen = () => {
 
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
-  
+
   const flatListRef = useRef<FlatList>(null);
 
   const { paddingBottom } = useKeyboardScroll({
@@ -49,8 +50,8 @@ const BalanceDetailScreen = () => {
     animateLayoutChanges: Platform.OS === 'ios',
   });
 
-  const sortedUtxos = useMemo(() => 
-    [...utxos].sort((a, b) => b.value - a.value), 
+  const sortedUtxos = useMemo(() =>
+    [...utxos].sort((a, b) => b.value - a.value),
     [utxos]
   );
 
@@ -67,8 +68,16 @@ const BalanceDetailScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-          <Feather name="x" size={24} color={theme.colors.primary} />
+        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.8}>
+          <GlassView
+            width={32}
+            height={32}
+            borderRadius={16}
+            shape="circle"
+            interactive={true}
+          >
+            <Feather name="x" size={20} color={theme.colors.primary} />
+          </GlassView>
         </TouchableOpacity>
       ),
     });
@@ -79,13 +88,13 @@ const BalanceDetailScreen = () => {
       const index = sortedUtxos.findIndex(
         u => `${u.txid}:${u.vout}` === editingUtxoKey
       );
-      
+
       if (index !== -1) {
         const timer = setTimeout(() => {
           flatListRef.current?.scrollToIndex({
             index,
             animated: true,
-            viewPosition: 0.5 
+            viewPosition: 0.5
           });
         }, 300);
         return () => clearTimeout(timer);
@@ -117,7 +126,7 @@ const BalanceDetailScreen = () => {
 
   const stopEditing = async (txid: string, vout: number) => {
     if (!editingUtxoKey) return;
-    
+
     const labelToSave = editingLabel.trim();
     setEditingUtxoKey(null);
     Keyboard.dismiss();
@@ -137,41 +146,41 @@ const BalanceDetailScreen = () => {
       <View style={styles.row}>
         <View style={styles.infoContainer}>
           <View style={styles.nameContainer}>
-             {isEditing ? (
-                 <TextInput
-                    style={styles.nameInput}
-                    value={editingLabel}
-                    onChangeText={setEditingLabel}
-                    onBlur={() => stopEditing(item.txid, item.vout)}
-                    onSubmitEditing={() => stopEditing(item.txid, item.vout)}
-                    returnKeyType="done"
-                    autoFocus={true}
-                    keyboardAppearance={isDark ? 'dark' : 'light'}
-                    placeholderTextColor={theme.colors.muted}
-                    underlineColorAndroid="transparent"
-                 />
-             ) : (
-                 <TouchableOpacity 
-                    style={styles.nameTouchable}
-                    onPress={() => startEditing(item, label)}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 10, bottom: 10, left: 0, right: 20 }}
-                 >
-                    <Text style={styles.utxoNameText}>{label}</Text>
-                    <Feather name="edit" style={styles.editIcon} />
-                 </TouchableOpacity>
-             )}
+            {isEditing ? (
+              <TextInput
+                style={styles.nameInput}
+                value={editingLabel}
+                onChangeText={setEditingLabel}
+                onBlur={() => stopEditing(item.txid, item.vout)}
+                onSubmitEditing={() => stopEditing(item.txid, item.vout)}
+                returnKeyType="done"
+                autoFocus={true}
+                keyboardAppearance={isDark ? 'dark' : 'light'}
+                placeholderTextColor={theme.colors.muted}
+                underlineColorAndroid="transparent"
+              />
+            ) : (
+              <TouchableOpacity
+                style={styles.nameTouchable}
+                onPress={() => startEditing(item, label)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 0, right: 20 }}
+              >
+                <Text style={styles.utxoNameText}>{label}</Text>
+                <Feather name="edit" style={styles.editIcon} />
+              </TouchableOpacity>
+            )}
           </View>
 
           <View>
-             <Text style={styles.detailText} selectable>
-                {item.txid.substring(0, 4)}...{item.txid.substring(item.txid.length - 4)}:{item.vout}
-             </Text>
+            <Text style={styles.detailText} selectable>
+              {item.txid.substring(0, 4)}...{item.txid.substring(item.txid.length - 4)}:{item.vout}
+            </Text>
           </View>
 
           <View>
             <Text style={styles.detailText}>
-                {formatBitcoinAddressShort(item.address)}
+              {formatBitcoinAddressShort(item.address)}
             </Text>
           </View>
 
@@ -228,7 +237,7 @@ const BalanceDetailScreen = () => {
 
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   container: {
-    flex: 1, 
+    flex: 1,
     backgroundColor: theme.colors.background,
   },
   flatList: {
@@ -239,27 +248,27 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 16,
   },
-  centered: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
     marginTop: 50,
   },
   closeButton: {
     padding: 4,
   },
-  row: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingVertical: 16, 
-    borderBottomWidth: 1, 
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
     borderColor: theme.colors.border,
   },
-  infoContainer: { 
-    flex: 3, 
-    gap: 4 
+  infoContainer: {
+    flex: 3,
+    gap: 4
   },
   nameContainer: {
     height: 30,
@@ -278,7 +287,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   editIcon: {
     fontSize: 16,
-    color: theme.colors.primary, 
+    color: theme.colors.primary,
   },
   nameInput: {
     fontFamily: 'SpaceMono-Bold',
@@ -289,25 +298,25 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     margin: 0,
     minWidth: 150,
   },
-  detailText: { 
-    fontSize: 14, 
+  detailText: {
+    fontSize: 14,
     color: theme.colors.muted,
-    fontFamily: 'monospace', 
+    fontFamily: 'monospace',
   },
-  balanceContainer: { 
-    flex: 2, 
+  balanceContainer: {
+    flex: 2,
     flexDirection: 'row',
-    alignItems: 'center', 
+    alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 12,
   },
-  balanceText: { 
+  balanceText: {
     fontSize: 16,
     color: theme.colors.primary
   },
-  emptyText: {  
+  emptyText: {
     color: theme.colors.muted,
-    textAlign: 'center', 
+    textAlign: 'center',
     fontSize: 16,
   },
   orangeSymbol: {

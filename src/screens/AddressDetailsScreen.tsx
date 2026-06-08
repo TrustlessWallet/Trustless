@@ -14,6 +14,7 @@ import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GlassView } from '../components/GlassView';
 
 const QR_SIZE = 220;
 
@@ -77,8 +78,16 @@ const AddressDetailsScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
-          <Feather name="x" size={24} color={theme.colors.primary} />
+        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.8}>
+          <GlassView
+            width={32}
+            height={32}
+            borderRadius={16}
+            shape="circle"
+            interactive={true}
+          >
+            <Feather name="x" size={20} color={theme.colors.primary} />
+          </GlassView>
         </TouchableOpacity>
       ),
     });

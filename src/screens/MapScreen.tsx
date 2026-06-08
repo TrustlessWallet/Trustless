@@ -27,6 +27,8 @@ const getZoomLevel = (region: Region): number => Math.max(0, Math.round(Math.log
 
 export default function MapScreen() {
   const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  
   const mapRef = useRef<MapView>(null);
   const clusterRef = useRef<Supercluster | null>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
@@ -51,7 +53,6 @@ export default function MapScreen() {
   useEffect(() => {
     if (!elements || elements.length === 0) return;
 
-    // Process massive datasets in a non-blocking macro-task to prevent UI freezing (faster perceived loading)
     const timer = setTimeout(() => {
       const points = elements.map((el) => {
         const lat = el.osm_json?.lat ?? el.osm_json?.center?.lat ?? el.lat;
@@ -86,7 +87,6 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => {
-    // Automatically zoom to the user's location once data sync is finished and location is known
     if (!isLoading && location && mapRef.current) {
       mapRef.current.animateToRegion({
         latitude: location.coords.latitude,
@@ -175,7 +175,7 @@ export default function MapScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <View style={styles.container}>
         <MapView
           ref={mapRef}
           style={styles.map}
@@ -219,20 +219,29 @@ export default function MapScreen() {
 
         {isLoading && (
           <View style={styles.loadingOverlay}>
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.primary, opacity: 0.3 }]} />
-            <View style={[
-              styles.loadingBox, 
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }
-            ]}>
-              <ActivityIndicator size="large" color={theme.colors.bitcoin} />
-              <Text style={[styles.loadingText, { color: theme.colors.primary }]}>Syncing Map Data...</Text>
+            <View style={StyleSheet.absoluteFill} />
+            <View style={styles.loadingBoxContainer}>
+              <GlassView
+                width={240}
+                height={120}
+                borderRadius={16}
+                shape="rectangle"
+                tintColor={theme.colors.surface + '99'}
+                fallbackColor={theme.colors.surface}
+                interactive={false}
+              >
+                <View style={styles.loadingContent}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                  <Text style={styles.loadingText}>Loading merchants...</Text>
+                </View>
+              </GlassView>
             </View>
           </View>
         )}
 
         {error && (
-          <View style={[styles.errorContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.error }]}>
-            <Text style={{ color: theme.colors.error }}>Failed to load map data.</Text>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>Failed to load map data.</Text>
           </View>
         )}
 
@@ -247,8 +256,9 @@ export default function MapScreen() {
               height={52}
               borderRadius={26}
               tintColor={theme.colors.surface + '99'}
+              shape="circle"
               fallbackColor={theme.colors.surface}
-              interactive={false}
+              interactive={true}
             >
               <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
             </GlassView>
@@ -264,8 +274,9 @@ export default function MapScreen() {
               height={52}
               borderRadius={26}
               tintColor={theme.colors.surface + '99'}
+              shape="circle"
               fallbackColor={theme.colors.surface}
-              interactive={false}
+              interactive={true}
             >
               <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
             </GlassView>
@@ -284,9 +295,10 @@ export default function MapScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: theme.colors.background,
   },
   map: {
     position: 'absolute',
@@ -305,17 +317,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
-  loadingBox: {
-    paddingVertical: 24,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    borderWidth: 1,
+  loadingBoxContainer: {
+    overflow: 'hidden',
+  },
+  loadingContent: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: 16,
   },
   loadingText: {
     marginTop: 16,
     fontFamily: 'SpaceMono-Bold',
     fontSize: 16,
+    color: theme.colors.primary,
   },
   errorContainer: {
     position: 'absolute',
@@ -324,6 +339,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 8,
     borderWidth: 1,
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.error,
+  },
+  errorText: {
+    color: theme.colors.error,
   },
   fabContainer: {
     position: 'absolute',

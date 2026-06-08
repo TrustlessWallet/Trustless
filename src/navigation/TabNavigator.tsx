@@ -151,7 +151,7 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
         tintColor={theme.colors.surface + '99'}
         interactive={false}
         fallbackColor={theme.colors.surface}
-        fallbackOpacity={0.95}
+        fallbackOpacity={0.99}
         style={styles.glassLayer}
       />
 
@@ -175,7 +175,10 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
         <GlassView
           width={BUBBLE_W}
           height={BUBBLE_H}
-          borderRadius={28}
+          borderRadius={16}
+          shape="capsule"
+          variant="clear"
+          tintColor={theme.colors.surface + '10'}
           fallbackColor={theme.colors.primary}
           fallbackOpacity={0.85}
         />
@@ -332,7 +335,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     left: 0,
-    borderRadius: 28,
     zIndex: 1,
     overflow: 'hidden',
   },
