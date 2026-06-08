@@ -1,13 +1,22 @@
 import React from 'react';
 import { View, Platform, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Host, ZStack } from '@expo/ui/swift-ui';
-import { glassEffect, cornerRadius as cornerRadiusModifier, frame } from '@expo/ui/swift-ui/modifiers';
+import { 
+  glassEffect, 
+  cornerRadius as cornerRadiusModifier, 
+  frame,
+  ignoreSafeArea
+} from '@expo/ui/swift-ui/modifiers';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface GlassViewProps {
   width: number;
   height: number;
-  borderRadius: number;
+  borderRadius?: number;
+  borderTopLeftRadius?: number;
+  borderTopRightRadius?: number;
+  borderBottomLeftRadius?: number;
+  borderBottomRightRadius?: number;
   tintColor?: string;
   variant?: string;
   interactive?: boolean;
@@ -21,7 +30,11 @@ interface GlassViewProps {
 export const GlassView: React.FC<GlassViewProps> = ({
   width,
   height,
-  borderRadius,
+  borderRadius = 0,
+  borderTopLeftRadius,
+  borderTopRightRadius,
+  borderBottomLeftRadius,
+  borderBottomRightRadius,
   tintColor,
   variant = 'clear',
   interactive = false,
@@ -44,15 +57,37 @@ export const GlassView: React.FC<GlassViewProps> = ({
 
   const swiftModifiers: any[] = [
     frame({ width, height }),
-    glassEffect({ glass: glassOptions, shape })
+    glassEffect({ glass: glassOptions, shape }),
+    ignoreSafeArea()
   ];
 
-  if (borderRadius > 0) {
+  const hasIndividualCorners = 
+    borderTopLeftRadius !== undefined || 
+    borderTopRightRadius !== undefined || 
+    borderBottomLeftRadius !== undefined || 
+    borderBottomRightRadius !== undefined;
+
+  // Only apply native Swift corner radius if using a uniform radius.
+  if (borderRadius > 0 && !hasIndividualCorners) {
     swiftModifiers.push(cornerRadiusModifier(borderRadius));
   }
 
   return (
-    <View style={[{ width, height, borderRadius, overflow: 'hidden' }, style]}>
+    <View 
+      style={[
+        { 
+          width, 
+          height, 
+          overflow: 'hidden',
+          borderRadius: borderRadius,
+          borderTopLeftRadius: borderTopLeftRadius ?? borderRadius,
+          borderTopRightRadius: borderTopRightRadius ?? borderRadius,
+          borderBottomLeftRadius: borderBottomLeftRadius ?? borderRadius,
+          borderBottomRightRadius: borderBottomRightRadius ?? borderRadius,
+        }, 
+        style
+      ]}
+    >
       {Platform.OS === 'ios' ? (
         <Host style={StyleSheet.absoluteFill}>
           <ZStack modifiers={swiftModifiers}>
@@ -66,7 +101,6 @@ export const GlassView: React.FC<GlassViewProps> = ({
             {
               backgroundColor: activeFallbackColor,
               opacity: fallbackOpacity,
-              borderRadius,
             },
           ]}
         />
