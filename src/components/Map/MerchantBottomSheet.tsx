@@ -56,7 +56,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
   const { theme } = useTheme();
   const tags = merchant.tags || {};
 
-  const snapPoints = useMemo(() => ['20%', '50%', '90%'], []);
+  const snapPoints = useMemo(() => ['30%', '50%', '90%'], []);
 
   useEffect(() => {
     const timer = setTimeout(() => {

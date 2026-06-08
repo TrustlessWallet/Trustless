@@ -14,6 +14,7 @@ import CustomMarker from '../components/Map/CustomMarker';
 import ClusterMarker from '../components/Map/ClusterMarker';
 import MerchantBottomSheet from '../components/Map/MerchantBottomSheet';
 import { BTC_MAP_API_URL, btcMapFetcher, BtcMapElement } from '../services/btcmap';
+import { GlassView } from '../components/GlassView';
 
 const getBounds = (region: Region): [number, number, number, number] => [
   region.longitude - region.longitudeDelta / 2,
@@ -221,7 +222,7 @@ export default function MapScreen() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.primary, opacity: 0.3 }]} />
             <View style={[
               styles.loadingBox, 
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, shadowColor: theme.colors.primary }
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }
             ]}>
               <ActivityIndicator size="large" color={theme.colors.bitcoin} />
               <Text style={[styles.loadingText, { color: theme.colors.primary }]}>Syncing Map Data...</Text>
@@ -237,19 +238,37 @@ export default function MapScreen() {
 
         <View style={styles.fabContainer}>
           <TouchableOpacity 
-            style={[styles.fab, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]} 
+            style={styles.fab} 
             onPress={toggleMapType}
             activeOpacity={0.8}
           >
-            <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
+            <GlassView
+              width={52}
+              height={52}
+              borderRadius={26}
+              tintColor={theme.colors.surface + '99'}
+              fallbackColor={theme.colors.surface}
+              interactive={false}
+            >
+              <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
+            </GlassView>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.fab, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]} 
+            style={styles.fab} 
             onPress={centerOnUser}
             activeOpacity={0.8}
           >
-            <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
+            <GlassView
+              width={52}
+              height={52}
+              borderRadius={26}
+              tintColor={theme.colors.surface + '99'}
+              fallbackColor={theme.colors.surface}
+              interactive={false}
+            >
+              <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
+            </GlassView>
           </TouchableOpacity>
         </View>
 
@@ -292,10 +311,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 10,
   },
   loadingText: {
     marginTop: 16,
@@ -320,8 +335,5 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
   },
 });

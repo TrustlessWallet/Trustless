@@ -7,9 +7,7 @@ import WalletScreen from '../screens/WalletScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import { useIsFocused } from '@react-navigation/native';
 import MapScreen from '../screens/MapScreen';
-
-import { Host, ZStack } from '@expo/ui/swift-ui';
-import { glassEffect, cornerRadius, frame, tint } from '@expo/ui/swift-ui/modifiers';
+import { GlassView } from '../components/GlassView';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -36,7 +34,7 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
   // scaleY: squishes slightly when stretched (liquid feel)
   const scaleY = dragDx.interpolate({
     inputRange: [-60, -20, 0, 20, 60],
-    outputRange: [1.20, 1.1, 1, 1.1, 1.20],
+    outputRange: [1.40, 1.20, 1, 1.20, 1.40],
     extrapolate: 'clamp',
   });
 
@@ -146,26 +144,16 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
   return (
     <View style={styles.container}>
       {/* ── Background glass pill ── */}
-      {Platform.OS === 'ios' ? (
-        <Host style={styles.glassLayer}>
-          <ZStack
-            modifiers={[
-              frame({ width: TAB_BAR_WIDTH, height: 72 }),
-              glassEffect({ glass: { tint: theme.colors.surface + '99', variant: 'clear', interactive: true } }),
-              cornerRadius(36),
-            ]}
-          >
-            <View />
-          </ZStack>
-        </Host>
-      ) : (
-        <View
-          style={[
-            styles.glassLayer,
-            { opacity: 0.95, borderRadius: 36 },
-          ]}
-        />
-      )}
+      <GlassView
+        width={TAB_BAR_WIDTH}
+        height={72}
+        borderRadius={36}
+        tintColor={theme.colors.surface + '99'}
+        interactive={false}
+        fallbackColor={theme.colors.surface}
+        fallbackOpacity={0.95}
+        style={styles.glassLayer}
+      />
 
       {/* ── Liquid-glass bubble ── */}
       <Animated.View
@@ -184,31 +172,13 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
         ]}
         pointerEvents="none"
       >
-        {Platform.OS === 'ios' ? (
-          <Host style={StyleSheet.absoluteFill}>
-            <ZStack
-              modifiers={[
-                frame({ width: BUBBLE_W, height: BUBBLE_H }),
-                glassEffect({ glass: { variant: 'clear' } }),
-                cornerRadius(28),
-              ]}
-            >
-              <View />
-            </ZStack>
-          </Host>
-        ) : (
-          // Android fallback: semi-transparent tinted pill
-          <View
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                backgroundColor: theme.colors.primary,
-                opacity: 0.85,
-                borderRadius: 28,
-              },
-            ]}
-          />
-        )}
+        <GlassView
+          width={BUBBLE_W}
+          height={BUBBLE_H}
+          borderRadius={28}
+          fallbackColor={theme.colors.primary}
+          fallbackOpacity={0.85}
+        />
       </Animated.View>
 
       {/* ── Tab touch targets ── */}
@@ -224,8 +194,6 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
               ? options.title
               : route.name;
 
-          // On iOS the bubble is now glass-coloured, so use the primary colour for
-          // focused icons/labels so they still pop against the glass.
           const activeColor = isFocused ? theme.colors.primary : theme.colors.primary;
           const inactiveColor = theme.colors.primary;
           const color = isFocused ? activeColor : inactiveColor;
