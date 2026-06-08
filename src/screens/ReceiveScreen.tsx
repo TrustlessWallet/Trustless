@@ -14,6 +14,7 @@ import { EXPLORER_UI_URL, COIN_TYPE, IS_TESTNET } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GlassView } from '../components/GlassView';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 type ReceiveScreenRouteProp = RouteProp<RootStackParamList, 'Receive'>;
@@ -61,8 +62,16 @@ const ReceiveScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
-          <Feather name="x" size={24} color={theme.colors.primary} />
+        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.8}>
+          <GlassView
+            width={32}
+            height={32}
+            borderRadius={16}
+            shape="circle"
+            interactive={true}
+          >
+            <Feather name="x" size={20} color={theme.colors.primary} />
+          </GlassView>
         </TouchableOpacity>
       ),
     });
@@ -332,9 +341,17 @@ const ReceiveScreen = () => {
                 <Text style={styles.modalTitle}>Set request amount</Text>
                 <TouchableOpacity
                   onPress={() => setIsAmountModalVisible(false)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  activeOpacity={0.8}
                 >
-                  <Feather name="x" size={24} color={theme.colors.primary} />
+                  <GlassView
+                    width={32}
+                    height={32}
+                    borderRadius={16}
+                    shape="circle"
+                    interactive={true}
+                  >
+                    <Feather name="x" size={20} color={theme.colors.primary} />
+                  </GlassView>
                 </TouchableOpacity>
               </View>
 

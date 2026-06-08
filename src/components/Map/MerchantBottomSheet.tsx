@@ -6,6 +6,7 @@ import { Text } from '../StyledText';
 import { useTheme } from '../../contexts/ThemeContext';
 import { BtcMapElement } from '../../services/btcmap';
 import { getCategoryIcon } from './CustomMarker';
+import { GlassView } from '../GlassView';
 
 interface Props {
   merchant: BtcMapElement;
@@ -24,13 +25,13 @@ const parseOpeningHours = (hoursString?: string): { status: 'open' | 'closed', t
     const currentTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
     const rules = hoursString.split(';');
-    
+
     for (const rule of rules) {
       const r = rule.trim();
-      const hasDay = r.includes(currentDay) || 
-                     r.includes('Mo-Su') || 
-                     (r.includes('Mo-Fr') && ['Mo', 'Tu', 'We', 'Th', 'Fr'].includes(currentDay)) ||
-                     (r.includes('Mo-Sa') && currentDay !== 'Su');
+      const hasDay = r.includes(currentDay) ||
+        r.includes('Mo-Su') ||
+        (r.includes('Mo-Fr') && ['Mo', 'Tu', 'We', 'Th', 'Fr'].includes(currentDay)) ||
+        (r.includes('Mo-Sa') && currentDay !== 'Su');
 
       if (hasDay) {
         const timeMatch = r.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
@@ -90,7 +91,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
 
   const openLink = (url: string) => {
     if (!url.startsWith('http')) url = `https://${url}`;
-    Linking.openURL(url).catch(() => {});
+    Linking.openURL(url).catch(() => { });
   };
 
   const addressString = [tags['addr:street'], tags['addr:housenumber'], tags['addr:city']]
@@ -99,7 +100,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
   const getSubtitle = () => {
     const primaryTag = tags.shop || tags.amenity || tags.leisure || tags.tourism;
     if (primaryTag && primaryTag.toLowerCase() !== 'yes') {
-      return primaryTag.replace(/_/g, ' '); 
+      return primaryTag.replace(/_/g, ' ');
     }
     if (tags.category && tags.category.toLowerCase() !== 'other') {
       return tags.category;
@@ -109,7 +110,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
 
   const badgeBgColor = theme.colors.bitcoin;
   const badgeTextColor = theme.colors.background;
-  
+
   const categoryIcon = getCategoryIcon(tags);
   const storeStatus = parseOpeningHours(tags.opening_hours);
 
@@ -119,25 +120,33 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
   return (
     <BottomSheet
       ref={bottomSheetRef}
-      index={1} 
+      index={1}
       snapPoints={snapPoints}
       enableDynamicSizing={false}
-      enablePanDownToClose={false} 
+      enablePanDownToClose={false}
       handleIndicatorStyle={{ backgroundColor: theme.colors.border, width: 40 }}
-      backgroundStyle={{ backgroundColor: theme.colors.background }}
+      backgroundStyle={{ backgroundColor: theme.colors.background, borderRadius: 36 }}
     >
       <View style={styles.sheetWrapper}>
-        
+
         <View style={[styles.headerContainer, { borderBottomColor: theme.colors.border }]}>
           <View style={styles.headerTopRow}>
             <Text style={styles.title} numberOfLines={1}>
               {tags.name || 'Bitcoin Merchant'}
             </Text>
-            <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.colors.surface }]}>
-              <MaterialIcons name="close" size={16} color={theme.colors.primary} />
+            <TouchableOpacity onPress={onClose} activeOpacity={0.8}>
+              <GlassView
+                width={32}
+                height={32}
+                borderRadius={16}
+                shape="circle"
+                interactive={true}
+              >
+                <MaterialIcons name="close" size={16} color={theme.colors.primary} />
+              </GlassView>
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.infoRow}>
             <MaterialIcons name={categoryIcon} size={14} color={theme.colors.primary} style={styles.inlineIcon} />
             <Text style={[styles.subtitle, { color: theme.colors.primary }]} numberOfLines={1}>
@@ -147,25 +156,25 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
 
           {storeStatus && (
             <View style={styles.infoRow}>
-              <MaterialIcons 
-                name={storeStatus.status === 'open' ? 'schedule' : 'lock'} 
-                size={14} 
-                color={theme.colors.primary} 
-                style={styles.inlineIcon} 
+              <MaterialIcons
+                name={storeStatus.status === 'open' ? 'schedule' : 'lock'}
+                size={14}
+                color={theme.colors.primary}
+                style={styles.inlineIcon}
               />
               <Text style={[styles.statusText, { color: theme.colors.primary }]}>
-                {storeStatus.status === 'open' 
-                  ? `Open • Closing at ${storeStatus.time}` 
+                {storeStatus.status === 'open'
+                  ? `Open • Closing at ${storeStatus.time}`
                   : `Closed • Opens at ${storeStatus.time}`}
               </Text>
             </View>
           )}
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
-              styles.directionsBtn, 
+              styles.directionsBtn,
               { backgroundColor: theme.colors.primary }
-            ]} 
+            ]}
             onPress={handleDirections}
             activeOpacity={0.8}
           >
@@ -174,7 +183,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
         </View>
 
         <BottomSheetScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollInnerContent}>
-          
+
           {hasPaymentMethods && (
             <>
               <Text style={[styles.sectionHeader, { color: theme.colors.primary }]}>Accepting</Text>
@@ -211,7 +220,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
                     <Text style={[styles.detailText, { color: theme.colors.primary }]}>{addressString}</Text>
                   </View>
                 )}
-                
+
                 {tags.opening_hours && (
                   <View style={styles.detailRow}>
                     <MaterialIcons name="schedule" size={20} color={theme.colors.primary} style={styles.icon} />
@@ -235,7 +244,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
               </View>
             </>
           )}
-          
+
         </BottomSheetScrollView>
 
       </View>
@@ -245,10 +254,10 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
 
 const styles = StyleSheet.create({
   sheetWrapper: {
-    flex: 1, 
+    flex: 1,
   },
   headerContainer: {
-    paddingHorizontal: 24, 
+    paddingHorizontal: 24,
     paddingBottom: 16,
     borderBottomWidth: 1,
   },
