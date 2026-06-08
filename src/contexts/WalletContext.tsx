@@ -609,28 +609,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    const getLightningTopUpAddress = async (): Promise<string> => {
+const getLightningTopUpAddress = async (): Promise<string> => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+        
         try {
-            // Attempt 1: Standard UniFFI lowerCamelCase object mapping
+            // Use the exact same UniFFI `.new()` pattern that works for your Bolt11Invoice
             const response = await activeSdkInstance.receivePayment({
-                paymentMethod: { type: 'bitcoinAddress' }
+                paymentMethod: breezSdk.ReceivePaymentMethod.BitcoinAddress.new({
+                    newAddress: undefined // Explicitly providing the optional parameter the SDK expects
+                } as any)
             });
+            
             const address = response.paymentRequest || response.bitcoinAddress || response.address;
             if (address) return address;
-            throw new Error("Address empty");
+            
+            throw new Error("Address empty in response");
         } catch (error: any) {
-            try {
-                // Attempt 2: Direct JS Class instantiation (Spark SDK standard)
-                const response = await activeSdkInstance.receivePayment({
-                    paymentMethod: new (breezSdk.ReceivePaymentMethod as any).BitcoinAddress()
-                });
-                const address = response.paymentRequest || response.bitcoinAddress || response.address;
-                if (address) return address;
-                throw new Error("Address empty");
-            } catch (fallbackError) {
-                throw new Error("Could not generate on-chain address. Ensure node is synced.");
-            }
+            // Pass the true error message upward so we never hide node sync issues again
+            throw new Error(`Failed to generate address: ${error.message}`);
         }
     };
 
