@@ -11,7 +11,7 @@ echo "1. Generating version metadata..."
 node src/scripts/write-version.js
 
 echo "2. Installing dependencies..."
-npm ci
+npm ci --legacy-peer-deps
 
 echo "3. Generating android and ios directories..."
 export CI=1
