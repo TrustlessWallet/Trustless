@@ -40,6 +40,17 @@
     },
     "plugins": [
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "34.0.0",
+            "ndkVersion": "27.1.12297006"
+          }
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Trustless uses your location to show nearby Bitcoin merchants on the map."
