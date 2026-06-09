@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl, Dimensions } from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import { Theme } from '../constants/theme';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { useWalletTransactions, useWalletUTXOs, useTipHeight } from '../hooks/useBalance';
 import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
@@ -48,6 +49,16 @@ const WalletScreen = () => {
     const [isLightningMode, setIsLightningMode] = useState(false);
     const isFocused = useIsFocused();
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+
+    // Track scroll position
+    const scrollY = useRef(new Animated.Value(0)).current;
+
+    // Wait until content scrolls past the 128px padding container boundary before showing shadow
+    const shadowOpacity = scrollY.interpolate({
+        inputRange: [100, 140],
+        outputRange: [0, 1],
+        extrapolate: 'clamp',
+    });
 
     const onchainBalance = useMemo(() => {
         if (!activeWallet) return 0;
@@ -235,11 +246,38 @@ const WalletScreen = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['right', 'left']}>
-            <FlatList
+            <Animated.View
+                pointerEvents="none"
+                style={[
+                    styles.nativeTopHeaderBar,
+                    {
+                        height: insets.top + 48,
+                        opacity: shadowOpacity
+                    }
+                ]}
+            >
+                <LinearGradient
+                    colors={[
+                        theme.colors.background,           // solid at very top
+                        theme.colors.background + 'CC',    // ~80% opaque
+                        theme.colors.background + '66',    // ~40% opaque  
+                        theme.colors.background + '00',    // fully transparent
+                    ]}
+                    locations={[0, 0.4, 0.7, 1]}
+                    style={StyleSheet.absoluteFill}
+                />
+            </Animated.View>
+
+            <Animated.FlatList
                 key={isDark ? 'dark-list' : 'light-list'}
                 data={displayTransactions}
                 renderItem={renderTransactionItem}
                 keyExtractor={(item: any) => item.paymentHash || item.txid}
+                onScroll={Animated.event(
+                    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                    { useNativeDriver: true }
+                )}
+                scrollEventThrottle={16}
                 ListHeaderComponent={
                     <View style={styles.topSection}>
                         <View style={styles.headerRow}>
@@ -349,6 +387,14 @@ const WalletScreen = () => {
 };
 
 const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
+    nativeTopHeaderBar: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 100,
+        backgroundColor: 'transparent', 
+    },
     container: {
         flex: 1,
         backgroundColor: theme.colors.background,
