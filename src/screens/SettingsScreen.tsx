@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator, Linking } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator, Linking, Animated } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useWallet } from '../contexts/WalletContext';
@@ -13,6 +13,8 @@ import { RootStackParamList } from '../types';
 import { NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network'; 
 import { StyledInput } from '../components/StyledInput'; 
 import { getElectrumClient, resetActiveConnection, getActiveHostName, test_custom_node_connection } from '../services/electrum';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import build_info from '../constants/build.json';
 
@@ -48,8 +50,17 @@ const SettingsScreen = () => {
     lightningInitError,
   } = useWallet();
   const { theme, isDark, toggleTheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => get_styles(theme), [theme]);
   const navigation = useNavigation<navigation_prop>();
+
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  const shadowOpacity = scrollY.interpolate({
+    inputRange: [0, 100],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
   
   const [is_biometrics_enabled, set_is_biometrics_enabled] = useState(false);
   const [auto_lock_time_index, set_auto_lock_time_index] = useState(3);
@@ -294,7 +305,36 @@ const SettingsScreen = () => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.content_container} keyboardShouldPersistTaps="handled" bounces={false}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.topGradient,
+          { height: insets.top + 48, opacity: shadowOpacity }
+        ]}
+      >
+        <LinearGradient
+          colors={[
+            theme.colors.background,
+            theme.colors.background + 'CC',
+            theme.colors.background + '66',
+            theme.colors.background + '00',
+          ]}
+          locations={[0, 0.4, 0.7, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+
+      <Animated.ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content_container}
+        keyboardShouldPersistTaps="handled"
+        bounces={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+      >
         
         <View style={styles.section}>
           <Text style={styles.section_title}>App Settings</Text>
@@ -456,8 +496,6 @@ const SettingsScreen = () => {
                   <Text style={styles.checkbox_label}>Allow self-signed certificates</Text>
                 </TouchableOpacity>
 
-
-                
                 <TouchableOpacity 
                   style={[styles.save_button, connection_status === 'testing' && styles.disabled_button]}
                   onPress={handle_save_node_url}
@@ -595,12 +633,20 @@ const SettingsScreen = () => {
           </Text>
         </View>
 
-      </ScrollView>
+      </Animated.ScrollView>
     </KeyboardAvoidingView>
   );
 };
 
 const get_styles = (theme: Theme) => StyleSheet.create({
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    backgroundColor: 'transparent',
+  },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
