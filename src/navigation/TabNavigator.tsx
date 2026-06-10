@@ -1,5 +1,13 @@
-import React from 'react';
-import { View, StyleSheet, useWindowDimensions, Text as RNText, TouchableOpacity } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import {
+  View,
+  StyleSheet,
+  useWindowDimensions,
+  Text as RNText,
+  TouchableOpacity,
+  PanResponder,
+  Animated
+} from 'react-native';
 import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { TabParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
@@ -16,32 +24,120 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
   const TAB_BAR_WIDTH = SCREEN_WIDTH - 48;
   const TAB_WIDTH = TAB_BAR_WIDTH / state.routes.length;
 
-  const BUBBLE_W = TAB_WIDTH - 16;
+  const BUBBLE_W = TAB_WIDTH - 18;
   const BUBBLE_H = 56;
-  const bubbleLeft = state.index * TAB_WIDTH + 8;
+
+  const stateRef = useRef({
+    index: state.index,
+    routes: state.routes,
+    navigation: navigation,
+    tabWidth: TAB_WIDTH,
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      index: state.index,
+      routes: state.routes,
+      navigation: navigation,
+      tabWidth: TAB_WIDTH,
+    };
+  }, [state.index, state.routes, navigation, TAB_WIDTH]);
+
+  const animatedX = useRef(new Animated.Value(state.index * TAB_WIDTH)).current;
+  const currentX = useRef(state.index * TAB_WIDTH);
+
+  useEffect(() => {
+    const listenerId = animatedX.addListener(({ value }) => {
+      currentX.current = value;
+    });
+    return () => animatedX.removeListener(listenerId);
+  }, [animatedX]);
+
+  useEffect(() => {
+    Animated.spring(animatedX, {
+      toValue: state.index * TAB_WIDTH,
+      useNativeDriver: true,
+      bounciness: 2,
+      speed: 14,
+    }).start();
+  }, [state.index, TAB_WIDTH, animatedX]);
+
+
+  const dragStartX = useRef(0);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 5;
+      },
+      onPanResponderGrant: () => {
+        animatedX.stopAnimation();
+        // Record the exact position when the drag starts
+        dragStartX.current = currentX.current;
+        animatedX.setOffset(dragStartX.current);
+        animatedX.setValue(0);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const { tabWidth, routes } = stateRef.current;
+        const minX = 0;
+        const maxX = (routes.length - 1) * tabWidth;
+
+        // Calculate new position
+        let targetX = dragStartX.current + gestureState.dx;
+
+        // Clamp between min and max bounds
+        if (targetX < minX) targetX = minX;
+        if (targetX > maxX) targetX = maxX;
+
+        // Apply the clamped value relative to the start offset
+        animatedX.setValue(targetX - dragStartX.current);
+      },
+      onPanResponderRelease: () => {
+        animatedX.flattenOffset();
+
+        const { tabWidth, routes, index, navigation } = stateRef.current;
+
+        let targetIndex = Math.round(currentX.current / tabWidth);
+        targetIndex = Math.max(0, Math.min(targetIndex, routes.length - 1));
+
+        Animated.spring(animatedX, {
+          toValue: targetIndex * tabWidth,
+          useNativeDriver: true,
+          bounciness: 2,
+          speed: 14,
+        }).start();
+
+        if (targetIndex !== index) {
+          navigation.navigate(routes[targetIndex].name);
+        }
+      },
+    })
+  ).current;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...panResponder.panHandlers}>
       {/* ── Background glass pill ── */}
       <GlassView
         width={TAB_BAR_WIDTH}
         height={72}
         shape="capsule"
         tintColor={theme.colors.surface + '99'}
-        interactive={true}
+        interactive={false}
         fallbackColor={theme.colors.surface}
         fallbackOpacity={0.99}
         style={styles.glassLayer}
       />
 
-      {/* ── Liquid-glass bubble (at root level to prevent clipping) ── */}
-      <View
+      {/* ── Liquid-glass bubble ── */}
+      <Animated.View
         style={[
           styles.bubble,
           {
             width: BUBBLE_W,
             height: BUBBLE_H,
-            left: bubbleLeft,
+            left: 8,
+            transform: [{ translateX: animatedX }]
           },
         ]}
         pointerEvents="none"
@@ -57,24 +153,22 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
           interactive={true}
           style={styles.glassOverflowOverride}
         />
-      </View>
+      </Animated.View>
 
       {/* ── Tab touch targets ── */}
-      <View style={styles.touchArea}>
-        {state.routes.map((route, index) => {
+      <View style={styles.touchArea} pointerEvents="box-none">
+        {state.routes.map((route, idx) => {
           const { options } = descriptors[route.key];
-          const isFocused = state.index === index;
+          const isFocused = state.index === idx;
 
           const labelText =
             typeof options.tabBarLabel === 'string'
               ? options.tabBarLabel
               : options.title !== undefined
-              ? options.title
-              : route.name;
+                ? options.title
+                : route.name;
 
-          const activeColor = isFocused ? theme.colors.primary : theme.colors.primary;
-          const inactiveColor = theme.colors.primary;
-          const color = isFocused ? activeColor : inactiveColor;
+          const color = theme.colors.primary;
 
           return (
             <TouchableOpacity
