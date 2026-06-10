@@ -156,7 +156,7 @@ const ImportPSBTScreen = () => {
         <View style={styles.container}>
             {isFocused && (
                 <CameraView
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                     facing="back"
                     onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
                     barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
@@ -188,7 +188,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background },
     permissionButton: { marginTop: 16, padding: 12, backgroundColor: theme.colors.primary, borderRadius: 8 },
     overlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         justifyContent: 'center',
         alignItems: 'center',
     },
