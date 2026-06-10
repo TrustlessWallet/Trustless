@@ -254,11 +254,11 @@ export default function MapScreen() {
             <GlassView
               width={52}
               height={52}
-              borderRadius={26}
               tintColor={theme.colors.surface + '99'}
               shape="circle"
               fallbackColor={theme.colors.surface}
               interactive={true}
+              style={{ overflow: 'visible' }}
             >
               <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
             </GlassView>
@@ -272,11 +272,11 @@ export default function MapScreen() {
             <GlassView
               width={52}
               height={52}
-              borderRadius={26}
               tintColor={theme.colors.surface + '99'}
               shape="circle"
               fallbackColor={theme.colors.surface}
               interactive={true}
+              style={{ overflow: 'visible' }}
             >
               <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
             </GlassView>
@@ -299,6 +299,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+    overflow: 'visible',
   },
   map: {
     position: 'absolute',
@@ -350,10 +351,9 @@ const createStyles = (theme: any) => StyleSheet.create({
     bottom: 140,
     right: 20,
     gap: 16,
+    overflow: 'visible',
   },
   fab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    overflow: 'visible',
   },
 });
