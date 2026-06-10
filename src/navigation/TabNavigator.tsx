@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Platform, StyleSheet, Animated, PanResponder, useWindowDimensions, Text as RNText, TouchableOpacity } from 'react-native';
+import React from 'react';
+import { View, StyleSheet, useWindowDimensions, Text as RNText, TouchableOpacity } from 'react-native';
 import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { TabParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
@@ -18,128 +18,7 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
 
   const BUBBLE_W = TAB_WIDTH - 16;
   const BUBBLE_H = 56;
-
-  // +8 baked in so the bubble sits centred in its slot (avoids Animated.add in render)
-  const translateX = useRef(new Animated.Value(state.index * TAB_WIDTH + 8)).current;
-  // Tracks raw drag delta so we can derive a horizontal stretch
-  const dragDx = useRef(new Animated.Value(0)).current;
-
-  // scaleX: stretches up to ~1.25 at ±60 px of drag, then eases back
-  const scaleX = dragDx.interpolate({
-    inputRange: [-60, -20, 0, 20, 60],
-    outputRange: [1.25, 1.12, 1, 1.12, 1.25],
-    extrapolate: 'clamp',
-  });
-
-  // scaleY: squishes slightly when stretched (liquid feel)
-  const scaleY = dragDx.interpolate({
-    inputRange: [-60, -20, 0, 20, 60],
-    outputRange: [1.40, 1.20, 1, 1.20, 1.40],
-    extrapolate: 'clamp',
-  });
-
-  // Keep live refs so the panResponder (created once) always reads current values.
-  // Without this, state.index / TAB_WIDTH / navigation are stale closures.
-  const stateRef = useRef(state);
-  const navigationRef = useRef(navigation);
-  const tabWidthRef = useRef(TAB_WIDTH);
-  useEffect(() => { stateRef.current = state; }, [state]);
-  useEffect(() => { navigationRef.current = navigation; }, [navigation]);
-  useEffect(() => { tabWidthRef.current = TAB_WIDTH; }, [TAB_WIDTH]);
-
-  useEffect(() => {
-    Animated.spring(translateX, {
-      toValue: state.index * TAB_WIDTH + 8,
-      useNativeDriver: true,
-      bounciness: 14,
-      speed: 14,
-    }).start();
-  }, [state.index, TAB_WIDTH]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 5,
-
-      onPanResponderGrant: (evt) => {
-        const TW = tabWidthRef.current;
-        const numRoutes = stateRef.current.routes.length;
-        const touchX = evt.nativeEvent.pageX - 24;
-        const offset = touchX - TW / 2;
-        dragDx.setValue(0);
-        Animated.timing(translateX, {
-          toValue: Math.max(8, Math.min(offset + 8, TW * (numRoutes - 1) + 8)),
-          duration: 50,
-          useNativeDriver: true,
-        }).start();
-      },
-
-      onPanResponderMove: (evt, gestureState) => {
-        const TW = tabWidthRef.current;
-        const numRoutes = stateRef.current.routes.length;
-        const touchX = evt.nativeEvent.pageX - 24;
-        const offset = touchX - TW / 2;
-        translateX.setValue(Math.max(8, Math.min(offset + 8, TW * (numRoutes - 1) + 8)));
-        dragDx.setValue(Math.max(-80, Math.min(80, gestureState.dx)));
-      },
-
-      onPanResponderRelease: () => {
-        const TW = tabWidthRef.current;
-        const currentState = stateRef.current;
-        const nav = navigationRef.current;
-
-        // Read bubble position directly — unambiguous regardless of drag origin
-        const bubbleLeft = (translateX as any)._value - 8;
-        let index = Math.round(bubbleLeft / TW);
-        index = Math.max(0, Math.min(index, currentState.routes.length - 1));
-
-        // Snap bubble to resolved slot
-        Animated.spring(translateX, {
-          toValue: index * TW + 8,
-          useNativeDriver: true,
-          bounciness: 12,
-          speed: 14,
-        }).start();
-
-        // Release stretch
-        Animated.spring(dragDx, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 18,
-          speed: 16,
-        }).start();
-
-        if (currentState.index !== index) {
-          const route = currentState.routes[index];
-          const event = nav.emit({
-            type: 'tabPress',
-            target: route.key,
-            canPreventDefault: true,
-          });
-          if (!event.defaultPrevented) {
-            nav.navigate(route.name);
-          }
-        }
-      },
-
-      onPanResponderTerminate: () => {
-        const TW = tabWidthRef.current;
-        const currentState = stateRef.current;
-        Animated.spring(translateX, {
-          toValue: currentState.index * TW + 8,
-          useNativeDriver: true,
-          bounciness: 12,
-          speed: 14,
-        }).start();
-        Animated.spring(dragDx, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 18,
-          speed: 16,
-        }).start();
-      },
-    })
-  ).current;
+  const bubbleLeft = state.index * TAB_WIDTH + 8;
 
   return (
     <View style={styles.container}>
@@ -147,27 +26,22 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
       <GlassView
         width={TAB_BAR_WIDTH}
         height={72}
-        borderRadius={36}
+        shape="capsule"
         tintColor={theme.colors.surface + '99'}
-        interactive={false}
+        interactive={true}
         fallbackColor={theme.colors.surface}
         fallbackOpacity={0.99}
         style={styles.glassLayer}
       />
 
-      {/* ── Liquid-glass bubble ── */}
-      <Animated.View
+      {/* ── Liquid-glass bubble (at root level to prevent clipping) ── */}
+      <View
         style={[
           styles.bubble,
           {
             width: BUBBLE_W,
             height: BUBBLE_H,
-            transform: [
-              { translateX },
-              // Stretch horizontally and squish vertically while dragging
-              { scaleX },
-              { scaleY },
-            ],
+            left: bubbleLeft,
           },
         ]}
         pointerEvents="none"
@@ -175,17 +49,18 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
         <GlassView
           width={BUBBLE_W}
           height={BUBBLE_H}
-          borderRadius={16}
           shape="capsule"
           variant="clear"
           tintColor={theme.colors.surface + '10'}
           fallbackColor={theme.colors.primary}
           fallbackOpacity={0.85}
+          interactive={true}
+          style={styles.glassOverflowOverride}
         />
-      </Animated.View>
+      </View>
 
       {/* ── Tab touch targets ── */}
-      <View style={styles.touchArea} {...panResponder.panHandlers}>
+      <View style={styles.touchArea}>
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
           const isFocused = state.index === index;
@@ -217,17 +92,19 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
                 }
               }}
             >
-              {options.tabBarIcon?.({ focused: isFocused, color, size: 24 })}
-              <RNText
-                style={{
-                  color,
-                  fontSize: 11,
-                  fontFamily: isFocused ? 'SpaceMono-Bold' : 'SpaceMono-Regular',
-                  marginTop: 2,
-                }}
-              >
-                {labelText}
-              </RNText>
+              <View style={styles.tabContent}>
+                {options.tabBarIcon?.({ focused: isFocused, color, size: 24 })}
+                <RNText
+                  style={{
+                    color,
+                    fontSize: 11,
+                    fontFamily: isFocused ? 'SpaceMono-Bold' : 'SpaceMono-Regular',
+                    marginTop: 2,
+                  }}
+                >
+                  {labelText}
+                </RNText>
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -322,6 +199,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 10,
+    overflow: 'visible',
   },
   glassLayer: {
     position: 'absolute',
@@ -330,25 +208,35 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 0,
-  },
-  bubble: {
-    position: 'absolute',
-    top: 8,
-    left: 0,
-    zIndex: 1,
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   touchArea: {
     flexDirection: 'row',
     width: '100%',
     height: '100%',
     zIndex: 2,
+    overflow: 'visible',
   },
   tabButton: {
     flex: 1,
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'visible',
+  },
+  bubble: {
+    position: 'absolute',
+    top: 8,
+    zIndex: 1,
+    overflow: 'visible',
+  },
+  glassOverflowOverride: {
+    overflow: 'visible',
+  },
+  tabContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
   },
 });
 
