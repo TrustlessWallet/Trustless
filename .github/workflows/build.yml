@@ -1,0 +1,28 @@
+name: Reproducible Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag or branch to build (e.g., 2.0.3)'
+        required: true
+        default: 'main'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag }}
+          fetch-depth: 0
+
+      - name: Execute Dockerized Build
+        run: bash docker-build.sh
+
+      - name: Upload Output APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustless-unsigned-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
