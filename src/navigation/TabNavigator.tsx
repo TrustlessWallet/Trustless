@@ -16,6 +16,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import { useIsFocused } from '@react-navigation/native';
 import MapScreen from '../screens/MapScreen';
 import { GlassView } from '../components/GlassView';
+import { zIndex } from '@expo/ui/swift-ui/modifiers';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -122,10 +123,9 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
         width={TAB_BAR_WIDTH}
         height={72}
         shape="capsule"
+        variant="clear"
         tintColor={theme.colors.surface + '99'}
         interactive={false}
-        fallbackColor={theme.colors.surface}
-        fallbackOpacity={0.99}
         style={styles.glassLayer}
       />
 
@@ -148,10 +148,8 @@ function LiquidGlassTabBar({ state, descriptors, navigation, theme }: BottomTabB
           shape="capsule"
           variant="clear"
           tintColor={theme.colors.surface + '10'}
-          fallbackColor={theme.colors.primary}
-          fallbackOpacity={0.85}
           interactive={true}
-          style={styles.glassOverflowOverride}
+          style={[styles.glassOverflowOverride]}
         />
       </Animated.View>
 
@@ -301,14 +299,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 0,
     overflow: 'visible',
+    zIndex: 2,
   },
   touchArea: {
     flexDirection: 'row',
     width: '100%',
     height: '100%',
-    zIndex: 2,
+    zIndex: 4,
     overflow: 'visible',
   },
   tabButton: {
@@ -321,7 +319,7 @@ const styles = StyleSheet.create({
   bubble: {
     position: 'absolute',
     top: 8,
-    zIndex: 1,
+    zIndex: 3,
     overflow: 'visible',
   },
   glassOverflowOverride: {
@@ -330,7 +328,6 @@ const styles = StyleSheet.create({
   tabContent: {
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 2,
   },
 });
 
