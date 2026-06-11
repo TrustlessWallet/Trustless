@@ -115,6 +115,12 @@ const WalletScreen = () => {
         loadInitialWalletMode();
     }, []);
 
+    useEffect(() => {
+        if (activeWallet?.type === 'watch-only' && isLightningMode) {
+            setIsLightningMode(false);
+        }
+    }, [activeWallet?.type, isLightningMode]);
+
     const onRefresh = useCallback(async () => {
         setIsManualRefreshing(true);
         try {
