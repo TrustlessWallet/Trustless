@@ -28,7 +28,7 @@ const getZoomLevel = (region: Region): number => Math.max(0, Math.round(Math.log
 export default function MapScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  
+
   const mapRef = useRef<MapView>(null);
   const clusterRef = useRef<Supercluster | null>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
@@ -43,6 +43,7 @@ export default function MapScreen() {
     latitudeDelta: 100,
     longitudeDelta: 100,
   });
+  const regionRef = useRef<Region>(region);
 
   const { data: elements, error, isLoading } = useSWR<BtcMapElement[]>(
     BTC_MAP_API_URL,
@@ -70,8 +71,8 @@ export default function MapScreen() {
       const supercluster = new Supercluster({ radius: 70, maxZoom: 16 });
       supercluster.load(points);
       clusterRef.current = supercluster;
-      
-      updateClusters(region);
+
+      updateClusters(regionRef.current);
     }, 0);
 
     return () => clearTimeout(timer);
@@ -88,12 +89,19 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (!isLoading && location && mapRef.current) {
-      mapRef.current.animateToRegion({
+      const targetRegion = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
-      }, 1000);
+      };
+
+      mapRef.current.animateToRegion(targetRegion, 1000);
+
+      // Force update state immediately so markers appear instantly
+      setRegion(targetRegion);
+      regionRef.current = targetRegion;
+      updateClusters(targetRegion);
     }
   }, [isLoading, location]);
 
@@ -103,11 +111,12 @@ export default function MapScreen() {
     const zoom = getZoomLevel(newRegion);
     try {
       setClusters(clusterRef.current.getClusters(bbox, zoom));
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleRegionChangeComplete = (newRegion: Region) => {
     setRegion(newRegion);
+    regionRef.current = newRegion;
     updateClusters(newRegion);
   };
 
@@ -131,7 +140,7 @@ export default function MapScreen() {
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
     setSelectedMerchant(merchant);
-    
+
     const latDelta = 0.003;
     const lonDelta = 0.003;
     const targetLatitude = Number(merchant.lat) - (latDelta * 0.25);
@@ -245,11 +254,12 @@ export default function MapScreen() {
           </View>
         )}
 
-        <View style={styles.fabContainer}>
-          <TouchableOpacity 
-            style={styles.fab} 
+        <View style={styles.fabContainer} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
+          <TouchableOpacity
+            style={styles.fab}
             onPress={toggleMapType}
             activeOpacity={0.8}
+            disabled={!!selectedMerchant}
           >
             <GlassView
               width={52}
@@ -257,17 +267,18 @@ export default function MapScreen() {
               tintColor={theme.colors.surface + '99'}
               shape="circle"
               fallbackColor={theme.colors.surface}
-              interactive={true}
+              interactive={!selectedMerchant}
               style={{ overflow: 'visible' }}
             >
               <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
             </GlassView>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.fab} 
+          <TouchableOpacity
+            style={styles.fab}
             onPress={centerOnUser}
             activeOpacity={0.8}
+            disabled={!!selectedMerchant}
           >
             <GlassView
               width={52}
@@ -275,7 +286,7 @@ export default function MapScreen() {
               tintColor={theme.colors.surface + '99'}
               shape="circle"
               fallbackColor={theme.colors.surface}
-              interactive={true}
+              interactive={!selectedMerchant}
               style={{ overflow: 'visible' }}
             >
               <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
@@ -284,9 +295,9 @@ export default function MapScreen() {
         </View>
 
         {selectedMerchant && (
-          <MerchantBottomSheet 
-            merchant={selectedMerchant} 
-            onClose={() => setSelectedMerchant(null)} 
+          <MerchantBottomSheet
+            merchant={selectedMerchant}
+            onClose={() => setSelectedMerchant(null)}
             bottomSheetRef={bottomSheetRef}
           />
         )}
