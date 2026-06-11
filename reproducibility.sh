@@ -18,6 +18,8 @@ export CI=1
 npx expo prebuild --clean
 
 echo "4. Injecting reproducibility settings..."
+echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
+
 cat <<EOF >> android/app/build.gradle
 
 android {
