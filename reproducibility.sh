@@ -4,7 +4,7 @@ echo "0. Hiding environment variables..."
 if [ -f .env ]; then
     mv .env .env.backup
 fi
-# Ensure .env is restored upon script exit, success, or failure
+
 trap 'if [ -f .env.backup ]; then mv .env.backup .env; fi' EXIT
 
 echo "1. Generating version metadata..."
