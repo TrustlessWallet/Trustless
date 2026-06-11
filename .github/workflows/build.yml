@@ -11,6 +11,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Execute natively inside the WS verification container
+    container:
+      image: reactnativecommunity/react-native-android:latest
+    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -18,8 +22,14 @@ jobs:
           ref: ${{ github.event.inputs.tag }}
           fetch-depth: 0
 
-      - name: Execute Dockerized Build
-        run: bash docker-build.sh
+      # Install Node directly, avoiding apt-get freezes
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+
+      - name: Execute Reproducible Build
+        run: bash reproducibility.sh
 
       - name: Upload Output APK
         uses: actions/upload-artifact@v4

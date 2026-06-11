@@ -1,9 +1,0 @@
-FROM --platform=linux/amd64 reactnativecommunity/react-native-android:latest
-
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs && \
-    npm install -g npm@latest
-
-WORKDIR /app
-
-CMD ["bash", "reproducibility.sh"]
