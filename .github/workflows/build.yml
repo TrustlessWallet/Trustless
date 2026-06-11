@@ -28,8 +28,10 @@ jobs:
         with:
           node-version: '22.14.0'
 
-      - name: Execute Reproducible Build
-        run: bash reproducibility.sh
+      - name: Execute reproducible build
+        run: |
+          git config --global --add safe.directory '*'
+          bash reproducibility.sh
 
       - name: Upload Output APK
         uses: actions/upload-artifact@v4
