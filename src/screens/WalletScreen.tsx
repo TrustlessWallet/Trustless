@@ -407,7 +407,7 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     },
     listContent: {
         flexGrow: 1,
-        paddingVertical: 128,
+        paddingVertical: 92,
     },
     centeredContainer: {
         flex: 1,

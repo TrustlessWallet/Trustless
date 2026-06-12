@@ -16,6 +16,7 @@ import ClusterMarker from '../components/Map/ClusterMarker';
 import MerchantBottomSheet from '../components/Map/MerchantBottomSheet';
 import { BTC_MAP_API_URL, btcMapFetcher, BtcMapElement } from '../services/btcmap';
 import { GlassView } from '../components/GlassView';
+import { useIsFocused } from '@react-navigation/native';
 
 const getBounds = (region: Region): [number, number, number, number] => [
   region.longitude - region.longitudeDelta / 2,
@@ -79,14 +80,23 @@ export default function MapScreen() {
     return () => clearTimeout(timer);
   }, [elements]);
 
+
+  const isFocused = useIsFocused();
+  const hasRequestedLocation = useRef(false); // Prevents asking multiple times if they deny it
+
   useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      let currentLocation = await Location.getCurrentPositionAsync({});
-      setLocation(currentLocation);
-    })();
-  }, []);
+    // Only ask for permission if the user is actually looking at the Map tab
+    if (isFocused && !hasRequestedLocation.current) {
+      hasRequestedLocation.current = true;
+
+      (async () => {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        let currentLocation = await Location.getCurrentPositionAsync({});
+        setLocation(currentLocation);
+      })();
+    }
+  }, [isFocused]);
 
   useEffect(() => {
     if (!isLoading && location && mapRef.current) {
@@ -255,65 +265,65 @@ export default function MapScreen() {
           </View>
         )}
 
-<View style={styles.fabContainer} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
-  {/* ── Map/Satellite Toggle FAB ── */}
-  <TouchableOpacity
-    style={styles.fab}
-    onPress={toggleMapType}
-    activeOpacity={0.8}
-    disabled={!!selectedMerchant}
-  >
-    <GlassView
-      width={52}
-      height={52}
-      tintColor={theme.colors.surface + '99'}
-      shape="circle"
-      fallbackColor={theme.colors.surface}
-      interactive={!selectedMerchant}
-      style={{ overflow: 'visible' }}
-    >
-      {Platform.OS === 'ios' ? (
-        <SymbolView 
-          name={mapType === 'standard' ? 'globe.americas.fill' : 'map.fill'} 
-          size={22} 
-          tintColor={theme.colors.primary} 
-          weight="semibold"
-        />
-      ) : (
-        <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
-      )}
-    </GlassView>
-  </TouchableOpacity>
+        <View style={styles.fabContainer} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
+          {/* ── Map/Satellite Toggle FAB ── */}
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={toggleMapType}
+            activeOpacity={0.8}
+            disabled={!!selectedMerchant}
+          >
+            <GlassView
+              width={52}
+              height={52}
+              tintColor={theme.colors.surface + '99'}
+              shape="circle"
+              fallbackColor={theme.colors.surface}
+              interactive={!selectedMerchant}
+              style={{ overflow: 'visible' }}
+            >
+              {Platform.OS === 'ios' ? (
+                <SymbolView
+                  name='square.stack.3d.up.fill'
+                  size={22}
+                  tintColor={theme.colors.primary}
+                  weight="semibold"
+                />
+              ) : (
+                <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
+              )}
+            </GlassView>
+          </TouchableOpacity>
 
-  {/* ── Center on User Location FAB ── */}
-  <TouchableOpacity
-    style={styles.fab}
-    onPress={centerOnUser}
-    activeOpacity={0.8}
-    disabled={!!selectedMerchant}
-  >
-    <GlassView
-      width={52}
-      height={52}
-      tintColor={theme.colors.surface + '99'}
-      shape="circle"
-      fallbackColor={theme.colors.surface}
-      interactive={!selectedMerchant}
-      style={{ overflow: 'visible' }}
-    >
-      {Platform.OS === 'ios' ? (
-        <SymbolView 
-          name="location.fill" 
-          size={22} 
-          tintColor={theme.colors.primary} 
-          weight="semibold"
-        />
-      ) : (
-        <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
-      )}
-    </GlassView>
-  </TouchableOpacity>
-</View>
+          {/* ── Center on User Location FAB ── */}
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={centerOnUser}
+            activeOpacity={0.8}
+            disabled={!!selectedMerchant}
+          >
+            <GlassView
+              width={52}
+              height={52}
+              tintColor={theme.colors.surface + '99'}
+              shape="circle"
+              fallbackColor={theme.colors.surface}
+              interactive={!selectedMerchant}
+              style={{ overflow: 'visible' }}
+            >
+              {Platform.OS === 'ios' ? (
+                <SymbolView
+                  name="location.fill"
+                  size={22}
+                  tintColor={theme.colors.primary}
+                  weight="semibold"
+                />
+              ) : (
+                <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
+              )}
+            </GlassView>
+          </TouchableOpacity>
+        </View>
 
         {selectedMerchant && (
           <MerchantBottomSheet
