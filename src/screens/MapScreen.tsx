@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 import useSWR from 'swr';
 import Supercluster from 'supercluster';
 import { MaterialIcons } from '@expo/vector-icons';
+import { SymbolView } from 'expo-symbols';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet from '@gorhom/bottom-sheet';
 
@@ -254,45 +255,65 @@ export default function MapScreen() {
           </View>
         )}
 
-        <View style={styles.fabContainer} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={toggleMapType}
-            activeOpacity={0.8}
-            disabled={!!selectedMerchant}
-          >
-            <GlassView
-              width={52}
-              height={52}
-              tintColor={theme.colors.surface + '99'}
-              shape="circle"
-              fallbackColor={theme.colors.surface}
-              interactive={!selectedMerchant}
-              style={{ overflow: 'visible' }}
-            >
-              <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
-            </GlassView>
-          </TouchableOpacity>
+<View style={styles.fabContainer} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
+  {/* ── Map/Satellite Toggle FAB ── */}
+  <TouchableOpacity
+    style={styles.fab}
+    onPress={toggleMapType}
+    activeOpacity={0.8}
+    disabled={!!selectedMerchant}
+  >
+    <GlassView
+      width={52}
+      height={52}
+      tintColor={theme.colors.surface + '99'}
+      shape="circle"
+      fallbackColor={theme.colors.surface}
+      interactive={!selectedMerchant}
+      style={{ overflow: 'visible' }}
+    >
+      {Platform.OS === 'ios' ? (
+        <SymbolView 
+          name={mapType === 'standard' ? 'globe.americas.fill' : 'map.fill'} 
+          size={22} 
+          tintColor={theme.colors.primary} 
+          weight="semibold"
+        />
+      ) : (
+        <MaterialIcons name="layers" size={24} color={theme.colors.primary} />
+      )}
+    </GlassView>
+  </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={centerOnUser}
-            activeOpacity={0.8}
-            disabled={!!selectedMerchant}
-          >
-            <GlassView
-              width={52}
-              height={52}
-              tintColor={theme.colors.surface + '99'}
-              shape="circle"
-              fallbackColor={theme.colors.surface}
-              interactive={!selectedMerchant}
-              style={{ overflow: 'visible' }}
-            >
-              <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
-            </GlassView>
-          </TouchableOpacity>
-        </View>
+  {/* ── Center on User Location FAB ── */}
+  <TouchableOpacity
+    style={styles.fab}
+    onPress={centerOnUser}
+    activeOpacity={0.8}
+    disabled={!!selectedMerchant}
+  >
+    <GlassView
+      width={52}
+      height={52}
+      tintColor={theme.colors.surface + '99'}
+      shape="circle"
+      fallbackColor={theme.colors.surface}
+      interactive={!selectedMerchant}
+      style={{ overflow: 'visible' }}
+    >
+      {Platform.OS === 'ios' ? (
+        <SymbolView 
+          name="location.fill" 
+          size={22} 
+          tintColor={theme.colors.primary} 
+          weight="semibold"
+        />
+      ) : (
+        <MaterialIcons name="my-location" size={24} color={theme.colors.primary} />
+      )}
+    </GlassView>
+  </TouchableOpacity>
+</View>
 
         {selectedMerchant && (
           <MerchantBottomSheet

@@ -51,6 +51,7 @@
     "expo-location": "~56.0.15",
     "expo-sqlite": "~56.0.4",
     "expo-status-bar": "~56.0.4",
+    "expo-symbols": "^56.0.6",
     "jest-expo": "~56.0.4",
     "node-libs-react-native": "^1.2.1",
     "process": "^0.11.10",
