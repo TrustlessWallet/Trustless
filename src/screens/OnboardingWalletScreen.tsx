@@ -20,9 +20,9 @@ const slides = [
   },
   {
     key: '2',
-    headline: 'Manage multiple wallets',
-    body: 'Create, import, and switch between several wallets.',
-    image: require('../../assets/Wallets-onboarding.png'),
+    headline: 'Send Bitcoin',
+    body: 'Adjust fees and review all details before broadcasting.',
+    image: require('../../assets/Transaction-onboarding.png'),
   },
   {
     key: '3',
@@ -32,21 +32,21 @@ const slides = [
   },
   {
     key: '4',
-    headline: 'Control your coins',
-    body: 'Manually select which UTXOs to spend. You are in charge.',
-    image: require('../../assets/Coin-control-onboarding.png'),
+    headline: 'Use lightning',
+    body: 'Instant payments with low fees.\nNon-custodial, of course.',
+    image: require('../../assets/Lightning-onboarding.png'),
   },
   {
     key: '5',
-    headline: 'Send Bitcoin',
-    body: 'Adjust fees and review all details before broadcasting.',
-    image: require('../../assets/Transaction-onboarding.png'),
+    headline: 'Find merchants',
+    body: 'Discover places that accept Bitcoin \n and Lightning near you.',
+    image: require('../../assets/Map-onboarding.png'),
   },
   {
     key: '6',
-    headline: 'Send Lightning',
-    body: 'Instant payments with low fees.\nNon-custodial, of course.',
-    image: require('../../assets/Lightning-onboarding.png'),
+    headline: 'Control your coins',
+    body: 'Manually select which UTXOs to spend. You are in charge.',
+    image: require('../../assets/Coin-control-onboarding.png'),
   },
   {
     key: '7',
@@ -56,7 +56,7 @@ const slides = [
   },
   {
     key: '8',
-    headline: "Don't trust, verify",
+    headline: 'Open source',
     body: 'Trustless is fully open source.\n',
     link_text: 'Audit the code yourself.',
     link: REPO_URL,
