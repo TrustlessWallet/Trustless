@@ -147,7 +147,6 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 ```bash
    bash reproducibility.sh
 ```
-
 **Option B — Docker (macOS / Windows):**
 ```bash
    docker run --rm --platform linux/amd64 \
