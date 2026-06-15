@@ -117,49 +117,65 @@ To get the API key just fill out the [form](https://breez.technology/request-api
 
 To verify that the official binary was built exactly from the published source code, follow these steps. This process compares the internal contents of the official signed package (published on GitHub) against a locally built unsigned package (your local build).
 
-1.  **Download the signed release:**
-    Download the official signed file from the github releases page into a new testing directory. *(Replace the URL with the specific version you are testing)*.
-    ```bash
-    curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/2.0.2/trustless-v2.0.2-release.apk
-    ```
-2. **Verify that hash matches the one listed on Github by running:**
-    ```bash
-    shasum -a 256 trustless-release.apk
-    ```
-4.  **Clone the repository:**
-    Clone the source code and check out the exact release tag matching the downloaded file.
-    ```bash
-    git clone https://github.com/trustlesswallet/trustless.git
-    cd trustless
-    git checkout 2.0.2
-    ```
+The official APK is built on Linux (amd64) inside a pinned Docker container. To get a matching result, your local build must use the same environment. You have two options:
 
-5.  **Build the local unsigned package:**
-    Execute the automated build script. This will install dependencies, enforce reproducible file sorting, disable automated signing, and compile the application.
-    ```bash
-    bash reproducibility.sh
-    ```
+**Option A — Native Linux:** If you are on a Linux (amd64) machine, you can run `reproducibility.sh` directly without Docker.
 
-6.  **Unpack both packages:**
-    Android packages are zip archives. Extract both the downloaded signed package and the newly built local package into separate directories for comparison.
-    ```bash
-    cd ..
-    mkdir unpacked-signed unpacked-unsigned
-    unzip -q -o trustless-release.apk -d unpacked-signed
-    unzip -q -o trustless/android/app/build/outputs/apk/release/app-release-unsigned.apk -d unpacked-unsigned
-    ```
+**Option B — Any OS with Docker:** If you are on macOS or Windows, use the pinned Docker container to replicate the exact build environment.
 
-7.  **Strip metadata and compare:**
-    Remove the `META-INF` directory from both folders. This directory contains the unique cryptographic developer signature and timestamps that will never match. Compare the remaining raw files.
-    ```bash
-    rm -rf unpacked-signed/META-INF unpacked-unsigned/META-INF
-    diff -r unpacked-signed unpacked-unsigned
-    ```
+1. **Download the signed release:**
+   Download the official signed file from the GitHub releases page into a new empty directory. *(Replace the version number with the one you are testing)*.
+```bash
+   curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/2.0.3/trustless-v2.0.3-release.apk
+```
 
-    If the `diff` command returns an empty output, the contents are identical bit-for-bit. The build is officially reproducible.
+2. **Verify the hash matches the one listed on GitHub:**
+```bash
+   shasum -a 256 trustless-release.apk
+```
+
+3. **Clone the repository and check out the release tag:**
+```bash
+   git clone https://github.com/trustlesswallet/trustless.git
+   cd trustless
+   git checkout 2.0.3
+```
+
+4. **Build the local unsigned package:**
+
+**Option A — Native Linux:**
+```bash
+   bash reproducibility.sh
+```
+
+**Option B — Docker (macOS / Windows):**
+```bash
+   docker run --rm --platform linux/amd64 \
+     -v "$(pwd):/app" -w /app \
+     reactnativecommunity/react-native-android@sha256:88d93a9282e0f54f84cec7b979da6c5e3f20d87f5be246b75c231838be852fec \
+     bash -c "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs && bash reproducibility.sh"
+```
+   *Note: on macOS this runs under emulation and will be slow. A native Linux machine is recommended for faster verification.*
+
+5. **Unpack both packages:**
+   Android packages are zip archives. Extract both into separate directories for comparison.
+```bash
+   cd ..
+   mkdir unpacked-signed unpacked-unsigned
+   unzip -q -o trustless-release.apk -d unpacked-signed
+   unzip -q -o trustless/android/app/build/outputs/apk/release/app-release-unsigned.apk -d unpacked-unsigned
+```
+
+6. **Strip metadata and compare:**
+   Remove the `META-INF` directory from both folders. This directory contains the cryptographic developer signature and timestamps that will never match between a signed and unsigned package. Compare everything else.
+```bash
+   rm -rf unpacked-signed/META-INF unpacked-unsigned/META-INF
+   diff -r unpacked-signed unpacked-unsigned
+```
+   If the `diff` command returns empty output, the contents are identical bit-for-bit. The build is reproducible.
 
 #### Lightning reproducibility implications
-Trustless uses [Breez SDK](https://github.com/breez) to handle lightning operations. SDK requires an API key to work. For obvious reasons we don't push the .env file with the key to the GitHub repo. Therefore, proper code reproduction is only possible without an API key, meaning lightning won't work in such a build. With that said, even without the .env file, all lightning-related code is still being baked into the reproducible build, guaranteeing integrity.
+Trustless uses [Breez SDK](https://github.com/breez) to handle lightning operations. The SDK requires an API key, which is not committed to the repository. Therefore, proper code reproduction is only possible without an API key, meaning lightning won't work in a locally built version. With that said, even without the `.env` file, all lightning-related code is still compiled into the build, guaranteeing code integrity.
 
 ## Contributing
 
