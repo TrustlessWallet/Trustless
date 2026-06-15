@@ -96,22 +96,21 @@ To get the API key just fill out the [form](https://breez.technology/request-api
 <summary>Maintainer release checklist</summary>
 
 1. Ensure the working tree is completely clean to avoid the dirty flag.
-2. Create and push the new tag: 
-   `git tag -a 2.0.2 -m "release 2.0.2"`
-   `git push origin 2.0.2`
-3. Navigate into the repository directory to ensure all generated files stay in the correct folder:
-   `cd Trustless`
-4. Generate the unsigned package: 
-   `bash reproducibility.sh`
+2. Create and push the new tag:
+   `git tag -a 2.0.3 -m "release 2.0.3"`
+   `git push origin 2.0.3`
+3. Go to GitHub Actions → "Reproducible release build" → Run workflow → enter the tag.
+4. Wait for the build to complete and download the unsigned APK artifact (`trustless-unsigned-apk`).
 5. If the keystore is missing, generate a new one in the current directory:
    `keytool -genkey -v -keystore trustless-release.keystore -alias trustless-alias -keyalg RSA -keysize 2048 -validity 10000`
-6. Locate the signing tool and sign the package using the keystore: 
+6. Sign the downloaded unsigned APK:
    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1)`
-   
-   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v2.0.2-release.apk android/app/build/outputs/apk/release/app-release-unsigned.apk`
-7. Generate the official hash: 
-   `shasum -a 256 trustless-v2.0.2-release.apk`
-8. Create the github release. Upload the signed package and paste the hash into the release notes.
+   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v2.0.3-release.apk trustless-unsigned-apk.apk`
+7. Generate the official hash:
+   `shasum -a 256 trustless-v2.0.3-release.apk`
+8. Create the GitHub release. Upload the signed package and paste the hash into the release notes.
+
+**Build environment:** Ubuntu (linux/amd64), `reactnativecommunity/react-native-android@sha256:88d93a9282e0f54f84cec7b979da6c5e3f20d87f5be246b75c231838be852fec`, Node.js 22.14.0, NDK 27.1.12297006.
 
 </details>
 
