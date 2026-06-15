@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag or branch to build (e.g., main or 2.0.3)'
+        description: 'Tag or branch to build (e.g., main 3.0.0)'
         required: true
         default: 'main'
 
