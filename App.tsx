@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StatusBar, LogBox, View, Image, Text, TextInput, Animated } from 'react-native';
+import { StatusBar, LogBox, View, Image, Text, TextInput, Animated, Appearance } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppNavigator from './src/navigation/AppNavigator';
 import { WalletProvider } from './src/contexts/WalletContext';
@@ -17,10 +17,12 @@ import * as Font from 'expo-font';
 import { Feather } from '@expo/vector-icons';
 import 'react-native-get-random-values';
 
+
 import './shim';
 
 import { registerRootComponent } from 'expo';
 import { initDatabase } from './src/services/database';
+
 
 interface TextWithDefaultProps extends Text {
   defaultProps?: { allowFontScaling?: boolean };
@@ -55,14 +57,16 @@ const ThemedStatusBar = () => {
     <StatusBar
       barStyle={barStyle}
       backgroundColor={statusBarBg}
-     />
+    />
   );
 };
 
 export default function App() {
   const [networkLoaded, setNetworkLoaded] = useState(false);
   const [dbReady, setDbReady] = useState(false);
-  const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>('light');
+  const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>(
+    Appearance.getColorScheme() === 'dark' ? 'dark' : 'light'
+  );
   const [appKey, setAppKey] = useState(0);
   const [showSplashOverlay, setShowSplashOverlay] = useState(true);
   const [navBootReady, setNavBootReady] = useState(false);
@@ -80,7 +84,7 @@ export default function App() {
     const prepareApp = async () => {
       try {
         await initDatabase();
-        
+
         try {
           await Font.loadAsync(Feather.font);
         } catch (fontError) {
@@ -95,7 +99,7 @@ export default function App() {
         // 2. Hydrate network state
         const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
         setNetwork(savedNetwork === 'testnet' ? 'testnet' : 'mainnet');
-        
+
         // 3. Hydrate theme state
         const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
         if (savedTheme) {
@@ -118,11 +122,11 @@ export default function App() {
   useEffect(() => {
     const appReady = Boolean(fontsLoaded && networkLoaded && dbReady && navBootReady);
     if (!appReady) return;
-    
+
     const minSplashMs = 1000;
     const elapsed = Date.now() - splashStartMs;
     const remaining = Math.max(0, minSplashMs - elapsed);
-    
+
     const t = setTimeout(() => {
       Animated.timing(splashOpacity, {
         toValue: 0,
@@ -132,7 +136,7 @@ export default function App() {
         setShowSplashOverlay(false);
       });
     }, remaining);
-    
+
     return () => clearTimeout(t);
   }, [fontsLoaded, networkLoaded, dbReady, navBootReady, splashOpacity, splashStartMs]);
 
