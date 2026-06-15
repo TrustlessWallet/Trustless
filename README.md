@@ -105,10 +105,11 @@ To get the API key just fill out the [form](https://breez.technology/request-api
    `keytool -genkey -v -keystore trustless-release.keystore -alias trustless-alias -keyalg RSA -keysize 2048 -validity 10000`
 6. Sign the downloaded unsigned APK:
    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1)`
+   
    `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v2.0.3-release.apk trustless-unsigned-apk.apk`
-7. Generate the official hash:
+8. Generate the official hash:
    `shasum -a 256 trustless-v2.0.3-release.apk`
-8. Create the GitHub release. Upload the signed package and paste the hash into the release notes.
+9. Create the GitHub release. Upload the signed package and paste the hash into the release notes.
 
 **Build environment:** Ubuntu (linux/amd64), `reactnativecommunity/react-native-android@sha256:88d93a9282e0f54f84cec7b979da6c5e3f20d87f5be246b75c231838be852fec`, Node.js 22.14.0, NDK 27.1.12297006.
 
