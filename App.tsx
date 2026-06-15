@@ -64,9 +64,7 @@ const ThemedStatusBar = () => {
 export default function App() {
   const [networkLoaded, setNetworkLoaded] = useState(false);
   const [dbReady, setDbReady] = useState(false);
-  const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>(
-    Appearance.getColorScheme() === 'dark' ? 'dark' : 'light'
-  );
+const [splashTheme, setSplashTheme] = useState<'light' | 'dark'>('light');
   const [appKey, setAppKey] = useState(0);
   const [showSplashOverlay, setShowSplashOverlay] = useState(true);
   const [navBootReady, setNavBootReady] = useState(false);
