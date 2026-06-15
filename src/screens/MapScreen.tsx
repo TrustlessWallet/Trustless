@@ -276,7 +276,7 @@ export default function MapScreen() {
             <GlassView
               width={52}
               height={52}
-              tintColor={theme.colors.surface + '99'}
+              tintColor={theme.colors.surface + '10'}
               shape="circle"
               fallbackColor={theme.colors.surface}
               interactive={!selectedMerchant}
@@ -305,7 +305,7 @@ export default function MapScreen() {
             <GlassView
               width={52}
               height={52}
-              tintColor={theme.colors.surface + '99'}
+              tintColor={theme.colors.surface + '10'}
               shape="circle"
               fallbackColor={theme.colors.surface}
               interactive={!selectedMerchant}

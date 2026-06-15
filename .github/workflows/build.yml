@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag or branch to build (e.g., 2.0.3)'
+        description: 'Tag or branch to build (e.g., main or 2.0.3)'
         required: true
         default: 'main'
 
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     # Execute natively inside the WS verification container
     container:
-      image: reactnativecommunity/react-native-android:latest
+      image: reactnativecommunity/react-native-android@sha256:88d93a9282e0f54f84cec7b979da6c5e3f20d87f5be246b75c231838be852fec
     
     steps:
       - name: Checkout Code
