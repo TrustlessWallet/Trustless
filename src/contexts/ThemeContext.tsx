@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LIGHT_THEME, DARK_THEME, Theme } from '../constants/theme';
 
@@ -11,28 +11,22 @@ type ThemeContextType = {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const THEME_STORAGE_KEY = '@app_theme_preference';
 
-export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isDark, setIsDark] = useState<boolean>(false);
-  const isToggledRef = useRef(false);
+interface ThemeProviderProps {
+  children: ReactNode;
+  initialIsDark: boolean;
+}
 
-  useEffect(() => {
-    const loadTheme = async () => {
-      const saved = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-      if (saved !== null && !isToggledRef.current) {
-        setIsDark(saved === 'dark');
-      }
-    };
-    loadTheme();
-  }, []);
+export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, initialIsDark }) => {
+  const [isDark, setIsDark] = useState<boolean>(initialIsDark);
 
-  const toggleTheme = () => {
-    isToggledRef.current = true;
+
+  const toggleTheme = useCallback(() => {
     setIsDark((prevMode) => {
       const newMode = !prevMode;
       AsyncStorage.setItem(THEME_STORAGE_KEY, newMode ? 'dark' : 'light');
       return newMode;
     });
-  };
+  }, []);
 
   const theme = isDark ? DARK_THEME : LIGHT_THEME;
 
