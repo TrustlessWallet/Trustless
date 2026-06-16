@@ -44,7 +44,6 @@ const ThemedStatusBar = () => {
   );
 };
 
-// Renders the correct splash screen dynamically when the user swipes up to the app switcher
 const PrivacySwitcherOverlay = () => {
   const { isDark } = useTheme();
   const [appState, setAppState] = useState(AppState.currentState);
@@ -56,7 +55,6 @@ const PrivacySwitcherOverlay = () => {
     return () => subscription.remove();
   }, []);
 
-  // If the app is active and being used, hide the overlay
   if (appState === 'active') return null;
 
   const splashBg = isDark ? '#000000' : '#ffffff';
@@ -138,14 +136,10 @@ export default function App() {
     return () => clearTimeout(t);
   }, [fontsLoaded, networkLoaded, dbReady, navBootReady, isAppInitialized, launchOpacity, splashStartMs]);
 
-  // Notice there is no longer an "if (!isAppInitialized) return <View>..." block here.
-  // We return the entire tree from the very first frame to prevent React from unmounting
-  // and remounting the splash screen component, which causes blinking.
 
   return (
     <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
       
-      {/* We wait for initialization before rendering the heavy app logic */}
       {isAppInitialized && (
         <QueryClientProvider client={queryClient}>
           <ThemeProvider initialIsDark={initialIsDark}>
@@ -164,7 +158,6 @@ export default function App() {
         </QueryClientProvider>
       )}
 
-      {/* The animated launch splash overlay - CONSTANTLY RENDERED from initial load to prevent blinking */}
       {showLaunchOverlay && (
         <Animated.View
           pointerEvents="none"
@@ -173,7 +166,7 @@ export default function App() {
           <Image 
             source={require('./assets/splash-icon-white.png')} 
             style={{ height: '100%', width: '100%', resizeMode: 'cover' }} 
-            fadeDuration={0} // CRITICAL: Prevents React Native from causing a translucent blink
+            fadeDuration={0}
           />
         </Animated.View>
       )}
