@@ -106,7 +106,7 @@ To get the API key just fill out the [form](https://breez.technology/request-api
 6. Sign the downloaded unsigned APK:
    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1)`
    
-   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v3.0.0-release.apk trustless-unsigned-apk.apk`
+   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v3.0.0-release.apk app-release-unsigned.apk`
 8. Generate the official hash:
    `shasum -a 256 trustless-v3.0.0-release.apk`
 9. Create the GitHub release. Upload the signed package and paste the hash into the release notes.
