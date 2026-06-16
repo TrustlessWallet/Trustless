@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LIGHT_THEME, DARK_THEME, Theme } from '../constants/theme';
 
@@ -11,28 +11,25 @@ type ThemeContextType = {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const THEME_STORAGE_KEY = '@app_theme_preference';
 
-export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isDark, setIsDark] = useState<boolean>(false);
-  const isToggledRef = useRef(false);
+// 1. Explicitly define the props for the provider to fix the TS error
+interface ThemeProviderProps {
+  children: ReactNode;
+  initialIsDark: boolean;
+}
 
-  useEffect(() => {
-    const loadTheme = async () => {
-      const saved = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-      if (saved !== null && !isToggledRef.current) {
-        setIsDark(saved === 'dark');
-      }
-    };
-    loadTheme();
-  }, []);
+// 2. Apply the interface to the React.FC generic
+export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, initialIsDark }) => {
+  const [isDark, setIsDark] = useState<boolean>(initialIsDark);
 
-  const toggleTheme = () => {
-    isToggledRef.current = true;
+  // useCallback ensures this function instance remains stable, improving button responsiveness
+  const toggleTheme = useCallback(() => {
     setIsDark((prevMode) => {
       const newMode = !prevMode;
+      // Fire-and-forget storage update so it doesn't block the UI thread
       AsyncStorage.setItem(THEME_STORAGE_KEY, newMode ? 'dark' : 'light');
       return newMode;
     });
-  };
+  }, []);
 
   const theme = isDark ? DARK_THEME : LIGHT_THEME;
 

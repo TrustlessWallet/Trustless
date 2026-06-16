@@ -6,7 +6,7 @@
     "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon-white.png",
@@ -17,12 +17,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.btc.trustless",
       "icon": "./assets/Trustless.icon",
-      "splash": {
-        "dark": {
-          "image": "./assets/splash-icon-black.png",
-          "backgroundColor": "#000000"
-        }
-      },
       "infoPlist": {
         "NSCameraUsageDescription": "Trustless uses the camera to scan Bitcoin address QR codes.",
         "NSFaceIDUsageDescription": "Trustless uses Face ID to secure your wallet.",
@@ -37,13 +31,6 @@
       },
       "package": "com.btc.trustless",
       "edgeToEdgeEnabled": true,
-      "splash": {
-        "dark": {
-          "image": "./assets/splash-icon-black.png",
-          "backgroundColor": "#000000",
-          "resizeMode": "cover"
-        }
-      },
       "permissions": [
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
