@@ -10,8 +10,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network'; 
-import { StyledInput } from '../components/StyledInput'; 
+import { NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network';
+import { StyledInput } from '../components/StyledInput';
 import { getElectrumClient, resetActiveConnection, getActiveHostName, test_custom_node_connection } from '../services/electrum';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -61,20 +61,20 @@ const SettingsScreen = () => {
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
-  
+
   const [is_biometrics_enabled, set_is_biometrics_enabled] = useState(false);
   const [auto_lock_time_index, set_auto_lock_time_index] = useState(3);
   const [hide_wallet_balance, set_hide_wallet_balance] = useState(false);
   const [default_screen, set_default_screen] = useState<'Wallet'>('Wallet');
   const [default_wallet_mode, set_default_wallet_mode] = useState<'On-chain' | 'Lightning'>('On-chain');
-  
+
   const [custom_node_url, set_custom_node_url] = useState('');
   const [allow_self_signed, set_allow_self_signed] = useState(false);
   const [is_editing_node, set_is_editing_node] = useState(false);
   const [connection_status, set_connection_status] = useState<'idle' | 'testing' | 'connected' | 'failed'>('idle');
   const [active_host, set_active_host] = useState<string | null>(null);
   const [is_viewing_lightning_status, set_is_viewing_lightning_status] = useState(false);
-  
+
   const is_focused = useIsFocused();
   const is_toggling_ref = useRef(false);
 
@@ -82,7 +82,7 @@ const SettingsScreen = () => {
     if (is_toggling_ref.current) return;
     const is_enrolled = await LocalAuthentication.isEnrolledAsync();
     const saved_setting = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
-    
+
     if (!is_enrolled && saved_setting === 'true') {
       await AsyncStorage.setItem(BIOMETRICS_ENABLED_KEY, 'false');
       set_is_biometrics_enabled(false);
@@ -98,7 +98,7 @@ const SettingsScreen = () => {
         const index = auto_lock_options.findIndex(opt => opt.toString() === saved_lock_time);
         if (index !== -1) set_auto_lock_time_index(index);
       }
-      
+
       const saved_wallet_pref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
       set_hide_wallet_balance(saved_wallet_pref === 'true');
 
@@ -111,12 +111,12 @@ const SettingsScreen = () => {
 
       const saved_node = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY);
       const saved_self_signed = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_KEY);
-      
+
       if (saved_node) {
         set_custom_node_url(saved_node);
         set_connection_status('connected');
       }
-      
+
       if (saved_self_signed === 'true') {
         set_allow_self_signed(true);
       }
@@ -138,22 +138,26 @@ const SettingsScreen = () => {
     is_toggling_ref.current = true;
     try {
       const is_enrolled = await LocalAuthentication.isEnrolledAsync();
+
       if (!is_enrolled) {
         Alert.alert(
-          "Biometrics Not Available",
-          "Biometric authentication is currently not available on this device.",
-          [{ text: "OK" }]
+          "Biometrics unavailable",
+          "Biometric authentication is either not supported, or permission was denied.\n\nIf you previously denied permission, you can enable it in your device settings.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() }
+          ]
         );
         is_toggling_ref.current = false;
         return;
       }
-      
-      const prompt_message = is_biometrics_enabled 
+
+      const prompt_message = is_biometrics_enabled
         ? 'Confirm your identity to disable biometric authentication'
         : 'Confirm your identity to enable biometric authentication';
-        
+
       const result = await LocalAuthentication.authenticateAsync({ promptMessage: prompt_message });
-      
+
       if (result.success) {
         const new_value = !is_biometrics_enabled;
         await AsyncStorage.setItem(BIOMETRICS_ENABLED_KEY, new_value.toString());
@@ -172,8 +176,8 @@ const SettingsScreen = () => {
       "This will erase all wallets and saved addresses. Are you sure?",
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Reset", 
+        {
+          text: "Reset",
           style: "destructive",
           onPress: async () => {
             try {
@@ -182,7 +186,7 @@ const SettingsScreen = () => {
                 DEFAULT_SCREEN_KEY,
                 DEFAULT_WALLET_MODE_KEY,
                 BIOMETRICS_ENABLED_KEY,
-                AUTO_LOCK_TIME_KEY, 
+                AUTO_LOCK_TIME_KEY,
                 HIDE_WALLET_BALANCE_KEY,
                 CUSTOM_NODE_URL_KEY,
                 ALLOW_SELF_SIGNED_KEY,
@@ -197,7 +201,7 @@ const SettingsScreen = () => {
               resetActiveConnection();
 
               await resetWallet();
-              
+
               Alert.alert("App Reset", "All data has been deleted.");
             } catch (error) {
               Alert.alert("Error", "Could not complete the reset process.");
@@ -209,10 +213,10 @@ const SettingsScreen = () => {
   };
 
   const handle_auto_lock_change = async (direction: 'next' | 'prev') => {
-    const new_index = direction === 'next' 
+    const new_index = direction === 'next'
       ? (auto_lock_time_index + 1) % auto_lock_options.length
       : (auto_lock_time_index - 1 + auto_lock_options.length) % auto_lock_options.length;
-    
+
     set_auto_lock_time_index(new_index);
     await AsyncStorage.setItem(AUTO_LOCK_TIME_KEY, auto_lock_options[new_index].toString());
     await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
@@ -233,17 +237,17 @@ const SettingsScreen = () => {
   const handle_network_change = async () => {
     const new_network = IS_TESTNET ? 'mainnet' : 'testnet';
     const new_network_name = IS_TESTNET ? 'Mainnet' : 'Testnet';
-    
+
     Alert.alert(
       "Switch Network",
       `Switch to ${new_network_name}? The app will reload and your ${new_network_name} wallets will be loaded.`,
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Switch", 
+        {
+          text: "Switch",
           onPress: async () => {
             await AsyncStorage.setItem(NETWORK_PREF_KEY, new_network);
-            setNetwork(new_network); 
+            setNetwork(new_network);
           }
         }
       ]
@@ -252,7 +256,7 @@ const SettingsScreen = () => {
 
   const handle_save_node_url = async () => {
     const trimmed = custom_node_url.trim().replace(/^https?:\/\//, '');
-    
+
     if (trimmed.length === 0) {
       await AsyncStorage.removeItem(CUSTOM_NODE_URL_KEY);
       await AsyncStorage.removeItem(ALLOW_SELF_SIGNED_KEY);
@@ -268,23 +272,23 @@ const SettingsScreen = () => {
     const parts = trimmed.split(':');
     if (parts.length < 2) {
       Alert.alert(
-        "Invalid Format", 
+        "Invalid Format",
         "Please use the format: host:port:protocol\n\nExample:\n192.168.1.50:50002:tls"
       );
       return;
     }
 
     set_connection_status('testing');
-    
+
     const is_connected = await test_custom_node_connection(trimmed, allow_self_signed);
 
     if (is_connected) {
       await AsyncStorage.setItem(CUSTOM_NODE_URL_KEY, trimmed);
       await AsyncStorage.setItem(ALLOW_SELF_SIGNED_KEY, allow_self_signed ? 'true' : 'false');
-      
+
       resetActiveConnection();
-      await getElectrumClient(); 
-      
+      await getElectrumClient();
+
       set_connection_status('connected');
       set_is_editing_node(false);
       Keyboard.dismiss();
@@ -294,14 +298,14 @@ const SettingsScreen = () => {
     } else {
       set_connection_status('failed');
       Alert.alert(
-        "Connection Failed", 
+        "Connection Failed",
         `Could not connect to ${trimmed}.\n\nThe node might be offline, or you have a typo. The app will continue using the active node.`
       );
     }
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
@@ -335,10 +339,10 @@ const SettingsScreen = () => {
         )}
         scrollEventThrottle={16}
       >
-        
+
         <View style={styles.section}>
           <Text style={styles.section_title}>App Settings</Text>
-          
+
           <View style={styles.row_wrapper}>
             <View style={styles.row}>
               <Text style={styles.row_label}>Theme</Text>
@@ -432,8 +436,8 @@ const SettingsScreen = () => {
           </View>
 
           <View style={styles.col}>
-            <TouchableOpacity 
-              style={styles.row_no_border} 
+            <TouchableOpacity
+              style={styles.row_no_border}
               onPress={() => set_is_editing_node(!is_editing_node)}
             >
               <View style={styles.row_header_group}>
@@ -449,13 +453,13 @@ const SettingsScreen = () => {
                   {connection_status === 'failed' && <Text style={[styles.status_text, { color: theme.colors.error }]}>● Failed</Text>}
                 </View>
               </View>
-              <Feather 
-                name={is_editing_node ? "chevron-up" : "chevron-down"} 
-                size={24} 
-                color={theme.colors.primary} 
+              <Feather
+                name={is_editing_node ? "chevron-up" : "chevron-down"}
+                size={24}
+                color={theme.colors.primary}
               />
             </TouchableOpacity>
-            
+
             {is_editing_node && (
               <View style={styles.node_input_container}>
 
@@ -484,19 +488,19 @@ const SettingsScreen = () => {
                   <Text style={styles.banner_text}>Active node: {active_host || 'Disconnected'}</Text>
                 </View>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.checkbox_row}
                   onPress={() => set_allow_self_signed(!allow_self_signed)}
                 >
-                  <Feather 
-                    name={allow_self_signed ? "check-square" : "square"} 
-                    size={20} 
-                    color={theme.colors.primary} 
+                  <Feather
+                    name={allow_self_signed ? "check-square" : "square"}
+                    size={20}
+                    color={theme.colors.primary}
                   />
                   <Text style={styles.checkbox_label}>Allow self-signed certificates</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.save_button, connection_status === 'testing' && styles.disabled_button]}
                   onPress={handle_save_node_url}
                   disabled={connection_status === 'testing'}
@@ -554,9 +558,9 @@ const SettingsScreen = () => {
 
         <View style={styles.section}>
           <Text style={styles.section_title}>About</Text>
-          
+
           <View style={styles.row_wrapper}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.row}
               onPress={() => Linking.openURL('https://github.com/TrustlessWallet/Trustless')}
             >
@@ -566,7 +570,7 @@ const SettingsScreen = () => {
           </View>
 
           <View style={styles.row_wrapper}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.row}
               onPress={() => Linking.openURL('https://tally.so/r/Y5RyOz')}
             >
@@ -574,9 +578,9 @@ const SettingsScreen = () => {
               <Feather name="chevron-right" size={24} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.row_wrapper}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.row}
               onPress={() => navigation.navigate('PrivacyPolicy')}
             >
@@ -586,7 +590,7 @@ const SettingsScreen = () => {
           </View>
 
           <View style={styles.row_wrapper}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.row}
               onPress={() => navigation.navigate('TermsConditions')}
             >
@@ -596,19 +600,19 @@ const SettingsScreen = () => {
           </View>
 
           <View style={styles.row_wrapper}>
-           <TouchableOpacity 
-            style={styles.row}
-            onPress={() => navigation.navigate('Support' as any)}
-          >
-            <Text style={styles.row_label}>Support Trustless</Text>
-            <Feather name="heart" size={24} color={theme.colors.bitcoin} />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => navigation.navigate('Support' as any)}
+            >
+              <Text style={styles.row_label}>Support Trustless</Text>
+              <Feather name="heart" size={24} color={theme.colors.bitcoin} />
+            </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.section_title}>Danger Zone</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.button_container}
             onPress={handle_reset}
           >
