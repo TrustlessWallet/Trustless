@@ -13,14 +13,16 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 
 ## Main features
 * **Bitcoin wallet:** Import or create new wallets, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets and PSBT sigining.
-  
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/b8bd0f48-9d76-4abb-973d-487b01ea315c" />
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/530a7910-6012-4972-8531-d68e69db2e64" />
+
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/11c00369-6cf6-4fb8-a176-2caee4e2395f" />
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/25582f10-c3de-4012-9b5d-9badf3fba494" />
+
 
 * **Non-custodial Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your lighning balance at anytime.
 
-  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/b67a6933-587a-4f9c-adeb-618e292061f3" />
-  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/545aadf1-b88d-459f-a9fe-1c9e2ace988a" />
+  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/a7f6264f-1535-467b-a704-7b55e32710c5" />
+  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/f31643fe-5963-4251-8541-89bb1cd5fe49" />
+
 
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 
@@ -34,8 +36,8 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 
 * **Custom node and network:** Connect to your own node via Electrum and use testnet network for transaction testing / development.
 
-  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/7ba270f0-f6bd-413d-80dc-2f0912736208" />
-  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/8e9a6cb5-07b9-4575-9af4-e8406b669708" />
+  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/3781bfea-ac93-436f-9744-976b59e3f720" />
+  <img width="250" alt="Custom node and network" src="https://github.com/user-attachments/assets/b5425274-d652-49a3-b775-7bd16a24265b" />
 
 * **Receive address rotation:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
 
