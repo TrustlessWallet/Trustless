@@ -148,7 +148,13 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
    docker run --rm --platform linux/amd64 \
      -v "$(pwd):/app" -w /app \
      reactnativecommunity/react-native-android@sha256:88d93a9282e0f54f84cec7b979da6c5e3f20d87f5be246b75c231838be852fec \
-     bash -c "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs && bash reproducibility.sh"
+     bash -c "
+       curl -fsSL -o node.tar.xz https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz && \
+       tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+       rm node.tar.xz && \
+       node --version && \
+       bash reproducibility.sh
+    "
 ```
    *Note: on macOS this runs under emulation and will be slow. A native Linux machine is recommended for faster verification.*
 
