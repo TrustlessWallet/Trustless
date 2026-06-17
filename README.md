@@ -144,12 +144,6 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 ```
 
 4. **Build the local unsigned package:**
-
-**Option A — Native Linux:**
-```bash
-   bash reproducibility.sh
-```
-**Option B — Docker (macOS / Windows):**
 ```bash
    docker run --rm --platform linux/amd64 \
      -v "$(pwd):/app" -w /app \
