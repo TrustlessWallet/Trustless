@@ -406,7 +406,7 @@
     </footer>
 
     <script>
-        // Updated to explicitly represent your required 7 screens in order
+        // Exact names of your images, which will construct: "Wallet-dark.png", "Wallet-white.png" etc.
         const SLIDES = ["Wallet", "Lightning", "Map", "Receive", "Send", "Confirm", "Node"];
         const BASE_PATH = "assets/Website images";
         const EXTENSION = ".png"; 
@@ -442,12 +442,13 @@
             const type = theme === 'dark' ? 'dark' : 'white';
 
             SLIDES.forEach((slideName, index) => {
-                const i = index + 1; // Maps index 0 to Device 1, index 1 to Device 2, etc.
+                const i = index + 1;
                 const div = document.createElement('div');
                 div.className = 'carousel-item';
                 
                 const img = document.createElement('img');
-                img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
+                // Updated line: Maps to "Wallet-dark.png", "Lightning-white.png", etc.
+                img.src = `${BASE_PATH}/${slideName}-${type}${EXTENSION}`;
                 img.alt = `Trustless Wallet - ${slideName} Screen`;
                 img.id = `slide-${i}`;
                 
@@ -458,12 +459,14 @@
 
         function updateCarouselImages(newTheme) {
             const type = newTheme === 'dark' ? 'dark' : 'white';
-            for (let i = 1; i <= SLIDES.length; i++) {
+            SLIDES.forEach((slideName, index) => {
+                const i = index + 1;
                 const img = document.getElementById(`slide-${i}`);
                 if (img) {
-                    img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
+                    // Updated line: Dynamically sets new src based on slide name and new theme
+                    img.src = `${BASE_PATH}/${slideName}-${type}${EXTENSION}`;
                 }
-            }
+            });
         }
 
         function scrollCarousel(direction) {
