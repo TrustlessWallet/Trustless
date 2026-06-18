@@ -406,7 +406,8 @@
     </footer>
 
     <script>
-        const IMAGE_COUNT = 8;
+        // Updated to explicitly represent your required 7 screens in order
+        const SLIDES = ["Wallet", "Lightning", "Map", "Receive", "Send", "Confirm", "Node"];
         const BASE_PATH = "assets/Website images";
         const EXTENSION = ".png"; 
 
@@ -440,21 +441,24 @@
             track.innerHTML = ''; 
             const type = theme === 'dark' ? 'dark' : 'white';
 
-            for (let i = 1; i <= IMAGE_COUNT; i++) {
+            SLIDES.forEach((slideName, index) => {
+                const i = index + 1; // Maps index 0 to Device 1, index 1 to Device 2, etc.
                 const div = document.createElement('div');
                 div.className = 'carousel-item';
+                
                 const img = document.createElement('img');
                 img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
-                img.alt = `Trustless Wallet Screenshot ${i}`;
+                img.alt = `Trustless Wallet - ${slideName} Screen`;
                 img.id = `slide-${i}`;
+                
                 div.appendChild(img);
                 track.appendChild(div);
-            }
+            });
         }
 
         function updateCarouselImages(newTheme) {
             const type = newTheme === 'dark' ? 'dark' : 'white';
-            for (let i = 1; i <= IMAGE_COUNT; i++) {
+            for (let i = 1; i <= SLIDES.length; i++) {
                 const img = document.getElementById(`slide-${i}`);
                 if (img) {
                     img.src = `${BASE_PATH}/Device ${type} ${i}${EXTENSION}`;
