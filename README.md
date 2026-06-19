@@ -103,8 +103,8 @@ To get the API key just fill out the [form](https://breez.technology/request-api
 
 1. Ensure the working tree is completely clean to avoid the dirty flag.
 2. Create and push the new tag:
-   `git tag -a 3.0.0 -m "release 3.0.0"`
-   `git push origin 3.0.0`
+   `git tag -a 3.0.1 -m "release 3.0.1"`
+   `git push origin 3.0.1`
 3. Go to GitHub Actions → "Reproducible release build" → Run workflow → enter the tag.
 4. Wait for the build to complete and download the unsigned APK artifact (`trustless-unsigned-apk`).
 5. If the keystore is missing, generate a new one in the current directory:
@@ -112,9 +112,9 @@ To get the API key just fill out the [form](https://breez.technology/request-api
 6. Sign the downloaded unsigned APK:
    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1)`
    
-   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v3.0.0-release.apk app-release-unsigned.apk`
+   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v3.0.1-release.apk app-release-unsigned.apk`
 8. Generate the official hash:
-   `shasum -a 256 trustless-v3.0.0-release.apk`
+   `shasum -a 256 trustless-v3.0.1-release.apk`
 9. Create the GitHub release. Upload the signed package and paste the hash into the release notes.
 
 **Build environment:** Ubuntu (linux/amd64), `reactnativecommunity/react-native-android@sha256:88d93a9282e0f54f84cec7b979da6c5e3f20d87f5be246b75c231838be852fec`, Node.js 22.14.0, NDK 27.1.12297006.
@@ -132,7 +132,7 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 1. **Download the signed release:**
    Download the official signed file from the GitHub releases page into a new empty directory. *(Replace the version number with the one you are testing)*.
 ```bash
-   curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/3.0.0/trustless-v3.0.0-release.apk
+   curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/3.0.1/trustless-v3.0.1-release.apk
 ```
 
 2. **Verify the hash matches the one listed on GitHub:**
@@ -144,7 +144,7 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 ```bash
    git clone https://github.com/trustlesswallet/trustless.git
    cd trustless
-   git checkout 3.0.0
+   git checkout 3.0.1
 ```
 
 4. **Build the local unsigned package:**
