@@ -23,6 +23,8 @@ const RecoverWalletScreen = () => {
 
     const [is_input_focused, set_is_input_focused] = useState(false);
 
+    const is_input_empty = phrase.trim().length === 0;
+
     const handle_text_change = (text: string) => {
         set_phrase(text);
 
@@ -125,7 +127,14 @@ const RecoverWalletScreen = () => {
                 </View>
 
                 <View style={styles.bottom_content}>
-                    <TouchableOpacity style={styles.button} onPress={handle_recover} disabled={loading}>
+                    <TouchableOpacity 
+                        style={[
+                            styles.button, 
+                            is_input_empty && { opacity: 0.5 }
+                        ]} 
+                        onPress={handle_recover} 
+                        disabled={loading || is_input_empty}
+                    >
                         {loading ? (
                             <ActivityIndicator color={theme.colors.inversePrimary} />
                         ) : (
