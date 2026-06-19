@@ -246,7 +246,7 @@ export default function MapScreen() {
                 height={120}
                 borderRadius={16}
                 shape="rectangle"
-                tintColor={theme.colors.surface + '99'}
+                tintColor={theme.colors.surface + '10'}
                 fallbackColor={theme.colors.surface}
                 interactive={false}
               >
