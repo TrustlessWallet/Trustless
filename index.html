@@ -406,7 +406,6 @@
     </footer>
 
     <script>
-        // Exact names of your images, which will construct: "Wallet-dark.png", "Wallet-white.png" etc.
         const SLIDES = ["Wallet", "Lightning", "Map", "Receive", "Send", "Confirm", "Node"];
         const BASE_PATH = "assets/Website images";
         const EXTENSION = ".png"; 
@@ -447,7 +446,6 @@
                 div.className = 'carousel-item';
                 
                 const img = document.createElement('img');
-                // Updated line: Maps to "Wallet-dark.png", "Lightning-white.png", etc.
                 img.src = `${BASE_PATH}/${slideName}-${type}${EXTENSION}`;
                 img.alt = `Trustless Wallet - ${slideName} Screen`;
                 img.id = `slide-${i}`;
@@ -463,7 +461,6 @@
                 const i = index + 1;
                 const img = document.getElementById(`slide-${i}`);
                 if (img) {
-                    // Updated line: Dynamically sets new src based on slide name and new theme
                     img.src = `${BASE_PATH}/${slideName}-${type}${EXTENSION}`;
                 }
             });
