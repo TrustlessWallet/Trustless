@@ -82,7 +82,7 @@ export default function MapScreen() {
 
 
   const isFocused = useIsFocused();
-  const hasRequestedLocation = useRef(false); // Prevents asking multiple times if they deny it
+  const hasRequestedLocation = useRef(false);
 
   useEffect(() => {
     // Only ask for permission if the user is actually looking at the Map tab
@@ -295,7 +295,6 @@ export default function MapScreen() {
             </GlassView>
           </TouchableOpacity>
 
-          {/* ── Center on User Location FAB ── */}
           <TouchableOpacity
             style={styles.fab}
             onPress={centerOnUser}
