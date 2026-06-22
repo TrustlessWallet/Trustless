@@ -123,11 +123,7 @@ To get the API key just fill out the [form](https://breez.technology/request-api
 
 To verify that the official binary was built exactly from the published source code, follow these steps. This process compares the internal contents of the official signed package (published on GitHub) against a locally built unsigned package (your local build).
 
-The official APK is built on Linux (amd64) inside a pinned Docker container. To get a matching result, your local build must use the same environment. You have two options:
-
-**Option A — Native Linux:** If you are on a Linux (amd64) machine, you can run `reproducibility.sh` directly without Docker.
-
-**Option B — Any OS with Docker:** If you are on macOS or Windows, use the pinned Docker container to replicate the exact build environment.
+The official APK is built on Linux (amd64) inside a pinned Docker container. To get a matching result, your local build must use the same environment.
 
 1. **Download the signed release:**
    Download the official signed file from the GitHub releases page into a new empty directory. *(Replace the version number with the one you are testing)*.
