@@ -180,7 +180,7 @@ Trustless uses [Breez SDK](https://github.com/breez) to handle lightning operati
 
 ## Contributing
 
-We welcome contributions to trustless! Please follow the standard fork-and-pull request workflow.
+We welcome contributions to Trustless! Please follow the standard fork-and-pull request workflow.
 
 ### Contribution process
 
