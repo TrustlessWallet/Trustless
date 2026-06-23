@@ -52,7 +52,7 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
   <img width="800" alt="Change" src="https://github.com/user-attachments/assets/af596cf8-bc7c-4554-9593-ba78294bb16e" />
 
 
-## Getting started (development)
+## Getting started
 
 To run the project in development mode, you need node-js and a setup for ios (xcode) or android (android studio).
 
