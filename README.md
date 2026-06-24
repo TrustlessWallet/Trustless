@@ -45,7 +45,7 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 
 * **Receive address rotation:** Have 20 unused receive addresses at all times to choose from. This is a privacy feature, because address reuse links payments together.
 
-  <img width="800" alt="Receive" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
+  <img width="800" alt="Receive rotation" src="https://github.com/user-attachments/assets/eada81ef-2979-4178-81ce-322fd2368868" />
   
 * **Change address management:**  To protect user's privacy even more, all change addresses are automatically derived from 1/n chain and are never reused for receiving. In tandem with the previous feature, Trustless makes it drastically harder to link and track user's BTC.
 
