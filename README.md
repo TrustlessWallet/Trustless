@@ -195,7 +195,7 @@ We welcome contributions to Trustless! Please follow the standard fork-and-pull 
 
 * **Minimal PRs:** One feature/fix - one PR please.
 * **Code style:** Keep code clean and consistent.
-* **Testing:** Ensure the app builds and runs via `npm run ios` or `npm run android` before submitting.
+* **Testing:** Ensure the app builds and runs via `npm run ios` or `npm run android` before submitting. Also run `npm run test` to see if any tests fail.
 * **Issues:** Open an issue to discuss major changes before starting work.
 
 ## License
