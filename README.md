@@ -118,7 +118,7 @@ To get the API key just fill out the [form](https://breez.technology/request-api
 
 </details>
 
-To verify that the official binary was built exactly from the published source code, follow these steps. This process compares the internal contents of the official signed package (published on GitHub) against a locally built unsigned package (your local build).
+To verify that the official binary was built exactly from the published source code, follow the steps below. This process compares the internal contents of the official signed package (published on GitHub) against a locally built unsigned package (your local build).
 
 The official APK is built on Linux (amd64) inside a pinned Docker container. To get a matching result, your local build must use the same environment.
 
