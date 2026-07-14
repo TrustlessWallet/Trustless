@@ -41,6 +41,7 @@ import SupportScreen from '../screens/SupportScreen';
 import { get_biometric_prompt_shown, set_biometric_prompt_shown, authenticate_session } from '../services/authState';
 import { LightningTopUpScreen } from '../screens/LightningTopUpScreen';
 import { WithdrawToOnchainScreen } from '../screens/WithdrawToOnchainScreen';
+import TransactionSuccessScreen from '../screens/TransactionSuccessScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
@@ -135,7 +136,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
         const is_enrolled = await LocalAuthentication.isEnrolledAsync();
         const auto_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
-        
+
         if (is_biometrics_enabled === 'true' && is_enrolled && auto_lock_time !== null && auto_lock_time !== 'Off') {
           const lock_time_minutes = parseInt(auto_lock_time, 10);
           if (lock_time_minutes === 0) {
@@ -152,7 +153,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           }
         }
       };
-      
+
       check_pending_auth();
     }
   }, [wallet_loading, wallets.length]);
@@ -160,7 +161,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const check_auth_needed = async () => {
     try {
       if (wallet_loading) return;
-      
+
       if (wallets.length === 0) return;
 
       const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
@@ -198,7 +199,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     check_auth_needed_ref.current = check_auth_needed;
   });
 
-useEffect(() => {
+  useEffect(() => {
     const check_initial_status = async () => {
       try {
         set_initial_tab('Wallet');
@@ -210,7 +211,7 @@ useEffect(() => {
           set_is_loading(false);
           return;
         }
-        
+
         set_needs_onboarding(false);
 
         const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
@@ -371,134 +372,145 @@ useEffect(() => {
         initialRouteName={initial_route}
         screenOptions={screen_options}
       >
+        <Stack.Screen
+          name="MainTabs"
+          component={TabNavigator}
+          options={{
+            headerShown: false,
+            contentStyle: { backgroundColor: theme.colors.background }
+          }}
+          initialParams={{ screen: initial_tab }}
+        />
+        <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
+
+        <Stack.Screen
+          name="TransactionSuccess"
+          component={TransactionSuccessScreen}
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+            animation: 'fade',
+            gestureEnabled: false,
+          }}
+        />
+
+        <Stack.Group screenOptions={{
+          presentation: 'formSheet',
+          ...android_sheet_options,
+        }}>
+          <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
+          <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
+          <Stack.Screen name="ShowMnemonicQR" component={ShowMnemonicQRScreen} options={{ title: 'Recovery QR' }} />
+          <Stack.Screen name="VerifyMnemonic" component={VerifyMnemonicScreen} options={{ title: 'Verify phrase' }} />
+          <Stack.Screen name="RecoverWallet" component={RecoverWalletScreen} options={{ title: 'Recover wallet' }} />
+          <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
+          <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
+          <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
+          <Stack.Screen name="WithdrawToOnchain" component={WithdrawToOnchainScreen} options={{ title: 'Withdraw to on-chain' }} />
+          <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
+          <Stack.Screen name="ExportPSBT" component={ExportPSBTScreen} options={{ title: 'Export transaction' }} />
+          <Stack.Screen name="ImportPSBT" component={ImportPSBTScreen} options={{ title: 'Scan signed transaction', presentation: 'modal' }} />
+          <Stack.Screen name="WalletSwitcher" component={WalletSwitcherScreen} options={{ title: 'Wallets' }} />
+          <Stack.Screen name="WalletOptions" component={WalletOptionsScreen} options={{ title: 'Wallet options' }} />
+          <Stack.Screen name="AddWalletOptions" component={AddWalletOptionsScreen} options={{ title: 'Add wallet' }} />
+          <Stack.Screen name="BackupDisclaimer" component={BackupDisclaimerScreen} options={{ title: 'Backup wallet' }} />
+          <Stack.Screen name="AddressBook" component={AddressBookScreen} options={{ title: 'Saved addresses' }} />
+          <Stack.Screen name="AddSavedAddress" component={AddSavedAddressScreen} options={{ title: 'Add new address' }} />
+          <Stack.Screen name="CoinControl" component={CoinControlScreen} options={{ title: 'Select coins to spend' }} />
+        </Stack.Group>
+
+        <Stack.Group screenOptions={{ presentation: 'modal', ...android_sheet_options }}>
           <Stack.Screen
-            name="MainTabs"
-            component={TabNavigator}
-            options={{
-              headerShown: false,
-              contentStyle: { backgroundColor: theme.colors.background }
-            }}
-            initialParams={{ screen: initial_tab }}
+            name="BalanceDetail"
+            component={BalanceDetailScreen}
+            options={{ title: 'Balance details' }}
           />
-          <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
-
-          <Stack.Group screenOptions={{
-            presentation: 'formSheet',
-            ...android_sheet_options,
-          }}>
-            <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
-            <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
-            <Stack.Screen name="ShowMnemonicQR" component={ShowMnemonicQRScreen} options={{ title: 'Recovery QR' }} />
-            <Stack.Screen name="VerifyMnemonic" component={VerifyMnemonicScreen} options={{ title: 'Verify phrase' }} />
-            <Stack.Screen name="RecoverWallet" component={RecoverWalletScreen} options={{ title: 'Recover wallet' }} />
-            <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
-            <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
-            <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
-            <Stack.Screen name="WithdrawToOnchain" component={WithdrawToOnchainScreen} options={{ title: 'Withdraw to on-chain' }} />
-            <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
-            <Stack.Screen name="ExportPSBT" component={ExportPSBTScreen} options={{ title: 'Export transaction' }} />
-            <Stack.Screen name="ImportPSBT" component={ImportPSBTScreen} options={{ title: 'Scan signed transaction', presentation: 'modal' }} />
-            <Stack.Screen name="WalletSwitcher" component={WalletSwitcherScreen} options={{ title: 'Wallets' }} />
-            <Stack.Screen name="WalletOptions" component={WalletOptionsScreen} options={{ title: 'Wallet options' }} />
-            <Stack.Screen name="AddWalletOptions" component={AddWalletOptionsScreen} options={{ title: 'Add wallet' }} />
-            <Stack.Screen name="BackupDisclaimer" component={BackupDisclaimerScreen} options={{ title: 'Backup wallet' }} />
-            <Stack.Screen name="AddressBook" component={AddressBookScreen} options={{ title: 'Saved addresses' }} />
-            <Stack.Screen name="AddSavedAddress" component={AddSavedAddressScreen} options={{ title: 'Add new address' }} />
-            <Stack.Screen name="CoinControl" component={CoinControlScreen} options={{ title: 'Select coins to spend' }} />
-          </Stack.Group>
-
-          <Stack.Group screenOptions={{ presentation: 'modal', ...android_sheet_options }}>
-            <Stack.Screen
-              name="BalanceDetail"
-              component={BalanceDetailScreen}
-              options={{ title: 'Balance details' }}
-            />
-            <Stack.Screen
-              name="AddressDetails"
-              component={AddressDetailsScreen}
-              options={({ navigation }) => ({
-                title: 'Address details',
-                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-              })}
-            />
-            <Stack.Screen
-              name="ShowPublicKey"
-              component={ShowPublicKeyScreen}
-              options={({ navigation }) => ({
-                title: 'Public key',
-                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-              })}
-            />
-          </Stack.Group>
-
-          <Stack.Group screenOptions={{ presentation: 'modal', ...android_sheet_options }}>
-            <Stack.Screen
-              name="Receive"
-              component={ReceiveScreen}
-              options={({ navigation }) => ({
-                title: 'Receive bitcoin',
-                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-              })}
-            />
-            <Stack.Screen
-              name="QRScanner"
-              component={QRScannerScreen}
-              options={{ title: 'Scan QR code' }}
-            />
-            <Stack.Screen
-              name="TransactionDetails"
-              component={TransactionDetailsScreen}
-              options={({ navigation }) => ({
-                title: 'Transaction details',
-                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-              })}
-            />
-            <Stack.Screen
-              name="OnboardingWelcome"
-              component={OnboardingWelcomeScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="OnboardingWallet"
-              component={OnboardingWalletScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="PrivacyPolicy"
-              component={PrivacyPolicyScreen}
-              options={({ navigation }) => ({
-                title: 'Privacy Policy',
-                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-              })}
-            />
-            <Stack.Screen
-              name="TermsConditions"
-              component={TermsConditionsScreen}
-              options={({ navigation }) => ({
-                title: 'Terms & Conditions',
-                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-              })}
-            />
-            <Stack.Screen
-              name="Support"
-              component={SupportScreen}
-              options={({ navigation }) => ({
-                title: 'Support Trustless',
-                headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-              })}
-            />
-          </Stack.Group>
-
           <Stack.Screen
-            name={"PrivacyOverlay" as any}
-            component={PrivacyOverlayScreen}
-            options={{
-              headerShown: false,
-              presentation: 'fullScreenModal',
-              animation: 'fade',
-              gestureEnabled: false,
-            }}
+            name="AddressDetails"
+            component={AddressDetailsScreen}
+            options={({ navigation }) => ({
+              title: 'Address details',
+              headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+            })}
           />
+          <Stack.Screen
+            name="ShowPublicKey"
+            component={ShowPublicKeyScreen}
+            options={({ navigation }) => ({
+              title: 'Public key',
+              headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+            })}
+          />
+        </Stack.Group>
+
+        <Stack.Group screenOptions={{ presentation: 'modal', ...android_sheet_options }}>
+          <Stack.Screen
+            name="Receive"
+            component={ReceiveScreen}
+            options={({ navigation }) => ({
+              title: 'Receive bitcoin',
+              headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+            })}
+          />
+          <Stack.Screen
+            name="QRScanner"
+            component={QRScannerScreen}
+            options={{ title: 'Scan QR code' }}
+          />
+          <Stack.Screen
+            name="TransactionDetails"
+            component={TransactionDetailsScreen}
+            options={({ navigation }) => ({
+              title: 'Transaction details',
+              headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+            })}
+          />
+          <Stack.Screen
+            name="OnboardingWelcome"
+            component={OnboardingWelcomeScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="OnboardingWallet"
+            component={OnboardingWalletScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="PrivacyPolicy"
+            component={PrivacyPolicyScreen}
+            options={({ navigation }) => ({
+              title: 'Privacy Policy',
+              headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+            })}
+          />
+          <Stack.Screen
+            name="TermsConditions"
+            component={TermsConditionsScreen}
+            options={({ navigation }) => ({
+              title: 'Terms & Conditions',
+              headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+            })}
+          />
+          <Stack.Screen
+            name="Support"
+            component={SupportScreen}
+            options={({ navigation }) => ({
+              title: 'Support Trustless',
+              headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+            })}
+          />
+        </Stack.Group>
+
+        <Stack.Screen
+          name={"PrivacyOverlay" as any}
+          component={PrivacyOverlayScreen}
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+            animation: 'fade',
+            gestureEnabled: false,
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
