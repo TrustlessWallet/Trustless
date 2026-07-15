@@ -289,9 +289,12 @@ const SendScreen = () => {
                 await incrementChangeIndex(activeWallet.id, usedChangeIndex);
             }
 
-            await broadcastTransaction(txHex);
 
-            navigation.navigate('TransactionSuccess', { type: 'onchain' });
+            const txId = await broadcastTransaction(txHex);
+
+            triggerRefresh(); 
+            navigation.replace('TransactionSuccess', { type: 'onchain', txId });
+
         } catch (error) {
             console.error(error);
             Alert.alert('Transaction error', error instanceof Error ? error.message : 'An unexpected error occurred.');
@@ -462,7 +465,10 @@ const SendScreen = () => {
 
         setLoading(true);
         try {
+
             await payLightningInvoice(lightningInvoice.trim(), sats);
+
+            triggerRefresh();
             navigation.navigate('TransactionSuccess', { type: 'lightning' });
         } catch (error: any) {
             console.error("Lightning payment failed:", error);

@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated, InteractionManager } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
-import { useWallet } from '../contexts/WalletContext';
 import { RootStackParamList } from '../types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -14,20 +13,15 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Transaction
 const TransactionSuccessScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<RoutePropType>();
-    const { type } = route.params; // 'onchain' or 'lightning'
+    const { type, txId } = route.params; 
     
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
-    const { triggerRefresh } = useWallet();
 
     const scaleAnim = useRef(new Animated.Value(0)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        // Trigger a background refresh immediately so balances update
-        triggerRefresh();
-
-        // Play the success spring animation
         Animated.parallel([
             Animated.spring(scaleAnim, {
                 toValue: 1,
@@ -41,10 +35,29 @@ const TransactionSuccessScreen = () => {
                 useNativeDriver: true,
             })
         ]).start();
+
+        InteractionManager.runAfterInteractions(() => {
+            navigation.dispatch((state) => {
+                const filteredRoutes = state.routes.filter(
+                    (r) => r.name !== 'Send' && r.name !== 'TransactionConfirm'
+                );
+                return CommonActions.reset({
+                    ...state,
+                    routes: filteredRoutes,
+                    index: filteredRoutes.length - 1,
+                });
+            });
+        });
     }, []);
 
     const handleDone = () => {
-        navigation.popToTop();
+        navigation.popToTop(); 
+    };
+
+    const handleDetails = () => {
+        if (txId) {
+            navigation.navigate('TransactionDetails', { txId });
+        }
     };
 
     return (
@@ -58,17 +71,22 @@ const TransactionSuccessScreen = () => {
                 
                 <Animated.View style={{ opacity: opacityAnim, alignItems: 'center' }}>
                     <Text style={styles.title}>
-                        {type === 'lightning' ? 'Payment Sent!' : 'Transaction Sent!'}
+                        {type === 'lightning' ? 'Payment sent!' : 'Transaction sent!'}
                     </Text>
                     <Text style={styles.subtitle}>
                         {type === 'lightning' 
-                            ? 'Your lightning invoice was paid instantly.' 
-                            : 'Your transaction has been broadcasted to the network.'}
+                            ? 'Your lightning invoice has been paid.' 
+                            : 'Your transaction has been broadcasted.'}
                     </Text>
                 </Animated.View>
             </View>
 
             <Animated.View style={[styles.footer, { opacity: opacityAnim }]}>
+                {type === 'onchain' && txId && (
+                    <TouchableOpacity style={styles.detailsButton} onPress={handleDetails}>
+                        <Text style={styles.buttonText}>Transaction details</Text>
+                    </TouchableOpacity>
+                )}
                 <TouchableOpacity style={styles.doneButton} onPress={handleDone}>
                     <Text style={styles.doneButtonText}>Done</Text>
                 </TouchableOpacity>
@@ -81,10 +99,10 @@ const getStyles = (theme: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.colors.background,
-        justifyContent: 'space-between',
     },
     content: {
         flex: 1,
+        paddingTop: 64,
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 32,
@@ -96,7 +114,7 @@ const getStyles = (theme: any) => StyleSheet.create({
         width: 96,
         height: 96,
         borderRadius: 48,
-        backgroundColor: theme.colors.primary, // Or use theme.colors.bitcoin for the orange accent
+        backgroundColor: theme.colors.primary,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -114,21 +132,38 @@ const getStyles = (theme: any) => StyleSheet.create({
         lineHeight: 24,
     },
     footer: {
+        width: '100%',
         padding: 24,
-        paddingBottom: 48, // Extra padding for safe area
+        paddingBottom: 48,
+        gap: 12,
+        backgroundColor: theme.colors.background,
     },
-    doneButton: {
-        backgroundColor: theme.colors.surface,
+
+    detailsButton: {
+        backgroundColor: theme.colors.surface, 
+        paddingVertical: 16,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 56,
         borderWidth: 1,
         borderColor: theme.colors.border,
+    },
+    doneButton: {
+        backgroundColor: '#000000', 
         paddingVertical: 16,
         borderRadius: 8,
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
     },
-    doneButtonText: {
+    buttonText: {
         color: theme.colors.primary,
+        fontSize: 16,
+        fontFamily: 'SpaceMono-Bold',
+    },
+    doneButtonText: {
+        color: theme.colors.inversePrimary,
         fontSize: 16,
         fontFamily: 'SpaceMono-Bold',
     },
