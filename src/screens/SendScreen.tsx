@@ -291,17 +291,7 @@ const SendScreen = () => {
 
             await broadcastTransaction(txHex);
 
-            Alert.alert(
-                'Transaction sent!',
-                `Your transaction has been broadcasted.`,
-                [{
-                    text: 'OK',
-                    onPress: () => {
-                        triggerRefresh();
-                        navigation.popToTop();
-                    }
-                }]
-            );
+            navigation.navigate('TransactionSuccess', { type: 'onchain' });
         } catch (error) {
             console.error(error);
             Alert.alert('Transaction error', error instanceof Error ? error.message : 'An unexpected error occurred.');
@@ -473,11 +463,7 @@ const SendScreen = () => {
         setLoading(true);
         try {
             await payLightningInvoice(lightningInvoice.trim(), sats);
-            Alert.alert(
-                'Payment sent!',
-                'Your lightning payment has been successfully completed.',
-                [{ text: 'OK', onPress: () => navigation.popToTop() }]
-            );
+            navigation.navigate('TransactionSuccess', { type: 'lightning' });
         } catch (error: any) {
             console.error("Lightning payment failed:", error);
             Alert.alert('Payment error', error.message || 'Failed to process lightning payment.');
@@ -488,15 +474,15 @@ const SendScreen = () => {
 
     const handleOpenCoinControl = () => {
         Keyboard.dismiss();
-        setTimeout(() => { 
-        const cleanAmount = amount.replace(',', '.');
-        const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
-        navigation.navigate('CoinControl', {
-            targetAmount: amountSatoshis,
-            onSelect: (utxos: UTXO[]) => {
-                setSelectedUtxos(utxos);
-            }
-        });
+        setTimeout(() => {
+            const cleanAmount = amount.replace(',', '.');
+            const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
+            navigation.navigate('CoinControl', {
+                targetAmount: amountSatoshis,
+                onSelect: (utxos: UTXO[]) => {
+                    setSelectedUtxos(utxos);
+                }
+            });
         }, 200);
     };
 
