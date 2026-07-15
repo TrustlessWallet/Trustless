@@ -122,7 +122,7 @@ export type RootStackParamList = {
   WithdrawToOnchain: undefined;
   Send: { selectedAddress?: string; mode?: 'onchain' | 'lightning' };
   Receive: { mode?: 'onchain' | 'lightning' };
-  TransactionSuccess: { type: 'onchain' | 'lightning' };
+  TransactionSuccess: { type: 'onchain' | 'lightning', txId?: string };
   TransactionConfirm: {
     recipientAddress: string;
     amount: string;
@@ -164,7 +164,7 @@ export type RootStackParamList = {
   AddressDetails: { address: string }
   ShowPublicKey: { wallet_id: string };
   QRScanner: { onScanSuccess: (data: string) => void };
-  TransactionDetails: { transaction: Transaction | LightningTransaction };
+  TransactionDetails: { transaction?: Transaction | LightningTransaction; txId?: string };
   OnboardingWelcome: undefined;
   OnboardingWallet: undefined;
   PrivacyPolicy: undefined;

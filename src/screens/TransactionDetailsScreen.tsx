@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, ActivityIndicator } from 'react-native';
 import { Text } from '../components/StyledText';
 import { useRoute, RouteProp, useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
@@ -32,13 +32,21 @@ const DetailRow = ({ label, value, isAddress, styles, valueStyle }: { label: str
 const TransactionDetailsScreen = () => {
   const route = useRoute<RoutePropType>();
   const isFocused = useIsFocused();
-  const { transaction: txFromParams } = route.params || {};
-  const { activeWallet } = useWallet();
+
+  const { transaction: txFromParams, txId: paramTxId } = route.params || {};
+  const { activeWallet, lightningTransactions } = useWallet();
+
+  // --- ADDED LOGS ---
+  useEffect(() => {
+    console.log("DEBUG: TransactionDetailsScreen Mounted");
+    console.log("DEBUG: Route Params:", route.params);
+    console.log("DEBUG: Lightning Transactions Count:", lightningTransactions?.length);
+  }, []);
+  // ------------------
+
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
   const [hideBalance, setHideBalance] = useState(false);
-
-  const isLightning = Boolean(txFromParams && 'paymentHash' in txFromParams);
 
   const { data: tipHeight } = useTipHeight();
 
@@ -48,19 +56,58 @@ const TransactionDetailsScreen = () => {
     return [...new Set([...receiveAddresses, ...changeAddresses])];
   }, [activeWallet]);
 
-  const queryTxId = txFromParams ? (isLightning ? (txFromParams as unknown as LightningTransaction).paymentHash : (txFromParams as unknown as Transaction).txid) : undefined;
+  const queryTxId = paramTxId || (txFromParams ? ('paymentHash' in txFromParams ? txFromParams.paymentHash : txFromParams.txid) : undefined);
 
-  const { data: tx } = useQuery({
+  const localHistoryTx = useMemo(() => {
+    if (!queryTxId) return null;
+
+    // Check lightning
+    const lnTx = lightningTransactions?.find(t => t.paymentHash === queryTxId);
+    if (lnTx) {
+      console.log("DEBUG: Found in Lightning History:", lnTx);
+      return lnTx;
+    }
+
+    // Check on-chain
+    const ocTx = (activeWallet as any)?.transactions?.find((t: any) => t.txid === queryTxId);
+    if (ocTx) {
+      console.log("DEBUG: Found in On-chain History:", ocTx);
+      return ocTx;
+    }
+
+    console.log("DEBUG: Not found in local history");
+    return null;
+  }, [queryTxId, lightningTransactions, activeWallet]);
+
+  const isLightning = Boolean((txFromParams && 'paymentHash' in txFromParams) || (localHistoryTx && 'paymentHash' in localHistoryTx));
+
+  const { data: tx, isLoading } = useQuery({
     queryKey: ['txDetails', queryTxId],
     queryFn: async () => {
-      if (isLightning || !txFromParams || ('vin' in txFromParams)) return txFromParams;
+      // 1. Return local if found
+      if (localHistoryTx) return localHistoryTx;
+      // 2. Return params if passed
+      if (txFromParams) return txFromParams;
+      // 3. Last resort network fetch
+      if (!queryTxId) throw new Error("No transaction ID");
+
       try {
-        return await getTransactionDetails((txFromParams as unknown as Transaction).txid, allAddresses);
-      } catch {
-        return txFromParams; 
+        console.log("DEBUG: Fetching from network...");
+        return await getTransactionDetails(queryTxId, allAddresses);
+      } catch (e) {
+        console.error("DEBUG: Network fetch failed, creating lite tx:", e);
+        // Create a "Lite" transaction object to prevent the screen from crashing
+        return {
+          txid: queryTxId,
+          type: 'send', // Assuming send based on context
+          status: { confirmed: false },
+          amount: 0, // We don't have the amount, unfortunately
+          fee: 0,
+        } as unknown as Transaction;
       }
     },
-    initialData: txFromParams,
+    initialData: txFromParams || localHistoryTx,
+    staleTime: 5000,
   });
 
   useEffect(() => {
@@ -73,20 +120,29 @@ const TransactionDetailsScreen = () => {
 
   const handleOpenExplorer = () => {
     if (tx && !isLightning && 'txid' in tx) {
-      const url = `${EXPLORER_UI_URL}/tx/${(tx as unknown as Transaction).txid}`;
+      const url = `${EXPLORER_UI_URL}/tx/${(tx as any).txid}`;
       Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open block explorer."));
     }
   };
 
+  if (isLoading && !tx) {
+    return <View style={styles.centered}><ActivityIndicator color={theme.colors.primary} /></View>;
+  }
+
   if (!tx) {
-    return <View style={styles.centered}><Text style={{ color: theme.colors.primary }}>Transaction not found.</Text></View>;
+    return (
+      <View style={styles.centered}>
+        <Text style={{ color: theme.colors.primary, textAlign: 'center', padding: 32 }}>
+          {paramTxId ? 'Transaction broadcasted.\nWaiting for network confirmation...' : 'Transaction not found.'}
+        </Text>
+      </View>
+    );
   }
 
   const isSend = tx.type === 'send';
-  
-  const lnTx = tx as unknown as LightningTransaction; 
-  const ocTx = tx as unknown as Transaction; 
-  
+  const lnTx = tx as unknown as LightningTransaction;
+  const ocTx = tx as unknown as Transaction;
+
   const txId = isLightning ? lnTx.paymentHash : ocTx.txid;
   const amountSats = isLightning ? Math.floor(lnTx.amountMsat / 1000) : ocTx.amount;
   const feeSats = isLightning ? Math.floor(lnTx.feeMsat / 1000) : (ocTx.fee ?? '...');
@@ -113,7 +169,7 @@ const TransactionDetailsScreen = () => {
 
   const confirmations = !isLightning && isConfirmed && typeof ocTx.status?.block_height === 'number' && tipHeight != null
     ? Math.max(0, tipHeight - ocTx.status.block_height + 1)
-    : (isConfirmed ? '...' : null); 
+    : (isConfirmed ? '...' : null);
 
   return (
     <ScrollView style={styles.container} bounces={false}>
@@ -127,21 +183,17 @@ const TransactionDetailsScreen = () => {
       <View style={styles.detailsContainer}>
         <DetailRow label="Date" value={dateStr} styles={styles} />
         <DetailRow label="Status" value={isConfirmed ? 'Completed' : 'Pending'} styles={styles} />
-
         {isLightning ? (
           <DetailRow label="Description" value={otherAddress as string} styles={styles} />
         ) : (
           <DetailRow label={isSend ? "To" : "From"} value={(otherAddress as string) || 'Unknown'} isAddress={isOtherAddressValid} styles={styles} />
         )}
-
         {!isLightning && confirmations !== null && (
           <DetailRow label="Confirmations" value={`${confirmations}`} styles={styles} />
         )}
-
         <DetailRow label={isLightning ? lightningFeeLabel : "Network fee"} value={`${feeSats} sats`} styles={styles} />
         <DetailRow label={isLightning ? "Payment hash" : "Transaction ID"} value={txId} valueStyle={styles.addressValue} styles={styles} />
       </View>
-
       {!isLightning && (
         <TouchableOpacity style={styles.explorerButton} onPress={handleOpenExplorer}>
           <Feather name="external-link" size={18} color={theme.colors.inversePrimary} />
@@ -157,7 +209,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background },
   header: { alignItems: 'center', padding: 24, borderBottomWidth: 1, borderColor: theme.colors.border },
   amountText: { fontSize: 32, fontWeight: 'bold', marginVertical: 8, color: theme.colors.primary },
-  statusText: { fontSize: 16, color: theme.colors.muted, fontWeight: '500' },
   detailsContainer: { paddingHorizontal: 24, paddingTop: 16 },
   detailRow: { marginBottom: 24 },
   label: { fontSize: 16, color: theme.colors.primary, marginBottom: 4, fontWeight: '500' },
