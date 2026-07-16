@@ -13,8 +13,8 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Transaction
 const TransactionSuccessScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<RoutePropType>();
-    const { type, txId } = route.params; 
-    
+    const { type, txId, transaction } = route.params as any;
+
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
@@ -51,12 +51,12 @@ const TransactionSuccessScreen = () => {
     }, []);
 
     const handleDone = () => {
-        navigation.popToTop(); 
+        navigation.popToTop();
     };
 
     const handleDetails = () => {
-        if (txId) {
-            navigation.navigate('TransactionDetails', { txId });
+        if (txId || transaction) {
+            navigation.navigate('TransactionDetails', { txId, transaction });
         }
     };
 
@@ -68,14 +68,14 @@ const TransactionSuccessScreen = () => {
                         <Feather name="check" size={48} color={theme.colors.background} />
                     </View>
                 </Animated.View>
-                
+
                 <Animated.View style={{ opacity: opacityAnim, alignItems: 'center' }}>
                     <Text style={styles.title}>
                         {type === 'lightning' ? 'Payment sent!' : 'Transaction sent!'}
                     </Text>
                     <Text style={styles.subtitle}>
-                        {type === 'lightning' 
-                            ? 'Your lightning invoice has been paid.' 
+                        {type === 'lightning'
+                            ? 'Your lightning invoice has been paid.'
                             : 'Your transaction has been broadcasted.'}
                     </Text>
                 </Animated.View>
@@ -140,7 +140,7 @@ const getStyles = (theme: any) => StyleSheet.create({
     },
 
     detailsButton: {
-        backgroundColor: theme.colors.surface, 
+        backgroundColor: theme.colors.surface,
         paddingVertical: 16,
         borderRadius: 8,
         alignItems: 'center',
@@ -150,7 +150,7 @@ const getStyles = (theme: any) => StyleSheet.create({
         borderColor: theme.colors.border,
     },
     doneButton: {
-        backgroundColor: '#000000', 
+        backgroundColor: '#000000',
         paddingVertical: 16,
         borderRadius: 8,
         alignItems: 'center',

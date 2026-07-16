@@ -487,7 +487,6 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
             />
           </Stack.Group>
 
-          {/* Privacy Overlay */}
           <Stack.Screen
             name={"PrivacyOverlay" as any}
             component={PrivacyOverlayScreen}

@@ -122,7 +122,11 @@ export type RootStackParamList = {
   WithdrawToOnchain: undefined;
   Send: { selectedAddress?: string; mode?: 'onchain' | 'lightning' };
   Receive: { mode?: 'onchain' | 'lightning' };
-  TransactionSuccess: { type: 'onchain' | 'lightning', txId?: string };
+  TransactionSuccess: {
+    type: 'onchain' | 'lightning';
+    txId?: string;
+    transaction?: Transaction | LightningTransaction;
+  };
   TransactionConfirm: {
     recipientAddress: string;
     amount: string;

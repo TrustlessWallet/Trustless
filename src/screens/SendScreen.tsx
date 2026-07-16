@@ -292,8 +292,29 @@ const SendScreen = () => {
 
             const txId = await broadcastTransaction(txHex);
 
-            triggerRefresh(); 
-            navigation.replace('TransactionSuccess', { type: 'onchain', txId });
+            triggerRefresh();
+
+            const totalSelectedValue = utxosToUse.reduce((sum, u) => sum + u.value, 0);
+            const { fee } = calculateTransactionMetrics(
+                utxosToUse.length,
+                amountSatoshis,
+                totalSelectedValue,
+                finalFeeRate
+            );
+
+            const pendingTx = {
+                txid: txId,
+                type: 'send',
+                amount: amountSatoshis,
+                fee: fee,
+                status: { confirmed: false, block_time: Math.floor(Date.now() / 1000) }
+            };
+
+            navigation.replace('TransactionSuccess', {
+                type: 'onchain',
+                txId,
+                transaction: pendingTx as any
+            });
 
         } catch (error) {
             console.error(error);
@@ -466,10 +487,26 @@ const SendScreen = () => {
         setLoading(true);
         try {
 
-            await payLightningInvoice(lightningInvoice.trim(), sats);
+await payLightningInvoice(lightningInvoice.trim(), sats);
 
             triggerRefresh();
-            navigation.navigate('TransactionSuccess', { type: 'lightning' });
+
+            // 1. Create a pending lightning object
+            const pendingLnTx = {
+                paymentHash: lightningInvoice.trim(),
+                type: 'send',
+                amountMsat: sats * 1000,
+                feeMsat: (lnFeeEstimate || 0) * 1000,
+                status: 'complete',
+                paymentTime: Math.floor(Date.now() / 1000),
+                description: lightningInvoice.trim(),
+            };
+
+            navigation.navigate('TransactionSuccess', { 
+                type: 'lightning', 
+                transaction: pendingLnTx as any 
+            });
+
         } catch (error: any) {
             console.error("Lightning payment failed:", error);
             Alert.alert('Payment error', error.message || 'Failed to process lightning payment.');
