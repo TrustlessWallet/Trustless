@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Animated, InteractionManager, Dimensions } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated, InteractionManager, Dimensions, Easing } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
@@ -26,31 +26,54 @@ const TransactionSuccessScreen = () => {
     const footerAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        Animated.sequence([
-            Animated.parallel([
-                Animated.spring(scaleAnim, {
+        let has_started = false;
+
+        const startAnimation = () => {
+            if (has_started) return;
+            has_started = true;
+
+            Animated.sequence([
+                Animated.parallel([
+                    // Pop: overshoots past 1 then eases back, driven by
+                    // Easing.back so the circle feels like it "pops" into
+                    // place rather than just fading/scaling in linearly.
+                    Animated.timing(scaleAnim, {
+                        toValue: 1,
+                        duration: 450,
+                        easing: Easing.out(Easing.back(1.9)),
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(opacityAnim, {
+                        toValue: 1,
+                        duration: 300,
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(ringAnim, {
+                        toValue: 1,
+                        duration: 700,
+                        useNativeDriver: true,
+                    }),
+                ]),
+                Animated.timing(footerAnim, {
                     toValue: 1,
-                    tension: 50,
-                    friction: 5,
+                    duration: 280,
                     useNativeDriver: true,
                 }),
-                Animated.timing(opacityAnim, {
-                    toValue: 1,
-                    duration: 300,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(ringAnim, {
-                    toValue: 1,
-                    duration: 700,
-                    useNativeDriver: true,
-                }),
-            ]),
-            Animated.timing(footerAnim, {
-                toValue: 1,
-                duration: 280,
-                useNativeDriver: true,
-            }),
-        ]).start();
+            ]).start();
+        };
+
+        // The screen is presented as a sheet, which plays its own slide/grow
+        // transition on mount. Starting the pop animation immediately in
+        // this effect means it runs while the sheet is still transitioning
+        // in (or off-screen), so it's invisible or gets clipped by the time
+        // the sheet settles. `transitionEnd` fires once that presentation
+        // animation completes, so we wait for it before popping the circle.
+        const unsubscribe = navigation.addListener('transitionEnd', startAnimation);
+
+        // Fallback in case this screen's navigator never fires transitionEnd
+        // (e.g. it's the initial route, or the event doesn't propagate for
+        // this presentation type) so the animation still plays.
+        const fallback = setTimeout(startAnimation, 400);
 
         InteractionManager.runAfterInteractions(() => {
             navigation.dispatch((state) => {
@@ -64,6 +87,11 @@ const TransactionSuccessScreen = () => {
                 });
             });
         });
+
+        return () => {
+            unsubscribe();
+            clearTimeout(fallback);
+        };
     }, []);
 
     const handleDone = () => {
@@ -125,12 +153,11 @@ const TransactionSuccessScreen = () => {
                     <TouchableOpacity
                         style={styles.detailsButton}
                         onPress={handleDetails}
-                        activeOpacity={0.7}
                     >
                         <Text style={styles.buttonText}>Transaction details</Text>
                     </TouchableOpacity>
                 )}
-                <TouchableOpacity style={styles.doneButton} onPress={handleDone} activeOpacity={0.85}>
+                <TouchableOpacity style={styles.doneButton} onPress={handleDone}>
                     <Text style={styles.doneButtonText}>Done</Text>
                 </TouchableOpacity>
             </Animated.View>
@@ -202,14 +229,14 @@ const getStyles = (theme: any) => StyleSheet.create({
     },
     detailsButton: {
         flexDirection: 'row',
-        backgroundColor: theme.colors.surface,
+        backgroundColor: theme.colors.background,
         paddingVertical: 16,
         borderRadius: theme.LAYOUT.radius,
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 56,
         borderWidth: 1,
-        borderColor: theme.colors.border,
+        borderColor: theme.colors.primary,
     },
     doneButton: {
         backgroundColor: theme.colors.primary,
