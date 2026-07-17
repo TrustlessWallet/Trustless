@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, ActivityIndicator } from 'react-native';
 import { Text } from '../components/StyledText';
-import { useRoute, RouteProp, useIsFocused } from '@react-navigation/native';
+import { useRoute, RouteProp, useIsFocused, useNavigation } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { RootStackParamList, Transaction, LightningTransaction } from '../types';
 import { useWallet } from '../contexts/WalletContext';
@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { validateBitcoinAddress, getTransactionDetails } from '../services/bitcoin';
 import { useTipHeight } from '../hooks/useBalance';
 import { useQuery } from '@tanstack/react-query';
+import { GlassView } from '../components/GlassView'; // <-- Added Import
 
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionDetails'>;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -32,9 +33,14 @@ const DetailRow = ({ label, value, isAddress, styles, valueStyle }: { label: str
 const TransactionDetailsScreen = () => {
   const route = useRoute<RoutePropType>();
   const isFocused = useIsFocused();
+  const navigation = useNavigation(); // <-- Added Navigation Hook
 
   const { transaction: txFromParams, txId: paramTxId } = route.params || {};
   const { activeWallet, lightningTransactions } = useWallet();
+
+  const { theme } = useTheme();
+  const styles = useMemo(() => getStyles(theme), [theme]);
+  const [hideBalance, setHideBalance] = useState(false);
 
   // --- ADDED LOGS ---
   useEffect(() => {
@@ -44,9 +50,25 @@ const TransactionDetailsScreen = () => {
   }, []);
   // ------------------
 
-  const { theme } = useTheme();
-  const styles = useMemo(() => getStyles(theme), [theme]);
-  const [hideBalance, setHideBalance] = useState(false);
+  // --- ADDED GLASS CLOSE BUTTON ---
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.8}>
+          <GlassView
+            width={32}
+            height={32}
+            borderRadius={16}
+            shape="circle"
+            interactive={true}
+          >
+            <Feather name="x" size={20} color={theme.colors.primary} />
+          </GlassView>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, theme.colors.primary]);
+  // --------------------------------
 
   const { data: tipHeight } = useTipHeight();
 
@@ -207,7 +229,7 @@ const TransactionDetailsScreen = () => {
 const getStyles = (theme: Theme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background },
-  header: { alignItems: 'center', padding: 24, borderBottomWidth: 1, borderColor: theme.colors.border },
+  header: { alignItems: 'center', padding: 24 },
   amountText: { fontSize: 32, fontWeight: 'bold', marginVertical: 8, color: theme.colors.primary },
   detailsContainer: { paddingHorizontal: 24, paddingTop: 16 },
   detailRow: { marginBottom: 24 },
