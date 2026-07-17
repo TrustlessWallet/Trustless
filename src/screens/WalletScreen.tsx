@@ -407,7 +407,7 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     },
     listContent: {
         flexGrow: 1,
-        paddingVertical: 92,
+        paddingVertical: 48,
     },
     centeredContainer: {
         flex: 1,
@@ -475,12 +475,12 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingHorizontal: 16,
-        marginBottom: 20,
+        marginBottom: 16,
     },
     toggleTouchable: {
         width: 68,
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
     },
     iconToggleInner: {
         flexDirection: 'row',
@@ -513,7 +513,7 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         alignItems: 'center',
         height: 50,
         justifyContent: 'center',
-        marginBottom: 16,
+        marginBottom: 24,
     },
     balanceText: {
         fontSize: 36,
