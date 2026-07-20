@@ -123,11 +123,10 @@ const TransactionSuccessScreen = () => {
                 </Animated.View>
 
                 <Animated.View style={{ opacity: opacityAnim, alignItems: 'center' }}>
-                    <Text style={styles.title}>Transaction sent!</Text>
-                    <Text style={styles.subtitle}>
+                    <Text style={styles.title}>
                         {type === 'lightning'
-                            ? 'Your lightning invoice has been paid.'
-                            : 'Your transaction has been broadcasted.'}
+                            ? 'Your lightning invoice has been paid!'
+                            : 'Your transaction has been broadcasted!'}
                     </Text>
                 </Animated.View>
             </View>
@@ -179,7 +178,7 @@ const getStyles = (theme: any) => StyleSheet.create({
         paddingHorizontal: 32,
     },
     iconContainer: {
-        marginBottom: 28,
+        marginBottom: 24,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -198,19 +197,13 @@ const getStyles = (theme: any) => StyleSheet.create({
         backgroundColor: theme.colors.primary,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: theme.colors.primary,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.28,
-        shadowRadius: 16,
-        elevation: 6,
+
     },
     title: {
-        fontSize: 24,
+        fontSize: 20,
         fontFamily: 'SpaceMono-Bold',
         color: theme.colors.primary,
-        marginBottom: 10,
         textAlign: 'center',
-        letterSpacing: 0.2,
     },
     subtitle: {
         fontSize: 15,
@@ -222,7 +215,7 @@ const getStyles = (theme: any) => StyleSheet.create({
     footer: {
         width: '100%',
         paddingHorizontal: 24,
-        paddingBottom: 40,
+        paddingBottom: 16,
         paddingTop: 8,
         gap: 12,
         backgroundColor: theme.colors.background,
