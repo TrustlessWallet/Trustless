@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, Transaction, LightningTransaction } from '../types';
@@ -12,7 +12,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { useWalletTransactions, useWalletUTXOs, useTipHeight } from '../hooks/useBalance';
-import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -50,10 +49,8 @@ const WalletScreen = () => {
     const isFocused = useIsFocused();
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
-    // Track scroll position
     const scrollY = useRef(new Animated.Value(0)).current;
 
-    // Wait until content scrolls past the 128px padding container boundary before showing shadow
     const shadowOpacity = scrollY.interpolate({
         inputRange: [100, 140],
         outputRange: [0, 1],
@@ -264,10 +261,10 @@ const WalletScreen = () => {
             >
                 <LinearGradient
                     colors={[
-                        theme.colors.background,           // solid at very top
-                        theme.colors.background + 'CC',    // ~80% opaque
-                        theme.colors.background + '66',    // ~40% opaque  
-                        theme.colors.background + '00',    // fully transparent
+                        theme.colors.background,
+                        theme.colors.background + 'CC',
+                        theme.colors.background + '66',
+                        theme.colors.background + '00',
                     ]}
                     locations={[0, 0.4, 0.7, 1]}
                     style={StyleSheet.absoluteFill}
@@ -290,7 +287,6 @@ const WalletScreen = () => {
                             <TouchableOpacity
                                 style={styles.toggleTouchable}
                                 onPress={toggleMode}
-                                activeOpacity={0.8}
                                 disabled={!isLightningInitialized || activeWallet?.type === 'watch-only'}
                             >
                                 {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
@@ -322,47 +318,60 @@ const WalletScreen = () => {
                             </Text>
                         </TouchableOpacity>
 
-                        <View style={styles.actionsContainer}>
-                            <View style={styles.actionColumn}>
-                                <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Receive', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}>
-                                    <Feather name="arrow-down-circle" size={16} color={theme.colors.inversePrimary} />
-                                    <Text style={styles.actionButtonText}>Receive</Text>
+                        <View style={styles.actionsWrapper}>
+                            <View style={styles.actionsContainer}>
+                                <TouchableOpacity
+                                    style={styles.iconActionButton}
+                                    onPress={() => navigation.navigate('Receive', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
+                                >
+                                    <View style={styles.iconCircle}>
+                                        <MaterialIcons name="qr-code" size={32} color={theme.colors.inversePrimary} />
+                                    </View>
+                                    <Text style={styles.iconActionText}>Receive</Text>
                                 </TouchableOpacity>
 
-                                {isLightningMode && (
-                                    <View style={styles.secondaryActionWrapper}>
-                                        <TouchableOpacity
-                                            style={styles.secondaryActionButton}
-                                            onPress={() => navigation.navigate('WithdrawToOnchain' as any)}
-                                        >
-                                            <Feather name="minus" size={14} color={theme.colors.primary} />
-                                            <Text style={styles.secondaryActionButtonText}>Withdraw</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-                            </View>
-
-                            <View style={styles.actionColumn}>
                                 <TouchableOpacity
-                                    style={styles.actionButton}
+                                    style={styles.iconActionButton}
                                     onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
                                 >
-                                    <Feather name="arrow-up-circle" size={16} color={theme.colors.inversePrimary} />
-                                    <Text style={styles.actionButtonText}>Send</Text>
+                                    <View style={styles.iconCircle}>
+                                        <Feather name="arrow-up-right" size={32} color={theme.colors.inversePrimary} />
+                                    </View>
+                                    <Text style={styles.iconActionText}>Send</Text>
                                 </TouchableOpacity>
 
                                 {isLightningMode && (
-                                    <View style={styles.secondaryActionWrapper}>
-                                        <TouchableOpacity
-                                            style={styles.secondaryActionButton}
-                                            onPress={() => navigation.navigate('LightningTopUp' as any)}
-                                        >
-                                            <Feather name="plus" size={14} color={theme.colors.primary} />
-                                            <Text style={styles.secondaryActionButtonText}>Top-up</Text>
-                                        </TouchableOpacity>
-                                    </View>
+                                    <TouchableOpacity
+                                        style={styles.iconActionButton}
+                                        onPress={() => { /* Placeholder for NFC functionality */ }}
+                                    >
+                                        <View style={styles.iconCircle}>
+                                            <MaterialIcons name="nfc" size={32} color={theme.colors.inversePrimary} />
+                                        </View>
+                                        <Text style={styles.iconActionText}>NFC</Text>
+                                    </TouchableOpacity>
                                 )}
                             </View>
+
+                            {isLightningMode && (
+                                <View style={styles.secondaryActionsRow}>
+                                    <TouchableOpacity
+                                        style={styles.secondaryActionButton}
+                                        onPress={() => navigation.navigate('WithdrawToOnchain' as any)}
+                                    >
+                                        <Feather name="arrow-down-circle" size={14} color={theme.colors.primary} />
+                                        <Text style={styles.secondaryActionButtonText}>Withdraw</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={styles.secondaryActionButton}
+                                        onPress={() => navigation.navigate('LightningTopUp' as any)}
+                                    >
+                                        <Feather name="plus-circle" size={14} color={theme.colors.primary} />
+                                        <Text style={styles.secondaryActionButtonText}>Top-up</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
                     </View>
                 }
@@ -399,7 +408,7 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         left: 0,
         right: 0,
         zIndex: 100,
-        backgroundColor: 'transparent', 
+        backgroundColor: 'transparent',
     },
     container: {
         flex: 1,
@@ -407,7 +416,7 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     },
     listContent: {
         flexGrow: 1,
-        paddingVertical: 48,
+        paddingVertical: 56,
     },
     centeredContainer: {
         flex: 1,
@@ -462,13 +471,13 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         fontWeight: '600'
     },
     topSection: {
-        height: SCREEN_HEIGHT * 0.5,
-        paddingTop: topInset,
+        minHeight: SCREEN_HEIGHT * 0.55,
+        paddingTop: 56,
         justifyContent: 'center',
         alignItems: 'center',
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
-        paddingBottom: 80,
+        paddingBottom: 0,
     },
     headerRow: {
         flexDirection: 'row',
@@ -478,6 +487,7 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         marginBottom: 16,
     },
     toggleTouchable: {
+        padding: 4,
         width: 68,
         alignItems: 'center',
         justifyContent: 'center',
@@ -503,7 +513,8 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
-        marginHorizontal: 12,
+        marginRight: -4,
+        paddingHorizontal: 12,
     },
     walletName: {
         fontSize: 20,
@@ -513,7 +524,7 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         alignItems: 'center',
         height: 50,
         justifyContent: 'center',
-        marginBottom: 24,
+        marginBottom: 28,
     },
     balanceText: {
         fontSize: 36,
@@ -526,62 +537,68 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     orangeSymbol: {
         color: theme.colors.bitcoin
     },
-    actionsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
+    actionsWrapper: {
         width: '100%',
-        paddingHorizontal: 16,
-        gap: 12,
-        zIndex: 10,
-    },
-    actionColumn: {
-        flex: 1,
-        maxWidth: 140,
+        alignItems: 'center',
+        height: 168,
         position: 'relative',
     },
-    actionButton: {
+    actionsContainer: {
+        position: 'absolute',
+        top: 0,
         flexDirection: 'row',
+        justifyContent: 'center',
+        width: '100%',
+        gap: 32,
+    },
+    iconActionButton: {
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        width: 100,
+        gap: 6,
+    },
+    iconCircle: {
+        width: 100,
+        height: 64,
+        borderRadius: 8,
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
         backgroundColor: theme.colors.primary,
-        paddingVertical: 14,
-        borderRadius: 8,
-        width: '100%',
-        zIndex: 2,
     },
-    actionButtonText: {
-        color: theme.colors.inversePrimary,
-        fontSize: 15,
-        fontWeight: '600'
+    iconActionText: {
+        color: theme.colors.primary,
+        fontSize: 13,
+        fontWeight: '500',
     },
-    secondaryActionWrapper: {
+    secondaryActionsRow: {
         position: 'absolute',
-        top: 56,
-        left: 0,
-        right: 0,
-        height: 40,
+        top: 116,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        width: '100%',
+        gap: 12,
     },
     secondaryActionButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
+        width: 128,
         gap: 6,
         backgroundColor: theme.colors.background,
-        paddingVertical: 0,
-        borderRadius: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 20,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        width: '100%',
-        height: 40,
     },
     secondaryActionButtonText: {
         color: theme.colors.primary,
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '500',
         includeFontPadding: false,
         textAlignVertical: 'center'
     },
+
     noTxText: {
         textAlign: 'center',
         paddingVertical: 40,
