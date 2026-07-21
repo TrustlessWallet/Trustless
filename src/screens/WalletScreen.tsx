@@ -42,8 +42,11 @@ const WalletScreen = () => {
         lightningTransactions,
         isLightningInitialized
     } = useWallet();
-    const { theme, isDark } = useTheme();
-    const styles = useMemo(() => getStyles(theme, insets.top), [theme, insets.top]);
+    const { theme } = useTheme();
+    
+    // Using safe stable insets so the style object is always valid
+    const styles = useMemo(() => getStyles(theme), [theme]);
+    
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const isFocused = useIsFocused();
@@ -83,8 +86,7 @@ const WalletScreen = () => {
     const {
         data: onchainTransactions,
         isLoading: loadingTxs,
-        refetch: refetchTxs,
-        isRefetching: isRefetchingTxs
+        refetch: refetchTxs
     } = useWalletTransactions(activeWallet?.id, queryAddresses);
 
     const {
@@ -272,7 +274,7 @@ const WalletScreen = () => {
             </Animated.View>
 
             <Animated.FlatList
-                key={isDark ? 'dark-list' : 'light-list'}
+                extraData={theme} 
                 data={displayTransactions}
                 renderItem={renderTransactionItem}
                 keyExtractor={(item: any) => item.paymentHash || item.txid}
@@ -401,7 +403,7 @@ const WalletScreen = () => {
     );
 };
 
-const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
     nativeTopHeaderBar: {
         position: 'absolute',
         top: 0,
@@ -472,7 +474,7 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
     },
     topSection: {
         minHeight: SCREEN_HEIGHT * 0.55,
-        paddingTop: 56,
+        paddingTop: 56, // Restored original top header padding
         justifyContent: 'center',
         alignItems: 'center',
         borderBottomWidth: 1,
@@ -598,7 +600,6 @@ const getStyles = (theme: Theme, topInset: number) => StyleSheet.create({
         includeFontPadding: false,
         textAlignVertical: 'center'
     },
-
     noTxText: {
         textAlign: 'center',
         paddingVertical: 40,
