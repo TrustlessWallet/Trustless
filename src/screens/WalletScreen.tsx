@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions, Alert } from 'react-native';
+import { scanNfcTag, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
@@ -43,10 +44,10 @@ const WalletScreen = () => {
         isLightningInitialized
     } = useWallet();
     const { theme } = useTheme();
-    
+
     // Using safe stable insets so the style object is always valid
     const styles = useMemo(() => getStyles(theme), [theme]);
-    
+
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const isFocused = useIsFocused();
@@ -74,6 +75,32 @@ const WalletScreen = () => {
         const usedAddresses = infoCache.filter(i => i.tx_count > 0 || i.balance > 0).map(i => i.address);
         return [...new Set([...usedAddresses, ...changeAddresses])];
     }, [activeWallet]);
+
+    const [isScanningNfc, setIsScanningNfc] = useState(false);
+
+    const handleNfcPay = useCallback(async () => {
+        if (isScanningNfc) return;
+        setIsScanningNfc(true);
+        try {
+            const payload = await scanNfcTag();
+            if (!payload) {
+                Alert.alert('Nothing found', 'The tag was read but had no payment data on it.');
+                return;
+            }
+            navigation.navigate('Send', { mode: 'lightning', prefill: payload } as any);
+        } catch (err) {
+            if (err instanceof NfcCancelledError) {
+                // user backed out of the OS scan sheet — no need to alert
+            } else if (err instanceof NfcUnsupportedError) {
+                Alert.alert('NFC not available', 'This device doesn\'t support NFC.');
+            } else {
+                console.warn('NFC scan error', err);
+                Alert.alert('Scan failed', 'Could not read the tag. Please try again.');
+            }
+        } finally {
+            setIsScanningNfc(false);
+        }
+    }, [isScanningNfc, navigation]);
 
     const walletAddressesSet = useMemo(() => {
         if (!activeWallet) return new Set<string>();
@@ -274,7 +301,7 @@ const WalletScreen = () => {
             </Animated.View>
 
             <Animated.FlatList
-                extraData={theme} 
+                extraData={theme}
                 data={displayTransactions}
                 renderItem={renderTransactionItem}
                 keyExtractor={(item: any) => item.paymentHash || item.txid}
@@ -345,12 +372,17 @@ const WalletScreen = () => {
                                 {isLightningMode && (
                                     <TouchableOpacity
                                         style={styles.iconActionButton}
-                                        onPress={() => { /* Placeholder for NFC functionality */ }}
+                                        onPress={handleNfcPay}
+                                        disabled={isScanningNfc}
                                     >
                                         <View style={styles.iconCircle}>
-                                            <MaterialIcons name="nfc" size={32} color={theme.colors.inversePrimary} />
+                                            {isScanningNfc ? (
+                                                <ActivityIndicator size="small" color={theme.colors.inversePrimary} />
+                                            ) : (
+                                                <MaterialIcons name="nfc" size={32} color={theme.colors.inversePrimary} />
+                                            )}
                                         </View>
-                                        <Text style={styles.iconActionText}>Pay</Text>
+                                        <Text style={styles.iconActionText}>{isScanningNfc ? 'Scanning...' : 'Pay'}</Text>
                                     </TouchableOpacity>
                                 )}
                             </View>
