@@ -350,7 +350,7 @@ const WalletScreen = () => {
                                         <View style={styles.iconCircle}>
                                             <MaterialIcons name="nfc" size={32} color={theme.colors.inversePrimary} />
                                         </View>
-                                        <Text style={styles.iconActionText}>NFC</Text>
+                                        <Text style={styles.iconActionText}>Pay</Text>
                                     </TouchableOpacity>
                                 )}
                             </View>
@@ -361,7 +361,7 @@ const WalletScreen = () => {
                                         style={styles.secondaryActionButton}
                                         onPress={() => navigation.navigate('WithdrawToOnchain' as any)}
                                     >
-                                        <Feather name="arrow-down-circle" size={14} color={theme.colors.primary} />
+                                        <Feather name="minus-circle" size={14} color={theme.colors.primary} />
                                         <Text style={styles.secondaryActionButtonText}>Withdraw</Text>
                                     </TouchableOpacity>
 
@@ -474,7 +474,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     topSection: {
         minHeight: SCREEN_HEIGHT * 0.55,
-        paddingTop: 56, // Restored original top header padding
+        paddingTop: 56,
         justifyContent: 'center',
         alignItems: 'center',
         borderBottomWidth: 1,
@@ -551,7 +551,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         width: '100%',
-        gap: 32,
+        gap: 24,
     },
     iconActionButton: {
         alignItems: 'center',
@@ -561,8 +561,8 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     iconCircle: {
         width: 100,
-        height: 64,
-        borderRadius: 8,
+        height: 60,
+        borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: theme.colors.primary,
@@ -578,7 +578,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         width: '100%',
-        gap: 12,
+        gap: 24,
     },
     secondaryActionButton: {
         flexDirection: 'row',
@@ -589,7 +589,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         backgroundColor: theme.colors.background,
         paddingVertical: 8,
         paddingHorizontal: 16,
-        borderRadius: 20,
+        borderRadius: 8,
         borderWidth: 1,
         borderColor: theme.colors.border,
     },
