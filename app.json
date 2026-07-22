@@ -21,7 +21,8 @@
         "NSCameraUsageDescription": "Trustless uses the camera to scan Bitcoin address QR codes.",
         "NSFaceIDUsageDescription": "Trustless uses Face ID to secure your wallet.",
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Trustless uses your location to show nearby Bitcoin merchants on the map."
+        "NSLocationWhenInUseUsageDescription": "Trustless uses your location to show nearby Bitcoin merchants on the map.",
+        "NFCReaderUsageDescription": "Trustless uses NFC to scan Lightning invoices and tap-to-pay."
       }
     },
     "android": {
@@ -81,7 +82,8 @@
         }
       ],
       "expo-sqlite",
-      "expo-status-bar"
+      "expo-status-bar",
+      "react-native-nfc-manager"
     ],
     "extra": {
       "eas": {
