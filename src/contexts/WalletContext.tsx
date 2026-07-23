@@ -321,18 +321,26 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const isPending = p.status === SDK_STATUS.PENDING ||
                     p.status === SDK_STATUS.Pending;
 
+                const isFailed = p.status === SDK_STATUS.FAILED ||
+                    p.status === SDK_STATUS.Failed ||
+                    p.status === SDK_STATUS.FAIL;
+
                 const isReceive = p.paymentType === SDK_TYPE.RECEIVE ||
                     p.paymentType === SDK_TYPE.Receive ||
                     p.paymentType === SDK_TYPE.RECEIVED;
 
                 // Priority fallback resolution
-                let finalStatus: 'complete' | 'pending' = 'pending';
+                let finalStatus: 'complete' | 'pending' | 'failed' = 'pending';
                 if (isComplete) {
                     finalStatus = 'complete';
+                } else if (isFailed) {
+                    finalStatus = 'failed';
                 } else if (isPending) {
                     finalStatus = 'pending';
                 } else if (String(p.status).toLowerCase().includes('complete') || p.status === 1) {
                     finalStatus = 'complete';
+                } else if (String(p.status).toLowerCase().includes('fail') || p.status === 2 || p.status === -1) {
+                    finalStatus = 'failed';
                 }
 
                 let finalType: 'receive' | 'send' = 'send';
@@ -609,9 +617,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-const getLightningTopUpAddress = async (): Promise<string> => {
+    const getLightningTopUpAddress = async (): Promise<string> => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
-        
+
         try {
             // Use the exact same UniFFI `.new()` pattern that works for your Bolt11Invoice
             const response = await activeSdkInstance.receivePayment({
@@ -619,10 +627,10 @@ const getLightningTopUpAddress = async (): Promise<string> => {
                     newAddress: undefined // Explicitly providing the optional parameter the SDK expects
                 } as any)
             });
-            
+
             const address = response.paymentRequest || response.bitcoinAddress || response.address;
             if (address) return address;
-            
+
             throw new Error("Address empty in response");
         } catch (error: any) {
             // Pass the true error message upward so we never hide node sync issues again
