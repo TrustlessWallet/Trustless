@@ -120,7 +120,10 @@ export type RootStackParamList = {
   ImportWatchOnly: undefined;
   LightningTopUp: undefined;
   WithdrawToOnchain: undefined;
-  Send: { selectedAddress?: string; mode?: 'onchain' | 'lightning' };
+  Send: {
+    selectedAddress?: string; mode?: 'onchain' | 'lightning'; prefill?: string;
+    autoConfirm?: boolean;
+  };
   Receive: { mode?: 'onchain' | 'lightning' };
   TransactionSuccess: {
     type: 'onchain' | 'lightning';

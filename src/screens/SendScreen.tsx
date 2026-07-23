@@ -160,6 +160,25 @@ const SendScreen = () => {
         }
     }, [route.params?.selectedAddress, navigation]);
 
+    const [pendingAutoPay, setPendingAutoPay] = useState(false);
+
+    useEffect(() => {
+        if (route.params?.prefill && mode === 'lightning') {
+            const invoice = route.params.prefill.replace(/^lightning:/i, '').trim();
+            setLightningInvoice(invoice);
+            setPendingAutoPay(!!route.params?.autoConfirm);
+            navigation.setParams({ prefill: undefined, autoConfirm: undefined });
+        }
+    }, [route.params?.prefill, route.params?.autoConfirm, mode, navigation]);
+
+    // Once the invoice resolves to a fixed amount, fire the payment if it was requested
+    useEffect(() => {
+        if (pendingAutoPay && hasFixedAmount && lightningInvoice.trim() && lnAmount && !loading) {
+            setPendingAutoPay(false);
+            handlePayLightning();
+        }
+    }, [pendingAutoPay, hasFixedAmount, lightningInvoice, lnAmount, loading]);
+
     useEffect(() => {
         if (mode === 'lightning' && lightningInvoice) {
             const parsedSats = parseBolt11Amount(lightningInvoice);
@@ -486,8 +505,10 @@ const SendScreen = () => {
 
         setLoading(true);
         try {
-
-await payLightningInvoice(lightningInvoice.trim(), sats);
+            await payLightningInvoice(
+                lightningInvoice.trim(),
+                hasFixedAmount ? undefined : sats
+            );
 
             triggerRefresh();
 
@@ -502,9 +523,9 @@ await payLightningInvoice(lightningInvoice.trim(), sats);
                 description: lightningInvoice.trim(),
             };
 
-            navigation.navigate('TransactionSuccess', { 
-                type: 'lightning', 
-                transaction: pendingLnTx as any 
+            navigation.navigate('TransactionSuccess', {
+                type: 'lightning',
+                transaction: pendingLnTx as any
             });
 
         } catch (error: any) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions, Alert } from 'react-native';
-import { scanNfcTag, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
+import { scanLightningInvoice, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
@@ -82,12 +82,17 @@ const WalletScreen = () => {
         if (isScanningNfc) return;
         setIsScanningNfc(true);
         try {
-            const payload = await scanNfcTag();
+            // 1. Call the updated invoice scanning function
+            const payload = await scanLightningInvoice();
+
             if (!payload) {
                 Alert.alert('Nothing found', 'The tag was read but had no payment data on it.');
                 return;
             }
-            navigation.navigate('Send', { mode: 'lightning', prefill: payload } as any);
+
+            // 2. Navigate using your app's expected mode and prefill parameters
+            navigation.navigate('Send', { mode: 'lightning', prefill: payload, autoConfirm: true } as any);
+
         } catch (err) {
             if (err instanceof NfcCancelledError) {
                 // user backed out of the OS scan sheet — no need to alert
