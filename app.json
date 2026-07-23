@@ -22,7 +22,11 @@
         "NSFaceIDUsageDescription": "Trustless uses Face ID to secure your wallet.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Trustless uses your location to show nearby Bitcoin merchants on the map.",
-        "NFCReaderUsageDescription": "Trustless uses NFC to scan Lightning invoices and tap-to-pay."
+        "NFCReaderUsageDescription": "Trustless uses NFC to scan Lightning invoices and tap-to-pay.",
+        "com.apple.developer.nfc.readersession.iso7816.select-identifiers": [
+          "D2760000850101",
+          "D2760000850100"
+        ]
       }
     },
     "android": {
