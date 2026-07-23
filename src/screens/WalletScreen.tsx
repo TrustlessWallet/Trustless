@@ -194,7 +194,9 @@ const WalletScreen = () => {
                                 <>{isSend ? '-' : '+'} {formatBalance(amountSats)} <Text style={styles.orangeSymbol}>₿</Text></>
                             )}
                         </Text>
-                        <Text style={styles.txStatus}>{lnTx.status === 'complete' ? 'Complete' : 'Pending'}</Text>
+                        <Text style={styles.txStatus}>
+                            {lnTx.status === 'complete' ? 'Complete' : lnTx.status === 'failed' ? 'Failed' : 'Pending'}
+                        </Text>
                     </View>
                 </TouchableOpacity>
             );

@@ -204,7 +204,15 @@ const TransactionDetailsScreen = () => {
       </View>
       <View style={styles.detailsContainer}>
         <DetailRow label="Date" value={dateStr} styles={styles} />
-        <DetailRow label="Status" value={isConfirmed ? 'Completed' : 'Pending'} styles={styles} />
+        <DetailRow
+          label="Status"
+          value={
+            isLightning
+              ? (lnTx.status === 'complete' ? 'Completed' : lnTx.status === 'failed' ? 'Failed' : 'Pending')
+              : (isConfirmed ? 'Completed' : 'Pending')
+          }
+          styles={styles}
+        />
         {isLightning ? (
           <DetailRow label="Description" value={otherAddress as string} styles={styles} />
         ) : (
