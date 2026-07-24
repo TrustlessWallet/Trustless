@@ -21,6 +21,7 @@ import './shim';
 
 import { registerRootComponent } from 'expo';
 import { initDatabase } from './src/services/database';
+import { get_is_nfc_scanning } from './src/services/nfc';
 
 interface TextWithDefaultProps extends Text { defaultProps?: { allowFontScaling?: boolean }; }
 interface TextInputWithDefaultProps extends TextInput { defaultProps?: { allowFontScaling?: boolean }; }
@@ -55,7 +56,7 @@ const PrivacySwitcherOverlay = () => {
     return () => subscription.remove();
   }, []);
 
-  if (appState === 'active') return null;
+  if (appState === 'active' || get_is_nfc_scanning()) return null;
 
   const splashBg = isDark ? '#000000' : '#ffffff';
   const splashIcon = isDark
@@ -64,9 +65,9 @@ const PrivacySwitcherOverlay = () => {
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: splashBg, zIndex: 99999 }}>
-      <Image 
-        source={splashIcon} 
-        style={{ height: '100%', width: '100%', resizeMode: 'cover' }} 
+      <Image
+        source={splashIcon}
+        style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
         fadeDuration={0} // Prevent image fade-in blink
       />
     </View>
@@ -139,7 +140,7 @@ export default function App() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
-      
+
       {isAppInitialized && (
         <QueryClientProvider client={queryClient}>
           <ThemeProvider initialIsDark={initialIsDark}>
@@ -163,9 +164,9 @@ export default function App() {
           pointerEvents="none"
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#ffffff', opacity: launchOpacity, zIndex: 99999 }}
         >
-          <Image 
-            source={require('./assets/splash-icon-white.png')} 
-            style={{ height: '100%', width: '100%', resizeMode: 'cover' }} 
+          <Image
+            source={require('./assets/splash-icon-white.png')}
+            style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
             fadeDuration={0}
           />
         </Animated.View>

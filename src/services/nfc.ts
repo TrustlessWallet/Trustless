@@ -1,6 +1,9 @@
 import NfcManager, { NfcTech, Ndef } from 'react-native-nfc-manager';
 
 let nfcManagerStarted = false;
+let is_scanning = false;
+
+export const get_is_nfc_scanning = () => is_scanning;
 
 export class NfcCancelledError extends Error {
   constructor() {
@@ -36,6 +39,9 @@ const bytesToString = (bytes: number[]): string => {
 
 export const scanLightningInvoice = async (): Promise<string> => {
   console.log('[NFC] scanLightningInvoice triggered. User ready to tap.');
+
+  is_scanning = true;
+
   try {
     await ensureNfcStarted();
 
@@ -170,5 +176,9 @@ export const scanLightningInvoice = async (): Promise<string> => {
   } finally {
     console.log('[NFC] Cleaning up NFC technology request...');
     NfcManager.cancelTechnologyRequest();
+
+    setTimeout(() => {
+      is_scanning = false;
+    }, 500);
   }
 };
