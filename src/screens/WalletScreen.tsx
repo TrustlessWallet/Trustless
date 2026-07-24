@@ -31,6 +31,24 @@ const formatBalance = (sats: number) => {
     return btcFormatter.format(btc).replace(/,/g, ' ');
 };
 
+const extractSatsFromBolt11 = (invoice: string): number => {
+    // A standard BOLT11 invoice starts with ln(network)(amount)(multiplier)
+    const match = invoice.toLowerCase().match(/^ln(bc|tb|bcrt)(\d+)([munp]?)/);
+    if (!match) return 0; // Unknown or zero-amount invoice
+
+    const val = parseInt(match[2], 10);
+    if (isNaN(val)) return 0;
+
+    const mult = match[3];
+    switch (mult) {
+        case 'm': return val * 100000;      // milli-bitcoin (0.001 BTC)
+        case 'u': return val * 100;         // micro-bitcoin (0.000001 BTC)
+        case 'n': return val * 0.1;         // nano-bitcoin (0.000000001 BTC)
+        case 'p': return val * 0.0001;      // pico-bitcoin
+        default: return val * 100000000;    // whole bitcoin
+    }
+};
+
 const WalletScreen = () => {
     useTipHeight();
     const navigation = useNavigation<NavigationProp>();
@@ -82,7 +100,7 @@ const WalletScreen = () => {
         if (isScanningNfc) return;
         setIsScanningNfc(true);
         try {
-            // 1. Call the updated invoice scanning function
+            // 1. Scan the tag
             const payload = await scanLightningInvoice();
 
             if (!payload) {
@@ -90,8 +108,23 @@ const WalletScreen = () => {
                 return;
             }
 
-            // 2. Navigate using your app's expected mode and prefill parameters
-            navigation.navigate('Send', { mode: 'lightning', prefill: payload, autoConfirm: true } as any);
+            // 2. Fetch the tap-to-pay limit from storage
+            const savedLimit = await AsyncStorage.getItem('@tapToPayLimit');
+            const limitSats = savedLimit !== null ? parseInt(savedLimit, 10) : 100000; // 100k default fallback
+
+            // 3. Extract the requested amount from the invoice
+            const invoiceSats = extractSatsFromBolt11(payload);
+
+            // 4. Determine if we should auto-confirm the payment
+            // We ensure invoiceSats > 0 so that zero-amount invoices ALWAYS prompt the user for an amount
+            const shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
+
+            // 5. Navigate
+            navigation.navigate('Send', {
+                mode: 'lightning',
+                prefill: payload,
+                autoConfirm: shouldAutoConfirm
+            } as any);
 
         } catch (err) {
             if (err instanceof NfcCancelledError) {
