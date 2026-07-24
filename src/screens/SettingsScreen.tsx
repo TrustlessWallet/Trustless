@@ -28,8 +28,16 @@ const NETWORK_PREF_KEY = '@network_preference';
 const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
 const ALLOW_SELF_SIGNED_KEY = '@allowSelfSigned';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
+const TAP_TO_PAY_LIMIT_KEY = '@tapToPayLimit';
 
 const auto_lock_options = ['Off', 0, 1, 5, 30, 60];
+const TAP_TO_PAY_STEP = 10000;
+const TAP_TO_PAY_MAX = 1000000;
+const TAP_TO_PAY_MIN = 0;
+const HOLD_ACCELERATE_DELAY_MS = 400;
+const HOLD_NORMAL_INTERVAL_MS = 350;
+const HOLD_FAST_INTERVAL_MS = 90;
+const HOLD_SPEED_UP_AFTER_MS = 1400;
 
 const get_auto_lock_label = (value: string | number): string => {
   if (value === 'Off') return 'Off';
@@ -67,6 +75,11 @@ const SettingsScreen = () => {
   const [hide_wallet_balance, set_hide_wallet_balance] = useState(false);
   const [default_screen, set_default_screen] = useState<'Wallet'>('Wallet');
   const [default_wallet_mode, set_default_wallet_mode] = useState<'On-chain' | 'Lightning'>('On-chain');
+  const [tap_to_pay_limit, set_tap_to_pay_limit] = useState('100000');
+
+  const tap_step_timeout_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tap_step_interval_ref = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tap_step_speedup_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [custom_node_url, set_custom_node_url] = useState('');
   const [allow_self_signed, set_allow_self_signed] = useState(false);
@@ -109,6 +122,12 @@ const SettingsScreen = () => {
         set_default_wallet_mode('On-chain');
       }
 
+      const saved_tap_limit = await AsyncStorage.getItem(TAP_TO_PAY_LIMIT_KEY);
+      if (saved_tap_limit) {
+        const clamped = Math.max(TAP_TO_PAY_MIN, Math.min(TAP_TO_PAY_MAX, parseInt(saved_tap_limit, 10) || 0));
+        set_tap_to_pay_limit(clamped.toString());
+      }
+
       const saved_node = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY);
       const saved_self_signed = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_KEY);
 
@@ -132,6 +151,15 @@ const SettingsScreen = () => {
       set_active_host(getActiveHostName());
     }
   }, [is_focused, check_biometric_status]);
+
+  // Make sure any in-flight press-and-hold timers don't outlive the screen
+  useEffect(() => {
+    return () => {
+      if (tap_step_timeout_ref.current) clearTimeout(tap_step_timeout_ref.current);
+      if (tap_step_interval_ref.current) clearInterval(tap_step_interval_ref.current);
+      if (tap_step_speedup_ref.current) clearTimeout(tap_step_speedup_ref.current);
+    };
+  }, []);
 
   const toggle_biometrics = async () => {
     if (is_toggling_ref.current) return;
@@ -233,6 +261,60 @@ const SettingsScreen = () => {
     set_default_wallet_mode(new_mode);
     await AsyncStorage.setItem(DEFAULT_WALLET_MODE_KEY, new_mode);
   };
+
+  // Single-step change. Reads the latest value via functional update so
+  // rapid repeated calls (from press-and-hold) always clamp correctly
+  // instead of racing against a stale closure of tap_to_pay_limit.
+  const step_tap_to_pay_limit = useCallback((direction: 'next' | 'prev') => {
+    set_tap_to_pay_limit(prev => {
+      const current = parseInt(prev, 10) || 0;
+      const raw = current + (direction === 'next' ? TAP_TO_PAY_STEP : -TAP_TO_PAY_STEP);
+      const clamped = Math.max(TAP_TO_PAY_MIN, Math.min(TAP_TO_PAY_MAX, raw));
+      const next_str = clamped.toString();
+      AsyncStorage.setItem(TAP_TO_PAY_LIMIT_KEY, next_str);
+      return next_str;
+    });
+  }, []);
+
+  const stop_tap_limit_hold = useCallback(() => {
+    if (tap_step_timeout_ref.current) {
+      clearTimeout(tap_step_timeout_ref.current);
+      tap_step_timeout_ref.current = null;
+    }
+    if (tap_step_interval_ref.current) {
+      clearInterval(tap_step_interval_ref.current);
+      tap_step_interval_ref.current = null;
+    }
+    if (tap_step_speedup_ref.current) {
+      clearTimeout(tap_step_speedup_ref.current);
+      tap_step_speedup_ref.current = null;
+    }
+  }, []);
+
+  const start_tap_limit_hold = useCallback((direction: 'next' | 'prev') => {
+    stop_tap_limit_hold();
+
+    // Immediate single step on press-down, matching a normal tap
+    step_tap_to_pay_limit(direction);
+
+    // After a short delay (so a quick tap doesn't double-step), start
+    // repeating at a normal pace, then ramp up to a fast pace the longer
+    // the chevron is held.
+    tap_step_timeout_ref.current = setTimeout(() => {
+      tap_step_interval_ref.current = setInterval(() => {
+        step_tap_to_pay_limit(direction);
+      }, HOLD_NORMAL_INTERVAL_MS);
+
+      tap_step_speedup_ref.current = setTimeout(() => {
+        if (tap_step_interval_ref.current) {
+          clearInterval(tap_step_interval_ref.current);
+          tap_step_interval_ref.current = setInterval(() => {
+            step_tap_to_pay_limit(direction);
+          }, HOLD_FAST_INTERVAL_MS);
+        }
+      }, HOLD_SPEED_UP_AFTER_MS);
+    }, HOLD_ACCELERATE_DELAY_MS);
+  }, [step_tap_to_pay_limit, stop_tap_limit_hold]);
 
   const handle_network_change = async () => {
     const new_network = IS_TESTNET ? 'mainnet' : 'testnet';
@@ -433,6 +515,43 @@ const SettingsScreen = () => {
                 )}
               </View>
             )}
+          </View>
+
+          <View style={styles.row_wrapper}>
+            <View style={styles.row}>
+              <Text style={styles.row_label}>Tap-to-pay limit</Text>
+              <View style={styles.switcher}>
+                <TouchableOpacity
+                  onPressIn={() => start_tap_limit_hold('prev')}
+                  onPressOut={stop_tap_limit_hold}
+                  disabled={parseInt(tap_to_pay_limit, 10) <= TAP_TO_PAY_MIN}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 4 }}
+                >
+                  <Feather
+                    name="chevron-left"
+                    size={24}
+                    color={parseInt(tap_to_pay_limit, 10) <= TAP_TO_PAY_MIN ? theme.colors.border : theme.colors.primary}
+                  />
+                </TouchableOpacity>
+
+                <Text style={styles.switcher_text}>
+                  {(parseInt(tap_to_pay_limit, 10) || 0).toLocaleString()}
+                </Text>
+
+                <TouchableOpacity
+                  onPressIn={() => start_tap_limit_hold('next')}
+                  onPressOut={stop_tap_limit_hold}
+                  disabled={parseInt(tap_to_pay_limit, 10) >= TAP_TO_PAY_MAX}
+                  hitSlop={{ top: 10, bottom: 10, left: 4, right: 10 }}
+                >
+                  <Feather
+                    name="chevron-right"
+                    size={24}
+                    color={parseInt(tap_to_pay_limit, 10) >= TAP_TO_PAY_MAX ? theme.colors.border : theme.colors.primary}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
 
           <View style={styles.col}>
