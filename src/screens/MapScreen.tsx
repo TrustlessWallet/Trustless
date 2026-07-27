@@ -85,7 +85,6 @@ export default function MapScreen() {
   const hasRequestedLocation = useRef(false);
 
   useEffect(() => {
-    // Only ask for permission if the user is actually looking at the Map tab
     if (isFocused && !hasRequestedLocation.current) {
       hasRequestedLocation.current = true;
 
@@ -109,7 +108,6 @@ export default function MapScreen() {
 
       mapRef.current.animateToRegion(targetRegion, 1000);
 
-      // Force update state immediately so markers appear instantly
       setRegion(targetRegion);
       regionRef.current = targetRegion;
       updateClusters(targetRegion);

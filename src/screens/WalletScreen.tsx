@@ -15,6 +15,8 @@ import { Theme } from '../constants/theme';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { useWalletTransactions, useWalletUTXOs, useTipHeight } from '../hooks/useBalance';
 import { LinearGradient } from 'expo-linear-gradient';
+import { GlassView } from '../components/GlassView';
+import { bold } from '@expo/ui/swift-ui/modifiers';
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
@@ -453,14 +455,16 @@ const WalletScreen = () => {
     const displayTransactions = isLightningMode ? lightningTransactions : (onchainTransactions || []);
 
     const ToggleIconElement = () => (
-        <View style={styles.iconToggleInner}>
-            <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
-                <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
+        <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
+                <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
+                    <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
+                </View>
+                <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
+                    <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
+                </View>
             </View>
-            <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
-                <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
-            </View>
-        </View>
+        </GlassView>
     );
 
     if (walletLoading) {
@@ -529,6 +533,7 @@ const WalletScreen = () => {
                     <View style={styles.topSection}>
                         <View style={styles.headerRow}>
                             <TouchableOpacity
+                                activeOpacity={1}
                                 style={styles.toggleTouchable}
                                 onPress={toggleMode}
                                 disabled={!isLightningInitialized || activeWallet?.type === 'watch-only'}
@@ -536,43 +541,51 @@ const WalletScreen = () => {
                                 {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
                             </TouchableOpacity>
 
-                            <TouchableOpacity style={styles.walletSelector} onPress={() => navigation.navigate('WalletSwitcher')}>
-                                <Text style={styles.walletName}>{activeWallet?.name}</Text>
-                                <Feather name="chevron-down" size={20} color={theme.colors.muted} />
+                            <TouchableOpacity activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
+                                <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={true}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
+                                        <Text
+                                            style={[styles.walletName]}
+                                            numberOfLines={1}
+                                            ellipsizeMode="tail"
+                                        >
+                                            {activeWallet?.name || 'Wallet'}
+                                        </Text>
+                                    </View>
+                                </GlassView>
                             </TouchableOpacity>
 
                             <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
                                 {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
                             </View>
                         </View>
-
                         <View style={styles.balanceRow}>
                             <View style={styles.balanceSideSpacer} />
 
                             <TouchableOpacity
                                 style={styles.balanceContainer}
-                                onPress={() => !isLightningMode && navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
-                                disabled={isLightningMode}
+                                onPress={() =>
+                                    isLightningMode
+                                        ? openLiquiditySheet()
+                                        : navigation.navigate('BalanceDetail', { utxos: utxos || [] })
+                                }
                             >
-                                <Text style={styles.balanceText}>
-                                    {hideBalance ? '*******' : (
-                                        isLightningMode ? (
-                                            <>{new Intl.NumberFormat('en-US').format(displayBalance)} sats</>
-                                        ) : (
-                                            <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>
-                                        )
-                                    )}
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <Text style={styles.balanceText}>
+                                        {hideBalance ? '*******' : (
+                                            isLightningMode ? (
+                                                <>{new Intl.NumberFormat('en-US').format(displayBalance)} sats</>
+                                            ) : (
+                                                <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>
+                                            )
+                                        )}
+                                    </Text>
+
+                                    <Feather name="chevron-down" size={20} color={theme.colors.primary} />
+                                </View>
                             </TouchableOpacity>
 
-                            <View style={styles.balanceSideSpacerRight}>
-                                {isLightningMode && (
-                                    <TouchableOpacity style={styles.liquidityPillSmall} onPress={openLiquiditySheet}>
-                                        <Feather name="plus" size={14} color={theme.colors.primary} />
-                                        <Feather name="minus" size={14} color={theme.colors.primary} />
-                                    </TouchableOpacity>
-                                )}
-                            </View>
+                            <View style={styles.balanceSideSpacerRight} />
                         </View>
 
                         <View style={styles.actionsWrapper}>
@@ -825,39 +838,24 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 16,
         marginBottom: 16,
+        gap: 8
     },
     toggleTouchable: {
-        padding: 4,
-        width: 68,
+        width: 76,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    iconToggleInner: {
-        flexDirection: 'row',
-        backgroundColor: theme.colors.surface,
-        borderRadius: 20,
-        padding: 2,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
     iconWrapper: {
-        paddingVertical: 3,
-        paddingHorizontal: 8,
-        borderRadius: 16,
+        paddingVertical: 6,
+        paddingHorizontal: 6,
+        borderRadius: 30,
     },
     iconWrapperActive: {
         backgroundColor: theme.colors.primary,
     },
-    walletSelector: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        marginRight: -4,
-        paddingHorizontal: 12,
-    },
     walletName: {
-        fontSize: 20,
+        fontSize: 16,
+
         color: theme.colors.muted,
     },
     balanceRow: {
@@ -889,18 +887,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     orangeSymbol: {
         color: theme.colors.bitcoin
-    },
-    liquidityPillSmall: {
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: theme.colors.surface,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        borderRadius: 20,
-        paddingVertical: 6,
-        paddingHorizontal: 6,
-        gap: 6
     },
     actionsWrapper: {
         width: '100%',
