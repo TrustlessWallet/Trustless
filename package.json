@@ -46,6 +46,7 @@
     "expo-dev-client": "~56.0.20",
     "expo-file-system": "~56.0.7",
     "expo-font": "~56.0.5",
+    "expo-haptics": "~56.0.3",
     "expo-linear-gradient": "^56.0.4",
     "expo-local-authentication": "~56.0.4",
     "expo-location": "~56.0.17",
