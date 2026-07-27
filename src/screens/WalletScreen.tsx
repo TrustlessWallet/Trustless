@@ -454,7 +454,7 @@ const WalletScreen = () => {
 
     const displayTransactions = isLightningMode ? lightningTransactions : (onchainTransactions || []);
 
-    const ToggleIconElement = () => (
+    const toggleIconElement = (
         <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
             <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
                 <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
@@ -538,7 +538,7 @@ const WalletScreen = () => {
                                 onPress={toggleMode}
                                 disabled={!isLightningInitialized || activeWallet?.type === 'watch-only'}
                             >
-                                {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
+                                {activeWallet?.type !== 'watch-only' && toggleIconElement}
                             </TouchableOpacity>
 
                             <TouchableOpacity activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
@@ -556,7 +556,7 @@ const WalletScreen = () => {
                             </TouchableOpacity>
 
                             <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
-                                {activeWallet?.type !== 'watch-only' && <ToggleIconElement />}
+                                {activeWallet?.type !== 'watch-only' && toggleIconElement}
                             </View>
                         </View>
                         <View style={styles.balanceRow}>
@@ -703,7 +703,7 @@ const WalletScreen = () => {
                         <View {...sheetPanResponder.panHandlers} style={styles.dragZone}>
                             <View style={styles.sheetHandle} />
                             <Text style={styles.sheetTitle}>Manage liquidity</Text>
-                            <Text style={styles.sheetSubtitle}>Move funds between your on-chain and lightning wallet.</Text>
+                            <Text style={styles.sheetSubtitle}>Move funds between your on-chain and lightning wallets.</Text>
                         </View>
 
                         <View style={styles.sheetButtonRow}>
@@ -855,7 +855,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     walletName: {
         fontSize: 16,
-
         color: theme.colors.muted,
     },
     balanceRow: {
