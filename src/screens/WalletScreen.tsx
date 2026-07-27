@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions, Alert, Modal, Pressable, PanResponder, Vibration, Easing } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { scanLightningInvoice, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
@@ -18,8 +19,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const SHEET_CLOSED_OFFSET = 340; // Reduced for smaller sheet
+const SHEET_DISMISS_THRESHOLD = 90;
+const NFC_HOLD_DURATION = 400;
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const btcFormatter = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 8,
@@ -32,20 +38,27 @@ const formatBalance = (sats: number) => {
 };
 
 const extractSatsFromBolt11 = (invoice: string): number => {
-    // A standard BOLT11 invoice starts with ln(network)(amount)(multiplier)
     const match = invoice.toLowerCase().match(/^ln(bc|tb|bcrt)(\d+)([munp]?)/);
-    if (!match) return 0; // Unknown or zero-amount invoice
+    if (!match) return 0;
 
     const val = parseInt(match[2], 10);
     if (isNaN(val)) return 0;
 
     const mult = match[3];
     switch (mult) {
-        case 'm': return val * 100000;      // milli-bitcoin (0.001 BTC)
-        case 'u': return val * 100;         // micro-bitcoin (0.000001 BTC)
-        case 'n': return val * 0.1;         // nano-bitcoin (0.000000001 BTC)
-        case 'p': return val * 0.0001;      // pico-bitcoin
-        default: return val * 100000000;    // whole bitcoin
+        case 'm': return val * 100000;
+        case 'u': return val * 100;
+        case 'n': return val * 0.1;
+        case 'p': return val * 0.0001;
+        default: return val * 100000000;
+    }
+};
+
+const safeHaptic = (style: any) => {
+    try {
+        Haptics.impactAsync(style).catch(() => Vibration.vibrate());
+    } catch {
+        Vibration.vibrate();
     }
 };
 
@@ -63,15 +76,23 @@ const WalletScreen = () => {
     } = useWallet();
     const { theme } = useTheme();
 
-    // Using safe stable insets so the style object is always valid
     const styles = useMemo(() => getStyles(theme), [theme]);
 
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
-    const isFocused = useIsFocused();
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+    const [isSheetMounted, setIsSheetMounted] = useState(false);
 
+    const isFocused = useIsFocused();
     const scrollY = useRef(new Animated.Value(0)).current;
+
+    const sheetTranslateY = useRef(new Animated.Value(SHEET_CLOSED_OFFSET)).current;
+
+    const backdropOpacity = sheetTranslateY.interpolate({
+        inputRange: [0, SHEET_CLOSED_OFFSET],
+        outputRange: [1, 0],
+        extrapolate: 'clamp',
+    });
 
     const shadowOpacity = scrollY.interpolate({
         inputRange: [100, 140],
@@ -96,11 +117,156 @@ const WalletScreen = () => {
 
     const [isScanningNfc, setIsScanningNfc] = useState(false);
 
+    const pressScale = useRef(new Animated.Value(1)).current;
+    const holdCharge = useRef(new Animated.Value(0)).current;
+    const ring1 = useRef(new Animated.Value(0)).current;
+    const ring2 = useRef(new Animated.Value(0)).current;
+    const nfcPulseAnim = useRef(new Animated.Value(1)).current; // New pulse anim
+
+    // Reset hold charge when NFC scanning is finished/cancelled
+    useEffect(() => {
+        if (!isScanningNfc) {
+            Animated.timing(holdCharge, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: false,
+            }).start();
+        }
+    }, [isScanningNfc, holdCharge]);
+
+    useEffect(() => {
+        let loop1: Animated.CompositeAnimation | null = null;
+        let loop2: Animated.CompositeAnimation | null = null;
+        let pulseLoop: Animated.CompositeAnimation | null = null;
+        let staggerTimeout: ReturnType<typeof setTimeout> | null = null;
+
+        if (isScanningNfc) {
+            ring1.setValue(0);
+            ring2.setValue(0);
+            nfcPulseAnim.setValue(1);
+
+            loop1 = Animated.loop(
+                Animated.timing(ring1, {
+                    toValue: 1,
+                    duration: 1300,
+                    easing: Easing.out(Easing.quad),
+                    useNativeDriver: true,
+                })
+            );
+            loop1.start();
+
+            staggerTimeout = setTimeout(() => {
+                loop2 = Animated.loop(
+                    Animated.timing(ring2, {
+                        toValue: 1,
+                        duration: 1300,
+                        easing: Easing.out(Easing.quad),
+                        useNativeDriver: true,
+                    })
+                );
+                loop2.start();
+            }, 650);
+
+            // Pulsing animation for the center NFC icon
+            pulseLoop = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(nfcPulseAnim, {
+                        toValue: 0.4,
+                        duration: 600,
+                        easing: Easing.inOut(Easing.ease),
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(nfcPulseAnim, {
+                        toValue: 1,
+                        duration: 600,
+                        easing: Easing.inOut(Easing.ease),
+                        useNativeDriver: true,
+                    }),
+                ])
+            );
+            pulseLoop.start();
+
+        } else {
+            ring1.setValue(0);
+            ring2.setValue(0);
+            nfcPulseAnim.setValue(1);
+        }
+
+        return () => {
+            loop1?.stop();
+            loop2?.stop();
+            pulseLoop?.stop();
+            if (staggerTimeout) clearTimeout(staggerTimeout);
+        };
+    }, [isScanningNfc, ring1, ring2, nfcPulseAnim]);
+
+    const ring1Scale = ring1.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] });
+    const ring1Opacity = ring1.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.45, 0] });
+    const ring2Scale = ring2.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] });
+    const ring2Opacity = ring2.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.45, 0] });
+
+    const holdChargeHeight = holdCharge.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 60],
+        extrapolate: 'clamp',
+    });
+
+    const openLiquiditySheet = useCallback(() => {
+        setIsSheetMounted(true);
+        sheetTranslateY.setValue(SHEET_CLOSED_OFFSET);
+        Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 20,
+            stiffness: 220,
+            mass: 0.9,
+        }).start();
+    }, [sheetTranslateY]);
+
+    const closeLiquiditySheet = useCallback((onDone?: () => void) => {
+        Animated.timing(sheetTranslateY, {
+            toValue: SHEET_CLOSED_OFFSET,
+            duration: 200,
+            useNativeDriver: true,
+        }).start(() => {
+            setIsSheetMounted(false);
+            onDone?.();
+        });
+    }, [sheetTranslateY]);
+
+    const sheetPanResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onPanResponderTerminationRequest: () => false,
+            onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 4,
+            onPanResponderMove: (_evt, gestureState) => {
+                if (gestureState.dy > 0) {
+                    sheetTranslateY.setValue(gestureState.dy);
+                }
+            },
+            onPanResponderRelease: (_evt, gestureState) => {
+                if (gestureState.dy > SHEET_DISMISS_THRESHOLD || gestureState.vy > 0.6) {
+                    closeLiquiditySheet();
+                } else {
+                    Animated.spring(sheetTranslateY, {
+                        toValue: 0,
+                        useNativeDriver: true,
+                        damping: 20,
+                        stiffness: 220,
+                        mass: 0.9,
+                    }).start();
+                }
+            },
+        })
+    ).current;
+
     const handleNfcPay = useCallback(async () => {
         if (isScanningNfc) return;
+
+        safeHaptic(Haptics.ImpactFeedbackStyle.Medium);
+
         setIsScanningNfc(true);
         try {
-            // 1. Scan the tag
             const payload = await scanLightningInvoice();
 
             if (!payload) {
@@ -108,18 +274,12 @@ const WalletScreen = () => {
                 return;
             }
 
-            // 2. Fetch the tap-to-pay limit from storage
             const savedLimit = await AsyncStorage.getItem('@tapToPayLimit');
-            const limitSats = savedLimit !== null ? parseInt(savedLimit, 10) : 100000; // 100k default fallback
+            const limitSats = savedLimit !== null ? parseInt(savedLimit, 10) : 100000;
 
-            // 3. Extract the requested amount from the invoice
             const invoiceSats = extractSatsFromBolt11(payload);
-
-            // 4. Determine if we should auto-confirm the payment
-            // We ensure invoiceSats > 0 so that zero-amount invoices ALWAYS prompt the user for an amount
             const shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
 
-            // 5. Navigate
             navigation.navigate('Send', {
                 mode: 'lightning',
                 prefill: payload,
@@ -128,17 +288,53 @@ const WalletScreen = () => {
 
         } catch (err) {
             if (err instanceof NfcCancelledError) {
-                // user backed out of the OS scan sheet — no need to alert
+                // user backed out
             } else if (err instanceof NfcUnsupportedError) {
                 Alert.alert('NFC not available', 'This device doesn\'t support NFC.');
             } else {
-                console.warn('NFC scan error', err);
                 Alert.alert('Scan failed', 'Could not read the tag. Please try again.');
             }
         } finally {
             setIsScanningNfc(false);
         }
     }, [isScanningNfc, navigation]);
+
+    const handleSendPressIn = useCallback(() => {
+        Animated.spring(pressScale, {
+            toValue: 0.94,
+            useNativeDriver: true,
+            speed: 40,
+            bounciness: 3,
+        }).start();
+
+        if (isLightningMode) {
+            safeHaptic(Haptics.ImpactFeedbackStyle.Light);
+            holdCharge.setValue(0);
+            Animated.timing(holdCharge, {
+                toValue: 1,
+                duration: NFC_HOLD_DURATION,
+                easing: Easing.linear,
+                useNativeDriver: false,
+            }).start();
+        }
+    }, [isLightningMode, pressScale, holdCharge]);
+
+    const handleSendPressOut = useCallback(() => {
+        Animated.spring(pressScale, {
+            toValue: 1,
+            useNativeDriver: true,
+            speed: 40,
+            bounciness: 3,
+        }).start();
+
+        if (isLightningMode && !isScanningNfc) {
+            Animated.timing(holdCharge, {
+                toValue: 0,
+                duration: 150,
+                useNativeDriver: false,
+            }).start();
+        }
+    }, [isLightningMode, isScanningNfc, holdCharge, pressScale]);
 
     const walletAddressesSet = useMemo(() => {
         if (!activeWallet) return new Set<string>();
@@ -148,33 +344,21 @@ const WalletScreen = () => {
         ]);
     }, [activeWallet]);
 
-    const {
-        data: onchainTransactions,
-        isLoading: loadingTxs,
-        refetch: refetchTxs
-    } = useWalletTransactions(activeWallet?.id, queryAddresses);
-
-    const {
-        data: utxos,
-        refetch: refetchUtxos
-    } = useWalletUTXOs(queryAddresses);
+    const { data: onchainTransactions, isLoading: loadingTxs, refetch: refetchTxs } = useWalletTransactions(activeWallet?.id, queryAddresses);
+    const { data: utxos, refetch: refetchUtxos } = useWalletUTXOs(queryAddresses);
 
     useEffect(() => {
         const loadPreference = async () => {
             const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
             setHideBalance(savedPref === 'true');
         };
-        if (isFocused) {
-            loadPreference();
-        }
+        if (isFocused) loadPreference();
     }, [isFocused]);
 
     useEffect(() => {
         const loadInitialWalletMode = async () => {
             const savedMode = await AsyncStorage.getItem(DEFAULT_WALLET_MODE_KEY);
-            if (savedMode === 'Lightning') {
-                setIsLightningMode(true);
-            }
+            if (savedMode === 'Lightning') setIsLightningMode(true);
         };
         loadInitialWalletMode();
     }, []);
@@ -197,9 +381,7 @@ const WalletScreen = () => {
         }
     }, [isLightningMode, triggerRefresh, refetchTxs, refetchUtxos]);
 
-    const toggleMode = () => {
-        setIsLightningMode(!isLightningMode);
-    };
+    const toggleMode = () => setIsLightningMode(!isLightningMode);
 
     const renderTransactionItem = useCallback(({ item }: { item: any }) => {
         const isLightning = 'paymentHash' in item;
@@ -211,14 +393,11 @@ const WalletScreen = () => {
             const amountSats = Math.floor(lnTx.amountMsat / 1000);
 
             return (
-                <TouchableOpacity
-                    style={styles.txRow}
-                    onPress={() => navigation.navigate('TransactionDetails', { transaction: lnTx })}
-                >
+                <TouchableOpacity style={styles.txRow} onPress={() => navigation.navigate('TransactionDetails', { transaction: lnTx })}>
                     <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
                     <View style={styles.txDetails}>
                         <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
-                        <Text style={styles.txAddress}>{lnTx.description || 'Lightning payment'}</Text>
+                        <Text style={styles.txAddress} numberOfLines={1} ellipsizeMode="middle">{lnTx.description || 'Lightning payment'}</Text>
                         <Text style={styles.txDate}>{txDate}</Text>
                     </View>
                     <View style={styles.txAmountContainer}>
@@ -247,19 +426,16 @@ const WalletScreen = () => {
             if (externalInputs.length === 1) otherAddress = externalInputs[0].prevout.scriptpubkey_address;
         }
 
-        const txDate = ocTx.status.block_time
-            ? new Date(ocTx.status.block_time * 1000).toLocaleString()
-            : 'Pending confirmation';
+        const txDate = ocTx.status.block_time ? new Date(ocTx.status.block_time * 1000).toLocaleString() : 'Pending confirmation';
 
         return (
-            <TouchableOpacity
-                style={styles.txRow}
-                onPress={() => navigation.navigate('TransactionDetails', { transaction: ocTx })}
-            >
+            <TouchableOpacity style={styles.txRow} onPress={() => navigation.navigate('TransactionDetails', { transaction: ocTx })}>
                 <Feather name={isSend ? "arrow-up" : "arrow-down"} size={24} color={theme.colors.primary} style={styles.txIcon} />
                 <View style={styles.txDetails}>
                     <Text style={styles.txType}>{isSend ? "Send" : "Receive"}</Text>
-                    <Text style={styles.txAddress}>{isSend ? "To" : "From"} {formatBitcoinAddressShort(otherAddress || 'Unknown')}</Text>
+                    <Text style={styles.txAddress}>
+                        {isSend ? "To" : "From"} {formatBitcoinAddressShort(otherAddress || 'Unknown')}
+                    </Text>
                     <Text style={styles.txDate}>{txDate}</Text>
                 </View>
                 <View style={styles.txAmountContainer}>
@@ -305,7 +481,6 @@ const WalletScreen = () => {
                             <Feather name="refresh-ccw" size={18} color={theme.colors.primary} />
                             <Text style={styles.importButtonText}>Import existing wallet</Text>
                         </TouchableOpacity>
-
                         <TouchableOpacity style={styles.importButton} onPress={() => navigation.navigate('ImportWatchOnly')}>
                             <Feather name="eye" size={18} color={theme.colors.primary} />
                             <Text style={styles.importButtonText}>Import watch-only wallet</Text>
@@ -336,7 +511,7 @@ const WalletScreen = () => {
                         theme.colors.background + '00',
                     ]}
                     locations={[0, 0.4, 0.7, 1]}
-                    style={StyleSheet.absoluteFill}
+                    style={styles.absoluteFillOverride}
                 />
             </Animated.View>
 
@@ -371,21 +546,34 @@ const WalletScreen = () => {
                             </View>
                         </View>
 
-                        <TouchableOpacity
-                            style={styles.balanceContainer}
-                            onPress={() => !isLightningMode && navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
-                            disabled={isLightningMode}
-                        >
-                            <Text style={styles.balanceText}>
-                                {hideBalance ? '*******' : (
-                                    isLightningMode ? (
-                                        <>{new Intl.NumberFormat('en-US').format(displayBalance)} sats</>
-                                    ) : (
-                                        <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>
-                                    )
+                        <View style={styles.balanceRow}>
+                            <View style={styles.balanceSideSpacer} />
+
+                            <TouchableOpacity
+                                style={styles.balanceContainer}
+                                onPress={() => !isLightningMode && navigation.navigate('BalanceDetail', { utxos: utxos || [] })}
+                                disabled={isLightningMode}
+                            >
+                                <Text style={styles.balanceText}>
+                                    {hideBalance ? '*******' : (
+                                        isLightningMode ? (
+                                            <>{new Intl.NumberFormat('en-US').format(displayBalance)} sats</>
+                                        ) : (
+                                            <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>
+                                        )
+                                    )}
+                                </Text>
+                            </TouchableOpacity>
+
+                            <View style={styles.balanceSideSpacerRight}>
+                                {isLightningMode && (
+                                    <TouchableOpacity style={styles.liquidityPillSmall} onPress={openLiquiditySheet}>
+                                        <Feather name="plus" size={14} color={theme.colors.primary} />
+                                        <Feather name="minus" size={14} color={theme.colors.primary} />
+                                    </TouchableOpacity>
                                 )}
-                            </Text>
-                        </TouchableOpacity>
+                            </View>
+                        </View>
 
                         <View style={styles.actionsWrapper}>
                             <View style={styles.actionsContainer}>
@@ -401,51 +589,65 @@ const WalletScreen = () => {
 
                                 <TouchableOpacity
                                     style={styles.iconActionButton}
+                                    activeOpacity={0.85}
                                     onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
+                                    onLongPress={isLightningMode ? handleNfcPay : undefined}
+                                    onPressIn={handleSendPressIn}
+                                    onPressOut={handleSendPressOut}
+                                    delayLongPress={NFC_HOLD_DURATION}
+                                    disabled={isScanningNfc}
                                 >
-                                    <View style={styles.iconCircle}>
-                                        <Feather name="arrow-up-right" size={32} color={theme.colors.inversePrimary} />
+                                    <View style={styles.nfcRingWrapper}>
+                                        {isLightningMode && (
+                                            <>
+                                                <Animated.View
+                                                    pointerEvents="none"
+                                                    style={[
+                                                        styles.sonarRing,
+                                                        {
+                                                            opacity: ring1Opacity,
+                                                            transform: [{ scale: ring1Scale }],
+                                                        },
+                                                    ]}
+                                                />
+                                                <Animated.View
+                                                    pointerEvents="none"
+                                                    style={[
+                                                        styles.sonarRing,
+                                                        {
+                                                            opacity: ring2Opacity,
+                                                            transform: [{ scale: ring2Scale }],
+                                                        },
+                                                    ]}
+                                                />
+                                            </>
+                                        )}
+
+                                        <Animated.View style={[styles.iconCircle, { transform: [{ scale: pressScale }] }]}>
+                                            {isLightningMode && (
+                                                <Animated.View
+                                                    pointerEvents="none"
+                                                    style={[styles.chargeFill, { height: holdChargeHeight }]}
+                                                />
+                                            )}
+
+                                            {isScanningNfc ? (
+                                                <Animated.View style={{ opacity: nfcPulseAnim }}>
+                                                    <MaterialIcons name="nfc" size={32} color={theme.colors.inversePrimary} />
+                                                </Animated.View>
+                                            ) : (
+                                                <>
+                                                    <Feather name="arrow-up-right" size={32} color={theme.colors.inversePrimary} />
+                                                    {isLightningMode && (
+                                                        <MaterialIcons name="nfc" size={14} color={theme.colors.inversePrimary} style={styles.nfcHintIconOriginal} />
+                                                    )}
+                                                </>
+                                            )}
+                                        </Animated.View>
                                     </View>
                                     <Text style={styles.iconActionText}>Send</Text>
                                 </TouchableOpacity>
-
-                                {isLightningMode && (
-                                    <TouchableOpacity
-                                        style={styles.iconActionButton}
-                                        onPress={handleNfcPay}
-                                        disabled={isScanningNfc}
-                                    >
-                                        <View style={styles.iconCircle}>
-                                            {isScanningNfc ? (
-                                                <ActivityIndicator size="small" color={theme.colors.inversePrimary} />
-                                            ) : (
-                                                <MaterialIcons name="nfc" size={32} color={theme.colors.inversePrimary} />
-                                            )}
-                                        </View>
-                                        <Text style={styles.iconActionText}>{isScanningNfc ? 'Scanning...' : 'Pay'}</Text>
-                                    </TouchableOpacity>
-                                )}
                             </View>
-
-                            {isLightningMode && (
-                                <View style={styles.secondaryActionsRow}>
-                                    <TouchableOpacity
-                                        style={styles.secondaryActionButton}
-                                        onPress={() => navigation.navigate('WithdrawToOnchain' as any)}
-                                    >
-                                        <Feather name="minus-circle" size={14} color={theme.colors.primary} />
-                                        <Text style={styles.secondaryActionButtonText}>Withdraw</Text>
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity
-                                        style={styles.secondaryActionButton}
-                                        onPress={() => navigation.navigate('LightningTopUp' as any)}
-                                    >
-                                        <Feather name="plus-circle" size={14} color={theme.colors.primary} />
-                                        <Text style={styles.secondaryActionButtonText}>Top-up</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
                         </View>
                     </View>
                 }
@@ -465,17 +667,82 @@ const WalletScreen = () => {
                         progressViewOffset={SCREEN_HEIGHT * 0.1}
                     />
                 }
-                removeClippedSubviews={true}
-                initialNumToRender={10}
-                maxToRenderPerBatch={10}
-                windowSize={5}
-                updateCellsBatchingPeriod={50}
             />
+
+            <Modal
+                visible={isSheetMounted}
+                transparent
+                animationType="none"
+                onRequestClose={() => closeLiquiditySheet()}
+            >
+                <View style={styles.sheetOverlay}>
+                    <AnimatedPressable
+                        style={[styles.sheetBackdrop, { opacity: backdropOpacity }]}
+                        onPress={() => closeLiquiditySheet()}
+                    />
+
+                    <Animated.View
+                        style={[
+                            styles.sheetContent,
+                            { transform: [{ translateY: sheetTranslateY }] }
+                        ]}
+                    >
+                        <View {...sheetPanResponder.panHandlers} style={styles.dragZone}>
+                            <View style={styles.sheetHandle} />
+                            <Text style={styles.sheetTitle}>Manage liquidity</Text>
+                            <Text style={styles.sheetSubtitle}>Move funds between your on-chain and lightning wallet.</Text>
+                        </View>
+
+                        <View style={styles.sheetButtonRow}>
+                            <View style={styles.sheetActionCol}>
+                                <TouchableOpacity
+                                    style={styles.sheetPrimaryButton}
+                                    onPress={() => {
+                                        closeLiquiditySheet(() => navigation.navigate('LightningTopUp' as any));
+                                    }}
+                                >
+                                    <Feather name="plus" size={18} color={theme.colors.inversePrimary} />
+                                    <Text style={styles.sheetPrimaryButtonText}>Top-up</Text>
+                                </TouchableOpacity>
+                                <Text style={styles.sheetButtonSub}>On-chain to Lightning</Text>
+                            </View>
+
+                            <View style={styles.sheetActionCol}>
+                                <TouchableOpacity
+                                    style={styles.sheetPrimaryButton}
+                                    onPress={() => {
+                                        closeLiquiditySheet(() => navigation.navigate('WithdrawToOnchain' as any));
+                                    }}
+                                >
+                                    <Feather name="minus" size={18} color={theme.colors.inversePrimary} />
+                                    <Text style={styles.sheetPrimaryButtonText}>Withdraw</Text>
+                                </TouchableOpacity>
+                                <Text style={styles.sheetButtonSub}>Lightning to on-chain</Text>
+                            </View>
+                        </View>
+                    </Animated.View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
 
 const getStyles = (theme: Theme) => StyleSheet.create({
+    absoluteFillOverride: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+    },
+    sheetBackdrop: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+    },
     nativeTopHeaderBar: {
         position: 'absolute',
         top: 0,
@@ -551,7 +818,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
-        paddingBottom: 0,
     },
     headerRow: {
         flexDirection: 'row',
@@ -594,11 +860,24 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontSize: 20,
         color: theme.colors.muted,
     },
+    balanceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        width: '100%',
+        marginBottom: 28,
+        height: 50,
+    },
+    balanceSideSpacer: {
+        flex: 1,
+    },
+    balanceSideSpacerRight: {
+        flex: 1,
+        alignItems: 'flex-start',
+        paddingLeft: 16,
+    },
     balanceContainer: {
         alignItems: 'center',
-        height: 50,
         justifyContent: 'center',
-        marginBottom: 28,
     },
     balanceText: {
         fontSize: 36,
@@ -611,10 +890,22 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     orangeSymbol: {
         color: theme.colors.bitcoin
     },
+    liquidityPillSmall: {
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.colors.surface,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: 20,
+        paddingVertical: 6,
+        paddingHorizontal: 6,
+        gap: 6
+    },
     actionsWrapper: {
         width: '100%',
         alignItems: 'center',
-        height: 168,
+        height: 120,
         position: 'relative',
     },
     actionsContainer: {
@@ -631,6 +922,20 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         width: 100,
         gap: 6,
     },
+    nfcRingWrapper: {
+        width: 100,
+        height: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    sonarRing: {
+        position: 'absolute',
+        width: 100,
+        height: 60,
+        borderRadius: 10,
+        borderWidth: 2,
+        borderColor: theme.colors.primary,
+    },
     iconCircle: {
         width: 100,
         height: 60,
@@ -638,39 +943,25 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: theme.colors.primary,
+        overflow: 'hidden',
+    },
+    chargeFill: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: theme.colors.muted + '55',
     },
     iconActionText: {
         color: theme.colors.primary,
         fontSize: 13,
         fontWeight: '500',
     },
-    secondaryActionsRow: {
+    nfcHintIconOriginal: {
         position: 'absolute',
-        top: 116,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        width: '100%',
-        gap: 24,
-    },
-    secondaryActionButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 128,
-        gap: 6,
-        backgroundColor: theme.colors.background,
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    secondaryActionButtonText: {
-        color: theme.colors.primary,
-        fontSize: 13,
-        fontWeight: '500',
-        includeFontPadding: false,
-        textAlignVertical: 'center'
+        top: 6,
+        right: 8,
+        opacity: 0.8,
     },
     noTxText: {
         textAlign: 'center',
@@ -720,7 +1011,70 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     txStatus: {
         fontSize: 14,
         color: theme.colors.muted
-    }
+    },
+    sheetOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    sheetContent: {
+        backgroundColor: theme.colors.background,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 24,
+        paddingBottom: 48,
+    },
+    dragZone: {},
+    sheetHandle: {
+        width: 40,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: theme.colors.border,
+        alignSelf: 'center',
+        marginBottom: 16,
+    },
+    sheetTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: theme.colors.primary,
+        marginBottom: 8,
+    },
+    sheetSubtitle: {
+        fontSize: 14,
+        color: theme.colors.muted,
+        marginBottom: 24,
+    },
+    sheetButtonRow: {
+        flexDirection: 'row',
+        gap: 16,
+        marginTop: 4,
+    },
+    sheetActionCol: {
+        flex: 1,
+        alignItems: 'center',
+        gap: 10,
+    },
+    sheetPrimaryButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.colors.primary,
+        paddingVertical: 14,
+        borderRadius: 12,
+        width: '100%',
+        gap: 8,
+    },
+    sheetPrimaryButtonText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: theme.colors.inversePrimary,
+    },
+    sheetButtonSub: {
+        fontSize: 12,
+        color: theme.colors.muted,
+        textAlign: 'center',
+        lineHeight: 16,
+        paddingHorizontal: 4,
+    },
 });
 
 export default WalletScreen;
