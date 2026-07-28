@@ -302,14 +302,14 @@ const WalletScreen = () => {
     }, [isScanningNfc, navigation]);
 
     const handleSendPressIn = useCallback(() => {
-        Animated.spring(pressScale, {
-            toValue: 0.94,
-            useNativeDriver: true,
-            speed: 40,
-            bounciness: 3,
-        }).start();
-
         if (isLightningMode) {
+            Animated.spring(pressScale, {
+                toValue: 0.94,
+                useNativeDriver: true,
+                speed: 40,
+                bounciness: 3,
+            }).start();
+
             safeHaptic(Haptics.ImpactFeedbackStyle.Light);
             holdCharge.setValue(0);
             Animated.timing(holdCharge, {
@@ -322,19 +322,21 @@ const WalletScreen = () => {
     }, [isLightningMode, pressScale, holdCharge]);
 
     const handleSendPressOut = useCallback(() => {
-        Animated.spring(pressScale, {
-            toValue: 1,
-            useNativeDriver: true,
-            speed: 40,
-            bounciness: 3,
-        }).start();
-
-        if (isLightningMode && !isScanningNfc) {
-            Animated.timing(holdCharge, {
-                toValue: 0,
-                duration: 150,
-                useNativeDriver: false,
+        if (isLightningMode) {
+            Animated.spring(pressScale, {
+                toValue: 1,
+                useNativeDriver: true,
+                speed: 40,
+                bounciness: 3,
             }).start();
+
+            if (!isScanningNfc) {
+                Animated.timing(holdCharge, {
+                    toValue: 0,
+                    duration: 150,
+                    useNativeDriver: false,
+                }).start();
+            }
         }
     }, [isLightningMode, isScanningNfc, holdCharge, pressScale]);
 
@@ -602,7 +604,7 @@ const WalletScreen = () => {
 
                                 <TouchableOpacity
                                     style={styles.iconActionButton}
-                                    activeOpacity={0.85}
+                                    activeOpacity={isLightningMode ? 1 : 0.2}
                                     onPress={() => navigation.navigate('Send', { mode: isLightningMode ? 'lightning' : 'onchain' } as any)}
                                     onLongPress={isLightningMode ? handleNfcPay : undefined}
                                     onPressIn={handleSendPressIn}
