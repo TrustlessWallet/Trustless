@@ -144,17 +144,17 @@ export const scanLightningInvoice = async (): Promise<string> => {
       cleanInvoice = decodeURIComponent(lightningParamMatch[1]);
       console.log('[NFC] Extracted invoice from BIP21 lightning query parameter.');
     } else {
-      // Otherwise, scan using a regex for BOLT11/BOLT12 signatures (lnbc, lntb, lnbcrt)
-      const boltMatch = cleanInvoice.match(/ln(bc|tb|rt)[0-9a-z]+/i);
+      // Scan using a regex for BOLT11/BOLT12 signatures or LNURL formats
+      const boltMatch = cleanInvoice.match(/(ln(bc|tb|rt)[0-9a-z]+|lnurl1[0-9a-z]+)/i);
       if (boltMatch) {
         cleanInvoice = boltMatch[0];
-        console.log('[NFC] Extracted invoice via BOLT regex pattern match.');
+        console.log('[NFC] Extracted invoice via BOLT/LNURL regex pattern match.');
       } else {
-        // Fallback cleanup if neither matched
+        // Fallback cleanup if neither matched (Safe for Lightning Addresses)
         cleanInvoice = cleanInvoice
-          .replace(/^[a-z]{2}/i, '') // strip language code (e.g., 'en')
           .replace(/^bitcoin:\??/i, '')
           .replace(/^lightning:/i, '')
+          .replace(/^lnurl[pw]:\/\//i, '') // LUD-17 support
           .trim();
       }
     }

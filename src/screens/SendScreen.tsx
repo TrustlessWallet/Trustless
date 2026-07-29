@@ -21,6 +21,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AddressText } from '../components/AddressText';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import * as Clipboard from 'expo-clipboard';
+import { resolveLnurlOrAddress, fetchLnurlInvoice } from '../services/lnurl';
+
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Send'>;
 type SendScreenRouteProp = RouteProp<RootStackParamList, 'Send'>;
@@ -121,6 +123,7 @@ const SendScreen = () => {
     const isWatchOnly = activeWallet?.type === 'watch-only';
 
     const mode = route.params?.mode || 'onchain';
+    const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
     const [recipientAddress, setRecipientAddress] = useState('');
     const [isRecipientAddressFocused, setIsRecipientAddressFocused] = useState(false);
@@ -138,6 +141,8 @@ const SendScreen = () => {
     const [hasFixedAmount, setHasFixedAmount] = useState(false);
     const [lnFeeEstimate, setLnFeeEstimate] = useState<number | null>(null);
     const [estimatingLnFee, setEstimatingLnFee] = useState(false);
+    const [lnurlData, setLnurlData] = useState<any | null>(null);
+    const [lnurlDomain, setLnurlDomain] = useState<string>('');
 
     const [loading, setLoading] = useState(false);
     const [loadingBalance, setLoadingBalance] = useState(true);
@@ -152,6 +157,16 @@ const SendScreen = () => {
             setRecipientAddress(text);
         }
     };
+
+    useEffect(() => {
+        const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+        const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+
+        return () => {
+            keyboardDidHideListener.remove();
+            keyboardDidShowListener.remove();
+        };
+    }, []);
 
     useEffect(() => {
         if (route.params?.selectedAddress) {
@@ -180,52 +195,111 @@ const SendScreen = () => {
     }, [pendingAutoPay, hasFixedAmount, lightningInvoice, lnAmount, loading]);
 
     useEffect(() => {
-        if (mode === 'lightning' && lightningInvoice) {
-            const parsedSats = parseBolt11Amount(lightningInvoice);
-            if (parsedSats !== null && parsedSats > 0) {
-                setLnAmount(parsedSats.toString());
-                setHasFixedAmount(true);
-            } else {
-                setHasFixedAmount(false);
+        let isMounted = true;
+
+        const resolveInput = async () => {
+            if (mode !== 'lightning' || !lightningInvoice.trim()) {
+                if (isMounted) setHasFixedAmount(false);
+                return;
             }
-        } else {
-            setHasFixedAmount(false);
-        }
+
+            // Manually resolve the string to see if it's an LNURL or Lightning Address
+            const parsed = await resolveLnurlOrAddress(lightningInvoice.trim());
+            if (!isMounted) return;
+
+            if (parsed && parsed.tag === 'payRequest') {
+                const minSats = Number(parsed.minSendable) / 1000;
+                const maxSats = Number(parsed.maxSendable) / 1000;
+
+                setLnurlData(parsed);
+
+                // Try to extract a clean domain name for the UI label
+                try {
+                    const urlObj = new URL(parsed.callback);
+                    setLnurlDomain(urlObj.hostname);
+                } catch {
+                    setLnurlDomain('');
+                }
+
+                if (minSats === maxSats && minSats > 0) {
+                    setLnAmount(minSats.toString());
+                    setHasFixedAmount(true);
+                } else {
+                    setHasFixedAmount(false);
+                }
+            } else {
+                // Fallback: If it's a standard BOLT11, use original logic
+                const parsedSats = parseBolt11Amount(lightningInvoice);
+                if (parsedSats !== null && parsedSats > 0) {
+                    setLnAmount(parsedSats.toString());
+                    setHasFixedAmount(true);
+                } else {
+                    setHasFixedAmount(false);
+                }
+                setLnurlData(null);
+                setLnurlDomain('');
+            }
+        };
+
+        resolveInput();
+
+        return () => { isMounted = false; };
     }, [lightningInvoice, mode]);
 
+    // --- SMART LNURL FEE ESTIMATOR ---
     useEffect(() => {
         let isMounted = true;
 
-        const estimateFee = async () => {
-            if (mode !== 'lightning' || !lightningInvoice.trim() || !lnAmount) {
-                if (isMounted) setLnFeeEstimate(null);
-                return;
+        if (!lnurlData || !lnAmount || isNaN(Number(lnAmount))) {
+            if (isMounted) {
+                setLnFeeEstimate(null);
+                setEstimatingLnFee(false);
             }
+            return;
+        }
 
-            const sats = parseInt(lnAmount, 10);
-            if (isNaN(sats) || sats <= 0) {
-                if (isMounted) setLnFeeEstimate(null);
-                return;
-            }
+        const sats = parseInt(lnAmount, 10);
+        if (sats <= 0) return;
 
-            if (isMounted) setEstimatingLnFee(true);
-            if (isMounted) setLnFeeEstimate(null);
+        // CRITICAL: If the keyboard is actively open, the user is still typing. 
+        // Do NOT hit the server or estimate fees yet.
+        if (isKeyboardVisible) {
+            return;
+        }
+
+        // Once the keyboard is hidden (or if it never opened because they pasted), fetch the invoice!
+        const fetchAndEstimate = async () => {
+            if (!isMounted) return;
+            setEstimatingLnFee(true);
 
             try {
-                const fee = await estimateLightningFee(lightningInvoice.trim(), sats);
-                if (isMounted) setLnFeeEstimate(fee);
+                // 1. Fetch the BOLT11 invoice for the finalized amount
+                const invoicePr = await fetchLnurlInvoice(lnurlData.callback, sats * 1000);
+
+                if (!isMounted) return;
+
+                // 2. Feed this newly fetched BOLT11 string into the exact same 
+                // fee estimation function you are already using in this screen for BOLT11s!
+                const estimatedFee = await estimateLightningFee(invoicePr); // <-- Update to match your WalletContext function
+
+                if (isMounted) setLnFeeEstimate(estimatedFee);
+
             } catch (e) {
+                console.log("[LNURL] Could not pre-fetch invoice for fee estimation:", e);
+                if (isMounted) setLnFeeEstimate(null);
             } finally {
                 if (isMounted) setEstimatingLnFee(false);
             }
         };
 
-        const timer = setTimeout(estimateFee, 600);
+        // Add a tiny 300ms buffer just to let animations settle, then execute
+        const timeout = setTimeout(fetchAndEstimate, 300);
+
         return () => {
             isMounted = false;
-            clearTimeout(timer);
+            clearTimeout(timeout);
         };
-    }, [lightningInvoice, lnAmount, mode, estimateLightningFee]);
+    }, [lnAmount, lnurlData, isKeyboardVisible]);
 
     const getBalance = React.useCallback(async (bypassCache: boolean = false) => {
         const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
@@ -488,7 +562,7 @@ const SendScreen = () => {
 
     const handlePayLightning = async () => {
         if (!lightningInvoice.trim()) {
-            Alert.alert('Invalid input', 'Please enter a valid lightning invoice.');
+            Alert.alert('Invalid input', 'Please enter a valid lightning invoice or address.');
             return;
         }
 
@@ -505,29 +579,54 @@ const SendScreen = () => {
 
         setLoading(true);
         try {
-            await payLightningInvoice(
-                lightningInvoice.trim(),
-                hasFixedAmount ? undefined : sats
-            );
+            if (lnurlData) {
+                // --- LNURL / LIGHTNING ADDRESS PATH ---
+                // 1. Fetch the actual BOLT11 invoice from the LNURL provider for the requested amount
+                const invoicePr = await fetchLnurlInvoice(lnurlData.callback, sats * 1000);
 
-            triggerRefresh();
+                // 2. Pay the returned invoice using your existing wallet context
+                await payLightningInvoice(invoicePr);
 
-            // 1. Create a pending lightning object
-            const pendingLnTx = {
-                paymentHash: lightningInvoice.trim(),
-                type: 'send',
-                amountMsat: sats * 1000,
-                feeMsat: (lnFeeEstimate || 0) * 1000,
-                status: 'complete',
-                paymentTime: Math.floor(Date.now() / 1000),
-                description: lightningInvoice.trim(),
-            };
+                triggerRefresh();
 
-            navigation.navigate('TransactionSuccess', {
-                type: 'lightning',
-                transaction: pendingLnTx as any
-            });
+                const pendingLnTx = {
+                    paymentHash: lightningInvoice.trim(),
+                    type: 'send',
+                    amountMsat: sats * 1000,
+                    feeMsat: (lnFeeEstimate || 0) * 1000,
+                    status: 'complete',
+                    paymentTime: Math.floor(Date.now() / 1000),
+                    description: lnurlDomain ? `Paid ${lnurlDomain}` : 'LNURL Payment',
+                };
 
+                navigation.navigate('TransactionSuccess', {
+                    type: 'lightning',
+                    transaction: pendingLnTx as any
+                });
+            } else {
+                // --- BOLT11 PATH ---
+                await payLightningInvoice(
+                    lightningInvoice.trim(),
+                    hasFixedAmount ? undefined : sats
+                );
+
+                triggerRefresh();
+
+                const pendingLnTx = {
+                    paymentHash: lightningInvoice.trim(),
+                    type: 'send',
+                    amountMsat: sats * 1000,
+                    feeMsat: (lnFeeEstimate || 0) * 1000,
+                    status: 'complete',
+                    paymentTime: Math.floor(Date.now() / 1000),
+                    description: lightningInvoice.trim(),
+                };
+
+                navigation.navigate('TransactionSuccess', {
+                    type: 'lightning',
+                    transaction: pendingLnTx as any
+                });
+            }
         } catch (error: any) {
             console.error("Lightning payment failed:", error);
             Alert.alert('Payment error', error.message || 'Failed to process lightning payment.');
@@ -759,10 +858,10 @@ const SendScreen = () => {
                 </>
             ) : (
                 <>
-                    <Text style={styles.label}>Lightning invoice</Text>
+                    <Text style={styles.label}>{lnurlDomain ? `Paying to ${lnurlDomain}` : 'Lightning invoice'}</Text>
                     <View style={styles.inputSpacing}>
                         <StyledInput
-                            placeholder="BOLT11 / LNURL"
+                            placeholder="BOLT11 / LNURL / Lightning address"
                             value={lightningInvoice}
                             onChangeText={setLightningInvoice}
                             autoCapitalize="none"

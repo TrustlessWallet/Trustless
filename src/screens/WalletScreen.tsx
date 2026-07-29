@@ -17,6 +17,8 @@ import { useWalletTransactions, useWalletUTXOs, useTipHeight } from '../hooks/us
 import { LinearGradient } from 'expo-linear-gradient';
 import { GlassView } from '../components/GlassView';
 import { bold } from '@expo/ui/swift-ui/modifiers';
+import { resolveLnurlOrAddress } from '../services/lnurl';
+
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
@@ -279,8 +281,35 @@ const WalletScreen = () => {
             const savedLimit = await AsyncStorage.getItem('@tapToPayLimit');
             const limitSats = savedLimit !== null ? parseInt(savedLimit, 10) : 100000;
 
-            const invoiceSats = extractSatsFromBolt11(payload);
-            const shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
+            let invoiceSats = 0;
+            let shouldAutoConfirm = false;
+
+            // --- NEW LNURL PRE-FLIGHT CHECK ---
+            try {
+                // Try to manually resolve LNURLs and Lightning Addresses via the internet
+                const lnurlData = await resolveLnurlOrAddress(payload);
+
+                if (lnurlData && lnurlData.tag === 'payRequest') {
+                    const minSats = Number(lnurlData.minSendable) / 1000;
+                    const maxSats = Number(lnurlData.maxSendable) / 1000;
+
+                    // Auto-confirm ONLY if it's a fixed amount LNURL under the limit
+                    if (minSats === maxSats && minSats > 0) {
+                        invoiceSats = minSats;
+                        shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
+                    }
+                } else {
+                    // It was successfully fetched, but wasn't a payRequest, OR it's just a BOLT11
+                    invoiceSats = extractSatsFromBolt11(payload);
+                    shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
+                }
+            } catch (e) {
+                // FALLBACK: If offline, or if resolveLnurlOrAddress fails, just treat it like a BOLT11
+                // (This is exactly what your original code did!)
+                invoiceSats = extractSatsFromBolt11(payload);
+                shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
+            }
+            // ----------------------------------
 
             navigation.navigate('Send', {
                 mode: 'lightning',
@@ -289,6 +318,7 @@ const WalletScreen = () => {
             } as any);
 
         } catch (err) {
+            // Your original outer error handling remains perfectly intact!
             if (err instanceof NfcCancelledError) {
                 // user backed out
             } else if (err instanceof NfcUnsupportedError) {
