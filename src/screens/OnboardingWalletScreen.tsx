@@ -33,7 +33,7 @@ const slides = [
   {
     key: '4',
     headline: 'Use lightning',
-    body: 'Instant payments with low fees.\nNon-custodial, of course.',
+    body: 'Instant payments with low fees.\nJust tap and go.',
     image: require('../../assets/Lightning-onboarding.png'),
   },
   {
