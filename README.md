@@ -6,7 +6,7 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
 ## Table of contents
 * [Intro](#intro)
 * [Main features](#main-features)
-* [Getting started (development)](#getting-started-development)
+* [Getting started](#getting-started)
 * [Reproducible build instructions](#reproducible-build-instructions)
 * [Contributing](#contributing)
 * [License](#license)
@@ -18,7 +18,7 @@ Hi! Trustless is a fully open-source, non-custodial, privacy-focused, Bitcoin-on
   <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/25582f10-c3de-4012-9b5d-9badf3fba494" />
 
 
-* **Non-custodial Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your lighning balance at anytime.
+* **Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your Lightning balance at anytime. Lightning is powered by [Breez SDK](https://breez.technology/https://breez.technology/) that never has access to your seed phrase. However, note that withdrawing the lightning balance currently requires the cooperative uptime of the routing servers.
 
   <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/a7f6264f-1535-467b-a704-7b55e32710c5" />
   <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/f31643fe-5963-4251-8541-89bb1cd5fe49" />
