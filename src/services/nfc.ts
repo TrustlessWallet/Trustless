@@ -135,7 +135,6 @@ export const scanLightningInvoice = async (): Promise<string> => {
 
     console.log('[NFC] Raw Decoded Payload String:', payloadStr);
 
-    // --- ROBUST INVOICE EXTRACTION ---
     let cleanInvoice = payloadStr.trim();
 
     // Check if it's wrapped in a BIP21 URI with a lightning parameter
@@ -154,7 +153,6 @@ export const scanLightningInvoice = async (): Promise<string> => {
         cleanInvoice = cleanInvoice
           .replace(/^bitcoin:\??/i, '')
           .replace(/^lightning:/i, '')
-          .replace(/^lnurl[pw]:\/\//i, '') // LUD-17 support
           .trim();
       }
     }
