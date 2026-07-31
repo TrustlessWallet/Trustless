@@ -240,9 +240,14 @@ const WalletScreen = () => {
 
     const sheetPanResponder = useRef(
         PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
+            onStartShouldSetPanResponderCapture: () => false,
+            onStartShouldSetPanResponder: () => false,
+
+            onMoveShouldSetPanResponderCapture: (_evt, gestureState) => Math.abs(gestureState.dy) > 5,
+            onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 5,
+
             onPanResponderTerminationRequest: () => false,
-            onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 4,
+
             onPanResponderMove: (_evt, gestureState) => {
                 if (gestureState.dy > 0) {
                     sheetTranslateY.setValue(gestureState.dy);
@@ -284,7 +289,6 @@ const WalletScreen = () => {
             let invoiceSats = 0;
             let shouldAutoConfirm = false;
 
-            // --- NEW LNURL PRE-FLIGHT CHECK ---
             try {
                 // Try to manually resolve LNURLs and Lightning Addresses via the internet
                 const lnurlData = await resolveLnurlOrAddress(payload);
@@ -304,12 +308,9 @@ const WalletScreen = () => {
                     shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
                 }
             } catch (e) {
-                // FALLBACK: If offline, or if resolveLnurlOrAddress fails, just treat it like a BOLT11
-                // (This is exactly what your original code did!)
                 invoiceSats = extractSatsFromBolt11(payload);
                 shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
             }
-            // ----------------------------------
 
             navigation.navigate('Send', {
                 mode: 'lightning',
@@ -318,9 +319,7 @@ const WalletScreen = () => {
             } as any);
 
         } catch (err) {
-            // Your original outer error handling remains perfectly intact!
             if (err instanceof NfcCancelledError) {
-                // user backed out
             } else if (err instanceof NfcUnsupportedError) {
                 Alert.alert('NFC not available', 'This device doesn\'t support NFC.');
             } else {
@@ -727,12 +726,13 @@ const WalletScreen = () => {
                     />
 
                     <Animated.View
+                        {...sheetPanResponder.panHandlers}
                         style={[
                             styles.sheetContent,
                             { transform: [{ translateY: sheetTranslateY }] }
                         ]}
                     >
-                        <View {...sheetPanResponder.panHandlers} style={styles.dragZone}>
+                        <View style={styles.dragZone}>
                             <View style={styles.sheetHandle} />
                             <Text style={styles.sheetTitle}>Manage liquidity</Text>
                             <Text style={styles.sheetSubtitle}>Move funds between your on-chain and lightning wallets.</Text>
@@ -1037,8 +1037,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         backgroundColor: theme.colors.background,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        padding: 24,
-        paddingBottom: 48,
+        paddingHorizontal: 24,
+        paddingTop: 16,
+        paddingBottom: 64,
     },
     dragZone: {},
     sheetHandle: {
@@ -1047,7 +1048,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         borderRadius: 2,
         backgroundColor: theme.colors.border,
         alignSelf: 'center',
-        marginBottom: 16,
+        marginBottom: 8,
     },
     sheetTitle: {
         fontSize: 20,
@@ -1076,7 +1077,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         justifyContent: 'center',
         backgroundColor: theme.colors.primary,
         paddingVertical: 14,
-        borderRadius: 12,
+        borderRadius: 8,
         width: '100%',
         gap: 8,
     },
