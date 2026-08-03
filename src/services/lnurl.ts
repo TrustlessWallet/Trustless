@@ -11,8 +11,8 @@ export const resolveLnurlOrAddress = async (input: string) => {
             url = `https://${domain}/.well-known/lnurlp/${username}`;
         }
         // 2. LUD-17 format (e.g. lnurlp://domain.com)
-        else if (cleanInput.toLowerCase().startsWith('lnurlp://')) {
-            url = cleanInput.replace(/^lnurlp:\/\//i, 'https://');
+        else if (cleanInput.toLowerCase().startsWith('lnurlp://') || cleanInput.toLowerCase().startsWith('lnurlw://')) {
+            url = cleanInput.replace(/^lnurl[pw]:\/\//i, 'https://');
         }
         // 3. Standard LNURL (bech32 encoded)
         else if (cleanInput.toLowerCase().startsWith('lnurl1')) {
@@ -33,7 +33,7 @@ export const resolveLnurlOrAddress = async (input: string) => {
         return data; // Returns the LNURL metadata (minSendable, maxSendable, callback)
     } catch (e) {
         console.error('[LNURL] Resolution failed:', e);
-        return null;
+        throw e;
     }
 };
 
