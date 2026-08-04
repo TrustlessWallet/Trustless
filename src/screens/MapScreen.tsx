@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { StyleSheet, View, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from 'react-native';
 import MapView, { Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import useSWR from 'swr';
@@ -11,12 +11,22 @@ import BottomSheet from '@gorhom/bottom-sheet';
 
 import { useTheme } from '../contexts/ThemeContext';
 import { Text } from '../components/StyledText';
-import CustomMarker from '../components/Map/CustomMarker';
+import CustomMarker, { getCategoryIcon } from '../components/Map/CustomMarker';
 import ClusterMarker from '../components/Map/ClusterMarker';
 import MerchantBottomSheet from '../components/Map/MerchantBottomSheet';
 import { BTC_MAP_API_URL, btcMapFetcher, BtcMapElement } from '../services/btcmap';
 import { GlassView } from '../components/GlassView';
 import { useIsFocused } from '@react-navigation/native';
+
+
+const FILTER_GROUPS = [
+  { id: 'food', label: 'Food & Drink', icon: 'restaurant', icons: ['restaurant', 'local-cafe', 'local-bar', 'fastfood', 'bakery-dining', 'icecream'] },
+  { id: 'shopping', label: 'Shopping', icon: 'local-grocery-store', icons: ['local-grocery-store', 'checkroom', 'devices', 'menu-book', 'card-giftcard', 'chair', 'visibility', 'hardware', 'toys', 'pets', 'watch', 'videogame-asset', 'music-note', 'storefront'] },
+  { id: 'services', label: 'Services', icon: 'account-balance', icons: ['account-balance', 'local-pharmacy', 'local-hospital', 'content-cut', 'spa', 'real-estate-agent', 'gavel', 'design-services', 'business', 'school', 'plumbing', 'bolt', 'construction'] },
+  { id: 'Hotels', label: 'Hotels', icon: 'hotel', icons: ['hotel', 'apartment'] },
+  { id: 'transport', label: 'Transport', icon: 'directions-car', icons: ['pedal-bike', 'two-wheeler', 'directions-car', 'directions-boat', 'local-gas-station', 'local-parking'] },
+  { id: 'entertainment', label: 'Entertainment', icon: 'attractions', icons: ['flight', 'movie', 'casino', 'museum', 'fitness-center', 'pool', 'park', 'attractions'] }
+] as const;
 
 const getBounds = (region: Region): [number, number, number, number] => [
   region.longitude - region.longitudeDelta / 2,
@@ -47,39 +57,65 @@ export default function MapScreen() {
   });
   const regionRef = useRef<Region>(region);
 
+  // ─── FILTER STATES ───
+  // NOTE: activeFilters stays an array for compatibility with the clustering
+  // effect below, but the UI now enforces single-select (max length 1).
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [processingFilter, setProcessingFilter] = useState<string | null>(null);
+
   const { data: elements, error, isLoading } = useSWR<BtcMapElement[]>(
     BTC_MAP_API_URL,
     btcMapFetcher,
     { revalidateOnFocus: false }
   );
 
+  // ─── CLUSTERING & FILTERING ENGINE ───
   useEffect(() => {
     if (!elements || elements.length === 0) return;
 
+    // We use a timeout to yield to the JS thread. This guarantees the UI spinner 
+    // renders visually before the processor locks the thread to filter thousands of points.
     const timer = setTimeout(() => {
-      const points = elements.map((el) => {
+      const points = elements.reduce<any[]>((acc, el) => {
         const lat = el.osm_json?.lat ?? el.osm_json?.center?.lat ?? el.lat;
         const lon = el.osm_json?.lon ?? el.osm_json?.center?.lon ?? el.lon;
+
+        if (isNaN(Number(lon)) || isNaN(Number(lat))) return acc;
+
         const mergedTags = { ...(el.osm_json?.tags || {}), ...(el.tags || {}) };
+
+        // Apply active filters
+        if (activeFilters.length > 0) {
+          const iconName = getCategoryIcon(mergedTags);
+          const matchesFilter = activeFilters.some(filterId => {
+            const group = FILTER_GROUPS.find(g => g.id === filterId);
+            return (group?.icons as readonly string[])?.includes(iconName);
+          });
+          if (!matchesFilter) return acc;
+        }
+
         const cleanElement = { ...el, lat: Number(lat), lon: Number(lon), tags: mergedTags };
 
-        return {
+        acc.push({
           type: 'Feature' as const,
           properties: { cluster: false, element: cleanElement },
           geometry: { type: 'Point' as const, coordinates: [Number(lon), Number(lat)] },
-        };
-      }).filter(p => !isNaN(p.geometry.coordinates[0]) && !isNaN(p.geometry.coordinates[1]));
+        });
+
+        return acc;
+      }, []);
 
       const supercluster = new Supercluster({ radius: 70, maxZoom: 16 });
       supercluster.load(points);
       clusterRef.current = supercluster;
 
       updateClusters(regionRef.current);
-    }, 0);
+
+      setProcessingFilter(null);
+    }, 50);
 
     return () => clearTimeout(timer);
-  }, [elements]);
-
+  }, [elements, activeFilters]);
 
   const isFocused = useIsFocused();
   const hasRequestedLocation = useRef(false);
@@ -87,7 +123,6 @@ export default function MapScreen() {
   useEffect(() => {
     if (isFocused && !hasRequestedLocation.current) {
       hasRequestedLocation.current = true;
-
       (async () => {
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
@@ -105,9 +140,7 @@ export default function MapScreen() {
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
       };
-
       mapRef.current.animateToRegion(targetRegion, 1000);
-
       setRegion(targetRegion);
       regionRef.current = targetRegion;
       updateClusters(targetRegion);
@@ -149,7 +182,6 @@ export default function MapScreen() {
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
     setSelectedMerchant(merchant);
-
     const latDelta = 0.003;
     const lonDelta = 0.003;
     const targetLatitude = Number(merchant.lat) - (latDelta * 0.25);
@@ -171,6 +203,14 @@ export default function MapScreen() {
       latitudeDelta: region.latitudeDelta / 4,
       longitudeDelta: region.longitudeDelta / 4,
     }, 500);
+  };
+
+  const toggleFilter = (filterId: string) => {
+    setProcessingFilter(filterId);
+
+    setTimeout(() => {
+      setActiveFilters(prev => (prev[0] === filterId ? [] : [filterId]));
+    }, 20);
   };
 
   const mapStyle = useMemo(() => {
@@ -235,6 +275,51 @@ export default function MapScreen() {
           })}
         </MapView>
 
+        {/* ── Top Floating Filter Pills (Google Maps Style) ── */}
+        <View style={styles.topFilterWrapper} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScrollContent}
+          >
+            {FILTER_GROUPS.map(group => {
+              const isActive = activeFilters[0] === group.id;
+              const isProcessing = processingFilter === group.id;
+              const contentColor = isActive ? theme.colors.bitcoin : theme.colors.primary;
+
+              return (
+                <TouchableOpacity
+                  key={group.id}
+                  onPress={() => toggleFilter(group.id)}
+                  style={styles.pillTouchContainer}
+                  disabled={isProcessing}
+                >
+                  <GlassView
+                    width={140}
+                    height={40}
+                    borderRadius={20}
+                    shape="capsule"
+                    tintColor={ theme.colors.surface + '99'}
+                    fallbackColor={theme.colors.surface}
+                    interactive={false}
+                  >
+                    <View style={styles.pillContent}>
+                      <View style={styles.pillIconSlot}>
+                        {isProcessing ? (
+                          <ActivityIndicator size="small" color={contentColor} />
+                        ) : (
+                          <MaterialIcons name={group.icon as any} size={16} color={contentColor} />
+                        )}
+                      </View>
+                      <Text style={[styles.pillText, { color: contentColor }]}>{group.label}</Text>
+                    </View>
+                  </GlassView>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
         {isLoading && (
           <View style={styles.loadingOverlay}>
             <View style={StyleSheet.absoluteFill} />
@@ -274,7 +359,7 @@ export default function MapScreen() {
             <GlassView
               width={52}
               height={52}
-              tintColor={theme.colors.surface + '10'}
+              tintColor={theme.colors.surface + '99'}
               shape="circle"
               fallbackColor={theme.colors.surface}
               interactive={!selectedMerchant}
@@ -302,7 +387,7 @@ export default function MapScreen() {
             <GlassView
               width={52}
               height={52}
-              tintColor={theme.colors.surface + '10'}
+              tintColor={theme.colors.surface + '99'}
               shape="circle"
               fallbackColor={theme.colors.surface}
               interactive={!selectedMerchant}
@@ -347,6 +432,36 @@ const createStyles = (theme: any) => StyleSheet.create({
     right: 0,
     bottom: 0,
   },
+  topFilterWrapper: {
+    position: 'absolute',
+    top: 80,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  filterScrollContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    alignItems: 'center',
+  },
+  pillTouchContainer: {},
+  pillContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillIconSlot: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  pillText: {
+    fontSize: 13,
+    fontFamily: 'SpaceMono-Bold',
+  },
   loadingOverlay: {
     position: 'absolute',
     top: 0,
@@ -374,7 +489,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   errorContainer: {
     position: 'absolute',
-    top: 60,
+    top: 120,
     alignSelf: 'center',
     padding: 16,
     borderRadius: 8,
