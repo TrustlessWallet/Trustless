@@ -45,7 +45,8 @@ const ThemedStatusBar = () => {
   );
 };
 
-const PrivacySwitcherOverlay = () => {
+// ADDED: isBooting prop interface
+const PrivacySwitcherOverlay = ({ isBooting }: { isBooting: boolean }) => {
   const { isDark } = useTheme();
   const [appState, setAppState] = useState(AppState.currentState);
 
@@ -56,7 +57,8 @@ const PrivacySwitcherOverlay = () => {
     return () => subscription.remove();
   }, []);
 
-  if (appState === 'active' || get_is_nfc_scanning()) return null;
+  // ADDED: isBooting to the null return condition
+  if (appState === 'active' || get_is_nfc_scanning() || isBooting) return null;
 
   const splashBg = isDark ? '#000000' : '#ffffff';
   const splashIcon = isDark
@@ -68,7 +70,7 @@ const PrivacySwitcherOverlay = () => {
       <Image
         source={splashIcon}
         style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
-        fadeDuration={0} // Prevent image fade-in blink
+        fadeDuration={0} 
       />
     </View>
   );
@@ -77,6 +79,7 @@ const PrivacySwitcherOverlay = () => {
 export default function App() {
   const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [initialIsDark, setInitialIsDark] = useState(false);
+  const [splashIsDark, setSplashIsDark] = useState(false);
 
   const [networkLoaded, setNetworkLoaded] = useState(false);
   const [dbReady, setDbReady] = useState(false);
@@ -101,7 +104,22 @@ export default function App() {
         await initDatabase();
         try { await Font.loadAsync(Feather.font); } catch (e) { console.error(e); }
 
-        onNetworkChange(() => setAppKey(prev => prev + 1));
+
+        onNetworkChange(async () => {
+          // Fetch current theme
+          const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
+          const isCurrentlyDark = savedTheme === 'dark';
+
+          // Update BOTH the app root theme and the splash screen theme
+          setInitialIsDark(isCurrentlyDark);
+          setSplashIsDark(isCurrentlyDark);
+
+          // Trigger the splash and app reload
+          launchOpacity.setValue(1);
+          setShowLaunchOverlay(true);
+          setNavBootReady(false);
+          setAppKey(prev => prev + 1);
+        });
 
         const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
         setNetwork(savedNetwork === 'testnet' ? 'testnet' : 'mainnet');
@@ -139,7 +157,7 @@ export default function App() {
 
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+    <View style={{ flex: 1, backgroundColor: initialIsDark ? '#000000' : '#ffffff' }}>
 
       {isAppInitialized && (
         <QueryClientProvider client={queryClient}>
@@ -148,7 +166,8 @@ export default function App() {
               <WalletProvider key={appKey}>
                 <View style={{ flex: 1 }}>
                   <ThemedStatusBar />
-                  <PrivacySwitcherOverlay />
+                  {/* ADDED: Passed the showLaunchOverlay state as a prop */}
+                  <PrivacySwitcherOverlay isBooting={showLaunchOverlay} />
                   <AppNavigator onBootReady={() => setNavBootReady(true)} />
                 </View>
               </WalletProvider>
@@ -162,10 +181,16 @@ export default function App() {
       {showLaunchOverlay && (
         <Animated.View
           pointerEvents="none"
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#ffffff', opacity: launchOpacity, zIndex: 99999 }}
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: splashIsDark ? '#000000' : '#ffffff',
+            opacity: launchOpacity, zIndex: 99999
+          }}
         >
           <Image
-            source={require('./assets/splash-icon-white.png')}
+            source={splashIsDark
+              ? require('./assets/splash-icon-black.png')
+              : require('./assets/splash-icon-white.png')}
             style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
             fadeDuration={0}
           />

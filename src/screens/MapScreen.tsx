@@ -240,6 +240,7 @@ export default function MapScreen() {
           mapType={mapType}
           customMapStyle={mapStyle}
           showsUserLocation={true}
+          tintColor="#007AFF"
           showsMyLocationButton={false}
           showsCompass={false}
           showsScale={false}
