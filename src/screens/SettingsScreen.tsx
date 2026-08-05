@@ -106,6 +106,7 @@ const SettingsScreen = () => {
 
   useEffect(() => {
     const load_settings = async () => {
+      check_biometric_status();
       const saved_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
       if (saved_lock_time !== null) {
         const index = auto_lock_options.findIndex(opt => opt.toString() === saved_lock_time);
