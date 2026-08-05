@@ -22,6 +22,8 @@ import './shim';
 import { registerRootComponent } from 'expo';
 import { initDatabase } from './src/services/database';
 import { get_is_nfc_scanning } from './src/services/nfc';
+import { get_biometric_prompt_shown } from './src/services/authState';
+
 
 interface TextWithDefaultProps extends Text { defaultProps?: { allowFontScaling?: boolean }; }
 interface TextInputWithDefaultProps extends TextInput { defaultProps?: { allowFontScaling?: boolean }; }
@@ -57,8 +59,8 @@ const PrivacySwitcherOverlay = ({ isBooting }: { isBooting: boolean }) => {
     return () => subscription.remove();
   }, []);
 
-  // ADDED: isBooting to the null return condition
-  if (appState === 'active' || get_is_nfc_scanning() || isBooting) return null;
+
+  if (appState === 'active' || get_is_nfc_scanning() || get_biometric_prompt_shown() || isBooting) return null;
 
   const splashBg = isDark ? '#000000' : '#ffffff';
   const splashIcon = isDark
@@ -70,7 +72,7 @@ const PrivacySwitcherOverlay = ({ isBooting }: { isBooting: boolean }) => {
       <Image
         source={splashIcon}
         style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
-        fadeDuration={0} 
+        fadeDuration={0}
       />
     </View>
   );

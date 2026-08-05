@@ -83,6 +83,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
   const [initial_nav_state, set_initial_nav_state] = useState<any>(null);
   const [nav_state_resolved, set_nav_state_resolved] = useState(false);
+  const [is_checking_auth, set_is_checking_auth] = useState(false);
 
   const is_android = Platform.OS === 'android';
 
@@ -107,6 +108,9 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       if (next_app_state.match(/inactive|background/)) {
         set_is_backgrounded(true);
       } else if (next_app_state === 'active') {
+        if (!is_prompt_active && !is_nfc_active) {
+          set_is_checking_auth(true);
+        }
         set_is_backgrounded(false);
       }
 
@@ -115,7 +119,11 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         next_app_state === 'active'
       ) {
         if (!is_prompt_active && !is_nfc_active) {
-          await check_auth_needed_ref.current();
+          try {
+            await check_auth_needed_ref.current();
+          } finally {
+            set_is_checking_auth(false);
+          }
         }
         set_biometric_prompt_shown(false);
       } else if (next_app_state.match(/inactive|background/)) {
@@ -130,7 +138,6 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       subscription.remove();
     };
   }, []);
-
   useEffect(() => {
     if (!wallet_loading && wallets.length > 0 && app_state.current === 'active') {
       const check_pending_auth = async () => {
@@ -258,7 +265,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     set_nav_state_resolved(true);
   }, [nav_state_resolved, wallet_loading, is_loading, needs_onboarding, has_shown_onboarding, initial_tab]);
 
-  const is_privacy_active = is_backgrounded && !get_biometric_prompt_shown() && !get_is_nfc_scanning();
+  const is_privacy_active = (is_backgrounded || is_checking_auth) && !get_biometric_prompt_shown() && !get_is_nfc_scanning();
 
   useEffect(() => {
     if (!is_nav_ready || !navigation_ref.isReady()) return;
