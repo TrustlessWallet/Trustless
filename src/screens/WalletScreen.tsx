@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { GlassView } from '../components/GlassView';
 import { bold } from '@expo/ui/swift-ui/modifiers';
 import { resolveLnurlOrAddress } from '../services/lnurl';
+import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -238,36 +239,33 @@ const WalletScreen = () => {
         });
     }, [sheetTranslateY]);
 
-    const sheetPanResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponderCapture: () => false,
-            onStartShouldSetPanResponder: () => false,
+    const dragStartY = useRef(0);
 
-            onMoveShouldSetPanResponderCapture: (_evt, gestureState) => Math.abs(gestureState.dy) > 5,
-            onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 5,
-
-            onPanResponderTerminationRequest: () => false,
-
-            onPanResponderMove: (_evt, gestureState) => {
-                if (gestureState.dy > 0) {
-                    sheetTranslateY.setValue(gestureState.dy);
-                }
-            },
-            onPanResponderRelease: (_evt, gestureState) => {
-                if (gestureState.dy > SHEET_DISMISS_THRESHOLD || gestureState.vy > 0.6) {
-                    closeLiquiditySheet();
-                } else {
-                    Animated.spring(sheetTranslateY, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        damping: 20,
-                        stiffness: 220,
-                        mass: 0.9,
-                    }).start();
-                }
-            },
+    const panGesture = Gesture.Pan()
+        .activeOffsetY(10)      // only "steal" the gesture after 10px vertical movement
+        .failOffsetX([-15, 15]) // let horizontal movement pass through untouched
+        .runOnJS(true)          // <--- ADD THIS LINE HERE
+        .onStart(() => {
+            dragStartY.current = 0;
         })
-    ).current;
+        .onUpdate((e) => {
+            if (e.translationY > 0) {
+                sheetTranslateY.setValue(e.translationY);
+            }
+        })
+        .onEnd((e) => {
+            if (e.translationY > SHEET_DISMISS_THRESHOLD || e.velocityY > 800) {
+                closeLiquiditySheet();
+            } else {
+                Animated.spring(sheetTranslateY, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    damping: 20,
+                    stiffness: 220,
+                    mass: 0.9,
+                }).start();
+            }
+        });
 
     const handleNfcPay = useCallback(async () => {
         if (isScanningNfc) return;
@@ -713,60 +711,53 @@ const WalletScreen = () => {
                 }
             />
 
-            <Modal
-                visible={isSheetMounted}
-                transparent
-                animationType="none"
-                onRequestClose={() => closeLiquiditySheet()}
-            >
-                <View style={styles.sheetOverlay}>
-                    <AnimatedPressable
-                        style={[styles.sheetBackdrop, { opacity: backdropOpacity }]}
-                        onPress={() => closeLiquiditySheet()}
-                    />
+            <Modal visible={isSheetMounted} transparent animationType="none" onRequestClose={() => closeLiquiditySheet()}>
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                    <View style={styles.sheetOverlay}>
+                        <AnimatedPressable
+                            style={[styles.sheetBackdrop, { opacity: backdropOpacity }]}
+                            onPress={() => closeLiquiditySheet()}
+                        />
 
-                    <Animated.View
-                        {...sheetPanResponder.panHandlers}
-                        style={[
-                            styles.sheetContent,
-                            { transform: [{ translateY: sheetTranslateY }] }
-                        ]}
-                    >
-                        <View style={styles.dragZone}>
-                            <View style={styles.sheetHandle} />
-                            <Text style={styles.sheetTitle}>Manage liquidity</Text>
-                            <Text style={styles.sheetSubtitle}>Move funds between your on-chain and lightning wallets.</Text>
-                        </View>
+                        <GestureDetector gesture={panGesture}>
+                            <Animated.View style={[styles.sheetContent, { transform: [{ translateY: sheetTranslateY }] }]}>
+                                <View style={styles.dragZone}>
+                                    <View style={styles.sheetHandle} />
+                                    <Text style={styles.sheetTitle}>Manage liquidity</Text>
+                                    <Text style={styles.sheetSubtitle}>Move funds between your on-chain and lightning wallets.</Text>
+                                </View>
 
-                        <View style={styles.sheetButtonRow}>
-                            <View style={styles.sheetActionCol}>
-                                <TouchableOpacity
-                                    style={styles.sheetPrimaryButton}
-                                    onPress={() => {
-                                        closeLiquiditySheet(() => navigation.navigate('LightningTopUp' as any));
-                                    }}
-                                >
-                                    <Feather name="plus" size={18} color={theme.colors.inversePrimary} />
-                                    <Text style={styles.sheetPrimaryButtonText}>Top-up</Text>
-                                </TouchableOpacity>
-                                <Text style={styles.sheetButtonSub}>On-chain to Lightning</Text>
-                            </View>
+                                <View style={styles.sheetButtonRow}>
+                                    <View style={styles.sheetActionCol}>
+                                        <TouchableOpacity
+                                            style={styles.sheetPrimaryButton}
+                                            onPress={() => {
+                                                closeLiquiditySheet(() => navigation.navigate('LightningTopUp' as any));
+                                            }}
+                                        >
+                                            <Feather name="plus" size={18} color={theme.colors.inversePrimary} />
+                                            <Text style={styles.sheetPrimaryButtonText}>Top-up</Text>
+                                        </TouchableOpacity>
+                                        <Text style={styles.sheetButtonSub}>On-chain to Lightning</Text>
+                                    </View>
 
-                            <View style={styles.sheetActionCol}>
-                                <TouchableOpacity
-                                    style={styles.sheetPrimaryButton}
-                                    onPress={() => {
-                                        closeLiquiditySheet(() => navigation.navigate('WithdrawToOnchain' as any));
-                                    }}
-                                >
-                                    <Feather name="minus" size={18} color={theme.colors.inversePrimary} />
-                                    <Text style={styles.sheetPrimaryButtonText}>Withdraw</Text>
-                                </TouchableOpacity>
-                                <Text style={styles.sheetButtonSub}>Lightning to on-chain</Text>
-                            </View>
-                        </View>
-                    </Animated.View>
-                </View>
+                                    <View style={styles.sheetActionCol}>
+                                        <TouchableOpacity
+                                            style={styles.sheetPrimaryButton}
+                                            onPress={() => {
+                                                closeLiquiditySheet(() => navigation.navigate('WithdrawToOnchain' as any));
+                                            }}
+                                        >
+                                            <Feather name="minus" size={18} color={theme.colors.inversePrimary} />
+                                            <Text style={styles.sheetPrimaryButtonText}>Withdraw</Text>
+                                        </TouchableOpacity>
+                                        <Text style={styles.sheetButtonSub}>Lightning to on-chain</Text>
+                                    </View>
+                                </View>
+                            </Animated.View>
+                        </GestureDetector>
+                    </View>
+                </GestureHandlerRootView>
             </Modal>
         </SafeAreaView>
     );
