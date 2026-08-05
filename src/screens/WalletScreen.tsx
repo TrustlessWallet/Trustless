@@ -242,9 +242,9 @@ const WalletScreen = () => {
     const dragStartY = useRef(0);
 
     const panGesture = Gesture.Pan()
-        .activeOffsetY(10)      // only "steal" the gesture after 10px vertical movement
-        .failOffsetX([-15, 15]) // let horizontal movement pass through untouched
-        .runOnJS(true)          // <--- ADD THIS LINE HERE
+        .activeOffsetY(10)
+        .failOffsetX([-15, 15])
+        .runOnJS(true)
         .onStart(() => {
             dragStartY.current = 0;
         })
