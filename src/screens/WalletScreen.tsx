@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions, Alert, Modal, Pressable, PanResponder, Vibration, Easing } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions, Alert, Modal, Pressable, PanResponder, Vibration, Easing, useWindowDimensions } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { scanLightningInvoice, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,8 +23,7 @@ import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-g
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_CLOSED_OFFSET = 340; // Reduced for smaller sheet
+const SHEET_CLOSED_OFFSET = 340;
 const SHEET_DISMISS_THRESHOLD = 90;
 const NFC_HOLD_DURATION = 400;
 
@@ -69,6 +68,10 @@ const safeHaptic = (style: any) => {
 
 const WalletScreen = () => {
     useTipHeight();
+    const { height: screenHeight } = useWindowDimensions();
+    const { theme } = useTheme();
+    const styles = useMemo(() => getStyles(theme, screenHeight), [theme, screenHeight]);
+    
     const navigation = useNavigation<NavigationProp>();
     const insets = useSafeAreaInsets();
     const {
@@ -79,9 +82,7 @@ const WalletScreen = () => {
         lightningTransactions,
         isLightningInitialized
     } = useWallet();
-    const { theme } = useTheme();
 
-    const styles = useMemo(() => getStyles(theme), [theme]);
 
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
@@ -706,7 +707,7 @@ const WalletScreen = () => {
                         onRefresh={onRefresh}
                         tintColor={theme.colors.primary}
                         colors={[theme.colors.primary]}
-                        progressViewOffset={SCREEN_HEIGHT * 0.1}
+                        progressViewOffset={screenHeight * 0.1}
                     />
                 }
             />
@@ -763,7 +764,7 @@ const WalletScreen = () => {
     );
 };
 
-const getStyles = (theme: Theme) => StyleSheet.create({
+const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
     absoluteFillOverride: {
         position: 'absolute',
         top: 0,
@@ -848,7 +849,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         fontWeight: '600'
     },
     topSection: {
-        minHeight: SCREEN_HEIGHT * 0.55,
+        minHeight: screenHeight * 0.55,
         paddingTop: 56,
         justifyContent: 'center',
         alignItems: 'center',
