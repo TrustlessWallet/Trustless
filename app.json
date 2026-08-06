@@ -3,7 +3,7 @@
     "name": "Trustless",
     "slug": "Trustless",
     "scheme": "trustless",
-    "version": "3.0.1",
+    "version": "3.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
