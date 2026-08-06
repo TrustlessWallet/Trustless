@@ -570,7 +570,7 @@ const WalletScreen = () => {
                                 {activeWallet?.type !== 'watch-only' && toggleIconElement}
                             </TouchableOpacity>
 
-                            <TouchableOpacity activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
+                            <TouchableOpacity style={{ shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 2 }} activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
                                 <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={true}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
                                         <Text
@@ -867,6 +867,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         width: 76,
         alignItems: 'center',
         justifyContent: 'center',
+        shadowColor: theme.colors.primary,
+        shadowOffset: {
+            width: 0,
+            height: 0,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 2,
     },
     iconWrapper: {
         paddingVertical: 6,
