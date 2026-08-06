@@ -70,10 +70,10 @@ const WalletScreen = () => {
     useTipHeight();
     const { height: screenHeight } = useWindowDimensions();
     const { theme } = useTheme();
-    const insets = useSafeAreaInsets();
-    const styles = useMemo(() => getStyles(theme, screenHeight, insets), [theme, screenHeight, insets]);
-
+    const styles = useMemo(() => getStyles(theme, screenHeight), [theme, screenHeight]);
+    
     const navigation = useNavigation<NavigationProp>();
+    const insets = useSafeAreaInsets();
     const {
         activeWallet,
         loading: walletLoading,
@@ -550,7 +550,7 @@ const WalletScreen = () => {
             </Animated.View>
 
             <Animated.FlatList
-                extraData={{ theme, insets }}
+                extraData={theme}
                 data={displayTransactions}
                 renderItem={renderTransactionItem}
                 keyExtractor={(item: any) => item.paymentHash || item.txid}
@@ -764,7 +764,7 @@ const WalletScreen = () => {
     );
 };
 
-const getStyles = (theme: Theme, screenHeight: number, insets: { top: number, bottom: number }) => StyleSheet.create({
+const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
     absoluteFillOverride: {
         position: 'absolute',
         top: 0,
@@ -794,7 +794,7 @@ const getStyles = (theme: Theme, screenHeight: number, insets: { top: number, bo
     },
     listContent: {
         flexGrow: 1,
-        paddingVertical: insets.bottom > 0 ? insets.bottom + 16 : 56,
+        paddingVertical: 56,
     },
     centeredContainer: {
         flex: 1,
@@ -850,7 +850,7 @@ const getStyles = (theme: Theme, screenHeight: number, insets: { top: number, bo
     },
     topSection: {
         minHeight: screenHeight * 0.55,
-        paddingTop: insets.top > 0 ? insets.top + 16 : 56,
+        paddingTop: 56,
         justifyContent: 'center',
         alignItems: 'center',
         borderBottomWidth: 1,
