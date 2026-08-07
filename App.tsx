@@ -47,7 +47,7 @@ const ThemedStatusBar = () => {
   );
 };
 
-// ADDED: isBooting prop interface
+
 const PrivacySwitcherOverlay = ({ isBooting }: { isBooting: boolean }) => {
   const { isDark } = useTheme();
   const [appState, setAppState] = useState(AppState.currentState);
