@@ -277,7 +277,7 @@ export default function MapScreen() {
         </MapView>
 
         {/* ── Top Floating Filter Pills (Google Maps Style) ── */}
-        <View style={styles.topFilterWrapper} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
+        <View style={styles.topFilterWrapper} pointerEvents="box-none">
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -300,7 +300,7 @@ export default function MapScreen() {
                     height={40}
                     borderRadius={20}
                     shape="capsule"
-                    tintColor={ theme.colors.surface + '99'}
+                    tintColor={theme.colors.surface + '99'}
                     fallbackColor={theme.colors.surface}
                     interactive={false}
                   >

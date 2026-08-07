@@ -57,7 +57,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
   const { theme } = useTheme();
   const tags = merchant.tags || {};
 
-  const snapPoints = useMemo(() => ['28%', '50%', '90%'], []);
+  const snapPoints = useMemo(() => ['26%', '50%', '85%'], []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -123,7 +123,12 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
       index={1}
       snapPoints={snapPoints}
       enableDynamicSizing={false}
-      enablePanDownToClose={false}
+      enablePanDownToClose={true}
+      onChange={(index) => {
+        if (index === -1) {
+          onClose();
+        }
+      }}
       handleIndicatorStyle={{ backgroundColor: theme.colors.border, width: 40 }}
       backgroundStyle={{ backgroundColor: theme.colors.background, borderRadius: 36 }}
     >
