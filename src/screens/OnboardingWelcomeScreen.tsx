@@ -5,7 +5,9 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext'; 
-import { Theme } from '../constants/theme'; 
+import { Theme } from '../constants/theme';
+
+
 const OnboardingWelcomeScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingWelcome'>>();
   const { theme } = useTheme(); 
