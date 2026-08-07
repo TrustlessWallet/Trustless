@@ -8,6 +8,7 @@ import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
 
+
 const { width } = Dimensions.get('window');
 const REPO_URL = 'https://github.com/TrustlessWallet/Trustless';
 
