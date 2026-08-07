@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StatusBar, LogBox, View, Image, Text, TextInput, Animated, AppState, InteractionManager } from 'react-native';
+import { StatusBar, LogBox, View, Image, Text, TextInput, Animated, AppState } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppNavigator from './src/navigation/AppNavigator';
 import { WalletProvider } from './src/contexts/WalletContext';
@@ -101,48 +101,45 @@ export default function App() {
   });
 
   useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
-      const prepareApp = async () => {
-        try {
-          await initDatabase();
-          try { await Font.loadAsync(Feather.font); } catch (e) { console.error(e); }
+    const prepareApp = async () => {
+      try {
+        await initDatabase();
+        try { await Font.loadAsync(Feather.font); } catch (e) { console.error(e); }
 
-          onNetworkChange(async () => {
-            // Fetch current theme
-            const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
-            const isCurrentlyDark = savedTheme === 'dark';
 
-            // Update BOTH the app root theme and the splash screen theme
-            setInitialIsDark(isCurrentlyDark);
-            setSplashIsDark(isCurrentlyDark);
-
-            // Trigger the splash and app reload
-            launchOpacity.setValue(1);
-            setShowLaunchOverlay(true);
-            setNavBootReady(false);
-            setAppKey(prev => prev + 1);
-          });
-
-          const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
-          setNetwork(savedNetwork === 'testnet' ? 'testnet' : 'mainnet');
-
+        onNetworkChange(async () => {
+          // Fetch current theme
           const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
-          setInitialIsDark(savedTheme === 'dark');
+          const isCurrentlyDark = savedTheme === 'dark';
 
-          setDbReady(true);
-        } catch (e) {
-          console.warn('PREPARE APP ERROR:', e);
-        } finally {
-          setNetworkLoaded(true);
-          setIsAppInitialized(true);
-        }
-      };
-      prepareApp();
-    });
+          // Update BOTH the app root theme and the splash screen theme
+          setInitialIsDark(isCurrentlyDark);
+          setSplashIsDark(isCurrentlyDark);
 
-    return () => task.cancel();
+          // Trigger the splash and app reload
+          launchOpacity.setValue(1);
+          setShowLaunchOverlay(true);
+          setNavBootReady(false);
+          setAppKey(prev => prev + 1);
+        });
+
+        const savedNetwork = await AsyncStorage.getItem(NETWORK_PREF_KEY);
+        setNetwork(savedNetwork === 'testnet' ? 'testnet' : 'mainnet');
+
+        const savedTheme = await AsyncStorage.getItem(THEME_PREF_KEY);
+        setInitialIsDark(savedTheme === 'dark');
+
+        setDbReady(true);
+      } catch (e) {
+        console.warn('PREPARE APP ERROR:', e);
+      } finally {
+        setNetworkLoaded(true);
+        setIsAppInitialized(true);
+      }
+    };
+    prepareApp();
   }, []);
-  
+
   useEffect(() => {
     const appReady = Boolean(fontsLoaded && networkLoaded && dbReady && navBootReady && isAppInitialized);
     if (!appReady) return;
