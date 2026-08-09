@@ -18,7 +18,6 @@ import { BTC_MAP_API_URL, btcMapFetcher, BtcMapElement } from '../services/btcma
 import { GlassView } from '../components/GlassView';
 import { useIsFocused } from '@react-navigation/native';
 
-
 const FILTER_GROUPS = [
   { id: 'food', label: 'Food & Drink', icon: 'restaurant', icons: ['restaurant', 'local-cafe', 'local-bar', 'fastfood', 'bakery-dining', 'icecream'] },
   { id: 'shopping', label: 'Shopping', icon: 'local-grocery-store', icons: ['local-grocery-store', 'checkroom', 'devices', 'menu-book', 'card-giftcard', 'chair', 'visibility', 'hardware', 'toys', 'pets', 'watch', 'videogame-asset', 'music-note', 'storefront'] },
@@ -44,6 +43,7 @@ export default function MapScreen() {
   const mapRef = useRef<MapView>(null);
   const clusterRef = useRef<Supercluster | null>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const sheetState = useRef<'open' | 'closing' | 'closed'>('closed');
 
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [selectedMerchant, setSelectedMerchant] = useState<BtcMapElement | null>(null);
@@ -57,9 +57,6 @@ export default function MapScreen() {
   });
   const regionRef = useRef<Region>(region);
 
-  // ─── FILTER STATES ───
-  // NOTE: activeFilters stays an array for compatibility with the clustering
-  // effect below, but the UI now enforces single-select (max length 1).
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [processingFilter, setProcessingFilter] = useState<string | null>(null);
 
@@ -69,12 +66,9 @@ export default function MapScreen() {
     { revalidateOnFocus: false }
   );
 
-  // ─── CLUSTERING & FILTERING ENGINE ───
   useEffect(() => {
     if (!elements || elements.length === 0) return;
 
-    // We use a timeout to yield to the JS thread. This guarantees the UI spinner 
-    // renders visually before the processor locks the thread to filter thousands of points.
     const timer = setTimeout(() => {
       const points = elements.reduce<any[]>((acc, el) => {
         const lat = el.osm_json?.lat ?? el.osm_json?.center?.lat ?? el.lat;
@@ -84,7 +78,6 @@ export default function MapScreen() {
 
         const mergedTags = { ...(el.osm_json?.tags || {}), ...(el.tags || {}) };
 
-        // Apply active filters
         if (activeFilters.length > 0) {
           const iconName = getCategoryIcon(mergedTags);
           const matchesFilter = activeFilters.some(filterId => {
@@ -175,13 +168,20 @@ export default function MapScreen() {
   const toggleMapType = () => setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
 
   const handleMapInteraction = () => {
-    if (selectedMerchant && bottomSheetRef.current) {
+    if (selectedMerchant && bottomSheetRef.current && sheetState.current === 'open') {
       bottomSheetRef.current.snapToIndex(0);
     }
   };
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
-    setSelectedMerchant(merchant);
+    if (selectedMerchant?.id === merchant.id) {
+      sheetState.current = 'open';
+      bottomSheetRef.current?.snapToIndex(1);
+    } else {
+      sheetState.current = 'open';
+      setSelectedMerchant(merchant);
+    }
+    
     const latDelta = 0.003;
     const lonDelta = 0.003;
     const targetLatitude = Number(merchant.lat) - (latDelta * 0.25);
@@ -276,7 +276,6 @@ export default function MapScreen() {
           })}
         </MapView>
 
-        {/* ── Top Floating Filter Pills (Google Maps Style) ── */}
         <View style={styles.topFilterWrapper} pointerEvents="box-none">
           <ScrollView
             horizontal
@@ -350,7 +349,6 @@ export default function MapScreen() {
         )}
 
         <View style={styles.fabContainer} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
-          {/* ── Map/Satellite Toggle FAB ── */}
           <TouchableOpacity
             style={styles.fab}
             onPress={toggleMapType}
@@ -411,8 +409,14 @@ export default function MapScreen() {
         {selectedMerchant && (
           <MerchantBottomSheet
             merchant={selectedMerchant}
-            onClose={() => setSelectedMerchant(null)}
+            onClose={() => {
+              sheetState.current = 'closed';
+              setSelectedMerchant(null);
+            }}
             bottomSheetRef={bottomSheetRef}
+            onStateChange={(state) => {
+              sheetState.current = state;
+            }}
           />
         )}
       </View>
