@@ -12,6 +12,7 @@ interface Props {
   merchant: BtcMapElement;
   onClose: () => void;
   bottomSheetRef: React.RefObject<any>;
+  onStateChange?: (state: 'open' | 'closing' | 'closed') => void;
 }
 
 const parseOpeningHours = (hoursString?: string): { status: 'open' | 'closed', time: string } | null => {
@@ -53,7 +54,7 @@ const parseOpeningHours = (hoursString?: string): { status: 'open' | 'closed', t
   }
 };
 
-export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef }: Props) {
+export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef, onStateChange }: Props) {
   const { theme } = useTheme();
   const tags = merchant.tags || {};
 
@@ -123,10 +124,20 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
       index={1}
       snapPoints={snapPoints}
       enableDynamicSizing={false}
-      enablePanDownToClose={true}
+      enablePanDownToClose={false}
+      onAnimate={(from, to) => {
+        if (to === -1) {
+          onStateChange?.('closing');
+        } else {
+          onStateChange?.('open');
+        }
+      }}
       onChange={(index) => {
         if (index === -1) {
+          onStateChange?.('closed');
           onClose();
+        } else {
+          onStateChange?.('open');
         }
       }}
       handleIndicatorStyle={{ backgroundColor: theme.colors.border, width: 40 }}
@@ -139,7 +150,13 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef 
             <Text style={styles.title} numberOfLines={1}>
               {tags.name || 'Bitcoin Merchant'}
             </Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.8}>
+            <TouchableOpacity 
+              onPress={() => {
+                onStateChange?.('closing');
+                bottomSheetRef.current?.close();
+              }} 
+              activeOpacity={0.8}
+            >
               <GlassView
                 width={32}
                 height={32}
