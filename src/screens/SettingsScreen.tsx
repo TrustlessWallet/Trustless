@@ -15,8 +15,8 @@ import { StyledInput } from '../components/StyledInput';
 import { getElectrumClient, resetActiveConnection, getActiveHostName, test_custom_node_connection } from '../services/electrum';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import build_info from '../constants/build.json';
+
 
 type navigation_prop = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
@@ -747,7 +747,7 @@ const SettingsScreen = () => {
 
         <View style={styles.version_container}>
           <Text style={styles.version_text}>
-            Version 3.1.0
+            Version 3.1.1
           </Text>
           <Text style={styles.commit_text}>
             Commit: {build_info?.commitHash || 'Unknown'}
