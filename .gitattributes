@@ -1,1 +1,7 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.keystore binary
+*.jks binary
+
 src/constants/release-template.json export-subst
