@@ -25,8 +25,8 @@ Hi! Trustless is a fully open-source, non-custodial (only you have access to you
 
 * **BTC Map:** Find local and global shops that accept Bitcoin and Lightning payments directly within the app. All thanks to our friends from [BTC Map.](https://github.com/teambtcmap)
 
-  <img width="250" alt="BTCMap" src="https://github.com/user-attachments/assets/4e3807b7-fd53-470c-9cce-ec29f93db3d0" />
   <img width="250" alt="BTCMap" src="https://github.com/user-attachments/assets/9e305d79-f79b-4354-8d07-3f85ed344055" />
+  <img width="250" alt="BTCMap" src="https://github.com/user-attachments/assets/4e3807b7-fd53-470c-9cce-ec29f93db3d0" />
 
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 
