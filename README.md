@@ -14,8 +14,8 @@ Hi! Trustless is a fully open-source, non-custodial (only you have access to you
 ## Main features
 * **Bitcoin wallet:** Import or create new wallets, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets and PSBT sigining.
 
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/11c00369-6cf6-4fb8-a176-2caee4e2395f" />
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/25582f10-c3de-4012-9b5d-9badf3fba494" />
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/d888a374-62b2-4a1b-a84e-33f600888ca6" />
+  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/44bff39e-ebb7-4ba9-bff5-468240dbda1c" />
 
 
 * **Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your Lightning balance at anytime. Lightning is powered by [Breez SDK](https://breez.technology/https://breez.technology/) that never has access to your seed phrase. However, note that withdrawing the lightning balance currently requires the cooperative uptime of the routing servers.
