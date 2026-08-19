@@ -20,13 +20,13 @@ Hi! Trustless is a fully open-source, non-custodial (only you have access to you
 
 * **Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your Lightning balance at anytime. Lightning is powered by [Breez SDK](https://breez.technology/https://breez.technology/) that never has access to your seed phrase. However, note that withdrawing the lightning balance currently requires the cooperative uptime of the routing servers.
 
-  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/a7f6264f-1535-467b-a704-7b55e32710c5" />
-  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/f31643fe-5963-4251-8541-89bb1cd5fe49" />
+  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/f06b089b-8ff5-455a-a663-06e25d59e1d0" />
+  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/eb9725f0-f4d0-468e-ad8b-234f011d2ded" />
 
 * **BTC Map:** Find local and global shops that accept Bitcoin and Lightning payments directly within the app. All thanks to our friends from [BTC Map.](https://github.com/teambtcmap)
 
-  <img width="250" alt="BTCMap" src="https://github.com/user-attachments/assets/745c86ab-55fd-4162-a808-bc1435838950" />
-  <img width="250" alt="BTCMap" src="https://github.com/user-attachments/assets/fb2d1f33-08d8-47ed-9496-ce42bbfb224d" />
+  <img width="250" alt="BTCMap" src="https://github.com/user-attachments/assets/4e3807b7-fd53-470c-9cce-ec29f93db3d0" />
+  <img width="250" alt="BTCMap" src="https://github.com/user-attachments/assets/9e305d79-f79b-4354-8d07-3f85ed344055" />
 
 * **Balance breakdown:** See actual UTXOs you own by clicking on your total wallet balance.
 
