@@ -407,6 +407,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 leewaySatPerVbyte: BigInt(1)
             });
 
+            config.lnurlDomain = "pay.hd-apps.com";
+
             const documentDir = FileSystem.Paths.document;
             const storageDirPath = `${documentDir.uri}breezSdkSpark`;
             const storageDir = new FileSystem.Directory(storageDirPath);
