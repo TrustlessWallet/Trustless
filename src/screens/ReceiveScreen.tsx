@@ -241,7 +241,7 @@ const ReceiveScreen = () => {
     }
   };
 
-  const handleRegisterAddress = async () => {
+const handleRegisterAddress = async () => {
     const cleanUsername = addressUsername.trim().toLowerCase();
     if (!cleanUsername) return;
     
@@ -250,7 +250,13 @@ const ReceiveScreen = () => {
       await registerLightningAddress(cleanUsername);
       setIsAddressModalVisible(false);
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to register address");
+      let errorMsg = error.message || "Failed to register address.";
+      
+      if (errorMsg.toLowerCase().includes('networkerror') || errorMsg.toLowerCase().includes('conflict')) {
+        errorMsg = "This username is already taken by someone else. Please choose a different one.";
+      }
+      
+      Alert.alert("Not available", errorMsg);
     } finally {
       setIsRegisteringAddress(false);
     }
@@ -392,8 +398,8 @@ const ReceiveScreen = () => {
                 }
               />
 
-              <TouchableOpacity 
-                style={[styles.modalButtonPrimary, !isAmountValid && styles.modalButtonDisabled]} 
+              <TouchableOpacity
+                style={[styles.modalButtonPrimary, !isAmountValid && styles.modalButtonDisabled]}
                 onPress={handleSaveAmount}
                 disabled={!isAmountValid}
               >
@@ -415,7 +421,7 @@ const ReceiveScreen = () => {
                 <Text style={styles.modalTitle}>
                   {lightningAddress ? 'Change lightning address' : 'Claim lightning address'}
                 </Text>
-                <Pressable 
+                <Pressable
                   onPress={() => !isRegisteringAddress && setIsAddressModalVisible(false)}
                   disabled={isRegisteringAddress}
                 >
@@ -444,8 +450,8 @@ const ReceiveScreen = () => {
                 }
               />
 
-              <TouchableOpacity 
-                style={[styles.modalButtonPrimary, (isRegisteringAddress || !isAddressValid) && styles.modalButtonDisabled]} 
+              <TouchableOpacity
+                style={[styles.modalButtonPrimary, (isRegisteringAddress || !isAddressValid) && styles.modalButtonDisabled]}
                 onPress={handleRegisterAddress}
                 disabled={isRegisteringAddress || !isAddressValid}
               >
@@ -615,7 +621,7 @@ const ReceiveScreen = () => {
 
                     {appliedAmountSats === 0 && !isGeneratingLightning ? (
                       <Pressable
-                        style={{ 
+                        style={{
                           marginTop: 16,
                           shadowColor: theme.colors.primary,
                           shadowOffset: { width: 0, height: 2 },
@@ -945,10 +951,11 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   },
   modalButtonPrimary: {
     backgroundColor: theme.colors.primary,
-    paddingVertical: 14,
+    height: 52,
     borderRadius: 8,
     marginTop: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   modalButtonDisabled: {
     opacity: 0.4,
