@@ -29,6 +29,7 @@ const ReceiveScreen = () => {
   const route = useRoute<ReceiveScreenRouteProp>();
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
+
   const {
     activeWallet,
     loading: wallet_loading,
@@ -36,8 +37,12 @@ const ReceiveScreen = () => {
     getLightningInvoice,
     isLightningInitialized,
     defaultLightningInvoice,
-    updateAddressLabel
+    updateAddressLabel,
+    lightningAddress,
+    checkLightningAddressAvailable,
+    registerLightningAddress
   } = useWallet();
+
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
 
@@ -58,6 +63,10 @@ const ReceiveScreen = () => {
 
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [labelInput, setLabelInput] = useState('');
+
+  const [isAddressModalVisible, setIsAddressModalVisible] = useState(false);
+  const [addressUsername, setAddressUsername] = useState('');
+  const [isRegisteringAddress, setIsRegisteringAddress] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({
@@ -232,6 +241,24 @@ const ReceiveScreen = () => {
     }
   };
 
+  const handleRegisterAddress = async () => {
+    const cleanUsername = addressUsername.trim().toLowerCase();
+    if (!cleanUsername) return;
+
+    setIsRegisteringAddress(true);
+    try {
+      // Bypass the availability check and force the registration.
+      // If the server holds the reservation for the pubkey, this will succeed.
+      // If it is truly taken by someone else, the SDK will catch and display the error.
+      await registerLightningAddress(cleanUsername);
+      setIsAddressModalVisible(false);
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to register address");
+    } finally {
+      setIsRegisteringAddress(false);
+    }
+  };
+
   const handle_view_details = (address: string) => {
     if (address) {
       navigation.navigate('AddressDetails', { address });
@@ -270,7 +297,6 @@ const ReceiveScreen = () => {
   const used_addresses = useMemo(() => {
     if (!activeWallet) return [];
     const change_address_set = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
-
     const derivedMap = new Map();
     activeWallet.derivedReceiveAddresses.forEach(a => derivedMap.set(a.address, a));
 
@@ -291,7 +317,9 @@ const ReceiveScreen = () => {
   }, [activeWallet]);
 
   const loading_info = wallet_loading || !activeWallet;
-  const currentLnString = lightningInvoice;
+
+  const currentLnString = (appliedAmountSats === 0 && lightningAddress) ? lightningAddress : lightningInvoice;
+  const qrEncodeString = (appliedAmountSats === 0 && lightningAddress) ? `lightning:${lightningAddress}` : lightningInvoice;
 
   const memoizedOnchainQR = useMemo(() => {
     if (!current_display_data?.address) return null;
@@ -306,16 +334,16 @@ const ReceiveScreen = () => {
   }, [current_display_data?.address, theme.colors.background, theme.colors.primary]);
 
   const memoizedLightningQR = useMemo(() => {
-    if (!currentLnString) return null;
+    if (!qrEncodeString) return null;
     return (
       <QRCode
-        value={currentLnString}
+        value={qrEncodeString}
         size={QR_SIZE}
         backgroundColor={theme.colors.background}
         color={theme.colors.primary}
       />
     );
-  }, [currentLnString, theme.colors.background, theme.colors.primary]);
+  }, [qrEncodeString, theme.colors.background, theme.colors.primary]);
 
   if (loading_info) {
     return (
@@ -368,6 +396,68 @@ const ReceiveScreen = () => {
 
               <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleSaveAmount}>
                 <Text style={styles.modalButtonTextPrimary}>Save amount</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={isAddressModalVisible} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => !isRegisteringAddress && setIsAddressModalVisible(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.keyboardAvoidingView}
+          >
+            <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {lightningAddress ? 'Change Lightning Address' : 'Claim Lightning Address'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => !isRegisteringAddress && setIsAddressModalVisible(false)}
+                  activeOpacity={0.8}
+                  disabled={isRegisteringAddress}
+                >
+                  <GlassView
+                    width={32}
+                    height={32}
+                    borderRadius={16}
+                    shape="circle"
+                    interactive={true}
+                  >
+                    <Feather name="x" size={20} color={theme.colors.primary} />
+                  </GlassView>
+                </TouchableOpacity>
+              </View>
+
+              <StyledInput
+                placeholder="username"
+                value={addressUsername}
+                onChangeText={setAddressUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                rightElement={
+                  <Text style={styles.currencyLabel}>@pay.hd-apps.com</Text>
+                }
+              />
+
+              <TouchableOpacity
+                style={[styles.modalButtonPrimary, isRegisteringAddress && styles.actionButtonDisabled]}
+                onPress={handleRegisterAddress}
+                disabled={
+                  isRegisteringAddress ||
+                  !addressUsername.trim() ||
+                  addressUsername.trim().toLowerCase() === lightningAddress.split('@')[0]
+                }
+              >
+                {isRegisteringAddress ? (
+                  <ActivityIndicator color={theme.colors.inversePrimary} />
+                ) : (
+                  <Text style={styles.modalButtonTextPrimary}>
+                    {lightningAddress ? 'Update Address' : 'Claim Address'}
+                  </Text>
+                )}
               </TouchableOpacity>
             </Pressable>
           </KeyboardAvoidingView>
@@ -434,7 +524,6 @@ const ReceiveScreen = () => {
                   <Feather name="edit" size={14} color={theme.colors.primary} />
                 </TouchableOpacity>
               )}
-
             </View>
 
             <View style={styles.actionsContainer}>
@@ -442,7 +531,6 @@ const ReceiveScreen = () => {
                 <Feather name="copy" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>Copy</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={[styles.actionButton, loading_info && styles.actionButtonDisabled]}
                 onPress={handle_next_address}
@@ -451,7 +539,6 @@ const ReceiveScreen = () => {
                 <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>New address</Text>
               </TouchableOpacity>
-
               <TouchableOpacity style={styles.actionButton} onPress={() => on_share(current_display_data.address)}>
                 <Feather name="share-2" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>Share</Text>
@@ -482,7 +569,7 @@ const ReceiveScreen = () => {
                     <View style={styles.balanceContainer}>
                       <Text style={styles.balanceText}>
                         {hideBalance ? '*******' : (
-                          <>{format_btc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
+                          <>{format_btc(balance)} <Text style={styles.orangeSymbol}> </Text></>
                         )}
                       </Text>
                       <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
@@ -505,7 +592,9 @@ const ReceiveScreen = () => {
               ) : (
                 <>
                   <View style={styles.qrContainer}>
-                    <Text style={styles.derivationPathDisplay}>BOLT11 invoice</Text>
+                    <Text style={styles.derivationPathDisplay}>
+                      {appliedAmountSats === 0 ? (lightningAddress ? 'Lightning Address' : 'BOLT11 invoice') : 'BOLT11 invoice'}
+                    </Text>
 
                     <Pressable
                       style={({ pressed }) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]}
@@ -525,6 +614,35 @@ const ReceiveScreen = () => {
                         </View>
                       ) : currentLnString ? memoizedLightningQR : null}
                     </Pressable>
+
+                    {/* Display the text representation of the Lightning Address below the QR code */}
+                    {appliedAmountSats === 0 && !isGeneratingLightning ? (
+                      lightningAddress ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 }}>
+                          <Text style={[styles.addressText, { marginTop: 0, paddingHorizontal: 0 }]} selectable>
+                            {lightningAddress}
+                          </Text>
+                          <TouchableOpacity
+                            style={{ padding: 8, marginLeft: 4 }}
+                            onPress={() => {
+                              // Pre-fill the input with their current username
+                              setAddressUsername(lightningAddress.split('@')[0]);
+                              setIsAddressModalVisible(true);
+                            }}
+                          >
+                            <Feather name="edit-2" size={16} color={theme.colors.muted} />
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity style={styles.addressLabelPill} onPress={() => {
+                          setAddressUsername('');
+                          setIsAddressModalVisible(true);
+                        }}>
+                          <Text style={styles.addressLabelText}>Claim Lightning Address</Text>
+                          <Feather name="at-sign" size={14} color={theme.colors.primary} />
+                        </TouchableOpacity>
+                      )
+                    ) : null}
 
                     {appliedAmountSats > 0 && !isGeneratingLightning && (
                       <Text style={styles.amountValue}>
@@ -836,7 +954,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.primary,
     fontFamily: 'SpaceMono-Bold',
     marginRight: 16,
-  }
+  },
 });
 
 export default ReceiveScreen;
