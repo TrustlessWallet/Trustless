@@ -146,6 +146,10 @@ interface WalletContextType {
     getLightningTopUpAddress: () => Promise<string>;
     prepareWithdrawToOnchain: (address: string, amountSats: number, feeTier: 'fast' | 'normal' | 'slow') => Promise<{ senderFeeMsat: number; recipientFeeMsat: number; prepareResponse: any }>;
     withdrawToOnchain: (prepareResponse: any, feeTier: 'fast' | 'normal' | 'slow') => Promise<void>;
+
+    lightningAddress: string;
+    checkLightningAddressAvailable: (username: string) => Promise<boolean>;
+    registerLightningAddress: (username: string, description?: string) => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -174,6 +178,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [lightningInitError, setLightningInitError] = useState<string | null>(null);
     const [lightningBalance, setLightningBalance] = useState(0);
     const [lightningTransactions, setLightningTransactions] = useState<LightningTransaction[]>([]);
+    const [lightningAddress, setLightningAddress] = useState<string>('');
 
     const ACTIVE_WALLET_KEY = getStorageKey(KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE);
 
@@ -292,6 +297,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const info = await activeSdkInstance.getInfo({ ensureSynced: true });
             // CAST TO NUMBER HERE
             setLightningBalance(Number(info.balanceSats ?? 0));
+            try {
+                const addressInfo = await activeSdkInstance.getLightningAddress();
+                if (addressInfo && addressInfo.lightningAddress) {
+                    setLightningAddress(addressInfo.lightningAddress);
+                } else {
+                    setLightningAddress('');
+                }
+            } catch (err) {
+                console.error("Failed to fetch Lightning address:", err);
+                setLightningAddress('');
+            }
 
             const paymentsResponse = await activeSdkInstance.listPayments({ limit: 100 });
             const paymentsList = Array.isArray(paymentsResponse) ? paymentsResponse : (paymentsResponse?.payments || []);
@@ -450,6 +466,22 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setLightningInitAttempted(true);
             setLightningInitError(formattedError);
         }
+    };
+
+    const checkLightningAddressAvailable = async (username: string): Promise<boolean> => {
+        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+        const request = { username };
+        return await activeSdkInstance.checkLightningAddressAvailable(request);
+    };
+
+    const registerLightningAddress = async (username: string, description?: string): Promise<void> => {
+        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+        const request = { 
+            username, 
+            description: description || `Pay to ${username}@pay.hd-apps.com` 
+        };
+        const addressInfo = await activeSdkInstance.registerLightningAddress(request);
+        setLightningAddress(addressInfo.lightningAddress);
     };
 
     const getLightningInvoice = async (amountSats: number) => {
@@ -1560,6 +1592,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         lightningBalance,
         lightningTransactions,
         defaultLightningInvoice,
+        lightningAddress,
+        checkLightningAddressAvailable,
+        registerLightningAddress,
         getLightningInvoice,
         payLightningInvoice,
         estimateLightningFee,
