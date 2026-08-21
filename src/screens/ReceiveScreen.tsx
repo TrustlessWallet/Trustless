@@ -39,7 +39,6 @@ const ReceiveScreen = () => {
     defaultLightningInvoice,
     updateAddressLabel,
     lightningAddress,
-    checkLightningAddressAvailable,
     registerLightningAddress
   } = useWallet();
 
@@ -71,17 +70,18 @@ const ReceiveScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.8}>
+        <Pressable onPress={() => navigation.goBack()}>
           <GlassView
             width={32}
             height={32}
             borderRadius={16}
             shape="circle"
             interactive={true}
+            style={{ overflow: 'visible' }}
           >
             <Feather name="x" size={20} color={theme.colors.primary} />
           </GlassView>
-        </TouchableOpacity>
+        </Pressable>
       ),
     });
   }, [navigation, theme.colors.primary]);
@@ -244,12 +244,9 @@ const ReceiveScreen = () => {
   const handleRegisterAddress = async () => {
     const cleanUsername = addressUsername.trim().toLowerCase();
     if (!cleanUsername) return;
-
+    
     setIsRegisteringAddress(true);
     try {
-      // Bypass the availability check and force the registration.
-      // If the server holds the reservation for the pubkey, this will succeed.
-      // If it is truly taken by someone else, the SDK will catch and display the error.
       await registerLightningAddress(cleanUsername);
       setIsAddressModalVisible(false);
     } catch (error: any) {
@@ -321,6 +318,10 @@ const ReceiveScreen = () => {
   const currentLnString = (appliedAmountSats === 0 && lightningAddress) ? lightningAddress : lightningInvoice;
   const qrEncodeString = (appliedAmountSats === 0 && lightningAddress) ? `lightning:${lightningAddress}` : lightningInvoice;
 
+  const rawAmountNum = parseFloat(modalAmountStr.replace(',', '.'));
+  const isAmountValid = !isNaN(rawAmountNum) && rawAmountNum > 0;
+  const isAddressValid = addressUsername.trim().length > 0 && (!lightningAddress || addressUsername.trim().toLowerCase() !== lightningAddress.split('@')[0]);
+
   const memoizedOnchainQR = useMemo(() => {
     if (!current_display_data?.address) return null;
     return (
@@ -367,20 +368,17 @@ const ReceiveScreen = () => {
             <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Set request amount</Text>
-                <TouchableOpacity
-                  onPress={() => setIsAmountModalVisible(false)}
-                  activeOpacity={0.8}
-                >
+                <Pressable onPress={() => setIsAmountModalVisible(false)}>
                   <GlassView
                     width={32}
                     height={32}
-                    borderRadius={16}
                     shape="circle"
                     interactive={true}
+                    style={{ overflow: 'visible' }}
                   >
                     <Feather name="x" size={20} color={theme.colors.primary} />
                   </GlassView>
-                </TouchableOpacity>
+                </Pressable>
               </View>
 
               <StyledInput
@@ -394,7 +392,11 @@ const ReceiveScreen = () => {
                 }
               />
 
-              <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleSaveAmount}>
+              <TouchableOpacity 
+                style={[styles.modalButtonPrimary, !isAmountValid && styles.modalButtonDisabled]} 
+                onPress={handleSaveAmount}
+                disabled={!isAmountValid}
+              >
                 <Text style={styles.modalButtonTextPrimary}>Save amount</Text>
               </TouchableOpacity>
             </Pressable>
@@ -411,11 +413,10 @@ const ReceiveScreen = () => {
             <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>
-                  {lightningAddress ? 'Change Lightning Address' : 'Claim Lightning Address'}
+                  {lightningAddress ? 'Change lightning address' : 'Claim lightning address'}
                 </Text>
-                <TouchableOpacity
+                <Pressable 
                   onPress={() => !isRegisteringAddress && setIsAddressModalVisible(false)}
-                  activeOpacity={0.8}
                   disabled={isRegisteringAddress}
                 >
                   <GlassView
@@ -424,10 +425,11 @@ const ReceiveScreen = () => {
                     borderRadius={16}
                     shape="circle"
                     interactive={true}
+                    style={{ overflow: 'visible' }}
                   >
                     <Feather name="x" size={20} color={theme.colors.primary} />
                   </GlassView>
-                </TouchableOpacity>
+                </Pressable>
               </View>
 
               <StyledInput
@@ -442,20 +444,16 @@ const ReceiveScreen = () => {
                 }
               />
 
-              <TouchableOpacity
-                style={[styles.modalButtonPrimary, isRegisteringAddress && styles.actionButtonDisabled]}
+              <TouchableOpacity 
+                style={[styles.modalButtonPrimary, (isRegisteringAddress || !isAddressValid) && styles.modalButtonDisabled]} 
                 onPress={handleRegisterAddress}
-                disabled={
-                  isRegisteringAddress ||
-                  !addressUsername.trim() ||
-                  addressUsername.trim().toLowerCase() === lightningAddress.split('@')[0]
-                }
+                disabled={isRegisteringAddress || !isAddressValid}
               >
                 {isRegisteringAddress ? (
                   <ActivityIndicator color={theme.colors.inversePrimary} />
                 ) : (
                   <Text style={styles.modalButtonTextPrimary}>
-                    {lightningAddress ? 'Update Address' : 'Claim Address'}
+                    {lightningAddress ? 'Update address' : 'Claim address'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -593,7 +591,7 @@ const ReceiveScreen = () => {
                 <>
                   <View style={styles.qrContainer}>
                     <Text style={styles.derivationPathDisplay}>
-                      {appliedAmountSats === 0 ? (lightningAddress ? 'Lightning Address' : 'BOLT11 invoice') : 'BOLT11 invoice'}
+                      {appliedAmountSats === 0 ? (lightningAddress ? 'Lightning address' : 'BOLT11 invoice') : 'BOLT11 invoice'}
                     </Text>
 
                     <Pressable
@@ -615,33 +613,41 @@ const ReceiveScreen = () => {
                       ) : currentLnString ? memoizedLightningQR : null}
                     </Pressable>
 
-                    {/* Display the text representation of the Lightning Address below the QR code */}
                     {appliedAmountSats === 0 && !isGeneratingLightning ? (
-                      lightningAddress ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 }}>
-                          <Text style={[styles.addressText, { marginTop: 0, paddingHorizontal: 0 }]} selectable>
-                            {lightningAddress}
-                          </Text>
-                          <TouchableOpacity
-                            style={{ padding: 8, marginLeft: 4 }}
-                            onPress={() => {
-                              // Pre-fill the input with their current username
-                              setAddressUsername(lightningAddress.split('@')[0]);
-                              setIsAddressModalVisible(true);
-                            }}
-                          >
-                            <Feather name="edit-2" size={16} color={theme.colors.muted} />
-                          </TouchableOpacity>
-                        </View>
-                      ) : (
-                        <TouchableOpacity style={styles.addressLabelPill} onPress={() => {
-                          setAddressUsername('');
+                      <Pressable
+                        style={{ 
+                          marginTop: 16,
+                          shadowColor: theme.colors.primary,
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: isDark ? 0.15 : 0.1,
+                          shadowRadius: 4,
+                          elevation: 3,
+                          overflow: 'visible',
+                        }}
+                        onPress={() => {
+                          if (lightningAddress) {
+                            setAddressUsername(lightningAddress.split('@')[0]);
+                          } else {
+                            setAddressUsername('');
+                          }
                           setIsAddressModalVisible(true);
-                        }}>
-                          <Text style={styles.addressLabelText}>Claim Lightning Address</Text>
-                          <Feather name="at-sign" size={14} color={theme.colors.primary} />
-                        </TouchableOpacity>
-                      )
+                        }}
+                      >
+                        <GlassView
+                          width={272}
+                          height={40}
+                          shape="capsule"
+                          interactive={true}
+                          style={{ overflow: 'visible' }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%' }}>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.colors.primary }} numberOfLines={1} ellipsizeMode="middle">
+                              {lightningAddress ? lightningAddress : 'Claim lightning address'}
+                            </Text>
+                            <Feather name="edit" size={14} color={theme.colors.primary} />
+                          </View>
+                        </GlassView>
+                      </Pressable>
                     ) : null}
 
                     {appliedAmountSats > 0 && !isGeneratingLightning && (
@@ -922,7 +928,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     width: '100%',
     backgroundColor: theme.colors.surface,
     borderRadius: 16,
-    padding: 24,
+    padding: 20,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
@@ -933,7 +939,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: theme.colors.primary,
   },
@@ -941,8 +947,11 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     backgroundColor: theme.colors.primary,
     paddingVertical: 14,
     borderRadius: 8,
-    marginTop: 24,
+    marginTop: 12,
     alignItems: 'center',
+  },
+  modalButtonDisabled: {
+    opacity: 0.4,
   },
   modalButtonTextPrimary: {
     color: theme.colors.inversePrimary,
