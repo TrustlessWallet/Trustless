@@ -164,14 +164,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [wallets, setWallets] = useState<Wallet[]>([]);
     const [activeWallet, setActiveWallet] = useState<ActiveWallet | null>(null);
     const [loading, setLoading] = useState(true);
-    // Used to force React Query to re-fetch data
     const [lastRefreshTime, setLastRefreshTime] = useState(() => Date.now());
 
-    // Address Book state
     const [savedAddresses, setSavedAddresses] = useState<BitcoinAddress[]>([]);
     const [loadingSavedAddresses, setLoadingSavedAddresses] = useState(true);
 
-    // Phase 1 Lightning state
     const [isLightningInitialized, setIsLightningInitialized] = useState(false);
     const [lightningInitAttempted, setLightningInitAttempted] = useState(false);
     const [lightningApiKeyPresent, setLightningApiKeyPresent] = useState(false);
@@ -186,7 +183,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // SYNC HOOKS (Background Data Fetching)
     // ------------------------------------------------------------------
 
-    // Memoize the list of addresses needed for the current wallet to avoid infinite loops
     const activeWalletAddresses = useMemo(() => {
         if (!activeWallet) return [];
         return [
@@ -225,16 +221,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    // Hook 1: Sync Balance for Active Wallet
     const { data: syncedWalletData } = useWalletBalanceSync(activeWallet?.id, activeWalletAddresses);
 
-    // When new balance data arrives from the network:
     useEffect(() => {
         if (syncedWalletData && activeWallet) {
-            // 1. Update the local SQLite database
+            console.log(`[PERF - SYNC] syncedWalletData triggered for ${syncedWalletData.length} addresses at`, Date.now());
+            const tSync = Date.now();
+            
             dbUpdateAddressInfoBatch(syncedWalletData);
 
-            // 2. Update the in-memory state so the UI reflects changes instantly
             setActiveWallet(prev => {
                 if (!prev || prev.id !== activeWallet.id) return prev;
 
@@ -249,12 +244,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 return { ...prev, derivedAddressInfoCache: newCache };
             });
 
-            // 3. Scan for new UTXOs since balances have changed
-            scanAndNameUtxos();
+            // DEFER: Push UTXO scanning to macro task queue so it doesn't block UI renders
+            setTimeout(() => {
+                InteractionManager.runAfterInteractions(() => {
+                    console.log(`[PERF - DEFERRED] Executing deferred UTXO scan`);
+                    scanAndNameUtxos().finally(() => {
+                        console.log(`[PERF - SYNC] Finished syncing data & UTXOs in ${Date.now() - tSync}ms`);
+                    });
+                });
+            }, 1000);
         }
     }, [syncedWalletData]);
 
-    // Hook 2: Sync Balance for Saved Addresses
     const { data: syncedSavedBalances } = useAddressListSync('saved', savedAddresses);
 
     useEffect(() => {
@@ -278,7 +279,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const [defaultLightningInvoice, setDefaultLightningInvoice] = useState<string>('');
 
-    // Pre-generates the invoice in the background
     useEffect(() => {
         let isMounted = true;
         if (isLightningInitialized && !defaultLightningInvoice) {
@@ -294,8 +294,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const refreshLightningState = async () => {
         if (!activeSdkInstance) return;
         try {
+            console.log(`[PERF - BREEZ SDK] Starting refreshLightningState at`, Date.now());
+            const tRefresh = Date.now();
             const info = await activeSdkInstance.getInfo({ ensureSynced: true });
-            // CAST TO NUMBER HERE
             setLightningBalance(Number(info.balanceSats ?? 0));
             try {
                 const addressInfo = await activeSdkInstance.getLightningAddress();
@@ -329,7 +330,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const SDK_STATUS = breezSdk.PaymentStatus as any;
                 const SDK_TYPE = breezSdk.PaymentType as any;
 
-                // Strictly evaluate against the SDK's exported enums to guarantee accuracy
                 const isComplete = p.status === SDK_STATUS.COMPLETED ||
                     p.status === SDK_STATUS.Completed ||
                     p.status === SDK_STATUS.COMPLETE;
@@ -345,7 +345,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     p.paymentType === SDK_TYPE.Receive ||
                     p.paymentType === SDK_TYPE.RECEIVED;
 
-                // Priority fallback resolution
                 let finalStatus: 'complete' | 'pending' | 'failed' = 'pending';
                 if (isComplete) {
                     finalStatus = 'complete';
@@ -396,6 +395,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             });
 
             setLightningTransactions(formattedTxs);
+            console.log(`[PERF - BREEZ SDK] Finished refreshLightningState in ${Date.now() - tRefresh}ms`);
         } catch (error) {
             console.error("Failed to fetch Lightning state:", error);
         }
@@ -403,6 +403,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const initLightningNode = async (mnemonic: string) => {
         try {
+            console.log(`[PERF - LIGHTNING] Starting initLightningNode at`, Date.now());
+            const t2 = Date.now();
             const apiKey = process.env.EXPO_PUBLIC_BREEZ_API_KEY;
 
             setLightningInitAttempted(true);
@@ -438,15 +440,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 mnemonic: mnemonic.toLowerCase().trim()
             } as any);
 
+            console.log(`[PERF - BREEZ SDK] Starting breezSdk.connect`);
+            const tConnect = Date.now();
             const sdk = await breezSdk.connect({
                 config,
                 seed,
                 storageDir: storageDir.uri.replace('file://', '')
             });
+            console.log(`[PERF - BREEZ SDK] Finished breezSdk.connect in ${Date.now() - tConnect}ms`);
 
             activeSdkInstance = sdk;
-            setIsLightningInitialized(true);
             setLightningInitError(null);
+            
             if (sdk && typeof sdk.addEventListener === 'function') {
                 sdk.addEventListener({
                     onEvent: async (e: any) => {
@@ -458,7 +463,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 });
             }
 
+            // Sync the node completely before releasing the UI loading state
             await refreshLightningState();
+            
+            setIsLightningInitialized(true);
+            console.log(`[PERF - LIGHTNING] Finished initLightningNode in ${Date.now() - t2}ms`);
         } catch (error: any) {
             const formattedError = formatLightningInitError(error);
             console.error("Breez initialization failed:", formattedError);
@@ -486,7 +495,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const getLightningInvoice = async (amountSats: number) => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
-        // In getLightningInvoice:
         const req = await activeSdkInstance.receivePayment({
             paymentMethod: breezSdk.ReceivePaymentMethod.Bolt11Invoice.new({
                 description: "Send to Trustless Wallet",
@@ -620,7 +628,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             // Fall through to handle as raw bolt11 if parsing fails
         }
 
-        // Now handle as bolt11 invoice
         const prepareRequest: any = {
             paymentRequest: cleanStr
         };
@@ -655,10 +662,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
 
         try {
-            // Use the exact same UniFFI `.new()` pattern that works for your Bolt11Invoice
             const response = await activeSdkInstance.receivePayment({
                 paymentMethod: breezSdk.ReceivePaymentMethod.BitcoinAddress.new({
-                    newAddress: undefined // Explicitly providing the optional parameter the SDK expects
+                    newAddress: undefined 
                 } as any)
             });
 
@@ -667,7 +673,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             throw new Error("Address empty in response");
         } catch (error: any) {
-            // Pass the true error message upward so we never hide node sync issues again
             throw new Error(`Failed to generate address: ${error.message}`);
         }
     };
@@ -702,10 +707,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     const userFee = Number(speedObj?.userFeeSat || 0);
                     feeSats = l1Fee + userFee;
                 }
-            } else {
-                // Payment method not BitcoinAddress
-            }
-
+            } 
 
             return {
                 senderFeeMsat: feeSats * 1000,
@@ -722,7 +724,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         let speed;
         try {
-            // Try to access the enum values directly
             const OnchainConfirmationSpeed = breezSdk.OnchainConfirmationSpeed;
             if (feeTier === 'fast') {
                 speed = OnchainConfirmationSpeed.Fast;
@@ -736,7 +737,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             throw new Error(`Invalid fee tier: ${feeTier}`);
         }
 
-        // Debug log to help identify enum issues
         console.log('Withdrawal fee tier:', feeTier, '-> speed:', speed, 'type:', typeof speed);
         console.log('Available enum values:', breezSdk.OnchainConfirmationSpeed);
 
@@ -760,11 +760,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // WALLET HYDRATION & LOGIC
     // ------------------------------------------------------------------
 
-    /**
-     * Constructs the full `ActiveWallet` object from the database.
-     * This involves fetching the wallet record + all derived addresses + UTXO labels.
-     * It also determines the "current" receive address (the first one with 0 txs).
-     */
     const buildActiveWallet = async (walletId: string): Promise<ActiveWallet | null> => {
         const allWallets = await dbGetWallets(NETWORK_NAME);
         const basicWallet = allWallets.find(w => w.id === walletId);
@@ -777,7 +772,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         const receiveSet = new Set(derivedReceiveAddresses.map(a => a.address));
 
-        // Find the first unused receive address (Gap Limit logic)
         const maxIndex = derivedReceiveAddresses.length > 0 ? derivedReceiveAddresses[derivedReceiveAddresses.length - 1].index : -1;
         let firstUnusedIndex = -1;
 
@@ -792,7 +786,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         const currentReceiveAddress = derivedReceiveAddresses.find(a => a.index === firstUnusedIndex)?.address || '';
 
-        // Verify change address index to prevent reuse on restoration
         const change_set = new Set(derivedChangeAddresses.map(a => a.address));
         const max_change_index = derivedChangeAddresses.length > 0 ? derivedChangeAddresses[derivedChangeAddresses.length - 1].index : -1;
         let first_unused_change = -1;
@@ -821,13 +814,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         };
     };
 
-    /**
-     * Derives a specific Receive Address at a given index.
-     * Handles both Standard (p2wpkh) and Nested Segwit (p2sh-p2wpkh).
-     */
     const deriveReceiveAddress = (root: any, index: number, isWatchOnly: boolean, scriptType: string = 'p2wpkh'): DerivedAddress | null => {
         try {
-            // If watch-only (xpub), the path is relative (0/x). If full wallet, it's absolute (m/84'/0'/0'/0/x).
             const derivationPath = isWatchOnly ? `0/${index}` : `${DERIVATION_PARENT_PATH}/0/${index}`;
             const child = root.derivePath(derivationPath);
 
@@ -848,10 +836,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    /**
-     * Derives a specific Change Address (Internal Chain).
-     * Used for sending the "change" back to ourselves during a transaction.
-     */
     const deriveChangeAddress = (root: any, index: number, isWatchOnly: boolean, scriptType: string = 'p2wpkh'): DerivedAddress | null => {
         try {
             const derivationPath = isWatchOnly ? `1/${index}` : `${DERIVATION_PARENT_PATH}/1/${index}`;
@@ -889,19 +873,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setActiveWallet({ ...activeWallet, utxoLabels: newLabels });
     };
 
-    /**
-     * Scans all addresses for UTXOs (Unspent Transaction Outputs).
-     * This is how we know what coins are available to spend.
-     * If a new UTXO is found, we assign it a human-readable label (e.g., "UTXO #5").
-     */
     const scanAndNameUtxos = async () => {
         if (!activeWallet) return;
         const infoCache = activeWallet.derivedAddressInfoCache ?? [];
 
-        // Only scan addresses that actually have a positive balance
         const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
 
-        // Scan recent change addresses too
         const changeIndex = activeWallet.changeAddressIndex ?? 0;
         const changeAddresses = (activeWallet.derivedChangeAddresses ?? [])
             .filter(a => a.index <= changeIndex + 1)
@@ -932,7 +909,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (isLightningInitialized) refreshLightningState();
     };
 
-    // Helper to get the root BIP32 node from either an xpub (watch-only) or seed (standard).
     const getRootNode = async (wallet: Wallet) => {
         if (wallet.type === 'watch-only') {
             if (!wallet.xpub) throw new Error("Watch-only wallet missing xpub");
@@ -942,7 +918,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 throw new Error("Invalid Network Key");
             }
         } else {
-            // Securely retrieve the mnemonic from the device KeyChain
             const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${wallet.id}` });
             if (!credentials) throw new Error(`Mnemonic not found for wallet ${wallet.id}`);
             const mnemonic = credentials.password;
@@ -951,27 +926,32 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    /**
-     * LOAD WALLET (Critical)
-     * This function loads a wallet ID into the 'activeWallet' state.
-     * It ensures we have derived enough addresses (Gap Limit) so the user doesn't
-     * miss any funds if they restored from an old backup.
-     */
     const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
+        console.log(`[PERF - LOAD WALLET] Starting loadAndSetActiveWallet for id: ${walletId} at`, Date.now());
+        const t0 = Date.now();
         let wallet = await buildActiveWallet(walletId);
+        console.log(`[PERF - LOAD WALLET] buildActiveWallet took ${Date.now() - t0}ms`);
         if (!wallet) return false;
 
         try {
+            const t1 = Date.now();
             const root = await getRootNode(wallet);
+            console.log(`[PERF - LOAD WALLET] getRootNode took ${Date.now() - t1}ms`);
             const is_watch_only = wallet.type === 'watch-only';
             const script_type = wallet.scriptType || 'p2wpkh';
             let derived_new = false;
 
-            // --- LIGHTNING INIT ---
+            // --- LIGHTNING INIT (DEFERRED) ---
             if (!is_watch_only) {
                 const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
                 if (credentials) {
-                    await initLightningNode(credentials.password);
+                    // DEFER: Push Lightning initialization to macro task queue so UI renders first
+                    setTimeout(() => {
+                        InteractionManager.runAfterInteractions(() => {
+                            console.log(`[PERF - DEFERRED] Executing deferred Lightning Init`);
+                            initLightningNode(credentials.password);
+                        });
+                    }, 800); // 800ms covers typical splash screen fade out and initial queries
                 } else {
                     setIsLightningInitialized(false);
                     setLightningInitAttempted(false);
@@ -990,7 +970,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
             // ----------------------
 
-            // Create a fast map to eliminate O(N^2) array lookups
             const cacheMap = new Map();
             wallet.derivedAddressInfoCache.forEach(c => cacheMap.set(c.address, c.tx_count));
 
@@ -1029,10 +1008,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             };
 
             // --- RECEIVE CHAIN ---
+            console.log(`[PERF - GAP LIMIT] Starting Receive Chain derivation check`);
+            const t3 = Date.now();
             let consecutive_unused_receive = 0;
             const max_rx = wallet.derivedReceiveAddresses.length;
 
-            // Count backwards to determine existing gap
             for (let i = max_rx - 1; i >= 0; i--) {
                 const addr = wallet.derivedReceiveAddresses.find(a => a.index === i)?.address;
                 if (addr && cacheMap.get(addr) > 0) break;
@@ -1069,8 +1049,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 receive_index += batch_size;
                 if (receive_index > 500) break;
             }
+            console.log(`[PERF - GAP LIMIT] Finished Receive Chain derivation check in ${Date.now() - t3}ms`);
 
             // --- CHANGE CHAIN ---
+            console.log(`[PERF - GAP LIMIT] Starting Change Chain derivation check`);
+            const t4 = Date.now();
             let consecutive_unused_change = 0;
             const max_ch = wallet.derivedChangeAddresses.length;
 
@@ -1110,6 +1093,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 change_index += batch_size;
                 if (change_index > 500) break;
             }
+            console.log(`[PERF - GAP LIMIT] Finished Change Chain derivation check in ${Date.now() - t4}ms`);
 
             if (derived_new) {
                 wallet = await buildActiveWallet(walletId);
@@ -1127,14 +1111,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    // INITIALIZATION
-    // On app start, load all wallets and select the last active one.
     useEffect(() => {
         const bootstrap = async () => {
+            console.log('[PERF - BOOTSTRAP] Starting bootstrap sequence at', Date.now());
             setLoading(true);
             setLoadingSavedAddresses(true);
             try {
                 const walletsFromDb = await dbGetWallets(NETWORK_NAME);
+                console.log('[PERF - BOOTSTRAP] Finished dbGetWallets');
                 setWallets(walletsFromDb);
 
                 let activeId: string | null = null;
@@ -1143,14 +1127,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
                 if (walletsFromDb.length > 0) {
                     let currentId = activeId;
-                    // Fallback to first wallet if saved ID is invalid
                     if (!currentId || !walletsFromDb.find(w => w.id === currentId)) {
                         currentId = walletsFromDb[0].id;
                     }
 
+                    console.log('[PERF - BOOTSTRAP] Starting loadAndSetActiveWallet for', currentId);
                     let success = await loadAndSetActiveWallet(currentId);
+                    console.log('[PERF - BOOTSTRAP] Finished loadAndSetActiveWallet, success:', success);
 
-                    // If the active wallet is corrupted/unloadable, try others
                     if (!success) {
                         console.warn("Active wallet failed to load. Attempting fallback...");
                         for (const w of walletsFromDb) {
@@ -1175,28 +1159,22 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             } finally {
                 setLoading(false);
                 setLoadingSavedAddresses(false);
+                console.log('[PERF - BOOTSTRAP] Finished bootstrap sequence at', Date.now());
             }
         };
         bootstrap();
     }, []);
 
-
-    /**
-     * Creates a new Receive Address.
-     * Called when the user hits "Receive" and needs a fresh QR code.
-     */
     const getOrCreateNextUnusedReceiveAddress = async (currentAddress: string, currentIndex: number): Promise<{ address: string, index: number } | null> => {
         if (!activeWallet) return null;
 
         const addresses = activeWallet.derivedReceiveAddresses;
         const currentPos = addresses.findIndex(a => a.index === currentIndex);
 
-        // If there is already a pre-generated address ahead, return that.
         if (currentPos !== -1 && currentPos < addresses.length - 1) {
             return addresses[currentPos + 1];
         }
 
-        // Otherwise, derive a new one from the seed
         try {
             const root = await getRootNode(activeWallet);
             const isWatchOnly = activeWallet.type === 'watch-only';
@@ -1232,13 +1210,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    /**
-     * ADD WALLET
-     * Handles creating a new wallet from:
-     * 1. A new seed (Standard).
-     * 2. An imported mnemonic (Standard).
-     * 3. An xpub (Watch-only).
-     */
     const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; }): Promise<Wallet | null> => {
         const { mnemonic, name } = params;
         const type = params.type || 'standard';
@@ -1347,9 +1318,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     const removeWallet = async (walletId: string) => {
-        // Delete from DB (cascades to addresses/txs)
         await dbDeleteWallet(walletId);
-        // Delete from Keychain
         await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
 
         const remaining = await dbGetWallets(NETWORK_NAME);
@@ -1372,7 +1341,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (error) { return null; }
     };
 
-    // Nuke everything (Debug/Dev tool)
     const resetWallet = async () => {
         const d = await dbGetWallets(NETWORK_NAME);
         for (const w of d) {
@@ -1384,31 +1352,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setActiveWallet(null);
     };
 
-    /**
-     * CREATE TRANSACTION (The "Send" Logic)
-     * 1. Fetches Private Key from Keychain.
-     * 2. Selects UTXOs (Coin Control).
-     * 3. Calculates Change (Total Input - Send Amount - Fee).
-     * 4. Signs inputs with PSBT.
-     */
     const createAndSignTransaction = async (
         recipient: string, amount: number, utxos: any[], feeRate: number
     ): Promise<{ txHex: string | null; usedChangeIndex: number | null }> => {
         if (!activeWallet) throw new Error("No active wallet.");
         if (activeWallet.type === 'watch-only') throw new Error("Watch-only wallets cannot sign transactions.");
 
-        // Retrieve sensitive keys
         const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${activeWallet.id}` });
         if (!credentials) throw new Error("Could not retrieve credentials.");
         const mnemonic = credentials.password;
         const seed = bip39.mnemonicToSeedSync(mnemonic);
         const root = bip32.fromSeed(seed, NETWORK);
 
-        // Prepare Change Address
         let verified_change_index = activeWallet.changeAddressIndex ?? 0;
         const change_addresses_set = new Set(activeWallet.derivedChangeAddresses.map(a => a.address));
 
-        // Scan forward to ensure the chosen index has exactly 0 previous transactions
         for (let i = verified_change_index; i < activeWallet.derivedChangeAddresses.length + 20; i++) {
             const info = activeWallet.derivedAddressInfoCache.find(c => c.index === i && change_addresses_set.has(c.address));
             if (!info || info.tx_count === 0) {
@@ -1434,11 +1392,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const psbt = new bitcoin.Psbt({ network: NETWORK });
             let totalInput = 0;
 
-            // Add Inputs
             for (const utxo of utxos) {
                 totalInput += utxo.value;
 
-                // Find the derivation path for this UTXO so we can sign it
                 const recvInfo = activeWallet.derivedReceiveAddresses.find(a => a.address === utxo.address);
                 const changeInfo = recvInfo ? null : activeWallet.derivedChangeAddresses.find(a => a.address === utxo.address);
 
@@ -1472,7 +1428,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 }
             };
 
-            // Calculate Fees and Change
             const { vsize, fee, change, numOutputs } = calculateTransactionMetrics(
                 utxos.length,
                 amount,
@@ -1484,7 +1439,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 throw new Error(`Insufficient funds. You need ${amount + fee} sats but only have ${totalInput}.`);
             }
 
-            // Add Outputs
             psbt.addOutput({ address: recipient, value: amount });
 
             let usedChangeIndex: number | null = null;
@@ -1493,9 +1447,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 usedChangeIndex = verified_change_index;
             }
 
-            // Sign Inputs
             utxos.forEach((utxo, index) => {
-                // Re-derive key for signing
                 const recvInfo = activeWallet.derivedReceiveAddresses.find(a => a.address === utxo.address);
                 const changeInfo = recvInfo ? null : activeWallet.derivedChangeAddresses.find(a => a.address === utxo.address);
                 const chain = changeInfo ? 1 : 0;
@@ -1515,7 +1467,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    // Called AFTER a transaction is broadcast to prevent address reuse
     const incrementChangeIndex = async (walletId: string, lastUsedIndex: number) => {
         if (activeWallet?.changeAddressIndex === lastUsedIndex) {
             const next = lastUsedIndex + 1;
@@ -1528,10 +1479,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setWallets(newWallets);
         }
     };
-
-    // ------------------------------------------------------------------
-    // ADDRESS BOOK UTILITIES
-    // ------------------------------------------------------------------
 
     const addSavedAddress = async (address: Omit<BitcoinAddress, 'id'>) => {
         const item = { ...address, id: uuidv4() };
