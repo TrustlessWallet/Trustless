@@ -20,7 +20,6 @@ import { bold } from '@expo/ui/swift-ui/modifiers';
 import { resolveLnurlOrAddress } from '../services/lnurl';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 
-
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
 const SHEET_CLOSED_OFFSET = 340;
@@ -71,7 +70,7 @@ const WalletScreen = () => {
     const { height: screenHeight } = useWindowDimensions();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme, screenHeight), [theme, screenHeight]);
-    
+
     const navigation = useNavigation<NavigationProp>();
     const insets = useSafeAreaInsets();
     const {
@@ -80,9 +79,9 @@ const WalletScreen = () => {
         triggerRefresh,
         lightningBalance,
         lightningTransactions,
-        isLightningInitialized
+        isLightningInitialized,
+        lightningInitError
     } = useWallet();
-
 
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
@@ -127,9 +126,17 @@ const WalletScreen = () => {
     const holdCharge = useRef(new Animated.Value(0)).current;
     const ring1 = useRef(new Animated.Value(0)).current;
     const ring2 = useRef(new Animated.Value(0)).current;
-    const nfcPulseAnim = useRef(new Animated.Value(1)).current; // New pulse anim
+    const nfcPulseAnim = useRef(new Animated.Value(1)).current;
 
-    // Reset hold charge when NFC scanning is finished/cancelled
+    const { data: onchainTransactions, isLoading: loadingTxs, refetch: refetchTxs } = useWalletTransactions(activeWallet?.id, queryAddresses);
+    const { data: utxos, refetch: refetchUtxos } = useWalletUTXOs(queryAddresses);
+
+    const isLightningLoading = activeWallet?.type !== 'watch-only' && !isLightningInitialized && !lightningInitError;
+
+    useEffect(() => {
+        console.log(`[UI - TOGGLE STATE] isLightningInitialized: ${isLightningInitialized}, isLightningLoading: ${isLightningLoading}, loadingTxs: ${loadingTxs}`);
+    }, [isLightningInitialized, isLightningLoading, loadingTxs]);
+
     useEffect(() => {
         if (!isScanningNfc) {
             Animated.timing(holdCharge, {
@@ -173,7 +180,6 @@ const WalletScreen = () => {
                 loop2.start();
             }, 650);
 
-            // Pulsing animation for the center NFC icon
             pulseLoop = Animated.loop(
                 Animated.sequence([
                     Animated.timing(nfcPulseAnim, {
@@ -289,20 +295,17 @@ const WalletScreen = () => {
             let shouldAutoConfirm = false;
 
             try {
-                // Try to manually resolve LNURLs and Lightning Addresses via the internet
                 const lnurlData = await resolveLnurlOrAddress(payload);
 
                 if (lnurlData && lnurlData.tag === 'payRequest') {
                     const minSats = Number(lnurlData.minSendable) / 1000;
                     const maxSats = Number(lnurlData.maxSendable) / 1000;
 
-                    // Auto-confirm ONLY if it's a fixed amount LNURL under the limit
                     if (minSats === maxSats && minSats > 0) {
                         invoiceSats = minSats;
                         shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
                     }
                 } else {
-                    // It was successfully fetched, but wasn't a payRequest, OR it's just a BOLT11
                     invoiceSats = extractSatsFromBolt11(payload);
                     shouldAutoConfirm = invoiceSats > 0 && invoiceSats <= limitSats;
                 }
@@ -375,9 +378,6 @@ const WalletScreen = () => {
             ...(activeWallet.derivedChangeAddresses.map(a => a.address) ?? [])
         ]);
     }, [activeWallet]);
-
-    const { data: onchainTransactions, isLoading: loadingTxs, refetch: refetchTxs } = useWalletTransactions(activeWallet?.id, queryAddresses);
-    const { data: utxos, refetch: refetchUtxos } = useWalletUTXOs(queryAddresses);
 
     useEffect(() => {
         const loadPreference = async () => {
@@ -491,7 +491,15 @@ const WalletScreen = () => {
                     <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
                 </View>
                 <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
-                    <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
+                    {isLightningLoading || loadingTxs ? (
+                        <ActivityIndicator
+                            size={18}
+                            color={isLightningMode ? theme.colors.inversePrimary : theme.colors.primary}
+                            style={{ transform: [{ scale: 0.8 }] }}
+                        />
+                    ) : (
+                        <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
+                    )}
                 </View>
             </View>
         </GlassView>
@@ -566,7 +574,7 @@ const WalletScreen = () => {
                                 activeOpacity={1}
                                 style={styles.toggleTouchable}
                                 onPress={toggleMode}
-                                disabled={!isLightningInitialized || activeWallet?.type === 'watch-only'}
+                                disabled={(!isLightningInitialized && !isLightningLoading) || activeWallet?.type === 'watch-only'}
                             >
                                 {activeWallet?.type !== 'watch-only' && toggleIconElement}
                             </TouchableOpacity>
