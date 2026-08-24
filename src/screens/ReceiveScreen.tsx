@@ -74,7 +74,6 @@ const ReceiveScreen = () => {
           <GlassView
             width={32}
             height={32}
-            borderRadius={16}
             shape="circle"
             interactive={true}
             style={{ overflow: 'visible' }}
@@ -241,21 +240,21 @@ const ReceiveScreen = () => {
     }
   };
 
-const handleRegisterAddress = async () => {
+  const handleRegisterAddress = async () => {
     const cleanUsername = addressUsername.trim().toLowerCase();
     if (!cleanUsername) return;
-    
+
     setIsRegisteringAddress(true);
     try {
       await registerLightningAddress(cleanUsername);
       setIsAddressModalVisible(false);
     } catch (error: any) {
       let errorMsg = error.message || "Failed to register address.";
-      
+
       if (errorMsg.toLowerCase().includes('networkerror') || errorMsg.toLowerCase().includes('conflict')) {
         errorMsg = "This username is already taken by someone else. Please choose a different one.";
       }
-      
+
       Alert.alert("Not available", errorMsg);
     } finally {
       setIsRegisteringAddress(false);
@@ -428,7 +427,6 @@ const handleRegisterAddress = async () => {
                   <GlassView
                     width={32}
                     height={32}
-                    borderRadius={16}
                     shape="circle"
                     interactive={true}
                     style={{ overflow: 'visible' }}
@@ -624,11 +622,9 @@ const handleRegisterAddress = async () => {
                         style={{
                           marginTop: 16,
                           shadowColor: theme.colors.primary,
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: isDark ? 0.15 : 0.1,
-                          shadowRadius: 4,
-                          elevation: 3,
-                          overflow: 'visible',
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: 0.25,
+                          shadowRadius: 2,
                         }}
                         onPress={() => {
                           if (lightningAddress) {
@@ -647,9 +643,16 @@ const handleRegisterAddress = async () => {
                           style={{ overflow: 'visible' }}
                         >
                           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%' }}>
-                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.colors.primary }} numberOfLines={1} ellipsizeMode="middle">
-                              {lightningAddress ? lightningAddress : 'Claim lightning address'}
-                            </Text>
+                            {lightningAddress ? (
+                              <Text style={{ fontSize: 14, fontWeight: 'bold' }} numberOfLines={1} ellipsizeMode="middle">
+                                <Text style={{ color: theme.colors.bitcoin }}>{lightningAddress.split('@')[0]}</Text>
+                                <Text style={{ color: theme.colors.primary }}>@{lightningAddress.split('@').slice(1).join('@')}</Text>
+                              </Text>
+                            ) : (
+                              <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.colors.primary }} numberOfLines={1} ellipsizeMode="middle">
+                                Claim lightning address
+                              </Text>
+                            )}
                             <Feather name="edit" size={14} color={theme.colors.primary} />
                           </View>
                         </GlassView>

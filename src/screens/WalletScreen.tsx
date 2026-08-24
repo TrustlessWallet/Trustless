@@ -577,7 +577,7 @@ const WalletScreen = () => {
                                         <Text
                                             style={[styles.walletName]}
                                             numberOfLines={1}
-                                            ellipsizeMode="tail"
+                                            ellipsizeMode="middle"
                                         >
                                             {activeWallet?.name || 'Wallet'}
                                         </Text>
