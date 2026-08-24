@@ -240,6 +240,15 @@ const ReceiveScreen = () => {
     }
   };
 
+  const handleDiscardAmount = () => {
+    setAppliedAmountSats(0);
+    setModalAmountStr('');
+    if (mode === 'lightning' && isLightningInitialized) {
+      setLightningInvoice(defaultLightningInvoice);
+      setIsGeneratingLightning(false);
+    }
+  };
+
   const handleRegisterAddress = async () => {
     const cleanUsername = addressUsername.trim().toLowerCase();
     if (!cleanUsername) return;
@@ -324,7 +333,7 @@ const ReceiveScreen = () => {
   const qrEncodeString = (appliedAmountSats === 0 && lightningAddress) ? `lightning:${lightningAddress}` : lightningInvoice;
 
   const rawAmountNum = parseFloat(modalAmountStr.replace(',', '.'));
-  const isAmountValid = !isNaN(rawAmountNum) && rawAmountNum > 0;
+  const isAmountValid = !isNaN(rawAmountNum) && rawAmountNum >= 0;
   const isAddressValid = addressUsername.trim().length > 0 && (!lightningAddress || addressUsername.trim().toLowerCase() !== lightningAddress.split('@')[0]);
 
   const memoizedOnchainQR = useMemo(() => {
@@ -367,7 +376,7 @@ const ReceiveScreen = () => {
       <Modal visible={isAmountModalVisible} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setIsAmountModalVisible(false)}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={Platform.OS === 'ios' ? 'position' : undefined}
             style={styles.keyboardAvoidingView}
           >
             <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
@@ -659,12 +668,35 @@ const ReceiveScreen = () => {
                       </Pressable>
                     ) : null}
 
-                    {appliedAmountSats > 0 && !isGeneratingLightning && (
-                      <Text style={styles.amountValue}>
-                        {appliedAmountSats.toLocaleString()}
-                        <Text style={styles.amountUnit}> sats</Text>
-                      </Text>
-                    )}
+                    {appliedAmountSats > 0 && !isGeneratingLightning ? (
+                      <View
+                        style={{
+                          marginTop: 16,
+                          shadowColor: theme.colors.primary,
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: 0.25,
+                          shadowRadius: 2,
+                        }}
+                      >
+                        <GlassView
+                          width={272}
+                          height={40}
+                          shape="capsule"
+                          interactive={true}
+                          style={{ overflow: 'visible' }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%' }}>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold' }} numberOfLines={1} ellipsizeMode="middle">
+                              <Text style={{ color: theme.colors.bitcoin }}>{appliedAmountSats.toLocaleString()}</Text>
+                              <Text style={{ color: theme.colors.primary }}> sats</Text>
+                            </Text>
+                            <Pressable hitSlop={8} onPress={handleDiscardAmount}>
+                              <Feather name="x" size={14} color={theme.colors.primary} />
+                            </Pressable>
+                          </View>
+                        </GlassView>
+                      </View>
+                    ) : null}
                   </View>
 
                   <View style={styles.actionsContainer}>
@@ -764,12 +796,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   addressLabelListText: {
     fontSize: 14,
     color: theme.colors.primary,
-  },
-  amountValue: {
-    marginTop: 8,
-    fontSize: 20,
-    color: theme.colors.primary,
-    textAlign: 'center',
   },
   amountUnit: {
     fontSize: 20,
@@ -928,18 +954,22 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+    overflow: 'hidden',
   },
   keyboardAvoidingView: {
     width: '100%',
-    alignItems: 'center',
+    maxWidth: 420,
   },
   modalContent: {
     width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
     backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -959,6 +989,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     marginTop: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   modalButtonDisabled: {
     opacity: 0.4,
