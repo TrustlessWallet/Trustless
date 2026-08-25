@@ -311,14 +311,6 @@ export const addressToScriptHash = (address: string): string => {
 
 /**
  * THE GATEKEEPER (Singleton Accessor)
- * * This function ensures we always return a valid, connected client.
- * * Logic Flow:
- * 1. If we already have a connected client for the correct network, return it.
- * 2. If a connection is currently being attempted (Promise exists), return that Promise.
- * 3. Otherwise, start a new connection process:
- * a. Check for a Custom Node URL in AsyncStorage.
- * b. If custom node fails or doesn't exist, iterate through the fallback PEERS list.
- * c. If all fail, throw an error.
  */
 export const getElectrumClient = async () => {
   // Reuse existing connection if valid
@@ -345,7 +337,6 @@ export const getElectrumClient = async () => {
         let allowSelfSigned = allowSelfSignedStr === 'true';
 
         if (custom) {
-          // Remove http/https prefix if user pasted it by accident
           custom = custom.replace(/^https?:\/\//, '');
 
           const parts = custom.split(':');
@@ -414,7 +405,6 @@ export const getElectrumClient = async () => {
 };
 
 // --- Exported Helper Wrappers ---
-// These functions abstract the JSON-RPC method names for the rest of the app.
 
 export const electrumGetBalance = async (scriptHash: string) => (await getElectrumClient()).request('blockchain.scripthash.get_balance', [scriptHash]);
 export const electrumGetHistory = async (scriptHash: string) => (await getElectrumClient()).request('blockchain.scripthash.get_history', [scriptHash]);

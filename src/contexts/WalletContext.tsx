@@ -225,9 +225,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     useEffect(() => {
         if (syncedWalletData && activeWallet) {
-            console.log(`[PERF - SYNC] syncedWalletData triggered for ${syncedWalletData.length} addresses at`, Date.now());
-            const tSync = Date.now();
-            
             dbUpdateAddressInfoBatch(syncedWalletData);
 
             setActiveWallet(prev => {
@@ -247,10 +244,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             // DEFER: Push UTXO scanning to macro task queue so it doesn't block UI renders
             setTimeout(() => {
                 InteractionManager.runAfterInteractions(() => {
-                    console.log(`[PERF - DEFERRED] Executing deferred UTXO scan`);
-                    scanAndNameUtxos().finally(() => {
-                        console.log(`[PERF - SYNC] Finished syncing data & UTXOs in ${Date.now() - tSync}ms`);
-                    });
+                    scanAndNameUtxos().catch((e) => console.error("Deferred UTXO scan failed", e));
                 });
             }, 1000);
         }
@@ -294,8 +288,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const refreshLightningState = async () => {
         if (!activeSdkInstance) return;
         try {
-            console.log(`[PERF - BREEZ SDK] Starting refreshLightningState at`, Date.now());
-            const tRefresh = Date.now();
             const info = await activeSdkInstance.getInfo({ ensureSynced: true });
             setLightningBalance(Number(info.balanceSats ?? 0));
             try {
@@ -395,7 +387,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             });
 
             setLightningTransactions(formattedTxs);
-            console.log(`[PERF - BREEZ SDK] Finished refreshLightningState in ${Date.now() - tRefresh}ms`);
         } catch (error) {
             console.error("Failed to fetch Lightning state:", error);
         }
@@ -403,8 +394,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const initLightningNode = async (mnemonic: string) => {
         try {
-            console.log(`[PERF - LIGHTNING] Starting initLightningNode at`, Date.now());
-            const t2 = Date.now();
             const apiKey = process.env.EXPO_PUBLIC_BREEZ_API_KEY;
 
             setLightningInitAttempted(true);
@@ -440,14 +429,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 mnemonic: mnemonic.toLowerCase().trim()
             } as any);
 
-            console.log(`[PERF - BREEZ SDK] Starting breezSdk.connect`);
-            const tConnect = Date.now();
             const sdk = await breezSdk.connect({
                 config,
                 seed,
                 storageDir: storageDir.uri.replace('file://', '')
             });
-            console.log(`[PERF - BREEZ SDK] Finished breezSdk.connect in ${Date.now() - tConnect}ms`);
 
             activeSdkInstance = sdk;
             setLightningInitError(null);
@@ -463,11 +449,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 });
             }
 
-            // Sync the node completely before releasing the UI loading state
             await refreshLightningState();
-            
             setIsLightningInitialized(true);
-            console.log(`[PERF - LIGHTNING] Finished initLightningNode in ${Date.now() - t2}ms`);
         } catch (error: any) {
             const formattedError = formatLightningInitError(error);
             console.error("Breez initialization failed:", formattedError);
@@ -737,9 +720,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             throw new Error(`Invalid fee tier: ${feeTier}`);
         }
 
-        console.log('Withdrawal fee tier:', feeTier, '-> speed:', speed, 'type:', typeof speed);
-        console.log('Available enum values:', breezSdk.OnchainConfirmationSpeed);
-
         try {
             const options = new breezSdk.SendPaymentOptions.BitcoinAddress({
                 confirmationSpeed: speed
@@ -927,19 +907,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
-        console.log(`[PERF - LOAD WALLET] Starting loadAndSetActiveWallet for id: ${walletId} at`, Date.now());
-        const t0 = Date.now();
         let wallet = await buildActiveWallet(walletId);
-        console.log(`[PERF - LOAD WALLET] buildActiveWallet took ${Date.now() - t0}ms`);
         if (!wallet) return false;
 
         try {
-            const t1 = Date.now();
             const root = await getRootNode(wallet);
-            console.log(`[PERF - LOAD WALLET] getRootNode took ${Date.now() - t1}ms`);
             const is_watch_only = wallet.type === 'watch-only';
             const script_type = wallet.scriptType || 'p2wpkh';
             let derived_new = false;
+
+            // Reset lightning state immediately to prevent stale states on switch
+            setIsLightningInitialized(false);
+            setLightningInitError(null);
 
             // --- LIGHTNING INIT (DEFERRED) ---
             if (!is_watch_only) {
@@ -948,10 +927,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     // DEFER: Push Lightning initialization to macro task queue so UI renders first
                     setTimeout(() => {
                         InteractionManager.runAfterInteractions(() => {
-                            console.log(`[PERF - DEFERRED] Executing deferred Lightning Init`);
-                            initLightningNode(credentials.password);
+                            initLightningNode(credentials.password).catch((e) => console.error("Deferred Lightning Init failed", e));
                         });
-                    }, 800); // 800ms covers typical splash screen fade out and initial queries
+                    }, 800);
                 } else {
                     setIsLightningInitialized(false);
                     setLightningInitAttempted(false);
@@ -1008,8 +986,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             };
 
             // --- RECEIVE CHAIN ---
-            console.log(`[PERF - GAP LIMIT] Starting Receive Chain derivation check`);
-            const t3 = Date.now();
             let consecutive_unused_receive = 0;
             const max_rx = wallet.derivedReceiveAddresses.length;
 
@@ -1049,11 +1025,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 receive_index += batch_size;
                 if (receive_index > 500) break;
             }
-            console.log(`[PERF - GAP LIMIT] Finished Receive Chain derivation check in ${Date.now() - t3}ms`);
 
             // --- CHANGE CHAIN ---
-            console.log(`[PERF - GAP LIMIT] Starting Change Chain derivation check`);
-            const t4 = Date.now();
             let consecutive_unused_change = 0;
             const max_ch = wallet.derivedChangeAddresses.length;
 
@@ -1093,7 +1066,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 change_index += batch_size;
                 if (change_index > 500) break;
             }
-            console.log(`[PERF - GAP LIMIT] Finished Change Chain derivation check in ${Date.now() - t4}ms`);
 
             if (derived_new) {
                 wallet = await buildActiveWallet(walletId);
@@ -1111,55 +1083,58 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
+    // FAST-PATH BOOTSTRAP
     useEffect(() => {
         const bootstrap = async () => {
-            console.log('[PERF - BOOTSTRAP] Starting bootstrap sequence at', Date.now());
             setLoading(true);
             setLoadingSavedAddresses(true);
             try {
                 const walletsFromDb = await dbGetWallets(NETWORK_NAME);
-                console.log('[PERF - BOOTSTRAP] Finished dbGetWallets');
                 setWallets(walletsFromDb);
 
-                let activeId: string | null = null;
-                const activeIdCreds = await Keychain.getGenericPassword({ service: ACTIVE_WALLET_KEY });
-                if (activeIdCreds) activeId = activeIdCreds.password;
-
-                if (walletsFromDb.length > 0) {
-                    let currentId = activeId;
-                    if (!currentId || !walletsFromDb.find(w => w.id === currentId)) {
-                        currentId = walletsFromDb[0].id;
-                    }
-
-                    console.log('[PERF - BOOTSTRAP] Starting loadAndSetActiveWallet for', currentId);
-                    let success = await loadAndSetActiveWallet(currentId);
-                    console.log('[PERF - BOOTSTRAP] Finished loadAndSetActiveWallet, success:', success);
-
-                    if (!success) {
-                        console.warn("Active wallet failed to load. Attempting fallback...");
-                        for (const w of walletsFromDb) {
-                            if (w.id === currentId) continue;
-                            success = await loadAndSetActiveWallet(w.id);
-                            if (success) {
-                                await Keychain.setGenericPassword('user', w.id, { service: ACTIVE_WALLET_KEY });
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    setWallets([]);
+                // Zero wallet edge-case optimization: skip keychain and address book calls
+                if (walletsFromDb.length === 0) {
                     setActiveWallet(null);
+                    setSavedAddresses([]);
+                    setLoading(false);
+                    setLoadingSavedAddresses(false);
+                    return;
                 }
 
-                const saved = await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses');
-                setSavedAddresses(saved);
+                // Existing wallets: fetch active ID and address book concurrently
+                let activeId: string | null = null;
+                const [activeIdCreds, saved] = await Promise.all([
+                    Keychain.getGenericPassword({ service: ACTIVE_WALLET_KEY }).catch(() => null),
+                    dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses').catch(() => [])
+                ]);
 
+                if (activeIdCreds) activeId = activeIdCreds.password;
+                setSavedAddresses(saved);
+                setLoadingSavedAddresses(false);
+
+                let currentId = activeId;
+                if (!currentId || !walletsFromDb.find(w => w.id === currentId)) {
+                    currentId = walletsFromDb[0].id;
+                }
+
+                let success = await loadAndSetActiveWallet(currentId);
+
+                if (!success) {
+                    console.warn("Active wallet failed to load. Attempting fallback...");
+                    for (const w of walletsFromDb) {
+                        if (w.id === currentId) continue;
+                        success = await loadAndSetActiveWallet(w.id);
+                        if (success) {
+                            await Keychain.setGenericPassword('user', w.id, { service: ACTIVE_WALLET_KEY });
+                            break;
+                        }
+                    }
+                }
             } catch (error) {
                 console.error("DEBUG: Failed to bootstrap wallet:", error);
             } finally {
                 setLoading(false);
                 setLoadingSavedAddresses(false);
-                console.log('[PERF - BOOTSTRAP] Finished bootstrap sequence at', Date.now());
             }
         };
         bootstrap();
@@ -1289,6 +1264,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setWallets(newWallets);
 
         if (isFirstWallet) {
+            dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses')
+                .then(setSavedAddresses)
+                .catch(() => {});
             await Keychain.setGenericPassword('user', newWalletId, { service: ACTIVE_WALLET_KEY });
             await loadAndSetActiveWallet(newWalletId);
         } else {
