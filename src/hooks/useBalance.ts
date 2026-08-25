@@ -4,14 +4,17 @@ import { BitcoinAddress, Transaction } from '../types';
 import { dbGetTransactions, dbSaveTransactions } from '../services/database';
 import { NETWORK_NAME } from '../constants/network';
 import { useState, useEffect } from 'react';
-import { getTipHeight } from '../services/bitcoin'; 
+import { getTipHeight } from '../services/bitcoin';
 
 export const useBalance = (address: string) => {
   return useQuery({
     queryKey: ['balance', address],
-    queryFn: () => fetchBitcoinBalance(address),
+    queryFn: async () => {
+        if (!address) return 0;
+        return await fetchBitcoinBalance(address);
+    },
     enabled: !!address,
-    staleTime: 30000, 
+    staleTime: 30000,
     retry: false,
   });
 };
@@ -21,13 +24,13 @@ export const useWalletBalanceSync = (
     addresses: string[]
 ) => {
     return useQuery({
-        queryKey: ['wallet-balances', walletId, addresses.length], 
+        queryKey: ['wallet-balances', walletId, addresses.length],
         queryFn: async () => {
             if (!walletId || addresses.length === 0) return [];
             return await fetchAddressInfoBatch(addresses);
         },
         enabled: !!walletId && addresses.length > 0,
-        refetchOnWindowFocus: true, 
+        refetchOnWindowFocus: true,
         staleTime: 60000,
         retry: false,
     });
@@ -72,12 +75,11 @@ export const useWalletTransactions = (walletId: string | undefined, addresses: s
         console.warn("Failed to load txs from DB", e);
         if (isMounted) setIsDbLoaded(true);
     });
-
     return () => { isMounted = false; };
   }, [walletId]);
 
   const query = useQuery({
-    queryKey: ['wallet-transactions', walletId, addresses.length], 
+    queryKey: ['wallet-transactions', walletId, addresses.length],
     queryFn: async () => {
          if (!walletId || addresses.length === 0) return [];
          const newTxs = await fetchAddressTransactions(addresses);
@@ -89,39 +91,44 @@ export const useWalletTransactions = (walletId: string | undefined, addresses: s
          return newTxs;
     },
     enabled: !!walletId && addresses.length > 0,
-    staleTime: 60000, // Increased to 60s to prevent excessive refetching during list scrolling
+    staleTime: 60000, 
     refetchOnMount: false,
     refetchOnWindowFocus: true,
     retry: false,
   });
 
-  // Ensure DB transactions show immediately, replaced by query data when fetch completes
   const transactions = (query.data && query.data.length > 0) ? query.data : cachedTxs;
-  
   const isLoading = !isDbLoaded || (query.isLoading && transactions.length === 0);
 
   return { 
-      ...query, 
-      data: transactions,
-      isLoading 
-  };
+       ...query, 
+       data: transactions,
+       isLoading 
+   };
 };
 
 export const useWalletUTXOs = (addresses: string[]) => {
   return useQuery({
     queryKey: ['wallet-utxos', addresses.length],
-    queryFn: () => fetchUTXOs(addresses),
+    queryFn: async () => {
+        if (addresses.length === 0) return [];
+        return await fetchUTXOs(addresses);
+    },
     enabled: addresses.length > 0,
     staleTime: 30000,
     retry: false,
   });
 };
 
-export const useTipHeight = () => {
+export const useTipHeight = (enabled: boolean = true) => {
   return useQuery({
     queryKey: ['tip-height'],
-    queryFn: getTipHeight,
+    queryFn: async () => {
+        if (!enabled) return 0;
+        return await getTipHeight();
+    },
     staleTime: 60000 * 5,
     retry: false,
+    enabled,
   });
 };

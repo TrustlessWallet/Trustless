@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Dimensions, Alert, Modal, Pressable, PanResponder, Vibration, Easing, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { scanLightningInvoice, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,7 +16,6 @@ import { formatBitcoinAddressShort } from '../constants/format';
 import { useWalletTransactions, useWalletUTXOs, useTipHeight } from '../hooks/useBalance';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GlassView } from '../components/GlassView';
-import { bold } from '@expo/ui/swift-ui/modifiers';
 import { resolveLnurlOrAddress } from '../services/lnurl';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -66,11 +65,10 @@ const safeHaptic = (style: any) => {
 };
 
 const WalletScreen = () => {
-    useTipHeight();
     const { height: screenHeight } = useWindowDimensions();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme, screenHeight), [theme, screenHeight]);
-
+    
     const navigation = useNavigation<NavigationProp>();
     const insets = useSafeAreaInsets();
     const {
@@ -82,6 +80,8 @@ const WalletScreen = () => {
         isLightningInitialized,
         lightningInitError
     } = useWallet();
+
+    useTipHeight(!!activeWallet);
 
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
@@ -132,10 +132,6 @@ const WalletScreen = () => {
     const { data: utxos, refetch: refetchUtxos } = useWalletUTXOs(queryAddresses);
 
     const isLightningLoading = activeWallet?.type !== 'watch-only' && !isLightningInitialized && !lightningInitError;
-
-    useEffect(() => {
-        console.log(`[UI - TOGGLE STATE] isLightningInitialized: ${isLightningInitialized}, isLightningLoading: ${isLightningLoading}, loadingTxs: ${loadingTxs}`);
-    }, [isLightningInitialized, isLightningLoading, loadingTxs]);
 
     useEffect(() => {
         if (!isScanningNfc) {
@@ -492,10 +488,10 @@ const WalletScreen = () => {
                 </View>
                 <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
                     {isLightningLoading || loadingTxs ? (
-                        <ActivityIndicator
-                            size={18}
-                            color={isLightningMode ? theme.colors.inversePrimary : theme.colors.primary}
-                            style={{ transform: [{ scale: 0.8 }] }}
+                        <ActivityIndicator 
+                            size={18} 
+                            color={isLightningMode ? theme.colors.inversePrimary : theme.colors.primary} 
+                            style={{ transform: [{ scale: 0.8 }] }} 
                         />
                     ) : (
                         <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />

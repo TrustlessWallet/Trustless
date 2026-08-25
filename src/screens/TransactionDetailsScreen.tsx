@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { validateBitcoinAddress, getTransactionDetails } from '../services/bitcoin';
 import { useTipHeight } from '../hooks/useBalance';
 import { useQuery } from '@tanstack/react-query';
-import { GlassView } from '../components/GlassView'; // <-- Added Import
+import { GlassView } from '../components/GlassView';
 
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionDetails'>;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -42,15 +42,13 @@ const TransactionDetailsScreen = () => {
   const styles = useMemo(() => getStyles(theme), [theme]);
   const [hideBalance, setHideBalance] = useState(false);
 
-  // --- ADDED LOGS ---
   useEffect(() => {
     console.log("DEBUG: TransactionDetailsScreen Mounted");
     console.log("DEBUG: Route Params:", route.params);
     console.log("DEBUG: Lightning Transactions Count:", lightningTransactions?.length);
   }, []);
-  // ------------------
 
-  // --- ADDED GLASS CLOSE BUTTON ---
+
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -58,9 +56,9 @@ const TransactionDetailsScreen = () => {
           <GlassView
             width={32}
             height={32}
-            borderRadius={16}
             shape="circle"
             interactive={true}
+            style={{ overflow: 'visible' }}
           >
             <Feather name="x" size={20} color={theme.colors.primary} />
           </GlassView>
@@ -68,7 +66,6 @@ const TransactionDetailsScreen = () => {
       ),
     });
   }, [navigation, theme.colors.primary]);
-  // --------------------------------
 
   const { data: tipHeight } = useTipHeight();
 
@@ -123,7 +120,7 @@ const TransactionDetailsScreen = () => {
           txid: queryTxId,
           type: 'send', // Assuming send based on context
           status: { confirmed: false },
-          amount: 0, // We don't have the amount, unfortunately
+          amount: 0,
           fee: 0,
         } as unknown as Transaction;
       }
