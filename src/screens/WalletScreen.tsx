@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { scanLightningInvoice, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,9 +68,10 @@ const WalletScreen = () => {
     const { height: screenHeight } = useWindowDimensions();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme, screenHeight), [theme, screenHeight]);
-    
+
     const navigation = useNavigation<NavigationProp>();
     const insets = useSafeAreaInsets();
+
     const {
         activeWallet,
         loading: walletLoading,
@@ -82,6 +83,10 @@ const WalletScreen = () => {
     } = useWallet();
 
     useTipHeight(!!activeWallet);
+
+    useEffect(() => {
+        console.log('[WalletScreen insets]', JSON.stringify(insets), 'screenHeight:', screenHeight, 'activeWallet:', !!activeWallet);
+    }, [insets, activeWallet, screenHeight]);
 
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
@@ -488,10 +493,10 @@ const WalletScreen = () => {
                 </View>
                 <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
                     {isLightningLoading || loadingTxs ? (
-                        <ActivityIndicator 
-                            size={18} 
-                            color={isLightningMode ? theme.colors.inversePrimary : theme.colors.primary} 
-                            style={{ transform: [{ scale: 0.8 }] }} 
+                        <ActivityIndicator
+                            size={18}
+                            color={isLightningMode ? theme.colors.inversePrimary : theme.colors.primary}
+                            style={{ transform: [{ scale: 0.8 }] }}
                         />
                     ) : (
                         <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
@@ -563,6 +568,12 @@ const WalletScreen = () => {
                     { useNativeDriver: true }
                 )}
                 scrollEventThrottle={16}
+
+                contentContainerStyle={[
+                    styles.listContent,
+                    { paddingTop: insets.top, paddingBottom: insets.bottom + 110 }
+                ]}
+
                 ListHeaderComponent={
                     <View style={styles.topSection}>
                         <View style={styles.headerRow}>
@@ -703,7 +714,6 @@ const WalletScreen = () => {
                         <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> :
                         <Text style={styles.noTxText}>No transactions yet</Text>
                 }
-                contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                     <RefreshControl
@@ -798,7 +808,6 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
     },
     listContent: {
         flexGrow: 1,
-        paddingVertical: 56,
     },
     centeredContainer: {
         flex: 1,
