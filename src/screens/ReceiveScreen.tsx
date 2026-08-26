@@ -29,7 +29,6 @@ const ReceiveScreen = () => {
   const route = useRoute<ReceiveScreenRouteProp>();
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
-
   const {
     activeWallet,
     loading: wallet_loading,
@@ -55,7 +54,6 @@ const ReceiveScreen = () => {
 
   const [lightningInvoice, setLightningInvoice] = useState<string>('');
   const [isGeneratingLightning, setIsGeneratingLightning] = useState(false);
-
   const [isAmountModalVisible, setIsAmountModalVisible] = useState(false);
   const [modalAmountStr, setModalAmountStr] = useState('');
   const [appliedAmountSats, setAppliedAmountSats] = useState<number>(0);
@@ -212,7 +210,6 @@ const ReceiveScreen = () => {
   const handleSaveAmount = async () => {
     const cleanAmount = modalAmountStr.replace(',', '.');
     const amountNum = parseFloat(cleanAmount);
-
     if (!modalAmountStr || isNaN(amountNum) || amountNum <= 0) {
       setAppliedAmountSats(0);
       setIsAmountModalVisible(false);
@@ -222,7 +219,6 @@ const ReceiveScreen = () => {
       }
       return;
     }
-
     const sats = parseInt(cleanAmount, 10);
     setAppliedAmountSats(sats);
     setIsAmountModalVisible(false);
@@ -259,11 +255,9 @@ const ReceiveScreen = () => {
       setIsAddressModalVisible(false);
     } catch (error: any) {
       let errorMsg = error.message || "Failed to register address.";
-
       if (errorMsg.toLowerCase().includes('networkerror') || errorMsg.toLowerCase().includes('conflict')) {
         errorMsg = "This username is already taken by someone else. Please choose a different one.";
       }
-
       Alert.alert("Not available", errorMsg);
     } finally {
       setIsRegisteringAddress(false);
@@ -328,7 +322,6 @@ const ReceiveScreen = () => {
   }, [activeWallet]);
 
   const loading_info = wallet_loading || !activeWallet;
-
   const currentLnString = (appliedAmountSats === 0 && lightningAddress) ? lightningAddress : lightningInvoice;
   const qrEncodeString = (appliedAmountSats === 0 && lightningAddress) ? `lightning:${lightningAddress}` : lightningInvoice;
 
@@ -514,27 +507,50 @@ const ReceiveScreen = () => {
                 padLastLine
               />
 
-              {isEditingLabel ? (
-                <View style={styles.addressLabelPill}>
-                  <TextInput
-                    style={styles.addressLabelInput}
-                    value={labelInput}
-                    onChangeText={setLabelInput}
-                    onBlur={saveLabel}
-                    onSubmitEditing={saveLabel}
-                    autoFocus
-                    returnKeyType="done"
-                    selectTextOnFocus
-                    keyboardAppearance={isDark ? 'dark' : 'light'}
-                    placeholderTextColor={theme.colors.muted}
-                  />
-                </View>
-              ) : (
-                <TouchableOpacity style={styles.addressLabelPill} onPress={startEditingLabel}>
-                  <Text style={styles.addressLabelText}>{current_display_data.label || defaultAddressName}</Text>
-                  <Feather name="edit" size={14} color={theme.colors.primary} />
-                </TouchableOpacity>
-              )}
+              <View
+                style={{
+                  marginTop: 16,
+                  shadowColor: theme.colors.primary,
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 2,
+                }}
+              >
+                <GlassView
+                  width={272}
+                  height={40}
+                  shape="capsule"
+                  interactive={true}
+                  style={{ overflow: 'visible' }}
+                >
+                  {isEditingLabel ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }}>
+                      <TextInput
+                        style={styles.addressLabelInput}
+                        value={labelInput}
+                        onChangeText={setLabelInput}
+                        onBlur={saveLabel}
+                        onSubmitEditing={saveLabel}
+                        autoFocus
+                        returnKeyType="done"
+                        selectTextOnFocus
+                        keyboardAppearance={isDark ? 'dark' : 'light'}
+                        placeholderTextColor={theme.colors.muted}
+                      />
+                    </View>
+                  ) : (
+                    <Pressable 
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }} 
+                      onPress={startEditingLabel}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.colors.primary }} numberOfLines={1} ellipsizeMode="middle">
+                        {current_display_data.label || defaultAddressName}
+                      </Text>
+                      <Feather name="edit" size={14} color={theme.colors.primary} />
+                    </Pressable>
+                  )}
+                </GlassView>
+              </View>
             </View>
 
             <View style={styles.actionsContainer}>
@@ -542,6 +558,7 @@ const ReceiveScreen = () => {
                 <Feather name="copy" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>Copy</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.actionButton, loading_info && styles.actionButtonDisabled]}
                 onPress={handle_next_address}
@@ -550,6 +567,7 @@ const ReceiveScreen = () => {
                 <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>New address</Text>
               </TouchableOpacity>
+
               <TouchableOpacity style={styles.actionButton} onPress={() => on_share(current_display_data.address)}>
                 <Feather name="share-2" size={24} color={theme.colors.primary} />
                 <Text style={styles.actionButtonText}>Share</Text>
@@ -651,7 +669,7 @@ const ReceiveScreen = () => {
                           interactive={true}
                           style={{ overflow: 'visible' }}
                         >
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }}>
                             {lightningAddress ? (
                               <Text style={{ fontSize: 14, fontWeight: 'bold' }} numberOfLines={1} ellipsizeMode="middle">
                                 <Text style={{ color: theme.colors.bitcoin }}>{lightningAddress.split('@')[0]}</Text>
@@ -685,7 +703,7 @@ const ReceiveScreen = () => {
                           interactive={true}
                           style={{ overflow: 'visible' }}
                         >
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }}>
                             <Text style={{ fontSize: 14, fontWeight: 'bold' }} numberOfLines={1} ellipsizeMode="middle">
                               <Text style={{ color: theme.colors.bitcoin }}>{appliedAmountSats.toLocaleString()}</Text>
                               <Text style={{ color: theme.colors.primary }}> sats</Text>
@@ -764,24 +782,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginBottom: 0,
-  },
-  addressLabelPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.surface,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    gap: 8,
-  },
-  addressLabelText: {
-    color: theme.colors.primary,
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: 'SpaceMono-Regular',
   },
   addressLabelInput: {
     color: theme.colors.primary,
