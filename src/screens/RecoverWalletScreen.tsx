@@ -175,7 +175,7 @@ const RecoverWalletScreen = () => {
 const get_styles = (theme: Theme) => StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: theme.colors.background 
+    backgroundColor: theme.colors.background,
   },
   scroll_container: {
     flexGrow: 1,
@@ -225,10 +225,12 @@ const get_styles = (theme: Theme) => StyleSheet.create({
   },
   suggestions_wrapper: {
     marginVertical: 16,
+    marginHorizontal: -24,
   },
   suggestions_scroll_content: {
     alignItems: 'center',
     gap: 8,
+    paddingHorizontal: 24,
   },
   suggestion_button: {
     backgroundColor: theme.colors.surface,
