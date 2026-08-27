@@ -913,8 +913,6 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
     },
     balanceSideSpacerRight: {
         flex: 1,
-        alignItems: 'flex-start',
-        paddingLeft: 16,
     },
     balanceContainer: {
         alignItems: 'center',
