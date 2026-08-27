@@ -123,7 +123,6 @@ const SendScreen = () => {
     const isWatchOnly = activeWallet?.type === 'watch-only';
 
     const mode = route.params?.mode || 'onchain';
-    const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
     const [recipientAddress, setRecipientAddress] = useState('');
     const [isRecipientAddressFocused, setIsRecipientAddressFocused] = useState(false);
@@ -157,16 +156,6 @@ const SendScreen = () => {
             setRecipientAddress(text);
         }
     };
-
-    useEffect(() => {
-        const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-        const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
-
-        return () => {
-            keyboardDidHideListener.remove();
-            keyboardDidShowListener.remove();
-        };
-    }, []);
 
     useEffect(() => {
         if (route.params?.selectedAddress) {
@@ -246,11 +235,14 @@ const SendScreen = () => {
         return () => { isMounted = false; };
     }, [lightningInvoice, mode]);
 
-    // --- SMART LNURL FEE ESTIMATOR ---
+    // --- LIGHTNING FEE ESTIMATOR ---
     useEffect(() => {
         let isMounted = true;
 
-        if (!lnurlData || !lnAmount || isNaN(Number(lnAmount))) {
+        const sats = parseInt(lnAmount, 10);
+        
+        // Bail out if amount is invalid or invoice string is empty
+        if (isNaN(sats) || sats <= 0 || !lightningInvoice.trim()) {
             if (isMounted) {
                 setLnFeeEstimate(null);
                 setEstimatingLnFee(false);
@@ -258,48 +250,44 @@ const SendScreen = () => {
             return;
         }
 
-        const sats = parseInt(lnAmount, 10);
-        if (sats <= 0) return;
-
-        // CRITICAL: If the keyboard is actively open, the user is still typing. 
-        // Do NOT hit the server or estimate fees yet.
-        if (isKeyboardVisible) {
-            return;
-        }
-
-        // Once the keyboard is hidden (or if it never opened because they pasted), fetch the invoice!
         const fetchAndEstimate = async () => {
             if (!isMounted) return;
             setEstimatingLnFee(true);
 
             try {
-                // 1. Fetch the BOLT11 invoice for the finalized amount
-                const invoicePr = await fetchLnurlInvoice(lnurlData.callback, sats * 1000);
-
-                if (!isMounted) return;
-
-                // 2. Feed this newly fetched BOLT11 string into the exact same 
-                // fee estimation function you are already using in this screen for BOLT11s!
-                const estimatedFee = await estimateLightningFee(invoicePr); // <-- Update to match your WalletContext function
+                let estimatedFee: number | null = null;
+                
+                if (lnurlData) {
+                    // 1. LNURL: Fetch the BOLT11 invoice for the finalized amount
+                    const invoicePr = await fetchLnurlInvoice(lnurlData.callback, sats * 1000);
+                    if (!isMounted) return;
+                    estimatedFee = await estimateLightningFee(invoicePr);
+                } else {
+                    // 2. BOLT11: Estimate directly. Pass amount if it's an amountless invoice.
+                    estimatedFee = await estimateLightningFee(
+                        lightningInvoice.trim(), 
+                        hasFixedAmount ? undefined : sats
+                    );
+                }
 
                 if (isMounted) setLnFeeEstimate(estimatedFee);
 
             } catch (e) {
-                console.log("[LNURL] Could not pre-fetch invoice for fee estimation:", e);
+                console.log("[Lightning] Fee estimation failed:", e);
                 if (isMounted) setLnFeeEstimate(null);
             } finally {
                 if (isMounted) setEstimatingLnFee(false);
             }
         };
 
-        // Add a tiny 300ms buffer just to let animations settle, then execute
-        const timeout = setTimeout(fetchAndEstimate, 300);
+        // 800ms debounce, executes consistently whether typing or pasted
+        const timeout = setTimeout(fetchAndEstimate, 800);
 
         return () => {
             isMounted = false;
             clearTimeout(timeout);
         };
-    }, [lnAmount, lnurlData, isKeyboardVisible]);
+    }, [lnAmount, lnurlData, lightningInvoice, hasFixedAmount, estimateLightningFee]);
 
     const getBalance = React.useCallback(async (bypassCache: boolean = false) => {
         const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
@@ -381,7 +369,6 @@ const SendScreen = () => {
             if (usedChangeIndex !== null && activeWallet) {
                 await incrementChangeIndex(activeWallet.id, usedChangeIndex);
             }
-
 
             const txId = await broadcastTransaction(txHex);
 
