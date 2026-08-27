@@ -419,9 +419,14 @@ const ReceiveScreen = () => {
           >
             <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  {lightningAddress ? 'Change lightning address' : 'Claim lightning address'}
-                </Text>
+                <View>
+                  <Text style={styles.modalTitle}>
+                    {lightningAddress ? 'Change lightning address' : 'Claim lightning address'}
+                  </Text>
+                  <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 4 }}>
+                    You can always change it later
+                  </Text>
+                </View>
                 <Pressable
                   onPress={() => !isRegisteringAddress && setIsAddressModalVisible(false)}
                   disabled={isRegisteringAddress}
@@ -539,8 +544,8 @@ const ReceiveScreen = () => {
                       />
                     </View>
                   ) : (
-                    <Pressable 
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }} 
+                    <Pressable
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }}
                       onPress={startEditingLabel}
                     >
                       <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.colors.primary }} numberOfLines={1} ellipsizeMode="middle">
@@ -967,6 +972,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 20,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: theme.colors.border,
     overflow: 'hidden',
@@ -975,7 +981,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 16,
@@ -986,7 +992,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     backgroundColor: theme.colors.primary,
     height: 52,
     borderRadius: 8,
-    marginTop: 12,
+    marginTop: 16,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
