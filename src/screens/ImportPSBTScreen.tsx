@@ -11,6 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import { URDecoder } from '@ngraveio/bc-ur';
 import { Buffer } from 'buffer';
 import { finalizeAndBroadcastPSBT } from '../services/bitcoin';
+import { useWallet } from '../contexts/WalletContext';
 
 type RouteParams = RouteProp<RootStackParamList, 'ImportPSBT'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ImportPSBT'>;
@@ -21,10 +22,11 @@ const ImportPSBTScreen = () => {
     const isFocused = useIsFocused();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
+    
+    const { triggerRefresh } = useWallet();
 
     const [permission, requestPermission] = useCameraPermissions();
     const [scanned, setScanned] = useState(false);
-
     const [decoder] = useState(() => new URDecoder());
     const [progress, setProgress] = useState(0);
 
@@ -63,14 +65,11 @@ const ImportPSBTScreen = () => {
 
     const handleBarCodeScanned = ({ data }: { data: string }) => {
         if (scanned) return;
-
         try {
             let psbtBase64 = '';
-
             if (data.toLowerCase().startsWith('ur:')) {
                 decoder.receivePart(data);
                 setProgress(decoder.getProgress());
-
                 if (decoder.isComplete()) {
                     if (decoder.isSuccess()) {
                         setScanned(true);
@@ -103,13 +102,32 @@ const ImportPSBTScreen = () => {
                     loading: false,
                     onConfirm: async () => {
                         try {
-                            await finalizeAndBroadcastPSBT(unsignedPsbtBase64, psbtBase64);
+                            const txId = await finalizeAndBroadcastPSBT(unsignedPsbtBase64, psbtBase64);
+                            
+                            triggerRefresh();
 
-                            Alert.alert(
-                                'Transaction sent!',
-                                'Your signed transaction has been broadcasted.',
-                                [{ text: 'OK', onPress: () => navigation.popToTop() }]
-                            );
+                            const safeAmount = amount ? String(amount) : '0';
+                            const cleanAmount = safeAmount.replace(',', '.');
+                            const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
+
+                            const pendingTx = {
+                                txid: txId,
+                                type: 'send',
+                                amount: amountSatoshis || 0,
+                                fee: fee || 0,
+                                status: { confirmed: false, block_time: Math.floor(Date.now() / 1000) }
+                            };
+
+                            navigation.popToTop();
+
+                            setTimeout(() => {
+                                navigation.navigate('TransactionSuccess', {
+                                    type: 'onchain',
+                                    txId,
+                                    transaction: pendingTx as any
+                                });
+                            }, 500);
+
                         } catch (error) {
                             console.error(error);
                             Alert.alert('Broadcast Error', error instanceof Error ? error.message : 'Failed to finalize and broadcast the transaction.');
@@ -164,7 +182,6 @@ const ImportPSBTScreen = () => {
             )}
             <View style={styles.overlay}>
                 <View style={styles.scanArea} />
-
                 <View style={styles.instructionContainer}>
                     <View style={styles.instructionHeader}>
                         <Feather name="maximize" size={24} color={theme.colors.primary} />
@@ -243,11 +260,11 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     progressBarFill: {
         height: '100%',
-        backgroundColor: theme.colors.bitcoin || '#F7931A', 
+        backgroundColor: theme.colors.bitcoin, 
         borderRadius: 3,
     },
     progressText: {
-        color: theme.colors.bitcoin || '#F7931A',
+        color: theme.colors.bitcoin,
         fontSize: 13,
         fontWeight: '600',
     },
