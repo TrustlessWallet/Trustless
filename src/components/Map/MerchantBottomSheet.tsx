@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
-import { StyleSheet, View, TouchableOpacity, Linking, Platform, ActionSheetIOS } from 'react-native';
+import { StyleSheet, View, Linking, Platform, ActionSheetIOS } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetScrollView, TouchableOpacity } from '@gorhom/bottom-sheet';
 import { Text } from '../StyledText';
 import { useTheme } from '../../contexts/ThemeContext';
 import { BtcMapElement } from '../../services/btcmap';
@@ -160,9 +160,9 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef,
               <GlassView
                 width={32}
                 height={32}
-                borderRadius={16}
                 shape="circle"
                 interactive={true}
+                style={{ overflow: 'visible' }}
               >
                 <MaterialIcons name="close" size={16} color={theme.colors.primary} />
               </GlassView>
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingVertical: 8,
     borderBottomWidth: 1,
   },
   headerTopRow: {
