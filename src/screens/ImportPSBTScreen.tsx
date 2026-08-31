@@ -12,6 +12,8 @@ import { URDecoder } from '@ngraveio/bc-ur';
 import { Buffer } from 'buffer';
 import { finalizeAndBroadcastPSBT } from '../services/bitcoin';
 import { useWallet } from '../contexts/WalletContext';
+import { authenticate_transaction_action } from '../services/authState';
+
 
 type RouteParams = RouteProp<RootStackParamList, 'ImportPSBT'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ImportPSBT'>;
@@ -22,7 +24,7 @@ const ImportPSBTScreen = () => {
     const isFocused = useIsFocused();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
-    
+
     const { triggerRefresh } = useWallet();
 
     const [permission, requestPermission] = useCameraPermissions();
@@ -101,11 +103,13 @@ const ImportPSBTScreen = () => {
                     isImported: true,
                     loading: false,
                     onConfirm: async () => {
+                        const authenticated = await authenticate_transaction_action('Authorize offline transaction broadcast');
+                        if (!authenticated) return;
+
                         try {
                             const txId = await finalizeAndBroadcastPSBT(unsignedPsbtBase64, psbtBase64);
-                            
-                            triggerRefresh();
 
+                            triggerRefresh();
                             const safeAmount = amount ? String(amount) : '0';
                             const cleanAmount = safeAmount.replace(',', '.');
                             const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
@@ -119,7 +123,6 @@ const ImportPSBTScreen = () => {
                             };
 
                             navigation.popToTop();
-
                             setTimeout(() => {
                                 navigation.navigate('TransactionSuccess', {
                                     type: 'onchain',
@@ -127,7 +130,6 @@ const ImportPSBTScreen = () => {
                                     transaction: pendingTx as any
                                 });
                             }, 500);
-
                         } catch (error) {
                             console.error(error);
                             Alert.alert('Broadcast Error', error instanceof Error ? error.message : 'Failed to finalize and broadcast the transaction.');
@@ -187,7 +189,7 @@ const ImportPSBTScreen = () => {
                         <Feather name="maximize" size={24} color={theme.colors.primary} />
                         <Text style={styles.instructionText}>Scan signed transaction</Text>
                     </View>
-                    
+
                     <Animated.View style={[styles.progressSection, { height: progressSectionHeight, opacity: progressSectionOpacity }]}>
                         <View style={styles.progressBarTrack}>
                             <Animated.View style={[styles.progressBarFill, { width: progressWidth }]} />
@@ -260,7 +262,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     progressBarFill: {
         height: '100%',
-        backgroundColor: theme.colors.bitcoin, 
+        backgroundColor: theme.colors.bitcoin,
         borderRadius: 3,
     },
     progressText: {

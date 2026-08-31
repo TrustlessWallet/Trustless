@@ -22,6 +22,7 @@ import { AddressText } from '../components/AddressText';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import * as Clipboard from 'expo-clipboard';
 import { resolveLnurlOrAddress, fetchLnurlInvoice } from '../services/lnurl';
+import { authenticate_transaction_action } from '../services/authState';
 
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Send'>;
@@ -179,7 +180,7 @@ const SendScreen = () => {
     useEffect(() => {
         if (pendingAutoPay && hasFixedAmount && lightningInvoice.trim() && lnAmount && !loading) {
             setPendingAutoPay(false);
-            handlePayLightning();
+            handlePayLightning(true);
         }
     }, [pendingAutoPay, hasFixedAmount, lightningInvoice, lnAmount, loading]);
 
@@ -240,7 +241,7 @@ const SendScreen = () => {
         let isMounted = true;
 
         const sats = parseInt(lnAmount, 10);
-        
+
         // Bail out if amount is invalid or invoice string is empty
         if (isNaN(sats) || sats <= 0 || !lightningInvoice.trim()) {
             if (isMounted) {
@@ -256,7 +257,7 @@ const SendScreen = () => {
 
             try {
                 let estimatedFee: number | null = null;
-                
+
                 if (lnurlData) {
                     // 1. LNURL: Fetch the BOLT11 invoice for the finalized amount
                     const invoicePr = await fetchLnurlInvoice(lnurlData.callback, sats * 1000);
@@ -265,7 +266,7 @@ const SendScreen = () => {
                 } else {
                     // 2. BOLT11: Estimate directly. Pass amount if it's an amountless invoice.
                     estimatedFee = await estimateLightningFee(
-                        lightningInvoice.trim(), 
+                        lightningInvoice.trim(),
                         hasFixedAmount ? undefined : sats
                     );
                 }
@@ -547,7 +548,7 @@ const SendScreen = () => {
         }
     };
 
-    const handlePayLightning = async () => {
+    const handlePayLightning = async (skipAuth: boolean = false) => {
         if (!lightningInvoice.trim()) {
             Alert.alert('Invalid input', 'Please enter a valid lightning invoice or address.');
             return;
@@ -562,6 +563,11 @@ const SendScreen = () => {
         if (sats > lightningBalance) {
             Alert.alert('Insufficient balance', `You do not have enough sats to pay this invoice.`);
             return;
+        }
+
+        if (!skipAuth) {
+            const authenticated = await authenticate_transaction_action('Authorize Lightning payment');
+            if (!authenticated) return;
         }
 
         setLoading(true);
@@ -897,7 +903,7 @@ const SendScreen = () => {
                     </View>
 
                     <TouchableOpacity
-                        onPress={handlePayLightning}
+                        onPress={() => handlePayLightning()}
                         style={[styles.sendButton, { marginTop: 8 }, (loading || !lightningInvoice.trim() || !lnAmount) && styles.buttonDisabled]}
                         disabled={loading || !lightningInvoice.trim() || !lnAmount}
                     >

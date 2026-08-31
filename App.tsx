@@ -22,7 +22,7 @@ import './shim';
 import { registerRootComponent } from 'expo';
 import { initDatabase } from './src/services/database';
 import { get_is_nfc_scanning } from './src/services/nfc';
-import { get_biometric_prompt_shown } from './src/services/authState';
+import { get_biometric_prompt_shown, set_biometric_prompt_shown } from './src/services/authState';
 
 
 interface TextWithDefaultProps extends Text { defaultProps?: { allowFontScaling?: boolean }; }
@@ -53,12 +53,30 @@ const PrivacySwitcherOverlay = ({ isBooting }: { isBooting: boolean }) => {
   const [appState, setAppState] = useState(AppState.currentState);
 
   useEffect(() => {
+    let timer: NodeJS.Timeout;
+
     const subscription = AppState.addEventListener('change', nextAppState => {
       setAppState(nextAppState);
-    });
-    return () => subscription.remove();
-  }, []);
 
+      if (nextAppState === 'active') {
+        // Delay resetting the biometric flag. 
+        // Lightning network initialization requests the keychain immediately after the initial unlock, 
+        // which causes the app to briefly dip into the 'inactive' state. 
+        // Keeping this true for a brief window prevents the privacy screen from flashing.
+        timer = setTimeout(() => {
+          set_biometric_prompt_shown(false);
+        }, 1500);
+      } else {
+        // Clear the timeout if the app goes inactive again so it doesn't reset prematurely
+        if (timer) clearTimeout(timer);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   if (appState === 'active' || get_is_nfc_scanning() || get_biometric_prompt_shown() || isBooting) return null;
 
