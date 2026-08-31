@@ -514,11 +514,7 @@ const ReceiveScreen = () => {
 
               <View
                 style={{
-                  marginTop: 16,
-                  shadowColor: theme.colors.primary,
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: 0.25,
-                  shadowRadius: 2,
+                  marginTop: 16
                 }}
               >
                 <GlassView

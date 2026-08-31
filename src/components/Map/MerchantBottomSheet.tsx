@@ -280,7 +280,8 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     paddingHorizontal: 24,
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 16,
     borderBottomWidth: 1,
   },
   headerTopRow: {
@@ -338,7 +339,7 @@ const styles = StyleSheet.create({
   },
   scrollInnerContent: {
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingVertical: 8,
   },
   sectionHeader: {
     fontSize: 16,
