@@ -1,9 +1,9 @@
 import React from 'react';
 import { View, Platform, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Host, ZStack } from '@expo/ui/swift-ui';
-import { 
-  glassEffect, 
-  cornerRadius as cornerRadiusModifier, 
+import {
+  glassEffect,
+  cornerRadius as cornerRadiusModifier,
   frame,
   ignoreSafeArea
 } from '@expo/ui/swift-ui/modifiers';
@@ -45,14 +45,13 @@ export const GlassView: React.FC<GlassViewProps> = ({
   children,
 }) => {
   const { theme } = useTheme();
-
   const activeTintColor = tintColor ?? theme.colors.surface + '99';
   const activeFallbackColor = fallbackColor ?? theme.colors.surface;
 
-  const glassOptions: any = { 
-    variant, 
-    interactive, 
-    tint: activeTintColor 
+  const glassOptions: any = {
+    variant,
+    interactive,
+    tint: activeTintColor
   };
 
   const swiftModifiers: any[] = [
@@ -61,50 +60,61 @@ export const GlassView: React.FC<GlassViewProps> = ({
     ignoreSafeArea()
   ];
 
-  const hasIndividualCorners = 
-    borderTopLeftRadius !== undefined || 
-    borderTopRightRadius !== undefined || 
-    borderBottomLeftRadius !== undefined || 
+  const hasIndividualCorners =
+    borderTopLeftRadius !== undefined ||
+    borderTopRightRadius !== undefined ||
+    borderBottomLeftRadius !== undefined ||
     borderBottomRightRadius !== undefined;
 
-  // Only apply native Swift corner radius if using a uniform radius.
   if (borderRadius > 0 && !hasIndividualCorners) {
     swiftModifiers.push(cornerRadiusModifier(borderRadius));
   }
 
   return (
-    <View 
+    <View
       style={[
-        { 
-          width, 
-          height, 
-          overflow: 'hidden',
-          borderRadius: borderRadius,
-          borderTopLeftRadius: borderTopLeftRadius ?? borderRadius,
-          borderTopRightRadius: borderTopRightRadius ?? borderRadius,
-          borderBottomLeftRadius: borderBottomLeftRadius ?? borderRadius,
-          borderBottomRightRadius: borderBottomRightRadius ?? borderRadius,
-        }, 
+        {
+          width,
+          height,
+          shadowColor: theme.colors.primary,
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.25,
+          shadowRadius: 2,
+        },
         style
       ]}
     >
-      {Platform.OS === 'ios' ? (
-        <Host style={StyleSheet.absoluteFill}>
-          <ZStack modifiers={swiftModifiers}>
-            <View />
-          </ZStack>
-        </Host>
-      ) : (
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              backgroundColor: activeFallbackColor,
-              opacity: fallbackOpacity,
-            },
-          ]}
-        />
-      )}
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            overflow: 'visible',
+            borderRadius: borderRadius,
+            borderTopLeftRadius: borderTopLeftRadius ?? borderRadius,
+            borderTopRightRadius: borderTopRightRadius ?? borderRadius,
+            borderBottomLeftRadius: borderBottomLeftRadius ?? borderRadius,
+            borderBottomRightRadius: borderBottomRightRadius ?? borderRadius,
+          }
+        ]}
+      >
+        {Platform.OS === 'ios' ? (
+          <Host style={StyleSheet.absoluteFill}>
+            <ZStack modifiers={swiftModifiers}>
+              <View />
+            </ZStack>
+          </Host>
+        ) : (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: activeFallbackColor,
+                opacity: fallbackOpacity,
+              },
+            ]}
+          />
+        )}
+      </View>
       <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]}>
         {children}
       </View>
