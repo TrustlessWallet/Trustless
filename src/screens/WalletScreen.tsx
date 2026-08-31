@@ -18,6 +18,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { GlassView } from '../components/GlassView';
 import { resolveLnurlOrAddress } from '../services/lnurl';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { authenticate_transaction_action } from '../services/authState';
+
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
@@ -83,10 +85,6 @@ const WalletScreen = () => {
     } = useWallet();
 
     useTipHeight(!!activeWallet);
-
-    useEffect(() => {
-        console.log('[WalletScreen insets]', JSON.stringify(insets), 'screenHeight:', screenHeight, 'activeWallet:', !!activeWallet);
-    }, [insets, activeWallet, screenHeight]);
 
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
@@ -279,6 +277,12 @@ const WalletScreen = () => {
         if (isScanningNfc) return;
 
         safeHaptic(Haptics.ImpactFeedbackStyle.Medium);
+
+        // Prompt Face ID / Passcode before opening the NFC scanner
+        const authenticated = await authenticate_transaction_action('Authorize Tap to Pay');
+        if (!authenticated) {
+            return;
+        }
 
         setIsScanningNfc(true);
         try {

@@ -16,6 +16,7 @@ import { getElectrumClient, resetActiveConnection, getActiveHostName, test_custo
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import build_info from '../constants/build.json';
+import { is_tx_biometrics_enabled, set_tx_biometrics_enabled } from '../services/authState';
 
 
 type navigation_prop = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -91,6 +92,8 @@ const SettingsScreen = () => {
   const is_focused = useIsFocused();
   const is_toggling_ref = useRef(false);
 
+  const [is_tx_confirm_enabled, set_is_tx_confirm_enabled] = useState(true);
+
   const check_biometric_status = useCallback(async () => {
     if (is_toggling_ref.current) return;
     const is_enrolled = await LocalAuthentication.isEnrolledAsync();
@@ -107,6 +110,8 @@ const SettingsScreen = () => {
   useEffect(() => {
     const load_settings = async () => {
       check_biometric_status();
+      const tx_biometrics = await is_tx_biometrics_enabled();
+      set_is_tx_confirm_enabled(tx_biometrics);
       const saved_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
       if (saved_lock_time !== null) {
         const index = auto_lock_options.findIndex(opt => opt.toString() === saved_lock_time);
@@ -255,6 +260,12 @@ const SettingsScreen = () => {
     const new_value = !hide_wallet_balance;
     set_hide_wallet_balance(new_value);
     await AsyncStorage.setItem(HIDE_WALLET_BALANCE_KEY, new_value.toString());
+  };
+
+  const toggle_tx_confirm = async () => {
+    const new_value = !is_tx_confirm_enabled;
+    set_is_tx_confirm_enabled(new_value);
+    await set_tx_biometrics_enabled(new_value);
   };
 
   const toggle_default_wallet_mode = async () => {
@@ -657,6 +668,21 @@ const SettingsScreen = () => {
               </TouchableOpacity>
             </View>
           </View>
+
+          {is_biometrics_enabled && (
+            <View style={styles.row_wrapper}>
+              <View style={styles.row}>
+                <Text style={styles.row_label}>Confirm transaction</Text>
+                <TouchableOpacity onPress={toggle_tx_confirm}>
+                  <View style={styles.switcher}>
+                    <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                    <Text style={styles.switcher_text}>{is_tx_confirm_enabled ? 'On' : 'Off'}</Text>
+                    <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {is_biometrics_enabled && (
             <View style={styles.row_wrapper}>

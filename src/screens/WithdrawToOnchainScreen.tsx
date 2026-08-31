@@ -21,6 +21,8 @@ import { Theme } from '../constants/theme';
 import { validateBitcoinAddress } from '../services/bitcoin';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import * as Clipboard from 'expo-clipboard';
+import { authenticate_transaction_action } from '../services/authState';
+
 
 export const WithdrawToOnchainScreen: React.FC = () => {
     const navigation = useNavigation<any>();
@@ -199,8 +201,10 @@ export const WithdrawToOnchainScreen: React.FC = () => {
     const handleExecuteWithdrawal = async () => {
         if (!txMetrics || !activeWallet || !activeDestination) return;
 
-        setExecuting(true);
+        const authenticated = await authenticate_transaction_action('Authorize Lightning to On-Chain swap');
+        if (!authenticated) return;
 
+        setExecuting(true);
         try {
             await withdrawToOnchain(txMetrics.prepareResponse, selectedFeeTier);
             triggerRefresh();

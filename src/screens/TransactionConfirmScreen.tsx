@@ -5,10 +5,12 @@ import { Feather } from '@expo/vector-icons';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
-import { useTheme } from '../contexts/ThemeContext'; 
-import { Theme } from '../constants/theme'; 
+import { useTheme } from '../contexts/ThemeContext';
+import { Theme } from '../constants/theme';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
+import { authenticate_transaction_action } from '../services/authState';
+
 
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionConfirm'>;
 const DUST_LIMIT = 546;
@@ -17,21 +19,21 @@ const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 
 const TransactionConfirmScreen = () => {
     const route = useRoute<RoutePropType>();
-    const { 
-        recipientAddress, 
-        amount, 
-        unit, 
-        onConfirm, 
-        loading, 
-        fee, 
-        feeVSize, 
-        selectedRate, 
-        feeOptions, 
+    const {
+        recipientAddress,
+        amount,
+        unit,
+        onConfirm,
+        loading,
+        fee,
+        feeVSize,
+        selectedRate,
+        feeOptions,
         onSelectFeeOption,
-        utxos 
+        utxos
     } = route.params;
-    const { theme, isDark } = useTheme(); 
-    const styles = useMemo(() => getStyles(theme), [theme]); 
+    const { theme, isDark } = useTheme();
+    const styles = useMemo(() => getStyles(theme), [theme]);
     const { activeWallet } = useWallet();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -42,7 +44,7 @@ const TransactionConfirmScreen = () => {
     const cleanAmount = amount.replace(',', '.');
     const amountInSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
     const totalInput = useMemo(() => utxos.reduce((acc, u) => acc + u.value, 0), [utxos]);
-    
+
     const calculatedVSize = useMemo(() => {
         if (feeVSize) return feeVSize;
         const initialChange = Math.max(0, totalInput - amountInSatoshis - fee);
@@ -57,20 +59,20 @@ const TransactionConfirmScreen = () => {
     const [currentFee, setCurrentFee] = useState<number>(fee);
     const [customRate, setCustomRate] = useState<string>(safeSelectedRate.toString());
     const [showHighFeeWarning, setShowHighFeeWarning] = useState(false);
-    
+
     const initialKey = safeSelectedRate === safeFeeOptions.normal
         ? 'normal'
         : safeSelectedRate === safeFeeOptions.fast
-        ? 'fast'
-        : safeSelectedRate === safeFeeOptions.slow
-        ? 'slow' 
-        : 'custom';
+            ? 'fast'
+            : safeSelectedRate === safeFeeOptions.slow
+                ? 'slow'
+                : 'custom';
     const [selectedKey, setSelectedKey] = useState<'slow' | 'normal' | 'fast' | 'custom'>(initialKey);
-    
+
     const feePercentage = amountInSatoshis > 0 ? (currentFee / amountInSatoshis) * 100 : 0;
     const total = amountInSatoshis + currentFee;
     const totalInBtc = total / 100000000;
-    
+
     const estimatedChange = Math.max(0, totalInput - amountInSatoshis - currentFee);
     const isDust = estimatedChange > 0 && estimatedChange <= DUST_LIMIT;
 
@@ -125,6 +127,10 @@ const TransactionConfirmScreen = () => {
 
     const submitConfirm = async () => {
         if (isSubmitting) return;
+
+        const authenticated = await authenticate_transaction_action('Authorize Bitcoin transaction');
+        if (!authenticated) return;
+
         try {
             setIsSubmitting(true);
             await onConfirm(currentRate);
@@ -251,7 +257,7 @@ const TransactionConfirmScreen = () => {
                         <Text style={[styles.subValue, styles.subValuePlaceholder]}>0</Text>
                     </View>
                 </View>
-                
+
                 <View style={styles.detailRowTopAligned}>
                     <Text style={styles.label}>Subtotal</Text>
                     <View style={styles.valueContainer}>
@@ -280,9 +286,9 @@ const TransactionConfirmScreen = () => {
                     <Text style={styles.totalValue}>{totalInBtc.toFixed(8)} <Text style={styles.orangeSymbol}>₿</Text></Text>
                 </View>
             </View>
-            <TouchableOpacity 
-                style={[styles.confirmButton, (loading || isSubmitting) && styles.buttonDisabled]} 
-                onPress={handle_sign_and_send} 
+            <TouchableOpacity
+                style={[styles.confirmButton, (loading || isSubmitting) && styles.buttonDisabled]}
+                onPress={handle_sign_and_send}
                 disabled={loading || isSubmitting}
             >
                 {loading || isSubmitting ? (
@@ -301,7 +307,7 @@ const TransactionConfirmScreen = () => {
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.colors.background, 
+        backgroundColor: theme.colors.background,
     },
     scrollContent: {
         padding: 24,
@@ -332,21 +338,21 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     label: {
         fontSize: 16,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     inputValue: {
         fontSize: 14,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontFamily: 'monospace',
     },
     amountValue: {
         fontSize: 14,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     pathBadge: {
         fontSize: 10,
-        color: theme.colors.muted, 
-        backgroundColor: theme.colors.surface, 
+        color: theme.colors.muted,
+        backgroundColor: theme.colors.surface,
         paddingHorizontal: 4,
         paddingVertical: 2,
         borderRadius: 4,
@@ -367,7 +373,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     value: {
         fontSize: 16,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontFamily: 'monospace',
     },
     valueDust: {
@@ -378,7 +384,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     },
     subValue: {
         fontSize: 12,
-        color: theme.colors.muted, 
+        color: theme.colors.muted,
         fontFamily: 'monospace',
     },
     subValuePlaceholder: {
@@ -387,14 +393,14 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     summaryBox: {
         paddingTop: 16,
         borderTopWidth: 1,
-        borderColor: theme.colors.border, 
+        borderColor: theme.colors.border,
     },
     summaryBoxNoBorder: {
         borderTopWidth: 0,
     },
     separator: {
         height: 1,
-        backgroundColor: theme.colors.border, 
+        backgroundColor: theme.colors.border,
         marginBottom: 8,
     },
     feeSelectorContainer: {
@@ -416,51 +422,51 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         paddingHorizontal: 2,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: theme.colors.border, 
-        backgroundColor: theme.colors.surface, 
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
         alignItems: 'center',
     },
     feeOptionActive: {
-        backgroundColor: theme.colors.primary, 
-        borderColor: theme.colors.primary, 
+        backgroundColor: theme.colors.primary,
+        borderColor: theme.colors.primary,
     },
     feeOptionText: {
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         fontWeight: '600',
         fontSize: 12,
     },
     feeOptionTextActive: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
     },
     feeOptionRate: {
-        color: theme.colors.muted, 
+        color: theme.colors.muted,
         fontSize: 11,
         marginTop: 2,
     },
     feeOptionRateActive: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
     },
     customFeeContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         marginTop: 12,
-        backgroundColor: theme.colors.surface, 
+        backgroundColor: theme.colors.surface,
         padding: 12,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: theme.colors.border, 
+        borderColor: theme.colors.border,
     },
     customFeeLabel: {
         fontSize: 14,
         marginRight: 12,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     customFeeInput: {
         flex: 1,
-        backgroundColor: theme.colors.background, 
+        backgroundColor: theme.colors.background,
         borderWidth: 1,
-        borderColor: theme.colors.border, 
-        color: theme.colors.primary, 
+        borderColor: theme.colors.border,
+        color: theme.colors.primary,
         borderRadius: 4,
         paddingVertical: 4,
         paddingHorizontal: 8,
@@ -471,28 +477,28 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        backgroundColor: theme.colors.surface, 
+        backgroundColor: theme.colors.surface,
         padding: 12,
         borderRadius: 8,
         marginBottom: 16,
     },
     warningText: {
         flex: 1,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     totalLabel: {
         fontSize: 18,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     totalValue: {
         fontSize: 18,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     orangeSymbol: {
-      color: theme.colors.bitcoin, 
+        color: theme.colors.bitcoin,
     },
     confirmButton: {
-        backgroundColor: theme.colors.primary, 
+        backgroundColor: theme.colors.primary,
         paddingVertical: 16,
         borderRadius: 8,
         alignItems: 'center',
@@ -502,10 +508,10 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         marginBottom: 128,
     },
     buttonDisabled: {
-        opacity: 0.5, 
+        opacity: 0.5,
     },
     buttonText: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
         fontSize: 16,
         fontWeight: '600',
     },
