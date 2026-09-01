@@ -132,17 +132,30 @@ export const fetchAddressInfoBatch = async (
     addresses: string[]
 ): Promise<{ address: string; balance: number; tx_count: number }[]> => {
     if (addresses.length === 0) return [];
-
     try {
-        const map = addresses.map(addr => ({ addr, hash: addressToScriptHash(addr) }));
+        // Filter out invalid addresses that hash to empty strings (non-hex hash fix)
+        const map = addresses
+            .map(addr => ({ addr, hash: addressToScriptHash(addr) }))
+            .filter(m => m.hash !== '');
+
         const hashes = map.map(m => m.hash);
 
-        const balances = await electrumBatchGetBalance(hashes) as any[];
-        const histories = await electrumBatchGetHistory(hashes) as any[];
+        // Chunk size = 25 for faster background syncing
+        const hashChunks = chunkArray(hashes, 25);
+        let balances: any[] = [];
+        let histories: any[] = [];
+
+        for (const chunk of hashChunks) {
+            const b = await electrumBatchGetBalance(chunk) as any[];
+            const h = await electrumBatchGetHistory(chunk) as any[];
+            balances = balances.concat(b);
+            histories = histories.concat(h);
+        }
 
         return map.map((item, index) => {
-            const bal_data = balances[index].result as any;
-            const hist_data = histories[index].result as any[];
+            const bal_data = balances[index]?.result as any;
+            const hist_data = histories[index]?.result as any[];
+
             const total_balance = (bal_data?.confirmed || 0) + (bal_data?.unconfirmed || 0);
             const tx_count = hist_data ? hist_data.length : 0;
 
@@ -170,27 +183,38 @@ export const fetchBitcoinBalance = async (address: string): Promise<number> => {
 
 export const fetchUTXOs = async (addresses: string[]) => {
     if (addresses.length === 0) return [];
-
     try {
-        const promises = addresses.map(async (addr) => {
-            const hash = addressToScriptHash(addr);
-            const utxos = await electrumListUnspent(hash) as any[];
-            return utxos.map((u: any) => ({
-                txid: u.tx_hash,
-                vout: u.tx_pos,
-                value: u.value,
-                address: addr,
-                status: {
-                    confirmed: u.height > 0,
-                    block_height: u.height,
-                    block_hash: null,
-                    block_time: null
-                }
-            }));
-        });
+        // Filter invalid addresses and increase chunking speed
+        const validAddresses = addresses.filter(a => addressToScriptHash(a) !== '');
+        const chunks = chunkArray(validAddresses, 10);
+        const allUtxos = [];
 
-        const results = await Promise.all(promises);
-        return results.flat();
+        for (const chunk of chunks) {
+            const promises = chunk.map(async (addr) => {
+                const hash = addressToScriptHash(addr);
+                try {
+                    const utxos = await electrumListUnspent(hash) as any[];
+                    if (!utxos) return [];
+                    return utxos.map((u: any) => ({
+                        txid: u.tx_hash,
+                        vout: u.tx_pos,
+                        value: u.value,
+                        address: addr,
+                        status: {
+                            confirmed: u.height > 0,
+                            block_height: u.height,
+                            block_hash: null,
+                            block_time: null
+                        }
+                    }));
+                } catch (e) {
+                    return [];
+                }
+            });
+            const results = await Promise.all(promises);
+            allUtxos.push(...results.flat());
+        }
+        return allUtxos;
     } catch (err) {
         return [];
     }
@@ -479,15 +503,30 @@ export const broadcastTransaction = async (tx_hex: string): Promise<string> => {
 
 export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: number; slow: number; }> => {
     const isTestnet = IS_TESTNET;
-
     try {
         const baseUrl = isTestnet
             ? 'https://mempool.space/testnet/api/v1/fees/recommended'
             : 'https://mempool.space/api/v1/fees/recommended';
 
-        const response = await fetch(baseUrl);
-        const data = await response.json();
+        // 1. Setup the fetch request with headers
+        const fetchPromise = fetch(baseUrl, {
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'TrustlessWallet/1.0'
+            }
+        });
 
+        // 2. Setup a strict 3-second timeout
+        const timeoutPromise = new Promise<Response>((_, reject) =>
+            setTimeout(() => reject(new Error('Mempool timeout')), 3000)
+        );
+
+        // 3. Race the fetch against the timeout. If it takes longer than 3s, it fails instantly.
+        const response = await Promise.race([fetchPromise, timeoutPromise]);
+
+        if (!response.ok) throw new Error('Mempool API error');
+
+        const data = await response.json();
         if (data && data.fastestFee) {
             return {
                 fast: data.fastestFee,
@@ -496,9 +535,10 @@ export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: numbe
             };
         }
     } catch (e) {
-        console.warn(`Mempool ${isTestnet ? 'Testnet' : 'Mainnet'} API failed`);
+        console.warn(`Mempool ${isTestnet ? 'Testnet' : 'Mainnet'} API failed or timed out`);
     }
 
+    // 4. Fallback to Electrum node fee estimation
     try {
         const [fast, normal, slow] = await Promise.all([
             electrumEstimateFee(1),
@@ -508,12 +548,10 @@ export const fetchFeeEstimates = async (): Promise<{ fast: number; normal: numbe
 
         const to_sats_vb = (btc_per_kb: any, fallback: number) => {
             const val = Number(btc_per_kb);
+            // Some Electrum testnet nodes return -1. This handles it gracefully.
             if (isNaN(val) || val <= 0) return fallback;
-
             const sats_vb = Math.ceil((val * 100000000) / 1000);
-
             if (!isTestnet && sats_vb > 300) return fallback;
-
             return sats_vb;
         };
 
