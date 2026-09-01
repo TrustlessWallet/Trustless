@@ -293,7 +293,10 @@ const SendScreen = () => {
     const getBalance = React.useCallback(async (bypassCache: boolean = false) => {
         const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
         const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
-        const changeAddresses = (activeWallet?.derivedChangeAddresses ?? []).map(a => a.address);
+        const changeIndex = activeWallet?.changeAddressIndex ?? 0;
+        const changeAddresses = (activeWallet?.derivedChangeAddresses ?? [])
+            .filter(a => a.index <= changeIndex + 1)
+            .map(a => a.address);
         const targetAddresses = [...new Set([...receiveForUtxos, ...changeAddresses])];
         const cacheKey = `${UTXO_CACHE_PREFIX}${activeWallet?.id || 'no-wallet'}`;
         if (!bypassCache) {
@@ -327,9 +330,6 @@ const SendScreen = () => {
             setBalance(availableToSend);
             setUtxos(fetchedUtxos);
             await AsyncStorage.setItem(cacheKey, JSON.stringify({ utxos: fetchedUtxos, balance: availableToSend, timestamp: Date.now() }));
-
-            const estimates = await fetchFeeEstimates();
-            setFeeOptions(estimates);
         } catch (e) {
             console.error('Error fetching balance:', e);
             Alert.alert('Error', 'Could not fetch wallet balance.');
@@ -339,14 +339,33 @@ const SendScreen = () => {
     }, [activeWallet]);
 
     useEffect(() => {
-        getBalance(false);
-    }, [getBalance]);
+        if (activeWallet) {
+            getBalance(false);
+        }
+    }, [activeWallet?.id, getBalance]);
 
     useEffect(() => {
-        if (activeWallet) {
+        if (activeWallet && lastRefreshTime > 0) {
             getBalance(true);
         }
-    }, [lastRefreshTime, activeWallet, getBalance]);
+    }, [lastRefreshTime]);
+
+    // Fetch fee estimates independently on screen load
+    useEffect(() => {
+        let isMounted = true;
+
+        if (mode === 'onchain') {
+            fetchFeeEstimates()
+                .then(estimates => {
+                    if (isMounted && estimates) {
+                        setFeeOptions(estimates);
+                    }
+                })
+                .catch(err => console.log("Background fee fetch failed:", err));
+        }
+
+        return () => { isMounted = false; };
+    }, [mode]);
 
     useEffect(() => {
         const loadPreference = async () => {

@@ -117,6 +117,10 @@ class CustomElectrumClient extends EventEmitter {
         });
 
         this.socket.on('error', (error: any) => {
+          // Force stringify the raw error object to expose hidden OS network codes
+          const rawError = JSON.stringify(error, Object.getOwnPropertyNames(error));
+          console.warn(`  ⚠️ [Socket Error] ${this.host}:${this.port} -> ${rawError}`);
+
           if (!this.isConnected) {
             clearTimeout(timeout);
             reject(error);
@@ -124,7 +128,8 @@ class CustomElectrumClient extends EventEmitter {
           this.forceClose();
         });
 
-        this.socket.on('close', () => {
+        this.socket.on('close', (hadError: boolean) => {
+          console.log(`  🔌 [Socket Closed] ${this.host}:${this.port} (Had error: ${hadError})`);
           this.forceClose();
         });
 
@@ -186,7 +191,9 @@ class CustomElectrumClient extends EventEmitter {
         this.requests.delete(response.id);
 
         if (response.error) {
-          console.log(`❌ ERROR (id=${response.id}):`, JSON.stringify(response.error));
+          if (response.error.message !== 'missing transaction' && response.error.message !== 'non-hex hash') {
+            console.warn(`  ⚠️ ERROR (id=${response.id}):`, JSON.stringify(response.error));
+          }
           req.reject(new Error(response.error.message || 'Electrum Error'));
         } else {
           // Optional: log successful responses to track data flow
@@ -283,6 +290,8 @@ const PEERS = {
   mainnet: [
     { host: 'electrum.blockstream.info', port: 50002, protocol: 'tls' as const },
     { host: 'electrum.emzy.de', port: 50002, protocol: 'tls' as const },
+    { host: 'electrum.bitaroo.net', port: 50002, protocol: 'tls' as const },
+    { host: 'fulcrum.sethforprivacy.com', port: 50002, protocol: 'tls' as const },
   ],
   testnet: [
     { host: 'electrum.blockstream.info', port: 60002, protocol: 'tls' as const },
@@ -387,7 +396,9 @@ export const getElectrumClient = async () => {
           });
           return client;
         } catch (err: any) {
-          console.warn(`❌ Failed ${peer.host}:`, err.message || 'Error');
+          const osErrorCode = err.code ? `[${err.code}] ` : '';
+          console.warn(`  ❌ Failed ${peer.host}:${peer.port} (${peer.protocol}): ${osErrorCode}${err.message || 'Unknown Error'}`);
+
           if (client) client.forceClose();
           client = null;
         }
