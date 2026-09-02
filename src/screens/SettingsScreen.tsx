@@ -341,6 +341,8 @@ const SettingsScreen = () => {
           text: "Switch",
           onPress: async () => {
             await AsyncStorage.setItem(NETWORK_PREF_KEY, new_network);
+            resetActiveConnection();
+
             setNetwork(new_network);
           }
         }
