@@ -1,478 +1,530 @@
-import * as bitcoin from 'bitcoinjs-lib';
-import { NETWORK, IS_TESTNET } from '../constants/network';
+import TcpSocket from 'react-native-tcp-socket';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { EventEmitter } from 'events';
+import * as bitcoin from 'bitcoinjs-lib';
 
-/**
- * We use 'react-native-tcp-socket' because React Native does not provide a standard
- * Node.js 'net' or 'tls' module. This library allows us to create raw TCP and TLS
- * connections directly from the device to the Electrum server.
- */
-const TcpSocket = require('react-native-tcp-socket').default || require('react-native-tcp-socket');
+// -------------------------------------------------------------
+// Constants and Peer Configurations
+// -------------------------------------------------------------
 
-const CUSTOM_NODE_KEY = '@customNodeUrl';
-const ALLOW_SELF_SIGNED_KEY = '@allowSelfSigned';
+export let IS_TESTNET = false; 
+const SETTINGS_NETWORK_KEY = '@network_preference';
+const CUSTOM_ELECTRUM_NODE_KEY = '@customElectrumNode';
+const ALLOW_SELF_SIGNED_CERTIFICATES_KEY = '@allow_self_signed_certs';
 
-/**
- * CustomElectrumClient
- * This class manages the connection to an Electrum server.
- * Key Responsibilities:
- * 1. Establishing and maintaining the socket connection.
- * 2. Handling TCP packet fragmentation (buffering).
- * 3. Matching asynchronous JSON-RPC responses to their original requests.
- * 4. Keeping the connection alive with pings.
- */
-class CustomElectrumClient extends EventEmitter {
-  private socket: any = null;
-  public host: string = '';
-  public port: number = 0;
-  public protocol: 'tcp' | 'tls' = 'tls';
-  private allowSelfSigned: boolean = false;
+export interface PeerConfig {
+  host: string;
+  port: number;
+  protocol: 'tcp' | 'tls';
+  requiresSelfSigned?: boolean;
+}
 
-  // JSON-RPC request ID counter. Every request gets a unique ID so we can identify the response.
-  private id: number = 0;
+export const PEERS: { mainnet: PeerConfig[], testnet: PeerConfig[] } = {
+  mainnet: [
+    { host: 'electrum.blockstream.info', port: 50002, protocol: 'tls', requiresSelfSigned: false },
+    { host: 'bitcoin.lu.ke', port: 50002, protocol: 'tls', requiresSelfSigned: true },
+    { host: 'electrum.bitaroo.net', port: 50002, protocol: 'tls', requiresSelfSigned: true },
+    { host: 'electrum.emzy.de', port: 50002, protocol: 'tls', requiresSelfSigned: true },
+    { host: 'fulcrum.sethforprivacy.com', port: 50002, protocol: 'tls', requiresSelfSigned: true },
+    { host: 'electrum.jochen-hoenicke.de', port: 50002, protocol: 'tls', requiresSelfSigned: false },
+    { host: 'bitcoin.grey.pw', port: 50002, protocol: 'tls', requiresSelfSigned: false },
+    { host: 'electrum.loyce.club', port: 50002, protocol: 'tls', requiresSelfSigned: true },
+    { host: 'electrum.sare.red', port: 50002, protocol: 'tls', requiresSelfSigned: false },
+    { host: 'fulcrum-core.1209k.com', port: 50002, protocol: 'tls', requiresSelfSigned: true },
+    { host: 'mempool.8333.mobi', port: 50002, protocol: 'tls', requiresSelfSigned: false },
+    { host: 'vmd128083.contaboserver.net', port: 50002, protocol: 'tls', requiresSelfSigned: true }
+  ],
+  testnet: [
+    { host: 'electrum.blockstream.info', port: 60002, protocol: 'tls', requiresSelfSigned: false },
+    { host: 'testnet.qtornado.com', port: 51002, protocol: 'tls', requiresSelfSigned: true },
+    { host: 'testnet.aranguren.org', port: 51001, protocol: 'tcp', requiresSelfSigned: false },
+  ],
+};
 
-  // Map to store pending requests. 
-  // Key: Request ID (number)
-  // Value: Object containing { resolve, reject } functions from the Promise.
-  private requests: Map<number, { resolve: Function; reject: Function }> = new Map();
+// -------------------------------------------------------------
+// Core CustomElectrumClient Class
+// -------------------------------------------------------------
 
-  // Buffer to store incoming data chunks. TCP packets can arrive split up or combined.
-  private buffer: string = '';
+export class CustomElectrumClient {
+  host: string;
+  port: number;
+  protocol: 'tcp' | 'tls';
+  tlsRequiresSelfSigned: boolean;
+  socket: any;
+  buffer: string = '';
+  requests: Map<number, { resolve: any; reject: any }> = new Map();
+  idCounter: number = 0;
+  isConnected: boolean = false;
+  keepAliveInterval: any = null;
+  onCloseCallback?: () => void;
 
-  public isConnected: boolean = false;
-  private keepAliveInterval: any = null;
-
-  constructor(host: string, port: number, protocol: 'tcp' | 'tls' = 'tls', allowSelfSigned: boolean = false) {
-    super();
+  constructor(host: string, port: number, protocol: 'tcp' | 'tls', tlsRequiresSelfSigned: boolean = false) {
     this.host = host;
     this.port = port;
     this.protocol = protocol;
-    this.allowSelfSigned = allowSelfSigned;
+    this.tlsRequiresSelfSigned = tlsRequiresSelfSigned;
   }
 
-  /**
-   * Initiates the connection to the server.
-   * Returns a Promise that resolves when the socket is open and the initial handshake is complete.
-   */
-  async connect() {
+  async connect(timeoutMs: number = 10000): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      // Safety timeout: If we don't connect within 10 seconds, give up.
       const timeout = setTimeout(() => {
         if (!this.isConnected) {
           this.forceClose();
-          reject(new Error(`Connection timeout: ${this.host}`));
+          reject(new Error(`Connection timeout`));
         }
-      }, 10000);
+      }, timeoutMs);
+
+      const onConnect = async () => {
+        if (!this.socket) return; // Guard against zombies firing after a timeout
+        this.isConnected = true;
+        this.startKeepAlive();
+        try {
+          await this.request('server.version', ['TrustlessWallet', '1.4']);
+          clearTimeout(timeout);
+          resolve();
+        } catch(e) {
+          clearTimeout(timeout);
+          this.forceClose();
+          reject(e);
+        }
+      };
+
+      const safeOnConnect = () => {
+        onConnect().catch(err => {
+           if (!this.isConnected) {
+              this.forceClose();
+              reject(err);
+           }
+        });
+      };
 
       try {
-        const options: any = {
-          port: this.port,
-          host: this.host,
-          rejectUnauthorized: !this.allowSelfSigned,
-        };
-
-        const onConnect = () => {
-          console.log(`⚡ Socket Opened: ${this.host} (${this.protocol})`);
-
-          // Electrum protocol version negotiation (Handshake).
-          // We must identify ourselves and request version 1.4.
-          const handshake = JSON.stringify({
-            jsonrpc: '2.0',
-            id: 'handshake',
-            method: 'server.version',
-            params: ["TrustlessWallet", "1.4"]
-          }) + '\n'; // Newline is the delimiter for JSON-RPC over TCP
-
-          if (this.socket) this.socket.write(handshake);
-        };
-
-        // Create the actual socket based on protocol preference
+        const options: any = { host: this.host, port: this.port };
+        
         if (this.protocol === 'tls') {
-          // @ts-ignore
-          this.socket = TcpSocket.connectTLS(options, onConnect);
+          options.tls = true;
+          options.rejectUnauthorized = !this.tlsRequiresSelfSigned;
+          options.tlsCheckValidity = !this.tlsRequiresSelfSigned;
+
+          if (typeof (TcpSocket as any).connectTLS === 'function') {
+            this.socket = (TcpSocket as any).connectTLS(options, safeOnConnect);
+          } else {
+            this.socket = TcpSocket.createConnection(options, safeOnConnect);
+          }
         } else {
-          // @ts-ignore
-          this.socket = TcpSocket.createConnection(options, onConnect);
+          this.socket = TcpSocket.createConnection(options, safeOnConnect);
         }
 
-        this.socket.setEncoding('utf8');
+        if (this.socket && typeof this.socket.on === 'function') {
+          this.socket.on('data', (data: Buffer | string) => {
+            const chunk = typeof data === 'string' ? data : data.toString('utf8');
+            this.buffer += chunk;
+            this.processBuffer();
+          });
 
-        // Listener for incoming data
-        this.socket.on('data', (data: Buffer | string) => {
-          const chunk = typeof data === 'string' ? data : data.toString('utf8');
-          this.buffer += chunk;
+          this.socket.on('error', (error: any) => {
+            const rawError = error ? JSON.stringify(error, Object.getOwnPropertyNames(error)) : 'Unknown Socket Error';
+            if (!this.isConnected) {
+              clearTimeout(timeout);
+              reject(new Error(rawError));
+            }
+            this.forceClose();
+          });
 
-          // If this is the first data we receive, we consider the connection "Established".
-          if (!this.isConnected) {
-            this.isConnected = true;
-            clearTimeout(timeout);
-            this.startKeepAlive(); // Start sending pings to prevent timeout
-            console.log(`✅ Data received from ${this.host}`);
-            resolve();
-          }
+          this.socket.on('close', (hadError: boolean) => {
+            this.forceClose();
+          });
+        }
 
-          // Process the buffer to check for complete JSON messages
-          this.processBuffer();
-        });
-
-        this.socket.on('error', (error: any) => {
-          // Force stringify the raw error object to expose hidden OS network codes
-          const rawError = JSON.stringify(error, Object.getOwnPropertyNames(error));
-          console.warn(`  ⚠️ [Socket Error] ${this.host}:${this.port} -> ${rawError}`);
-
-          if (!this.isConnected) {
-            clearTimeout(timeout);
-            reject(error);
-          }
-          this.forceClose();
-        });
-
-        this.socket.on('close', (hadError: boolean) => {
-          console.log(`  🔌 [Socket Closed] ${this.host}:${this.port} (Had error: ${hadError})`);
-          this.forceClose();
-        });
-
-      } catch (err) {
+      } catch (e) {
         clearTimeout(timeout);
         this.forceClose();
-        reject(err);
+        reject(e);
       }
     });
   }
 
-  /**
-   * Handles TCP fragmentation.
-   * TCP streams are continuous; we might receive half a JSON string, or two JSON strings at once.
-   * We look for the newline character ('\n') which marks the end of a message in Electrum protocol.
-   */
-  private processBuffer() {
-    let newlineIndex = this.buffer.indexOf('\n');
+  startKeepAlive() {
+    if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
+    this.keepAliveInterval = setInterval(async () => {
+      try {
+        await this.request('server.ping', []);
+      } catch (err) {
+        console.warn(`  ⚠️ Ping timeout for ${this.host}, dropping connection`);
+        this.forceClose();
+      }
+    }, 30000);
+  }
 
-    // While there is a complete message in the buffer...
-    while (newlineIndex !== -1) {
-      const message = this.buffer.slice(0, newlineIndex); // Extract the message
-      this.buffer = this.buffer.slice(newlineIndex + 1);  // Keep the rest in the buffer
-
-      if (message.trim()) {
+  processBuffer() {
+    if (typeof this.buffer !== 'string') return;
+    let newlineIndex;
+    while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
+      const line = this.buffer.slice(0, newlineIndex);
+      this.buffer = this.buffer.slice(newlineIndex + 1);
+      if (line) {
         try {
-          const json = JSON.parse(message);
-          this.handleMessage(json);
-        } catch (e) {
-          // If JSON parse fails, the server sent garbage or we have a sync issue. 
-          // We ignore it to keep the connection alive.
+          const response = JSON.parse(line);
+          this.handleMessage(response);
+        } catch (err) {
+          // Ignore unparseable chunks
         }
       }
-      // Check if there is another message in the remaining buffer
-      newlineIndex = this.buffer.indexOf('\n');
     }
   }
 
-  /**
-   * Routes the parsed JSON message to the correct handler.
-   * It handles:
-   * 1. Notifications (subscriptions like new blocks or wallet activity).
-   * 2. Responses to our specific requests (matching by ID).
-   */
-  private handleMessage(response: any) {
-    // 1. Handle Subscriptions (e.g., blockchain.headers.subscribe)
-    if (response.method && response.method.endsWith('.subscribe')) {
-      this.emit(response.method, response.params);
-      return;
-    }
-
-    // 2. Handle Handshake response (we ignore the content, just ensures connection works)
-    if (response.id === 'handshake') return;
-
-    // 3. Handle Standard Responses
+  handleMessage(response: any) {
     if (response.id !== undefined) {
       const req = this.requests.get(response.id);
       if (req) {
         this.requests.delete(response.id);
-
         if (response.error) {
           if (response.error.message !== 'missing transaction' && response.error.message !== 'non-hex hash') {
-            console.warn(`  ⚠️ ERROR (id=${response.id}):`, JSON.stringify(response.error));
+              console.warn(`  ⚠️ ERROR (id=${response.id}):`, JSON.stringify(response.error));
           }
           req.reject(new Error(response.error.message || 'Electrum Error'));
         } else {
-          // Optional: log successful responses to track data flow
-          // console.log(`⬇️ RECV (id=${response.id})`);
           req.resolve(response.result);
         }
       }
     }
   }
 
-  /**
-   * Sends a JSON-RPC request to the server.
-   * Returns a Promise that resolves when the server responds with the matching ID.
-   */
-  async request(method: string, params: any[] = []) {
-    if (!this.isConnected || !this.socket) throw new Error('Not connected');
-
-    this.id += 1;
-    const reqId = this.id;
-    const payload = JSON.stringify({ jsonrpc: '2.0', id: reqId, method, params }) + '\n';
-
+  async request(method: string, params: any[] = []): Promise<any> {
     return new Promise((resolve, reject) => {
-      // Store the promise handlers so handleMessage can call them later
-      this.requests.set(reqId, { resolve, reject });
-
-      // Request timeout: If server doesn't answer in 10s, fail.
-      setTimeout(() => {
-        if (this.requests.has(reqId)) {
-          this.requests.delete(reqId);
-          reject(new Error(`Timeout: ${method}`));
-        }
-      }, 10000);
-
+      if (!this.socket || !this.isConnected) {
+        return reject(new Error('Socket is not connected'));
+      }
+      const id = ++this.idCounter;
+      this.requests.set(id, { resolve, reject });
+      const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n';
       try {
         this.socket.write(payload);
-      } catch (e) {
-        this.requests.delete(reqId);
-        reject(e);
+      } catch (err) {
+        this.requests.delete(id);
+        reject(err);
       }
     });
   }
 
-  /**
-   * Helper to send multiple requests in parallel (not strictly a JSON-RPC batch, 
-   * but concurrent requests over the same socket).
-   */
-  async batch(requests: { method: string; params: any[] }[]) {
-    return Promise.all(
-      requests.map(req =>
-        this.request(req.method, req.params)
-          .then(result => ({ result, error: null }))
-          .catch(error => ({ result: null, error }))
-      )
-    );
-  }
-
-  /**
-   * Periodically pings the server to prevent it from closing the socket due to inactivity.
-   */
-  private startKeepAlive() {
-    if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
-    this.keepAliveInterval = setInterval(() => {
-      if (this.isConnected) {
-        this.request('server.ping').catch(() => {
-          // If ping throws/fails (e.g., broken pipe), drop connection
-          this.forceClose();
-        });
-      }
-    }, 60000); // 60 seconds
-  }
-
-  /**
-   * Cleans up resources, destroys socket, and clears intervals.
-   */
-  public forceClose() {
+  forceClose() {
     this.isConnected = false;
-    if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
+    
+    if (this.keepAliveInterval) {
+      try { clearInterval(this.keepAliveInterval); } catch (e) {}
+      this.keepAliveInterval = null;
+    }
+    
     if (this.socket) {
-      try { this.socket.destroy(); } catch (e) { }
+      try {
+        if (typeof this.socket.destroy === 'function') {
+          this.socket.destroy();
+        } else if (typeof this.socket.end === 'function') {
+          this.socket.end();
+        }
+      } catch (e) {}
       this.socket = null;
     }
-
-    // Explicitly reject and clear any pending requests to prevent hanging
+    
     for (const [id, req] of this.requests.entries()) {
-      req.reject(new Error('Connection closed prematurely'));
+      try {
+        if (typeof req.reject === 'function') {
+          req.reject(new Error('Connection closed'));
+        }
+      } catch (e) {}
     }
     this.requests.clear();
 
-    this.emit('close');
+    if (this.onCloseCallback) {
+      this.onCloseCallback();
+    }
   }
 }
 
-const PEERS = {
-  mainnet: [
-    { host: 'electrum.blockstream.info', port: 50002, protocol: 'tls' as const },
-    { host: 'electrum.emzy.de', port: 50002, protocol: 'tls' as const },
-    { host: 'electrum.bitaroo.net', port: 50002, protocol: 'tls' as const },
-    { host: 'fulcrum.sethforprivacy.com', port: 50002, protocol: 'tls' as const },
-  ],
-  testnet: [
-    { host: 'electrum.blockstream.info', port: 60002, protocol: 'tls' as const },
-    { host: 'testnet.qtornado.com', port: 51002, protocol: 'tls' as const },
-  ],
-};
+// -------------------------------------------------------------
+// Connection Management & Peer Rotation
+// -------------------------------------------------------------
 
-// Singleton instance. We only want one active socket at a time.
 let client: CustomElectrumClient | null = null;
-let currentNetworkIsTestnet: boolean | null = null;
 let connectionPromise: Promise<CustomElectrumClient> | null = null;
 
-/**
- * Utility: Converts a bitcoin address to a Script Hash.
- * Electrum servers index data by script hash (SHA256 of the output script), not by address.
- */
-export const addressToScriptHash = (address: string): string => {
-  try {
-    const script = bitcoin.address.toOutputScript(address, NETWORK);
-    const hash = bitcoin.crypto.sha256(script);
-    return Buffer.from(hash).reverse().toString('hex');
-  } catch (e) {
-    return '';
-  }
-};
+const peerCooldowns = new Map<string, number>();
+const COOLDOWN_MS = 5 * 60 * 1000; 
 
-/**
- * THE GATEKEEPER (Singleton Accessor)
- */
-export const getElectrumClient = async () => {
-  // Reuse existing connection if valid
-  if (client && client.isConnected && currentNetworkIsTestnet === IS_TESTNET) {
+function shuffle(array: any[]) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+  if (nextAppState.match(/inactive|background/)) {
+    if (client) {
+      console.log('  💤 App going to background, closing active socket.');
+      client.forceClose();
+      client = null;
+      connectionPromise = null;
+    }
+  } else if (nextAppState === 'active') {
+    if (!client && !connectionPromise) {
+      console.log('  🚀 App active, reconnecting...');
+      getElectrumClient().catch(() => {}); 
+    }
+  }
+});
+
+async function raceConnections(candidates: PeerConfig[]): Promise<CustomElectrumClient> {
+  if (candidates.length === 0) throw new Error("No candidates for race");
+
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    let failedCount = 0;
+    
+    for (const peer of candidates) {
+      console.log(`  🔌 Racing ${peer.host}:${peer.port} (${peer.protocol})...`);
+      const cl = new CustomElectrumClient(peer.host, peer.port, peer.protocol, Boolean(peer.requiresSelfSigned));
+      
+      cl.connect(3000) 
+        .then(() => {
+          if (!resolved) {
+            resolved = true;
+            console.log(`  🏆 Race won by ${peer.host}:${peer.port}`);
+            resolve(cl);
+          } else {
+            cl.forceClose();
+          }
+        })
+        .catch((err: any) => {
+          const osErrorCode = err.code ? `[${err.code}] ` : '';
+          console.warn(`  ❌ Race failed for ${peer.host}:${peer.port}: ${osErrorCode}${err.message}`);
+          
+          peerCooldowns.set(`${peer.host}:${peer.port}`, Date.now());
+          
+          failedCount++;
+          if (failedCount === candidates.length && !resolved) {
+            reject(new Error("All candidates failed the race"));
+          }
+        });
+    }
+  });
+}
+
+export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
+  if (client && client.isConnected) {
     return client;
   }
-  // Prevent race conditions: if connection logic is already running, wait for it
-  if (connectionPromise) return connectionPromise;
+  if (connectionPromise) {
+    return connectionPromise;
+  }
 
   connectionPromise = (async () => {
     try {
-      // Clean up old client if it exists
-      if (client) {
-        client.forceClose();
-        client = null;
-      }
+      const netStr = await AsyncStorage.getItem(SETTINGS_NETWORK_KEY);
+      IS_TESTNET = netStr === 'testnet';
+      
+      const allowSelfSignedStr = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_CERTIFICATES_KEY);
+      const allowSelfSigned = allowSelfSignedStr === 'true';
 
-      const peerList = IS_TESTNET ? PEERS.testnet : PEERS.mainnet;
-
-      // 1. Try Custom Node first
-      try {
-        let custom = await AsyncStorage.getItem(CUSTOM_NODE_KEY);
-        let allowSelfSignedStr = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_KEY);
-        let allowSelfSigned = allowSelfSignedStr === 'true';
-
-        if (custom) {
-          custom = custom.replace(/^https?:\/\//, '');
-
-          const parts = custom.split(':');
-          const host = parts[0];
-
-          let port = 50002;
-          let protocol: 'tcp' | 'tls' = 'tls';
-
-          if (parts.length > 1) {
-            port = parseInt(parts[1], 10) || 50002;
-          }
-
-          if (parts.length > 2) {
-            protocol = (parts[2].toLowerCase() as 'tcp' | 'tls') || 'tls';
-          } else if (port === 50001) {
-            protocol = 'tcp';
-          }
-
-          if (host) {
-            console.log(`🔌 Custom Node: ${host}:${port} (${protocol})`);
-            const cl = new CustomElectrumClient(host, port, protocol, allowSelfSigned);
-            await cl.connect();
-            client = cl;
-            currentNetworkIsTestnet = IS_TESTNET;
-            return client;
-          }
-        }
-      } catch (e) {
-        console.warn('Custom node failed, falling back to peers', e);
-      }
-
-      // 2. Fallback: Sequential Try through hardcoded peers
-      for (const peer of peerList) {
+      const customNodeStr = await AsyncStorage.getItem(CUSTOM_ELECTRUM_NODE_KEY);
+      
+      if (customNodeStr) {
         try {
-          console.log(`🔌 Connecting to ${peer.host}:${peer.port} (${peer.protocol})...`);
-          const cl = new CustomElectrumClient(peer.host, peer.port, peer.protocol, false);
-          await cl.connect();
-
-          client = cl;
-          currentNetworkIsTestnet = IS_TESTNET;
-
-          // Clean up singleton if this specific client closes later
-          client.on('close', () => {
-            if (client === cl) {
-              client = null;
-              connectionPromise = null;
-            }
-          });
-          return client;
-        } catch (err: any) {
-          const osErrorCode = err.code ? `[${err.code}] ` : '';
-          console.warn(`  ❌ Failed ${peer.host}:${peer.port} (${peer.protocol}): ${osErrorCode}${err.message || 'Unknown Error'}`);
-
-          if (client) client.forceClose();
-          client = null;
+          const parsed = JSON.parse(customNodeStr);
+          if (parsed && parsed.host) {
+            console.log(`  🔌 Attempting custom node ${parsed.host}...`);
+            const cl = new CustomElectrumClient(parsed.host, parsed.port, parsed.protocol, true);
+            await cl.connect(5000);
+            client = cl;
+            
+            cl.onCloseCallback = () => {
+              if (client === cl) { 
+                client = null; 
+                connectionPromise = null; 
+                if (AppState.currentState === 'active') getElectrumClient().catch(() => {});
+              }
+            };
+            return cl;
+          }
+        } catch (e) {
+          console.warn('  ⚠️ Custom node failed. Falling back to public peers.', e);
         }
       }
-      throw new Error('All peers failed');
+
+      const networkPeers = IS_TESTNET ? PEERS.testnet : PEERS.mainnet;
+      const validPeers = networkPeers.filter(p => allowSelfSigned || !p.requiresSelfSigned);
+      
+      const tier1 = validPeers.filter(p => !p.requiresSelfSigned);
+      const tier2 = validPeers.filter(p => Boolean(p.requiresSelfSigned));
+      
+      shuffle(tier1);
+      shuffle(tier2);
+      
+      const candidatePool = [...tier1, ...tier2];
+      
+      if (candidatePool.length === 0) {
+        throw new Error("No valid peers available based on current settings.");
+      }
+
+      const now = Date.now();
+      const freshCandidates = candidatePool.filter(p => {
+        const cd = peerCooldowns.get(`${p.host}:${p.port}`);
+        return !cd || (now - cd > COOLDOWN_MS);
+      });
+      
+      if (freshCandidates.length === 0) {
+        console.warn('  ⚠️ All peers on cooldown. Resetting registry.');
+        peerCooldowns.clear();
+        freshCandidates.push(...candidatePool);
+      }
+
+      while (freshCandidates.length > 0) {
+        const batch = freshCandidates.splice(0, 3);
+        try {
+          const winner = await raceConnections(batch);
+          client = winner;
+          
+          winner.onCloseCallback = () => {
+            if (client === winner) { 
+              client = null; 
+              connectionPromise = null;
+              if (AppState.currentState === 'active') {
+                getElectrumClient().catch(() => {}); 
+              }
+            }
+          };
+          
+          return winner;
+        } catch (err) {
+          console.warn(`  ⚠️ Batch failed. Trying next batch if available...`);
+        }
+      }
+      
+      throw new Error("All peers exhausted or blocked.");
     } catch (error) {
       connectionPromise = null;
       throw error;
-    } finally {
-      connectionPromise = null;
     }
   })();
 
   return connectionPromise;
 };
 
-// --- Exported Helper Wrappers ---
+// -------------------------------------------------------------
+// Exposed Electrum API Actions & Settings Helpers
+// -------------------------------------------------------------
 
-export const electrumGetBalance = async (scriptHash: string) => (await getElectrumClient()).request('blockchain.scripthash.get_balance', [scriptHash]);
-export const electrumGetHistory = async (scriptHash: string) => (await getElectrumClient()).request('blockchain.scripthash.get_history', [scriptHash]);
-export const electrumListUnspent = async (scriptHash: string) => (await getElectrumClient()).request('blockchain.scripthash.listunspent', [scriptHash]);
-export const electrumGetTransaction = async (txId: string) => (await getElectrumClient()).request('blockchain.transaction.get', [txId, true]);
-export const electrumBroadcast = async (txHex: string) => (await getElectrumClient()).request('blockchain.transaction.broadcast', [txHex]);
-export const electrumEstimateFee = async (blocks: number) => (await getElectrumClient()).request('blockchain.estimatefee', [blocks]);
-export const electrumGetHeader = async () => (await getElectrumClient()).request('blockchain.headers.subscribe');
-
-// Batch Requests
-export const electrumBatchGetBalance = async (script_hashes: string[]) => {
-  const client = await getElectrumClient();
-  return client.batch(script_hashes.map(hash => ({ method: 'blockchain.scripthash.get_balance', params: [hash] })));
-};
-
-export const electrumBatchGetHistory = async (script_hashes: string[]) => {
-  const client = await getElectrumClient();
-  return client.batch(script_hashes.map(hash => ({ method: 'blockchain.scripthash.get_history', params: [hash] })));
-};
-
-export const electrumBatchGetTransactions = async (tx_ids: string[]) => {
-  const client = await getElectrumClient();
-  return client.batch(tx_ids.map(id => ({ method: 'blockchain.transaction.get', params: [id, false] })));
-};
-
-// Application State Controls
-export const resetActiveConnection = () => {
-  if (client) {
-    client.forceClose();
-    client = null;
-    connectionPromise = null;
+export const getConnectedPeer = () => {
+  if (client && client.isConnected) {
+    return { host: client.host, port: client.port, protocol: client.protocol };
   }
+  return null;
 };
 
 export const getActiveHostName = (): string | null => {
-  if (!client || !client.isConnected) return null;
-  return client.host;
+  if (client && client.isConnected) {
+    return client.host;
+  }
+  return null;
 };
 
-export const test_custom_node_connection = async (custom_url: string, allow_self_signed: boolean): Promise<boolean> => {
+export const resetElectrumClient = () => {
+  if (client) {
+    client.forceClose();
+  }
+  client = null;
+  connectionPromise = null;
+};
+
+export const resetActiveConnection = () => {
+  resetElectrumClient();
+};
+
+export const test_custom_node_connection = async (url: string, allowSelfSigned: boolean): Promise<boolean> => {
   try {
-    const parts = custom_url.split(':');
+    const parts = url.split(':');
+    if (parts.length < 2) return false;
+    
     const host = parts[0];
-    const port = parseInt(parts[1], 10) || 50002;
-    let protocol = 'tls' as 'tcp' | 'tls';
+    const port = parseInt(parts[1], 10);
+    const protocol = parts.length > 2 && parts[2].toLowerCase() === 'tcp' ? 'tcp' : 'tls';
 
-    if (parts.length > 2) {
-      protocol = parts[2].toLowerCase() as 'tcp' | 'tls';
-    } else if (port === 50001) {
-      protocol = 'tcp';
-    }
-
-    const test_client = new CustomElectrumClient(host, port, protocol, allow_self_signed);
-    await test_client.connect();
-    test_client.forceClose();
+    const cl = new CustomElectrumClient(host, port, protocol, allowSelfSigned);
+    await cl.connect(5000); 
+    cl.forceClose();
     return true;
-  } catch (error) {
+  } catch (e) {
     return false;
   }
 };
+
+export const isElectrumConnected = () => {
+  return client ? client.isConnected : false;
+};
+
+export const electrumBatchGetBalance = async (scripthashes: string[]) => {
+  const cl = await getElectrumClient();
+  return Promise.all(scripthashes.map(hash => 
+    cl.request('blockchain.scripthash.get_balance', [hash])
+      .then(result => ({ result }))
+      .catch(error => ({ error }))
+  ));
+};
+
+export const electrumBatchGetHistory = async (scripthashes: string[]) => {
+  const cl = await getElectrumClient();
+  return Promise.all(scripthashes.map(hash => 
+    cl.request('blockchain.scripthash.get_history', [hash])
+      .then(result => ({ result }))
+      .catch(error => ({ error }))
+  ));
+};
+
+export const electrumListUnspent = async (hash: string) => {
+  const cl = await getElectrumClient();
+  return cl.request('blockchain.scripthash.listunspent', [hash]);
+};
+
+export const electrumEstimateFee = async (blocks: number) => {
+  const cl = await getElectrumClient();
+  return cl.request('blockchain.estimatefee', [blocks]);
+};
+
+export const electrumBroadcastTransaction = async (txHex: string) => {
+  const cl = await getElectrumClient();
+  return cl.request('blockchain.transaction.broadcast', [txHex]);
+};
+
+export const addressToScriptHash = (address: string): string => {
+  try {
+    const network = IS_TESTNET ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
+    const script = bitcoin.address.toOutputScript(address, network);
+    const hash = bitcoin.crypto.sha256(script);
+    return Buffer.from(hash).reverse().toString('hex');
+  } catch (error) {
+    return '';
+  }
+};
+
+export const electrumBatchGetTransactions = async (txids: string[]) => {
+  const cl = await getElectrumClient();
+  return Promise.all(txids.map(txid => 
+    cl.request('blockchain.transaction.get', [txid, true])
+      .then(result => ({ result }))
+      .catch(error => ({ error }))
+  ));
+};
+
+export const electrumGetTransaction = async (txid: string) => {
+  const cl = await getElectrumClient();
+  return cl.request('blockchain.transaction.get', [txid, true]);
+};
+
+export const electrumGetHeader = async (height: number) => {
+  const cl = await getElectrumClient();
+  return cl.request('blockchain.block.header', [height]);
+};
+
+// Alias to fix the missing electrumBroadcast error in bitcoin.ts
+export const electrumBroadcast = electrumBroadcastTransaction;
