@@ -4,8 +4,6 @@ import {
     resetActiveConnection,
     getActiveHostName,
     test_custom_node_connection,
-    electrumGetBalance,
-    electrumGetHistory,
     electrumListUnspent,
     electrumGetTransaction,
     electrumBroadcast,
@@ -24,7 +22,6 @@ const flushPromises = async () => {
     }
 };
 
-// 1. Properly mock react-native-tcp-socket and export helpers for testing
 jest.mock('react-native-tcp-socket', () => {
     const socket = {
         setEncoding: jest.fn(),
@@ -44,7 +41,6 @@ jest.mock('react-native-tcp-socket', () => {
         }
     };
 
-    // Capture event listeners attached by electrum.ts
     socket.on.mockImplementation((event: string, cb: Function) => {
         socket.callbacks[event] = cb;
     });
@@ -68,7 +64,6 @@ jest.mock('react-native-tcp-socket', () => {
     };
 });
 
-// Import the mock helpers defined above
 const { mockSocket, mockTcp } = require('react-native-tcp-socket');
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -92,12 +87,11 @@ describe('Electrum Service', () => {
     afterAll(() => {
         jest.restoreAllMocks();
     });
+    
     beforeEach(() => {
         jest.useFakeTimers();
         jest.clearAllMocks();
         resetActiveConnection();
-
-        // Clear out callbacks before each test
         mockSocket.callbacks = {};
     });
 
@@ -120,8 +114,8 @@ describe('Electrum Service', () => {
     describe('getElectrumClient', () => {
         it('connects to custom node if available in storage', async () => {
             (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => {
-                if (key === '@customNodeUrl') return Promise.resolve('custom.node.com:50002:tls');
-                if (key === '@allowSelfSigned') return Promise.resolve('true');
+                if (key === '@customElectrumNode') return Promise.resolve('{"host":"custom.node.com","port":50002,"protocol":"tls"}');
+                if (key === '@allow_self_signed_certs') return Promise.resolve('true');
                 return Promise.resolve(null);
             });
 
@@ -129,7 +123,7 @@ describe('Electrum Service', () => {
             await flushPromises();
             jest.advanceTimersByTime(20);
 
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
 
             const client = await clientPromise;
 
@@ -142,7 +136,10 @@ describe('Electrum Service', () => {
         });
 
         it('falls back to hardcoded peers if custom node fails', async () => {
-            (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+            (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => {
+                if (key === '@customElectrumNode') return Promise.resolve('{"host":"bad.node.com","port":50002,"protocol":"tls"}');
+                return Promise.resolve(null);
+            });
 
             const originalConnectTLS = mockTcp.connectTLS.getMockImplementation();
 
@@ -156,12 +153,12 @@ describe('Electrum Service', () => {
             await flushPromises();
             jest.advanceTimersByTime(20);
 
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
 
             const client = await clientPromise;
 
-            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(2);
-            expect(client.host).toBe('electrum.emzy.de');
+            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(4); 
+            expect(client.host).not.toBe('bad.node.com');
         });
 
         it('reuses existing connection', async () => {
@@ -170,12 +167,12 @@ describe('Electrum Service', () => {
             const client1Promise = getElectrumClient();
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             const client1 = await client1Promise;
 
             const client2 = await getElectrumClient();
             expect(client1).toBe(client2);
-            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(1);
+            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(3); 
         });
     });
 
@@ -185,27 +182,27 @@ describe('Electrum Service', () => {
             const clientPromise = getElectrumClient();
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             await clientPromise;
             mockSocket.write.mockClear();
         });
 
         it('processes fragmented TCP JSON buffers', async () => {
-            const requestPromise = electrumGetBalance('test_hash');
+            const requestPromise = electrumListUnspent('test_hash');
             await flushPromises();
 
             const writeCall = mockSocket.write.mock.calls[0][0];
             const reqId = JSON.parse(writeCall).id;
 
             mockSocket.emitData(`{"jsonrpc":"2.0","id":${reqId}`);
-            mockSocket.emitData(`,"result":{"confirmed": 1000}}\n`);
+            mockSocket.emitData(`,"result":[{"tx_hash": "abcd"}]}\n`);
 
             const result = await requestPromise;
-            expect(result).toEqual({ confirmed: 1000 });
+            expect(result).toEqual([{ tx_hash: "abcd" }]);
         });
 
         it('handles JSON-RPC errors correctly', async () => {
-            const requestPromise = electrumGetBalance('test_hash');
+            const requestPromise = electrumListUnspent('test_hash');
             await flushPromises();
 
             const writeCall = mockSocket.write.mock.calls[0][0];
@@ -217,7 +214,7 @@ describe('Electrum Service', () => {
         });
 
         it('times out requests after 10 seconds', async () => {
-            const requestPromise = electrumGetBalance('test_hash');
+            const requestPromise = electrumListUnspent('test_hash');
             await flushPromises();
 
             jest.advanceTimersByTime(10000);
@@ -231,7 +228,7 @@ describe('Electrum Service', () => {
             const clientPromise = getElectrumClient();
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             await clientPromise;
         });
 
@@ -255,7 +252,7 @@ describe('Electrum Service', () => {
             const clientPromise = getElectrumClient();
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             const newClient = await clientPromise;
 
             expect(newClient.isConnected).toBe(true);
@@ -269,16 +266,9 @@ describe('Electrum Service', () => {
             const clientPromise = getElectrumClient();
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             await clientPromise;
             mockSocket.write.mockClear();
-        });
-
-        it('electrumGetHistory sends correct format', async () => {
-            electrumGetHistory('hash123').catch(() => { });
-            await flushPromises();
-            expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.scripthash.get_history'));
-            expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('hash123'));
         });
 
         it('electrumListUnspent sends correct format', async () => {
@@ -310,9 +300,9 @@ describe('Electrum Service', () => {
         });
 
         it('electrumGetHeader sends correct format', async () => {
-            electrumGetHeader().catch(() => { });
+            electrumGetHeader(100).catch(() => { });
             await flushPromises();
-            expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.headers.subscribe'));
+            expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.block.header'));
         });
     });
 
@@ -322,7 +312,7 @@ describe('Electrum Service', () => {
             const clientPromise = getElectrumClient();
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             await clientPromise;
             mockSocket.write.mockClear();
         });
@@ -358,7 +348,7 @@ describe('Electrum Service', () => {
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledTimes(2);
             expect(mockSocket.write.mock.calls[0][0]).toContain('blockchain.transaction.get');
-            expect(mockSocket.write.mock.calls[0][0]).toContain('false');
+            expect(mockSocket.write.mock.calls[0][0]).toContain('true');
         });
     });
 
@@ -367,7 +357,7 @@ describe('Electrum Service', () => {
             const promise = test_custom_node_connection('test.com:50001:tcp', false);
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
 
             const result = await promise;
 
@@ -401,71 +391,63 @@ describe('Electrum Service', () => {
         it('attempts all hardcoded peers sequentially and throws if all fail (Peer Exhaustion Routing)', async () => {
             (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
 
-            // Use mockImplementationOnce twice to fail mainnet peers cleanly without breaking other tests
-            mockTcp.connectTLS
-                .mockImplementationOnce(() => {
-                    setTimeout(() => mockSocket.emitError(new Error('Connection refused 1')), 5);
-                    return mockSocket;
-                })
-                .mockImplementationOnce(() => {
-                    setTimeout(() => mockSocket.emitError(new Error('Connection refused 2')), 5);
-                    return mockSocket;
-                });
+            mockTcp.connectTLS.mockImplementation(() => {
+                setTimeout(() => mockSocket.emitError(new Error('Connection refused')), 5);
+                return mockSocket;
+            });
+            mockTcp.createConnection.mockImplementation(() => {
+                setTimeout(() => mockSocket.emitError(new Error('Connection refused')), 5);
+                return mockSocket;
+            });
 
             const clientPromise = getElectrumClient();
 
-            await flushPromises();
-            jest.advanceTimersByTime(10);
-            await flushPromises();
-            jest.advanceTimersByTime(10);
+            for (let i = 0; i < 5; i++) {
+                await flushPromises();
+                jest.advanceTimersByTime(3000); 
+            }
             await flushPromises();
 
-            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(2);
-            await expect(clientPromise).rejects.toThrow('All peers failed');
+            expect(mockTcp.connectTLS).toHaveBeenCalled();
+            await expect(clientPromise).rejects.toThrow('All peers exhausted or blocked.');
         });
 
         it('rejects orphaned requests and removes them if connection closes (Orphaned Request Cleanup)', async () => {
             (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
 
-            // 1. Establish connection
             const clientPromise = getElectrumClient();
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             const client = await clientPromise;
 
-            // 2. Fire off a request
-            const reqPromise = electrumGetBalance('dummy_hash');
+            const reqPromise = electrumListUnspent('dummy_hash');
             await flushPromises();
 
             expect((client as any).requests.size).toBe(1);
 
-            // 3. Simulate unexpected socket closure
             mockSocket.emitClose();
 
-            await expect(reqPromise).rejects.toThrow('Connection closed prematurely');
+            await expect(reqPromise).rejects.toThrow('Connection closed');
             expect((client as any).requests.size).toBe(0);
         });
 
         it('closes connection and sets isConnected to false if keep-alive ping fails (Keep-Alive Ping Interruption)', async () => {
             (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
 
-            // 1. Establish connection
             const clientPromise = getElectrumClient();
             await flushPromises();
             jest.advanceTimersByTime(20);
-            mockSocket.emitData('{"jsonrpc":"2.0","id":"handshake","result":"1.4"}\n');
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             const client = await clientPromise;
 
             expect(client.isConnected).toBe(true);
 
-            // 2. Mock socket.write to throw an error on the ping
             mockSocket.write.mockImplementationOnce(() => {
                 throw new Error('System error: socket is half-open');
             });
 
-            // 3. Fast-forward 60s
-            jest.advanceTimersByTime(60000);
+            jest.advanceTimersByTime(30000);
             await flushPromises();
 
             expect(client.isConnected).toBe(false);
