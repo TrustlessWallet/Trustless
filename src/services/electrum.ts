@@ -7,7 +7,7 @@ import * as bitcoin from 'bitcoinjs-lib';
 // Constants and Peer Configurations
 // -------------------------------------------------------------
 
-export let IS_TESTNET = false; 
+export let IS_TESTNET = false;
 const SETTINGS_NETWORK_KEY = '@network_preference';
 const CUSTOM_ELECTRUM_NODE_KEY = '@customElectrumNode';
 const ALLOW_SELF_SIGNED_CERTIFICATES_KEY = '@allow_self_signed_certs';
@@ -82,7 +82,7 @@ export class CustomElectrumClient {
           await this.request('server.version', ['TrustlessWallet', '1.4']);
           clearTimeout(timeout);
           resolve();
-        } catch(e) {
+        } catch (e) {
           clearTimeout(timeout);
           this.forceClose();
           reject(e);
@@ -91,16 +91,16 @@ export class CustomElectrumClient {
 
       const safeOnConnect = () => {
         onConnect().catch(err => {
-           if (!this.isConnected) {
-              this.forceClose();
-              reject(err);
-           }
+          if (!this.isConnected) {
+            this.forceClose();
+            reject(err);
+          }
         });
       };
 
       try {
         const options: any = { host: this.host, port: this.port };
-        
+
         if (this.protocol === 'tls') {
           options.tls = true;
           options.rejectUnauthorized = !this.tlsRequiresSelfSigned;
@@ -180,7 +180,7 @@ export class CustomElectrumClient {
         this.requests.delete(response.id);
         if (response.error) {
           if (response.error.message !== 'missing transaction' && response.error.message !== 'non-hex hash') {
-              console.warn(`  ⚠️ ERROR (id=${response.id}):`, JSON.stringify(response.error));
+            console.warn(`  ⚠️ ERROR (id=${response.id}):`, JSON.stringify(response.error));
           }
           req.reject(new Error(response.error.message || 'Electrum Error'));
         } else {
@@ -196,11 +196,21 @@ export class CustomElectrumClient {
         return reject(new Error('Socket is not connected'));
       }
       const id = ++this.idCounter;
-      this.requests.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        if (this.requests.has(id)) {
+          this.requests.delete(id);
+          reject(new Error(`Timeout: ${method}`));
+        }
+      }, 10000);
+      this.requests.set(id, {
+        resolve: (v: any) => { clearTimeout(timer); resolve(v); },
+        reject: (e: any) => { clearTimeout(timer); reject(e); },
+      });
       const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n';
       try {
         this.socket.write(payload);
       } catch (err) {
+        clearTimeout(timer);
         this.requests.delete(id);
         reject(err);
       }
@@ -209,12 +219,12 @@ export class CustomElectrumClient {
 
   forceClose() {
     this.isConnected = false;
-    
+
     if (this.keepAliveInterval) {
-      try { clearInterval(this.keepAliveInterval); } catch (e) {}
+      try { clearInterval(this.keepAliveInterval); } catch (e) { }
       this.keepAliveInterval = null;
     }
-    
+
     if (this.socket) {
       try {
         if (typeof this.socket.destroy === 'function') {
@@ -222,16 +232,16 @@ export class CustomElectrumClient {
         } else if (typeof this.socket.end === 'function') {
           this.socket.end();
         }
-      } catch (e) {}
+      } catch (e) { }
       this.socket = null;
     }
-    
+
     for (const [id, req] of this.requests.entries()) {
       try {
         if (typeof req.reject === 'function') {
           req.reject(new Error('Connection closed'));
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     this.requests.clear();
 
@@ -249,7 +259,7 @@ let client: CustomElectrumClient | null = null;
 let connectionPromise: Promise<CustomElectrumClient> | null = null;
 
 const peerCooldowns = new Map<string, number>();
-const COOLDOWN_MS = 5 * 60 * 1000; 
+const COOLDOWN_MS = 5 * 60 * 1000;
 
 function shuffle(array: any[]) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -270,7 +280,7 @@ AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
   } else if (nextAppState === 'active') {
     if (!client && !connectionPromise) {
       console.log('  🚀 App active, reconnecting...');
-      getElectrumClient().catch(() => {}); 
+      getElectrumClient().catch(() => { });
     }
   }
 });
@@ -281,12 +291,12 @@ async function raceConnections(candidates: PeerConfig[]): Promise<CustomElectrum
   return new Promise((resolve, reject) => {
     let resolved = false;
     let failedCount = 0;
-    
+
     for (const peer of candidates) {
       console.log(`  🔌 Racing ${peer.host}:${peer.port} (${peer.protocol})...`);
       const cl = new CustomElectrumClient(peer.host, peer.port, peer.protocol, Boolean(peer.requiresSelfSigned));
-      
-      cl.connect(3000) 
+
+      cl.connect(3000)
         .then(() => {
           if (!resolved) {
             resolved = true;
@@ -299,9 +309,9 @@ async function raceConnections(candidates: PeerConfig[]): Promise<CustomElectrum
         .catch((err: any) => {
           const osErrorCode = err.code ? `[${err.code}] ` : '';
           console.warn(`  ❌ Race failed for ${peer.host}:${peer.port}: ${osErrorCode}${err.message}`);
-          
+
           peerCooldowns.set(`${peer.host}:${peer.port}`, Date.now());
-          
+
           failedCount++;
           if (failedCount === candidates.length && !resolved) {
             reject(new Error("All candidates failed the race"));
@@ -323,12 +333,12 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
     try {
       const netStr = await AsyncStorage.getItem(SETTINGS_NETWORK_KEY);
       IS_TESTNET = netStr === 'testnet';
-      
+
       const allowSelfSignedStr = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_CERTIFICATES_KEY);
       const allowSelfSigned = allowSelfSignedStr === 'true';
 
       const customNodeStr = await AsyncStorage.getItem(CUSTOM_ELECTRUM_NODE_KEY);
-      
+
       if (customNodeStr) {
         try {
           const parsed = JSON.parse(customNodeStr);
@@ -337,12 +347,12 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
             const cl = new CustomElectrumClient(parsed.host, parsed.port, parsed.protocol, true);
             await cl.connect(5000);
             client = cl;
-            
+
             cl.onCloseCallback = () => {
-              if (client === cl) { 
-                client = null; 
-                connectionPromise = null; 
-                if (AppState.currentState === 'active') getElectrumClient().catch(() => {});
+              if (client === cl) {
+                client = null;
+                connectionPromise = null;
+                if (AppState.currentState === 'active') getElectrumClient().catch(() => { });
               }
             };
             return cl;
@@ -354,15 +364,15 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
 
       const networkPeers = IS_TESTNET ? PEERS.testnet : PEERS.mainnet;
       const validPeers = networkPeers.filter(p => allowSelfSigned || !p.requiresSelfSigned);
-      
+
       const tier1 = validPeers.filter(p => !p.requiresSelfSigned);
       const tier2 = validPeers.filter(p => Boolean(p.requiresSelfSigned));
-      
+
       shuffle(tier1);
       shuffle(tier2);
-      
+
       const candidatePool = [...tier1, ...tier2];
-      
+
       if (candidatePool.length === 0) {
         throw new Error("No valid peers available based on current settings.");
       }
@@ -372,7 +382,7 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
         const cd = peerCooldowns.get(`${p.host}:${p.port}`);
         return !cd || (now - cd > COOLDOWN_MS);
       });
-      
+
       if (freshCandidates.length === 0) {
         console.warn('  ⚠️ All peers on cooldown. Resetting registry.');
         peerCooldowns.clear();
@@ -384,23 +394,23 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
         try {
           const winner = await raceConnections(batch);
           client = winner;
-          
+
           winner.onCloseCallback = () => {
-            if (client === winner) { 
-              client = null; 
+            if (client === winner) {
+              client = null;
               connectionPromise = null;
               if (AppState.currentState === 'active') {
-                getElectrumClient().catch(() => {}); 
+                getElectrumClient().catch(() => { });
               }
             }
           };
-          
+
           return winner;
         } catch (err) {
           console.warn(`  ⚠️ Batch failed. Trying next batch if available...`);
         }
       }
-      
+
       throw new Error("All peers exhausted or blocked.");
     } catch (error) {
       connectionPromise = null;
@@ -445,13 +455,13 @@ export const test_custom_node_connection = async (url: string, allowSelfSigned: 
   try {
     const parts = url.split(':');
     if (parts.length < 2) return false;
-    
+
     const host = parts[0];
     const port = parseInt(parts[1], 10);
     const protocol = parts.length > 2 && parts[2].toLowerCase() === 'tcp' ? 'tcp' : 'tls';
 
     const cl = new CustomElectrumClient(host, port, protocol, allowSelfSigned);
-    await cl.connect(5000); 
+    await cl.connect(5000);
     cl.forceClose();
     return true;
   } catch (e) {
@@ -465,16 +475,16 @@ export const isElectrumConnected = () => {
 
 export const electrumBatchGetBalance = async (scripthashes: string[]) => {
   const cl = await getElectrumClient();
-  return Promise.all(scripthashes.map(hash => 
+  return Promise.all(scripthashes.map(hash =>
     cl.request('blockchain.scripthash.get_balance', [hash])
-      .then(result => ({ result }))
-      .catch(error => ({ error }))
+      .then(result => ({ result, error: null }))
+      .catch(error => ({ result: null, error }))
   ));
 };
 
 export const electrumBatchGetHistory = async (scripthashes: string[]) => {
   const cl = await getElectrumClient();
-  return Promise.all(scripthashes.map(hash => 
+  return Promise.all(scripthashes.map(hash =>
     cl.request('blockchain.scripthash.get_history', [hash])
       .then(result => ({ result }))
       .catch(error => ({ error }))
@@ -509,7 +519,7 @@ export const addressToScriptHash = (address: string): string => {
 
 export const electrumBatchGetTransactions = async (txids: string[]) => {
   const cl = await getElectrumClient();
-  return Promise.all(txids.map(txid => 
+  return Promise.all(txids.map(txid =>
     cl.request('blockchain.transaction.get', [txid, true])
       .then(result => ({ result }))
       .catch(error => ({ error }))
