@@ -43,6 +43,9 @@ import { get_biometric_prompt_shown, set_biometric_prompt_shown } from '../servi
 import { LightningTopUpScreen } from '../screens/LightningTopUpScreen';
 import { WithdrawToOnchainScreen } from '../screens/WithdrawToOnchainScreen';
 import { get_is_nfc_scanning } from '../services/nfc';
+import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
+import { GlassView } from '../components/GlassView';
+
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
@@ -346,8 +349,16 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   };
 
   const CloseButton = ({ onPress }: { onPress: () => void }) => (
-    <TouchableOpacity onPress={onPress} style={{ padding: 4 }}>
-      <Feather name="x" size={24} color={theme.colors.primary} />
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+      <GlassView
+        width={32}
+        height={32}
+        shape="circle"
+        interactive={true}
+        style={{ overflow: 'visible' }}
+      >
+        <Feather name="x" size={20} color={theme.colors.primary} />
+      </GlassView>
     </TouchableOpacity>
   );
 
@@ -457,6 +468,14 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
             component={TransactionDetailsScreen}
             options={({ navigation }) => ({
               title: 'Transaction details',
+              headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+            })}
+          />
+          <Stack.Screen
+            name="TransactionHistory"
+            component={TransactionHistoryScreen}
+            options={({ navigation }) => ({
+              title: 'Transaction history',
               headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
             })}
           />

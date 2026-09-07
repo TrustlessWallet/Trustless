@@ -487,7 +487,10 @@ const WalletScreen = () => {
         );
     }, [walletAddressesSet, hideBalance, theme, navigation, styles]);
 
-    const displayTransactions = isLightningMode ? lightningTransactions : (onchainTransactions || []);
+    const displayTransactions = isLightningMode
+        ? [...lightningTransactions].sort((a, b) => b.paymentTime - a.paymentTime)
+        : (onchainTransactions || []);
+    const recentTransactions = displayTransactions.slice(0, 10);
 
     const toggleIconElement = (
         <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
@@ -564,7 +567,7 @@ const WalletScreen = () => {
 
             <Animated.FlatList
                 extraData={theme}
-                data={displayTransactions}
+                data={recentTransactions}
                 renderItem={renderTransactionItem}
                 keyExtractor={(item: any) => item.paymentHash || item.txid}
                 onScroll={Animated.event(
@@ -717,6 +720,18 @@ const WalletScreen = () => {
                     (!isLightningMode && loadingTxs) ?
                         <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> :
                         <Text style={styles.noTxText}>No transactions yet</Text>
+                }
+                ListFooterComponent={
+                    displayTransactions.length > 0 ? (
+                        <TouchableOpacity
+                            style={styles.historyButton}
+                            onPress={() => navigation.navigate('TransactionHistory', {
+                                mode: isLightningMode ? 'lightning' : 'onchain',
+                            })}
+                        >
+                            <Text style={styles.historyButtonText}>See full transaction history</Text>
+                        </TouchableOpacity>
+                    ) : null
                 }
                 showsVerticalScrollIndicator={false}
                 refreshControl={
@@ -992,6 +1007,17 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
         paddingVertical: 40,
         fontSize: 16,
         color: theme.colors.muted
+    },
+    historyButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        paddingVertical: 24,
+    },
+    historyButtonText: {
+        color: theme.colors.primary,
+        fontSize: 16,
     },
     loadingIndicator: {
         marginTop: 40,

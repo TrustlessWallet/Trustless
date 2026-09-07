@@ -160,6 +160,7 @@ export type RootStackParamList = {
     utxos: UTXO[];
     unsignedPsbtBase64: string;
   };
+  TransactionHistory: { mode: 'onchain' | 'lightning' };
   WalletSwitcher: undefined;
   WalletOptions: { wallet_id: string };
   AddWalletOptions: undefined;
