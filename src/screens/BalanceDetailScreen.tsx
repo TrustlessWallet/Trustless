@@ -8,7 +8,8 @@ import {
   TextInput,
   Platform,
   FlatList,
-  Keyboard
+  Keyboard,
+  ActivityIndicator,
 } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -23,6 +24,8 @@ import { formatBitcoinAddressShort } from '../constants/format';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import { GlassView } from '../components/GlassView';
+import { useWalletUTXOs } from '../hooks/useBalance';
+
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BalanceDetail'>;
@@ -31,13 +34,38 @@ const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const formatBtc = (sats: number) => (sats / 100000000).toFixed(8);
 
 const BalanceDetailScreen = () => {
-  const route = useRoute<RoutePropType>();
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
   const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
+
+  const queryAddresses = useMemo(() => {
+    if (!activeWallet) return [];
+
+    const changeAddresses = activeWallet.derivedChangeAddresses.map(
+      address => address.address
+    );
+
+    const usedReceiveAddresses = activeWallet.derivedAddressInfoCache
+      .filter(info => info.tx_count > 0 || info.balance > 0)
+      .map(info => info.address);
+
+    return [...new Set([...usedReceiveAddresses, ...changeAddresses])];
+  }, [activeWallet]);
+
+  const {
+    data: utxos = [],
+    isLoading: isLoadingUtxos,
+    refetch: refetchUtxos,
+  } = useWalletUTXOs(activeWallet?.id, queryAddresses);
+
+  useEffect(() => {
+    if (isFocused && queryAddresses.length > 0) {
+      void refetchUtxos();
+    }
+  }, [isFocused, queryAddresses.length, refetchUtxos]);
+
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
-  const { utxos } = route.params;
   const [hideBalance, setHideBalance] = useState(false);
 
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
@@ -50,8 +78,8 @@ const BalanceDetailScreen = () => {
     animateLayoutChanges: Platform.OS === 'ios',
   });
 
-  const sortedUtxos = useMemo(() =>
-    [...utxos].sort((a, b) => b.value - a.value),
+  const sortedUtxos = useMemo(
+    () => [...utxos].sort((a, b) => b.value - a.value),
     [utxos]
   );
 
@@ -227,7 +255,13 @@ const BalanceDetailScreen = () => {
         }}
         ListEmptyComponent={
           <View style={styles.centered}>
-            <Text style={styles.emptyText}>No spendable coins (UTXOs) found.</Text>
+            {isLoadingUtxos ? (
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+            ) : (
+              <Text style={styles.emptyText}>
+                No spendable coins (UTXOs) found.
+              </Text>
+            )}
           </View>
         }
       />
