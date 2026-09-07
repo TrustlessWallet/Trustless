@@ -291,16 +291,21 @@ async function raceConnections(candidates: PeerConfig[]): Promise<CustomElectrum
   return new Promise((resolve, reject) => {
     let resolved = false;
     let failedCount = 0;
+    const contenders: CustomElectrumClient[] = [];
 
     for (const peer of candidates) {
       console.log(`  🔌 Racing ${peer.host}:${peer.port} (${peer.protocol})...`);
       const cl = new CustomElectrumClient(peer.host, peer.port, peer.protocol, Boolean(peer.requiresSelfSigned));
+      contenders.push(cl);
 
       cl.connect(3000)
         .then(() => {
           if (!resolved) {
             resolved = true;
             console.log(`  🏆 Race won by ${peer.host}:${peer.port}`);
+            for (const other of contenders) {
+              if (other !== cl) other.forceClose();
+            }
             resolve(cl);
           } else {
             cl.forceClose();
@@ -486,8 +491,8 @@ export const electrumBatchGetHistory = async (scripthashes: string[]) => {
   const cl = await getElectrumClient();
   return Promise.all(scripthashes.map(hash =>
     cl.request('blockchain.scripthash.get_history', [hash])
-      .then(result => ({ result }))
-      .catch(error => ({ error }))
+      .then(result => ({ result, error: null }))
+      .catch(error => ({ result: null, error }))
   ));
 };
 
