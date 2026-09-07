@@ -132,7 +132,6 @@ const WalletScreen = () => {
     const nfcPulseAnim = useRef(new Animated.Value(1)).current;
 
     const { data: onchainTransactions, isLoading: loadingTxs, refetch: refetchTxs } = useWalletTransactions(activeWallet?.id, queryAddresses);
-    const { data: utxos, refetch: refetchUtxos } = useWalletUTXOs(queryAddresses);
 
     const isLightningLoading = activeWallet?.type !== 'watch-only' && !isLightningInitialized && !lightningInitError;
 
@@ -411,12 +410,13 @@ const WalletScreen = () => {
         try {
             triggerRefresh();
             if (!isLightningMode) {
-                await Promise.all([refetchTxs(), refetchUtxos()]);
+                await refetchTxs();
             }
         } finally {
             setIsManualRefreshing(false);
         }
-    }, [isLightningMode, triggerRefresh, refetchTxs, refetchUtxos]);
+}, [isLightningMode, triggerRefresh, refetchTxs]);
+
 
     const toggleMode = () => setIsLightningMode(!isLightningMode);
 
@@ -616,7 +616,7 @@ const WalletScreen = () => {
                                 onPress={() =>
                                     isLightningMode
                                         ? openLiquiditySheet()
-                                        : navigation.navigate('BalanceDetail', { utxos: utxos || [] })
+                                        : navigation.navigate('BalanceDetail', { utxos: [] })
                                 }
                             >
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

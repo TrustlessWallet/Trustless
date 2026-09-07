@@ -7,20 +7,20 @@ import { useState, useEffect } from 'react';
 import { getTipHeight } from '../services/bitcoin';
 
 export const useBalance = (address: string) => {
-  return useQuery({
-    queryKey: ['balance', address],
-    queryFn: async () => {
-        if (!address) return 0;
-        return await fetchBitcoinBalance(address);
-    },
-    enabled: !!address,
-    staleTime: 30000,
-    retry: false,
-  });
+    return useQuery({
+        queryKey: ['balance', address],
+        queryFn: async () => {
+            if (!address) return 0;
+            return await fetchBitcoinBalance(address);
+        },
+        enabled: !!address,
+        staleTime: 30000,
+        retry: false,
+    });
 };
 
 export const useWalletBalanceSync = (
-    walletId: string | undefined, 
+    walletId: string | undefined,
     addresses: string[]
 ) => {
     return useQuery({
@@ -55,80 +55,80 @@ export const useAddressListSync = (
 };
 
 export const useWalletTransactions = (walletId: string | undefined, addresses: string[]) => {
-  const [cachedTxs, setCachedTxs] = useState<Transaction[]>([]);
-  const [isDbLoaded, setIsDbLoaded] = useState(false);
+    const [cachedTxs, setCachedTxs] = useState<Transaction[]>([]);
+    const [isDbLoaded, setIsDbLoaded] = useState(false);
 
-  useEffect(() => {
-    if (!walletId) {
-        setCachedTxs([]);
-        setIsDbLoaded(true);
-        return;
-    }
-    
-    let isMounted = true;
-    dbGetTransactions(walletId).then(txs => {
-        if (isMounted) {
-            setCachedTxs(txs);
+    useEffect(() => {
+        if (!walletId) {
+            setCachedTxs([]);
             setIsDbLoaded(true);
+            return;
         }
-    }).catch(e => {
-        console.warn("Failed to load txs from DB", e);
-        if (isMounted) setIsDbLoaded(true);
+
+        let isMounted = true;
+        dbGetTransactions(walletId).then(txs => {
+            if (isMounted) {
+                setCachedTxs(txs);
+                setIsDbLoaded(true);
+            }
+        }).catch(e => {
+            console.warn("Failed to load txs from DB", e);
+            if (isMounted) setIsDbLoaded(true);
+        });
+        return () => { isMounted = false; };
+    }, [walletId]);
+
+    const query = useQuery({
+        queryKey: ['wallet-transactions', walletId, addresses.length],
+        queryFn: async () => {
+            if (!walletId || addresses.length === 0) return [];
+            const newTxs = await fetchAddressTransactions(addresses);
+
+            // Immediately cache to SQLite for subsequent instant loads
+            if (newTxs.length > 0) {
+                await dbSaveTransactions(walletId, newTxs, NETWORK_NAME);
+            }
+            return newTxs;
+        },
+        enabled: !!walletId && addresses.length > 0,
+        staleTime: 60000,
+        refetchOnMount: false,
+        refetchOnWindowFocus: true,
+        retry: false,
     });
-    return () => { isMounted = false; };
-  }, [walletId]);
 
-  const query = useQuery({
-    queryKey: ['wallet-transactions', walletId, addresses.length],
-    queryFn: async () => {
-         if (!walletId || addresses.length === 0) return [];
-         const newTxs = await fetchAddressTransactions(addresses);
-         
-         // Immediately cache to SQLite for subsequent instant loads
-         if (newTxs.length > 0) {
-             await dbSaveTransactions(walletId, newTxs, NETWORK_NAME);
-         }
-         return newTxs;
-    },
-    enabled: !!walletId && addresses.length > 0,
-    staleTime: 60000, 
-    refetchOnMount: false,
-    refetchOnWindowFocus: true,
-    retry: false,
-  });
+    const transactions = (query.data && query.data.length > 0) ? query.data : cachedTxs;
+    const isLoading = !isDbLoaded || (query.isLoading && transactions.length === 0);
 
-  const transactions = (query.data && query.data.length > 0) ? query.data : cachedTxs;
-  const isLoading = !isDbLoaded || (query.isLoading && transactions.length === 0);
-
-  return { 
-       ...query, 
-       data: transactions,
-       isLoading 
-   };
+    return {
+        ...query,
+        data: transactions,
+        isLoading
+    };
 };
 
-export const useWalletUTXOs = (addresses: string[]) => {
-  return useQuery({
-    queryKey: ['wallet-utxos', addresses.length],
-    queryFn: async () => {
-        if (addresses.length === 0) return [];
-        return await fetchUTXOs(addresses);
-    },
-    enabled: addresses.length > 0,
-    staleTime: 30000,
-    retry: false,
-  });
+export const useWalletUTXOs = (walletId: string | undefined, addresses: string[]) => {
+    return useQuery({
+        queryKey: ['wallet-utxos', walletId, addresses],
+        queryFn: async () => {
+            if (!walletId || addresses.length === 0) return [];
+            return await fetchUTXOs(addresses);
+        },
+        enabled: !!walletId && addresses.length > 0,
+        staleTime: 30000,
+        retry: false,
+    });
 };
 
 export const useTipHeight = (enabled: boolean = true) => {
-  return useQuery({
-    queryKey: ['tip-height'],
-    queryFn: async () => {
-        if (!enabled) return 0;
-        return await getTipHeight();
-    },
-    staleTime: 60000 * 5,
-    retry: false,
-    enabled,
-  });
+    return useQuery({
+        queryKey: ['tip-height'],
+        queryFn: async () => {
+            if (!enabled) return 0;
+            return await getTipHeight();
+        },
+        staleTime: 60000 * 5,
+        retry: false,
+        enabled,
+    });
 };
