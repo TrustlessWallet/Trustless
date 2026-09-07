@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback, useMemo } from 'react';
 import 'react-native-get-random-values';
 import * as bip39 from 'bip39';
 import * as Keychain from 'react-native-keychain';
@@ -179,6 +179,27 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const ACTIVE_WALLET_KEY = getStorageKey(KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE);
 
+    // Tracks any setTimeout ids scheduled for deferred work (Lightning init,
+    // UTXO scanning) so they can be cancelled if the provider unmounts,
+    // instead of firing later against a torn-down environment / stale wallet.
+    const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
+    const scheduleDeferred = useCallback((fn: () => void, delayMs: number) => {
+        const id = setTimeout(() => {
+            pendingTimeoutsRef.current.delete(id);
+            fn();
+        }, delayMs);
+        pendingTimeoutsRef.current.add(id);
+        return id;
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            pendingTimeoutsRef.current.forEach(id => clearTimeout(id));
+            pendingTimeoutsRef.current.clear();
+        };
+    }, []);
+
     // ------------------------------------------------------------------
     // SYNC HOOKS (Background Data Fetching)
     // ------------------------------------------------------------------
@@ -242,7 +263,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             });
 
             // DEFER: Push UTXO scanning to macro task queue so it doesn't block UI renders
-            setTimeout(() => {
+            scheduleDeferred(() => {
                 InteractionManager.runAfterInteractions(() => {
                     scanAndNameUtxos().catch((e) => console.error("Deferred UTXO scan failed", e));
                 });
@@ -437,7 +458,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             activeSdkInstance = sdk;
             setLightningInitError(null);
-            
+
             if (sdk && typeof sdk.addEventListener === 'function') {
                 sdk.addEventListener({
                     onEvent: async (e: any) => {
@@ -468,9 +489,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const registerLightningAddress = async (username: string, description?: string): Promise<void> => {
         if (!activeSdkInstance) throw new Error("Lightning node not initialized");
-        const request = { 
-            username, 
-            description: description || `Pay to ${username}@pay.hd-apps.com` 
+        const request = {
+            username,
+            description: description || `Pay to ${username}@pay.hd-apps.com`
         };
         const addressInfo = await activeSdkInstance.registerLightningAddress(request);
         setLightningAddress(addressInfo.lightningAddress);
@@ -647,7 +668,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         try {
             const response = await activeSdkInstance.receivePayment({
                 paymentMethod: breezSdk.ReceivePaymentMethod.BitcoinAddress.new({
-                    newAddress: undefined 
+                    newAddress: undefined
                 } as any)
             });
 
@@ -690,7 +711,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     const userFee = Number(speedObj?.userFeeSat || 0);
                     feeSats = l1Fee + userFee;
                 }
-            } 
+            }
 
             return {
                 senderFeeMsat: feeSats * 1000,
@@ -925,7 +946,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
                 if (credentials) {
                     // DEFER: Push Lightning initialization to macro task queue so UI renders first
-                    setTimeout(() => {
+                    scheduleDeferred(() => {
                         InteractionManager.runAfterInteractions(() => {
                             initLightningNode(credentials.password).catch((e) => console.error("Deferred Lightning Init failed", e));
                         });
@@ -1095,7 +1116,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 // Zero wallet edge-case optimization: skip keychain and address book calls
                 if (walletsFromDb.length === 0) {
                     setActiveWallet(null);
-                    setSavedAddresses([]);
+                    const saved = await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses').catch(() => []);
+                    setSavedAddresses(saved);
                     setLoading(false);
                     setLoadingSavedAddresses(false);
                     return;
@@ -1266,7 +1288,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (isFirstWallet) {
             dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses')
                 .then(setSavedAddresses)
-                .catch(() => {});
+                .catch(() => { });
             await Keychain.setGenericPassword('user', newWalletId, { service: ACTIVE_WALLET_KEY });
             await loadAndSetActiveWallet(newWalletId);
         } else {
