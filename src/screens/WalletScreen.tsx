@@ -131,7 +131,15 @@ const WalletScreen = () => {
     const ring2 = useRef(new Animated.Value(0)).current;
     const nfcPulseAnim = useRef(new Animated.Value(1)).current;
 
-    const { data: onchainTransactions, isLoading: loadingTxs, refetch: refetchTxs } = useWalletTransactions(activeWallet?.id, queryAddresses);
+    const {
+        data: onchainTransactions,
+        isLoading: loadingTxs,
+        refetch: refetchTxs,
+    } = useWalletTransactions(
+        activeWallet?.id,
+        queryAddresses,
+        10,
+    );
 
     const isLightningLoading = activeWallet?.type !== 'watch-only' && !isLightningInitialized && !lightningInitError;
 
@@ -415,7 +423,7 @@ const WalletScreen = () => {
         } finally {
             setIsManualRefreshing(false);
         }
-}, [isLightningMode, triggerRefresh, refetchTxs]);
+    }, [isLightningMode, triggerRefresh, refetchTxs]);
 
 
     const toggleMode = () => setIsLightningMode(!isLightningMode);
