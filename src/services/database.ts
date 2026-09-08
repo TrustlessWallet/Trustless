@@ -123,7 +123,7 @@ export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
     'SELECT * FROM wallets WHERE network = ?',
     [network]
   );
-  
+
   return rows.map((row: any) => ({
     id: row.id,
     name: row.name,
@@ -147,14 +147,14 @@ export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
  * 'scriptType' defaults to 'p2wpkh' (Native SegWit / bc1q) if not specified.
  */
 export const dbCreateWallet = async (
-    id: string, 
-    name: string, 
-    network: string, 
-    type: string = 'standard', 
-    xpub: string | null = null,
-    script_type: string = 'p2wpkh',
-    fingerprint: string | null = null,
-    derivation_path: string | null = null
+  id: string,
+  name: string,
+  network: string,
+  type: string = 'standard',
+  xpub: string | null = null,
+  script_type: string = 'p2wpkh',
+  fingerprint: string | null = null,
+  derivation_path: string | null = null
 ) => {
   const d = getDB();
   await d.runAsync(
@@ -248,8 +248,8 @@ export const dbGetAddressCache = async (wallet_id: string): Promise<DerivedAddre
 export const dbUpdateAddressLabel = async (address: string, label: string) => {
   const d = getDB();
   await d.runAsync(
-      'UPDATE addresses SET label = ? WHERE address = ?',
-      [label, address]
+    'UPDATE addresses SET label = ? WHERE address = ?',
+    [label, address]
   );
 };
 
@@ -283,11 +283,11 @@ export const dbGetUtxoLabels = async (wallet_id: string): Promise<Record<string,
 };
 
 export const dbUpdateUtxoLabel = async (txid: string, vout: number, label: string) => {
-    const d = getDB();
-    await d.runAsync(
-        'UPDATE utxos SET label = ? WHERE txid = ? AND vout = ?',
-        [label, txid, vout]
-    );
+  const d = getDB();
+  await d.runAsync(
+    'UPDATE utxos SET label = ? WHERE txid = ? AND vout = ?',
+    [label, txid, vout]
+  );
 }
 
 /**
@@ -300,20 +300,20 @@ export const dbUpdateUtxoLabel = async (txid: string, vout: number, label: strin
  */
 export const dbSyncUtxos = async (wallet_id: string, network: string, utxos: UTXO[], next_utxo_count: number) => {
   const d = getDB();
-  
+
   const existing_labels = await dbGetUtxoLabels(wallet_id);
-  
+
   // Clear old state
   await d.runAsync('DELETE FROM utxos WHERE wallet_id = ?', [wallet_id]);
 
   for (const u of utxos) {
     const key = `${u.txid}:${u.vout}`;
     let label = existing_labels[key] || null;
-    
+
     // Auto-labeling: If it's a new UTXO, give it a sequential ID (e.g., "UTXO #5")
     if (!label) {
-       label = `UTXO #${next_utxo_count}`;
-       next_utxo_count++; 
+      label = `UTXO #${next_utxo_count}`;
+      next_utxo_count++;
     }
 
     await d.runAsync(
@@ -325,7 +325,7 @@ export const dbSyncUtxos = async (wallet_id: string, network: string, utxos: UTX
 
   // Save the counter so the next UTXO gets the next number
   await d.runAsync('UPDATE wallets SET nextUtxoCount = ? WHERE id = ?', [next_utxo_count, wallet_id]);
-  
+
   return next_utxo_count;
 };
 
@@ -333,28 +333,48 @@ export const dbSyncUtxos = async (wallet_id: string, network: string, utxos: UTX
 // TRANSACTION HISTORY
 // ------------------------------------------------------------------
 
-export const dbGetTransactions = async (wallet_id: string): Promise<Transaction[]> => {
+export const dbGetTransactions = async (
+  wallet_id: string,
+  limit?: number,
+  offset: number = 0,
+): Promise<Transaction[]> => {
   const d = getDB();
-  const rows = await d.getAllAsync<any>(
-    'SELECT json_content FROM transactions WHERE wallet_id = ? ORDER BY block_time DESC',
-    [wallet_id]
-  );
-  
-  // Rehydrate the JSON string back into a Transaction object
+
+  let rows;
+
+  if (limit !== undefined) {
+    rows = await d.getAllAsync<any>(
+      `SELECT json_content
+       FROM transactions
+       WHERE wallet_id = ?
+       ORDER BY block_time DESC
+       LIMIT ? OFFSET ?`,
+      [wallet_id, limit, offset],
+    );
+  } else {
+    rows = await d.getAllAsync<any>(
+      `SELECT json_content
+       FROM transactions
+       WHERE wallet_id = ?
+       ORDER BY block_time DESC`,
+      [wallet_id],
+    );
+  }
+
   return rows.map(r => JSON.parse(r.json_content));
 };
 
 export const dbSaveTransactions = async (wallet_id: string, transactions: Transaction[], network: string) => {
   const d = getDB();
   for (const tx of transactions) {
-     // If unconfirmed, place it at the top of the list (future timestamp)
-     const block_time = tx.status.block_time || Date.now() / 1000 + 100000; 
-     
-     await d.runAsync(
-       `INSERT OR REPLACE INTO transactions (txid, wallet_id, json_content, block_time, network)
+    // If unconfirmed, place it at the top of the list (future timestamp)
+    const block_time = tx.status.block_time || Date.now() / 1000 + 100000;
+
+    await d.runAsync(
+      `INSERT OR REPLACE INTO transactions (txid, wallet_id, json_content, block_time, network)
         VALUES (?, ?, ?, ?, ?)`,
-       [tx.txid, wallet_id, JSON.stringify(tx), block_time, network]
-     );
+      [tx.txid, wallet_id, JSON.stringify(tx), block_time, network]
+    );
   }
 };
 
@@ -363,34 +383,34 @@ export const dbSaveTransactions = async (wallet_id: string, transactions: Transa
 // ------------------------------------------------------------------
 
 export const dbGetSavedAddresses = async (network: string, table: 'saved_addresses') => {
-    const d = getDB();
-    const rows = await d.getAllAsync<any>(`SELECT * FROM ${table} WHERE network = ?`, [network]);
-    return rows.map((r: any) => ({
-        id: r.id,
-        address: r.address,
-        name: r.name,
-        balance: r.balance,
-        lastUpdated: new Date(r.lastUpdated)
-    }));
+  const d = getDB();
+  const rows = await d.getAllAsync<any>(`SELECT * FROM ${table} WHERE network = ?`, [network]);
+  return rows.map((r: any) => ({
+    id: r.id,
+    address: r.address,
+    name: r.name,
+    balance: r.balance,
+    lastUpdated: new Date(r.lastUpdated)
+  }));
 };
 
 export const dbAddSavedAddress = async (table: 'saved_addresses', item: BitcoinAddress, network: string) => {
-    const d = getDB();
-    await d.runAsync(
-        `INSERT INTO ${table} (id, address, name, balance, lastUpdated, network) VALUES (?, ?, ?, ?, ?, ?)`,
-        [item.id, item.address, item.name || '', item.balance, item.lastUpdated.getTime(), network]
-    );
+  const d = getDB();
+  await d.runAsync(
+    `INSERT INTO ${table} (id, address, name, balance, lastUpdated, network) VALUES (?, ?, ?, ?, ?, ?)`,
+    [item.id, item.address, item.name || '', item.balance, item.lastUpdated.getTime(), network]
+  );
 };
 
 export const dbRemoveSavedAddress = async (table: 'saved_addresses', id: string) => {
-    const d = getDB();
-    await d.runAsync(`DELETE FROM ${table} WHERE id = ?`, [id]);
+  const d = getDB();
+  await d.runAsync(`DELETE FROM ${table} WHERE id = ?`, [id]);
 };
 
 export const dbUpdateSavedAddress = async (table: 'saved_addresses', item: BitcoinAddress) => {
-    const d = getDB();
-    await d.runAsync(
-        `UPDATE ${table} SET name = ?, balance = ?, lastUpdated = ? WHERE id = ?`,
-        [item.name || '', item.balance, item.lastUpdated.getTime(), item.id]
-    );
+  const d = getDB();
+  await d.runAsync(
+    `UPDATE ${table} SET name = ?, balance = ?, lastUpdated = ? WHERE id = ?`,
+    [item.name || '', item.balance, item.lastUpdated.getTime(), item.id]
+  );
 };

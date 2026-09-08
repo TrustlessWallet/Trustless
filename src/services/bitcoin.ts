@@ -381,7 +381,11 @@ const processTransaction = (tx: any, wallet_addresses: Set<string>, tip_height: 
     return result as Transaction;
 };
 
-export const fetchAddressTransactions = async (addresses: string[]): Promise<Transaction[]> => {
+export const fetchAddressTransactions = async (
+    addresses: string[],
+    limit?: number,
+    offset: number = 0,
+): Promise<Transaction[]> => {
     if (addresses.length === 0) return [];
 
     try {
@@ -425,10 +429,63 @@ export const fetchAddressTransactions = async (addresses: string[]): Promise<Tra
             }
         }
 
-        const unique_ids = Array.from(tx_ids);
+        let ordered_tx_ids = Array.from(tx_ids);
+
+        if (limit !== undefined) {
+            const historyOrder = new Map<string, { height: number; order: number }>();
+
+            histories.forEach((h: any) => {
+                if (!h.result) return;
+
+                (h.result as any[]).forEach((item: any, index: number) => {
+                    const existing = historyOrder.get(item.tx_hash);
+
+                    if (!existing) {
+                        historyOrder.set(item.tx_hash, {
+                            height: item.height || 0,
+                            order: index,
+                        });
+                        return;
+                    }
+
+                    // Keep the highest known height for transactions appearing
+                    // in multiple wallet addresses.
+                    if ((item.height || 0) > existing.height) {
+                        existing.height = item.height || 0;
+                    }
+                });
+            });
+
+            ordered_tx_ids.sort((a, b) => {
+                const aInfo = historyOrder.get(a);
+                const bInfo = historyOrder.get(b);
+
+                if (!aInfo && !bInfo) return 0;
+                if (!aInfo) return 1;
+                if (!bInfo) return -1;
+
+                // Unconfirmed transactions (height 0) first.
+                if (aInfo.height === 0 && bInfo.height !== 0) return -1;
+                if (aInfo.height !== 0 && bInfo.height === 0) return 1;
+
+                // Newest confirmed block first.
+                if (aInfo.height !== bInfo.height) {
+                    return bInfo.height - aInfo.height;
+                }
+
+                // Stable ordering for transactions with the same height.
+                return bInfo.order - aInfo.order;
+            });
+
+            ordered_tx_ids = ordered_tx_ids.slice(offset, offset + limit);
+        }
+
+        const unique_ids = ordered_tx_ids;
+
         if (unique_ids.length === 0) return [];
 
         const batches = chunkArray(unique_ids, 10);
+        
         let full_txs: any[] = [];
 
         for (const batch of batches) {

@@ -54,7 +54,12 @@ export const useAddressListSync = (
     });
 };
 
-export const useWalletTransactions = (walletId: string | undefined, addresses: string[]) => {
+export const useWalletTransactions = (
+    walletId: string | undefined,
+    addresses: string[],
+    limit?: number,
+    offset: number = 0,
+) => {
     const [cachedTxs, setCachedTxs] = useState<Transaction[]>([]);
     const [isDbLoaded, setIsDbLoaded] = useState(false);
 
@@ -66,44 +71,83 @@ export const useWalletTransactions = (walletId: string | undefined, addresses: s
         }
 
         let isMounted = true;
-        dbGetTransactions(walletId).then(txs => {
-            if (isMounted) {
-                setCachedTxs(txs);
-                setIsDbLoaded(true);
-            }
-        }).catch(e => {
-            console.warn("Failed to load txs from DB", e);
-            if (isMounted) setIsDbLoaded(true);
-        });
-        return () => { isMounted = false; };
-    }, [walletId]);
+
+        setIsDbLoaded(false);
+
+        dbGetTransactions(walletId, limit, offset)
+            .then(txs => {
+                if (isMounted) {
+                    setCachedTxs(txs);
+                    setIsDbLoaded(true);
+                }
+            })
+            .catch(e => {
+                console.warn("Failed to load txs from DB", e);
+
+                if (isMounted) {
+                    setCachedTxs([]);
+                    setIsDbLoaded(true);
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [walletId, limit, offset]);
 
     const query = useQuery({
-        queryKey: ['wallet-transactions', walletId, addresses.length],
+        queryKey: [
+            'wallet-transactions',
+            walletId,
+            addresses.length,
+            limit ?? 'all',
+            offset,
+        ],
+
         queryFn: async () => {
             if (!walletId || addresses.length === 0) return [];
-            const newTxs = await fetchAddressTransactions(addresses);
 
-            // Immediately cache to SQLite for subsequent instant loads
+            const newTxs = await fetchAddressTransactions(
+                addresses,
+                limit,
+                offset,
+            );
+
             if (newTxs.length > 0) {
-                await dbSaveTransactions(walletId, newTxs, NETWORK_NAME);
+                await dbSaveTransactions(
+                    walletId,
+                    newTxs,
+                    NETWORK_NAME,
+                );
             }
+
             return newTxs;
         },
+
         enabled: !!walletId && addresses.length > 0,
+
         staleTime: 60000,
+
         refetchOnMount: false,
+
         refetchOnWindowFocus: true,
+
         retry: false,
     });
 
-    const transactions = (query.data && query.data.length > 0) ? query.data : cachedTxs;
-    const isLoading = !isDbLoaded || (query.isLoading && transactions.length === 0);
+    const transactions =
+        query.data && query.data.length > 0
+            ? query.data
+            : cachedTxs;
+
+    const isLoading =
+        !isDbLoaded ||
+        (query.isLoading && transactions.length === 0);
 
     return {
         ...query,
         data: transactions,
-        isLoading
+        isLoading,
     };
 };
 
