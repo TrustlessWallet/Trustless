@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView } from 'react-native';
+import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, SafeAreaView } from 'react-native';
 import { Text } from '../components/StyledText';
 import { useNavigation, RouteProp, useRoute, useIsFocused } from '@react-navigation/native';
 import { useWallet } from '../contexts/WalletContext';
-import { fetchUTXOs } from '../services/bitcoin';
+import { useWalletUTXOs, getWalletUtxoQueryAddresses } from '../hooks/useBalance';
 import { UTXO, RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
@@ -28,58 +28,33 @@ const CoinControlScreen = () => {
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
   
-  const [utxos, setUtxos] = useState<UTXO[]>([]);
   const [selectedUtxos, setSelectedUtxos] = useState<UTXO[]>([]);
-  const [loading, setLoading] = useState(true);
   const [hideBalance, setHideBalance] = useState(false);
 
-  const UTXO_CACHE_PREFIX = '@utxoCache:';
-  const UTXO_CACHE_STALE_MS = 240000;
+  // Same address set as SendScreen/BalanceDetailScreen, same react-query hook.
+  // If SendScreen already fetched this wallet's UTXOs (which it does on focus),
+  // opening Coin Control here reuses that cached result instead of re-fetching.
+  const queryAddresses = useMemo(
+    () => getWalletUtxoQueryAddresses(activeWallet),
+    [activeWallet]
+  );
+
+  const {
+    data: rawUtxos = [],
+    isLoading: loading,
+    refetch: refetchUtxos,
+  } = useWalletUTXOs(activeWallet?.id, queryAddresses);
+
+  const utxos = useMemo(
+    () => [...rawUtxos].sort((a, b) => b.value - a.value),
+    [rawUtxos]
+  );
 
   useEffect(() => {
-    const getUtxos = async () => {
-      if (!activeWallet) {
-        setLoading(false);
-        return;
-      }
-      const cacheKey = `${UTXO_CACHE_PREFIX}${activeWallet.id}`;
-      let servedFromCache = false;
-      try {
-        const cachedStr = await AsyncStorage.getItem(cacheKey);
-        if (cachedStr) {
-          const cached = JSON.parse(cachedStr) as { utxos: UTXO[]; balance: number; timestamp: number };
-          setUtxos((cached.utxos || []).sort((a, b) => b.value - a.value));
-          servedFromCache = true;
-          setLoading(false);
-          const isFresh = Date.now() - cached.timestamp < UTXO_CACHE_STALE_MS;
-          if (isFresh) return; 
-        }
-      } catch {}
-      try {
-        const infoCache = activeWallet.derivedAddressInfoCache ?? [];
-        const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
-        const changeIndex = activeWallet.changeAddressIndex ?? 0;
-        const changeAddresses = (activeWallet.derivedChangeAddresses ?? [])
-          .filter(a => a.index <= changeIndex + 1)
-          .map(a => a.address);
-        const targetAddresses = [...new Set([...receiveForUtxos, ...changeAddresses])];
-        if (targetAddresses.length === 0) {
-          if (!servedFromCache) setLoading(false);
-          setUtxos([]);
-          return;
-        }
-        const fetchedUtxos = await fetchUTXOs(targetAddresses);
-        const sorted = fetchedUtxos.sort((a, b) => b.value - a.value);
-        setUtxos(sorted);
-        await AsyncStorage.setItem(cacheKey, JSON.stringify({ utxos: sorted, balance: sorted.reduce((s, u) => s + u.value, 0), timestamp: Date.now() }));
-      } catch (error) {
-        if (!servedFromCache) Alert.alert("Error", "Could not fetch wallet UTXOs.");
-      } finally {
-        if (!servedFromCache) setLoading(false);
-      }
-    };
-    getUtxos();
-  }, [activeWallet, targetAmount]);
+    if (isFocused && queryAddresses.length > 0) {
+      void refetchUtxos();
+    }
+  }, [isFocused, queryAddresses.length, refetchUtxos]);
 
   useEffect(() => {
     const loadPreference = async () => {

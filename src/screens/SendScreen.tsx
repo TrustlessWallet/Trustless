@@ -8,12 +8,12 @@ import { RootStackParamList, UTXO } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import {
     validateBitcoinAddress,
-    fetchUTXOs,
     broadcastTransaction,
     fetchFeeEstimates,
     calculateTransactionMetrics,
     DUST_THRESHOLD
 } from '../services/bitcoin';
+import { useWalletUTXOs, getWalletUtxoQueryAddresses } from '../hooks/useBalance';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
@@ -29,8 +29,6 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Send'>;
 type SendScreenRouteProp = RouteProp<RootStackParamList, 'Send'>;
 type Unit = 'BTC' | 'sats';
 
-const UTXO_CACHE_PREFIX = '@utxoCache:';
-const UTXO_CACHE_STALE_MS = 240000;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
 const selectUtxosForAmount = (utxos: UTXO[], targetAmount: number, feeRate: number = 4) => {
@@ -129,8 +127,14 @@ const SendScreen = () => {
     const [isRecipientAddressFocused, setIsRecipientAddressFocused] = useState(false);
     const [amount, setAmount] = useState('');
     const [unit, setUnit] = useState<Unit>('BTC');
-    const [balance, setBalance] = useState(0);
-    const [utxos, setUtxos] = useState<UTXO[]>([]);
+
+    // Seeded instantly from WalletContext's already-loaded balance (same number
+    // WalletScreen shows) so there's never a blank/loading flash on first render.
+    const [balance, setBalance] = useState(() => {
+        if (!activeWallet) return 0;
+        return activeWallet.derivedAddressInfoCache.reduce((acc, curr) => acc + curr.balance, 0);
+    });
+
     const [selectedUtxos, setSelectedUtxos] = useState<UTXO[] | null>(null);
     const [feeOptions, setFeeOptions] = useState<{ fast: number; normal: number; slow: number } | null>(null);
     const [selectedFee, setSelectedFee] = useState<'slow' | 'normal' | 'fast' | 'custom'>('normal');
@@ -145,7 +149,6 @@ const SendScreen = () => {
     const [lnurlDomain, setLnurlDomain] = useState<string>('');
 
     const [loading, setLoading] = useState(false);
-    const [loadingBalance, setLoadingBalance] = useState(true);
     const [hideBalance, setHideBalance] = useState(false);
 
     const { theme, isDark } = useTheme();
@@ -281,66 +284,49 @@ const SendScreen = () => {
         };
     }, [lnAmount, lnurlData, lightningInvoice, hasFixedAmount, estimateLightningFee]);
 
-    const getBalance = React.useCallback(async (bypassCache: boolean = false) => {
-        const infoCache = activeWallet?.derivedAddressInfoCache ?? [];
-        const receiveForUtxos = infoCache.filter(i => i.balance > 0).map(i => i.address);
-
-        const changeIndex = activeWallet?.changeAddressIndex ?? 0;
-        const changeAddresses = (activeWallet?.derivedChangeAddresses ?? [])
-            .filter(a => a.index <= changeIndex + 5)
-            .map(a => a.address);
-
-        const targetAddresses = [...new Set([...receiveForUtxos, ...changeAddresses])];
-        const cacheKey = `${UTXO_CACHE_PREFIX}${activeWallet?.id || 'no-wallet'}`;
-
-        if (!bypassCache) {
-            try {
-                const cachedStr = await AsyncStorage.getItem(cacheKey);
-                if (cachedStr) {
-                    const cached = JSON.parse(cachedStr) as { utxos: UTXO[]; balance: number; timestamp: number };
-                    const isFresh = Date.now() - cached.timestamp < UTXO_CACHE_STALE_MS;
-                    if (isFresh) {
-                        setUtxos(cached.utxos);
-                        setBalance(cached.balance);
-                        setLoadingBalance(false);
-                        return;
-                    } else {
-                        setUtxos(cached.utxos);
-                        setBalance(cached.balance);
-                    }
-                }
-            } catch { }
-        }
-        if (targetAddresses.length === 0) {
-            setLoadingBalance(false);
-            setUtxos([]);
-            setBalance(0);
-            return;
-        }
-        try {
-            setLoadingBalance(true);
-            const fetchedUtxos = await fetchUTXOs(targetAddresses);
-            const availableToSend = fetchedUtxos.reduce((sum, u) => sum + u.value, 0);
-            setBalance(availableToSend);
-            setUtxos(fetchedUtxos);
-            await AsyncStorage.setItem(cacheKey, JSON.stringify({ utxos: fetchedUtxos, balance: availableToSend, timestamp: Date.now() }));
-        } catch (e) {
-            console.error('Error fetching balance:', e);
-            Alert.alert('Error', 'Could not fetch wallet balance.');
-        } finally {
-            setLoadingBalance(false);
-        }
+    // Always-instant balance, sourced from WalletContext's own synced cache
+    // (the same number WalletScreen already shows). Kept live via useEffect
+    // below so switching wallets or background syncs update it immediately.
+    const contextBalance = useMemo(() => {
+        if (!activeWallet) return 0;
+        return activeWallet.derivedAddressInfoCache.reduce((acc, curr) => acc + curr.balance, 0);
     }, [activeWallet]);
 
     useEffect(() => {
-        if (isFocused && activeWallet) {
-            getBalance(false);
+        setBalance(contextBalance);
+    }, [contextBalance]);
+
+    // Same address set BalanceDetailScreen and CoinControlScreen use, passed to
+    // the same react-query-backed hook — so all three screens share one cache
+    // entry instead of each fetching UTXOs independently.
+    const queryAddresses = useMemo(
+        () => getWalletUtxoQueryAddresses(activeWallet),
+        [activeWallet]
+    );
+
+    const {
+        data: utxos = [],
+        refetch: refetchUtxos,
+    } = useWalletUTXOs(activeWallet?.id, queryAddresses);
+
+    // Refines the instant context balance once real UTXOs are available
+    // (needed anyway for coin selection at send time). Runs quietly — no
+    // loading state, since `balance` already shows a correct number.
+    useEffect(() => {
+        if (utxos.length > 0) {
+            setBalance(utxos.reduce((sum, u) => sum + u.value, 0));
         }
-    }, [isFocused, activeWallet?.id, getBalance]);
+    }, [utxos]);
+
+    useEffect(() => {
+        if (isFocused && queryAddresses.length > 0) {
+            void refetchUtxos();
+        }
+    }, [isFocused, queryAddresses.length, refetchUtxos]);
 
     useEffect(() => {
         if (activeWallet && lastRefreshTime > 0) {
-            getBalance(true);
+            void refetchUtxos();
         }
     }, [lastRefreshTime]);
 
@@ -676,7 +662,6 @@ const SendScreen = () => {
     const is_onchain_form_valid = is_amount_entered && is_address_entered && is_fee_valid;
 
     const displayBalance = mode === 'lightning' ? lightningBalance : balance;
-    const isBalanceLoading = mode === 'onchain' && loadingBalance;
 
     return (
         <ScrollView
@@ -693,15 +678,11 @@ const SendScreen = () => {
                     onPress={() => mode === 'onchain' && navigation.navigate('BalanceDetail', { utxos: utxos })}
                     disabled={mode === 'lightning'}
                 >
-                    {isBalanceLoading ? (
-                        <ActivityIndicator style={{ marginTop: 16 }} color={theme.colors.primary} />
-                    ) : (
-                        <Text style={styles.balanceText}>
-                            {hideBalance ? '*******' : (
-                                <>{formatBalance(displayBalance)} {(mode === 'lightning' || unit === 'sats') ? 'sats' : <Text style={styles.orangeSymbol}>₿</Text>}</>
-                            )}
-                        </Text>
-                    )}
+                    <Text style={styles.balanceText}>
+                        {hideBalance ? '*******' : (
+                            <>{formatBalance(displayBalance)} {(mode === 'lightning' || unit === 'sats') ? 'sats' : <Text style={styles.orangeSymbol}>₿</Text>}</>
+                        )}
+                    </Text>
                 </TouchableOpacity>
             </View>
 

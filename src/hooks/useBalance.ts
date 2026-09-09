@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchBitcoinBalance, fetchAddressBalances, fetchAddressInfoBatch, fetchAddressTransactions, fetchUTXOs } from '../services/bitcoin';
-import { BitcoinAddress, Transaction } from '../types';
+import { BitcoinAddress, Transaction, DerivedAddress, DerivedAddressInfo } from '../types';
 import { dbGetTransactions, dbSaveTransactions } from '../services/database';
 import { NETWORK_NAME } from '../constants/network';
 import { useState, useEffect } from 'react';
@@ -149,6 +149,24 @@ export const useWalletTransactions = (
         data: transactions,
         isLoading,
     };
+};
+
+// The single source of truth for "which addresses could hold spendable coins".
+// SendScreen, CoinControlScreen, and BalanceDetailScreen all call this so they
+// compute the exact same address set — which means they hit the exact same
+// react-query cache entry below instead of each fetching UTXOs independently.
+export const getWalletUtxoQueryAddresses = (
+    wallet: { derivedChangeAddresses: DerivedAddress[]; derivedAddressInfoCache: DerivedAddressInfo[] } | null | undefined
+): string[] => {
+    if (!wallet) return [];
+
+    const changeAddresses = wallet.derivedChangeAddresses.map(a => a.address);
+
+    const usedReceiveAddresses = wallet.derivedAddressInfoCache
+        .filter(info => info.tx_count > 0 || info.balance > 0)
+        .map(info => info.address);
+
+    return [...new Set([...usedReceiveAddresses, ...changeAddresses])];
 };
 
 export const useWalletUTXOs = (walletId: string | undefined, addresses: string[]) => {
