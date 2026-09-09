@@ -24,7 +24,7 @@ import { formatBitcoinAddressShort } from '../constants/format';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import { GlassView } from '../components/GlassView';
-import { useWalletUTXOs } from '../hooks/useBalance';
+import { useWalletUTXOs, getWalletUtxoQueryAddresses } from '../hooks/useBalance';
 
 
 type RoutePropType = RouteProp<RootStackParamList, 'BalanceDetail'>;
@@ -38,19 +38,12 @@ const BalanceDetailScreen = () => {
   const isFocused = useIsFocused();
   const { activeWallet, getUtxoLabel, updateUtxoLabel } = useWallet();
 
-  const queryAddresses = useMemo(() => {
-    if (!activeWallet) return [];
-
-    const changeAddresses = activeWallet.derivedChangeAddresses.map(
-      address => address.address
-    );
-
-    const usedReceiveAddresses = activeWallet.derivedAddressInfoCache
-      .filter(info => info.tx_count > 0 || info.balance > 0)
-      .map(info => info.address);
-
-    return [...new Set([...usedReceiveAddresses, ...changeAddresses])];
-  }, [activeWallet]);
+  // Same address-selection logic used by SendScreen and CoinControlScreen —
+  // sharing this formula means all three hit the same react-query cache entry.
+  const queryAddresses = useMemo(
+    () => getWalletUtxoQueryAddresses(activeWallet),
+    [activeWallet]
+  );
 
   const {
     data: utxos = [],
