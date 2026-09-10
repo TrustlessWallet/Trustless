@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions, Platform, InteractionManager } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { scanLightningInvoice, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -90,6 +90,7 @@ const WalletScreen = () => {
     const [isLightningMode, setIsLightningMode] = useState(false);
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
     const [isSheetMounted, setIsSheetMounted] = useState(false);
+    const [pullToRefreshReady, setPullToRefreshReady] = useState(false);
 
     const isFocused = useIsFocused();
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -397,6 +398,24 @@ const WalletScreen = () => {
             setHideBalance(savedPref === 'true');
         };
         if (isFocused) loadPreference();
+    }, [isFocused]);
+
+    // Native RefreshControl is only attached once any in-flight navigation
+    // transition has fully settled. Attaching it while the native thread is
+    // still busy with a screen-dismiss animation is what makes pull-to-refresh
+    // snap straight to "refreshing" instead of building up with drag resistance.
+    useEffect(() => {
+        if (!isFocused) {
+            setPullToRefreshReady(false);
+            return;
+        }
+
+        setPullToRefreshReady(false);
+        const task = InteractionManager.runAfterInteractions(() => {
+            setPullToRefreshReady(true);
+        });
+
+        return () => task.cancel();
     }, [isFocused]);
 
     useEffect(() => {
@@ -743,13 +762,15 @@ const WalletScreen = () => {
                 }
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    <RefreshControl
-                        refreshing={isManualRefreshing}
-                        onRefresh={onRefresh}
-                        tintColor={theme.colors.primary}
-                        colors={[theme.colors.primary]}
-                        progressViewOffset={screenHeight * 0.1}
-                    />
+                    pullToRefreshReady ? (
+                        <RefreshControl
+                            refreshing={isManualRefreshing}
+                            onRefresh={onRefresh}
+                            tintColor={theme.colors.primary}
+                            colors={[theme.colors.primary]}
+                            progressViewOffset={screenHeight * 0.1}
+                        />
+                    ) : undefined
                 }
             />
 
