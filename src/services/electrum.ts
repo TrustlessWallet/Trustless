@@ -525,7 +525,7 @@ export const addressToScriptHash = (address: string): string => {
 export const electrumBatchGetTransactions = async (txids: string[]) => {
   const cl = await getElectrumClient();
   return Promise.all(txids.map(txid =>
-    cl.request('blockchain.transaction.get', [txid, true])
+    cl.request('blockchain.transaction.get', [txid, false])
       .then(result => ({ result }))
       .catch(error => ({ error }))
   ));
@@ -533,7 +533,7 @@ export const electrumBatchGetTransactions = async (txids: string[]) => {
 
 export const electrumGetTransaction = async (txid: string) => {
   const cl = await getElectrumClient();
-  return cl.request('blockchain.transaction.get', [txid, true]);
+  return cl.request('blockchain.transaction.get', [txid, false]);
 };
 
 export const electrumGetHeader = async (height: number) => {
