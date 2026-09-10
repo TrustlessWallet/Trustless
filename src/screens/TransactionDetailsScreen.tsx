@@ -42,12 +42,6 @@ const TransactionDetailsScreen = () => {
   const styles = useMemo(() => getStyles(theme), [theme]);
   const [hideBalance, setHideBalance] = useState(false);
 
-  useEffect(() => {
-    console.log("DEBUG: TransactionDetailsScreen Mounted");
-    console.log("DEBUG: Route Params:", route.params);
-    console.log("DEBUG: Lightning Transactions Count:", lightningTransactions?.length);
-  }, []);
-
 
   useEffect(() => {
     navigation.setOptions({
@@ -83,18 +77,14 @@ const TransactionDetailsScreen = () => {
     // Check lightning
     const lnTx = lightningTransactions?.find(t => t.paymentHash === queryTxId);
     if (lnTx) {
-      console.log("DEBUG: Found in Lightning History:", lnTx);
       return lnTx;
     }
 
     // Check on-chain
     const ocTx = (activeWallet as any)?.transactions?.find((t: any) => t.txid === queryTxId);
     if (ocTx) {
-      console.log("DEBUG: Found in On-chain History:", ocTx);
       return ocTx;
     }
-
-    console.log("DEBUG: Not found in local history");
     return null;
   }, [queryTxId, lightningTransactions, activeWallet]);
 
@@ -111,10 +101,8 @@ const TransactionDetailsScreen = () => {
       if (!queryTxId) throw new Error("No transaction ID");
 
       try {
-        console.log("DEBUG: Fetching from network...");
         return await getTransactionDetails(queryTxId, allAddresses);
       } catch (e) {
-        console.error("DEBUG: Network fetch failed, creating lite tx:", e);
         // Create a "Lite" transaction object to prevent the screen from crashing
         return {
           txid: queryTxId,
