@@ -256,13 +256,14 @@ export const dbUpdateAddressLabel = async (address: string, label: string) => {
 // Bulk update of address balances after a network sync.
 export const dbUpdateAddressInfoBatch = async (updates: { address: string; balance: number; tx_count: number }[]) => {
   const d = getDB();
-  // Note: For very large batches (1000+), this should be wrapped in a transaction.
-  for (const update of updates) {
-    await d.runAsync(
-      'UPDATE addresses SET balance = ?, tx_count = ? WHERE address = ?',
-      [update.balance, update.tx_count, update.address]
-    );
-  }
+  await d.withTransactionAsync(async () => {
+    for (const update of updates) {
+      await d.runAsync(
+        'UPDATE addresses SET balance = ?, tx_count = ? WHERE address = ?',
+        [update.balance, update.tx_count, update.address]
+      );
+    }
+  });
 };
 
 // ------------------------------------------------------------------
@@ -303,25 +304,27 @@ export const dbSyncUtxos = async (wallet_id: string, network: string, utxos: UTX
 
   const existing_labels = await dbGetUtxoLabels(wallet_id);
 
-  // Clear old state
-  await d.runAsync('DELETE FROM utxos WHERE wallet_id = ?', [wallet_id]);
+  await d.withTransactionAsync(async () => {
+    // Clear old state
+    await d.runAsync('DELETE FROM utxos WHERE wallet_id = ?', [wallet_id]);
 
-  for (const u of utxos) {
-    const key = `${u.txid}:${u.vout}`;
-    let label = existing_labels[key] || null;
+    for (const u of utxos) {
+      const key = `${u.txid}:${u.vout}`;
+      let label = existing_labels[key] || null;
 
-    // Auto-labeling: If it's a new UTXO, give it a sequential ID (e.g., "UTXO #5")
-    if (!label) {
-      label = `UTXO #${next_utxo_count}`;
-      next_utxo_count++;
+      // Auto-labeling: If it's a new UTXO, give it a sequential ID (e.g., "UTXO #5")
+      if (!label) {
+        label = `UTXO #${next_utxo_count}`;
+        next_utxo_count++;
+      }
+
+      await d.runAsync(
+        `INSERT INTO utxos (txid, vout, wallet_id, address, value, label, status_json, network) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [u.txid, u.vout, wallet_id, u.address, u.value, label, JSON.stringify(u.status), network]
+      );
     }
-
-    await d.runAsync(
-      `INSERT INTO utxos (txid, vout, wallet_id, address, value, label, status_json, network) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [u.txid, u.vout, wallet_id, u.address, u.value, label, JSON.stringify(u.status), network]
-    );
-  }
+  });
 
   // Save the counter so the next UTXO gets the next number
   await d.runAsync('UPDATE wallets SET nextUtxoCount = ? WHERE id = ?', [next_utxo_count, wallet_id]);
@@ -366,16 +369,18 @@ export const dbGetTransactions = async (
 
 export const dbSaveTransactions = async (wallet_id: string, transactions: Transaction[], network: string) => {
   const d = getDB();
-  for (const tx of transactions) {
-    // If unconfirmed, place it at the top of the list (future timestamp)
-    const block_time = tx.status.block_time || Date.now() / 1000 + 100000;
+  await d.withTransactionAsync(async () => {
+    for (const tx of transactions) {
+      // If unconfirmed, place it at the top of the list (future timestamp)
+      const block_time = tx.status.block_time || Date.now() / 1000 + 100000;
 
-    await d.runAsync(
-      `INSERT OR REPLACE INTO transactions (txid, wallet_id, json_content, block_time, network)
-        VALUES (?, ?, ?, ?, ?)`,
-      [tx.txid, wallet_id, JSON.stringify(tx), block_time, network]
-    );
-  }
+      await d.runAsync(
+        `INSERT OR REPLACE INTO transactions (txid, wallet_id, json_content, block_time, network)
+          VALUES (?, ?, ?, ?, ?)`,
+        [tx.txid, wallet_id, JSON.stringify(tx), block_time, network]
+      );
+    }
+  });
 };
 
 // ------------------------------------------------------------------
