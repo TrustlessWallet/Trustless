@@ -4,6 +4,26 @@ import { BitcoinAddress, UTXO, Wallet, DerivedAddress, DerivedAddressInfo, Trans
 // Singleton database instance
 let db: SQLite.SQLiteDatabase | null = null;
 
+// SQLite only allows one active transaction per connection at a time.
+// dbSaveTransactions, dbUpdateAddressInfoBatch, and dbSyncUtxos are each
+// wrapped in their own transaction, but they're triggered independently
+// (some fire-and-forget) from different hooks/effects across the app, so
+// two of them can easily overlap in real execution time. Without
+// serializing them, a second withTransactionAsync call can attempt to BEGIN
+// while the first is still open, throwing "cannot start a transaction
+// within a transaction". runExclusive() queues transactional DB work so
+// only one runs against the connection at a time, regardless of how many
+// call sites kick one off concurrently.
+let dbMutex: Promise<any> = Promise.resolve();
+
+const runExclusive = <T>(fn: () => Promise<T>): Promise<T> => {
+  const result = dbMutex.then(fn, fn);
+  // Keep the chain alive even if this operation fails, without leaking
+  // that rejection into the next queued operation's starting point.
+  dbMutex = result.then(() => undefined, () => undefined);
+  return result;
+};
+
 /**
  * INITIALIZATION & SCHEMA DEFINITION
  * This function creates the relational tables if they don't exist.
@@ -256,14 +276,14 @@ export const dbUpdateAddressLabel = async (address: string, label: string) => {
 // Bulk update of address balances after a network sync.
 export const dbUpdateAddressInfoBatch = async (updates: { address: string; balance: number; tx_count: number }[]) => {
   const d = getDB();
-  await d.withTransactionAsync(async () => {
+  await runExclusive(() => d.withTransactionAsync(async () => {
     for (const update of updates) {
       await d.runAsync(
         'UPDATE addresses SET balance = ?, tx_count = ? WHERE address = ?',
         [update.balance, update.tx_count, update.address]
       );
     }
-  });
+  }));
 };
 
 // ------------------------------------------------------------------
@@ -304,7 +324,7 @@ export const dbSyncUtxos = async (wallet_id: string, network: string, utxos: UTX
 
   const existing_labels = await dbGetUtxoLabels(wallet_id);
 
-  await d.withTransactionAsync(async () => {
+  await runExclusive(() => d.withTransactionAsync(async () => {
     // Clear old state
     await d.runAsync('DELETE FROM utxos WHERE wallet_id = ?', [wallet_id]);
 
@@ -324,7 +344,7 @@ export const dbSyncUtxos = async (wallet_id: string, network: string, utxos: UTX
         [u.txid, u.vout, wallet_id, u.address, u.value, label, JSON.stringify(u.status), network]
       );
     }
-  });
+  }));
 
   // Save the counter so the next UTXO gets the next number
   await d.runAsync('UPDATE wallets SET nextUtxoCount = ? WHERE id = ?', [next_utxo_count, wallet_id]);
@@ -369,7 +389,7 @@ export const dbGetTransactions = async (
 
 export const dbSaveTransactions = async (wallet_id: string, transactions: Transaction[], network: string) => {
   const d = getDB();
-  await d.withTransactionAsync(async () => {
+  await runExclusive(() => d.withTransactionAsync(async () => {
     for (const tx of transactions) {
       // If unconfirmed, place it at the top of the list (future timestamp)
       const block_time = tx.status.block_time || Date.now() / 1000 + 100000;
@@ -380,7 +400,7 @@ export const dbSaveTransactions = async (wallet_id: string, transactions: Transa
         [tx.txid, wallet_id, JSON.stringify(tx), block_time, network]
       );
     }
-  });
+  }));
 };
 
 // ------------------------------------------------------------------

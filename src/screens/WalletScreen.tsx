@@ -125,6 +125,7 @@ const WalletScreen = () => {
     }, [activeWallet]);
 
     const [isScanningNfc, setIsScanningNfc] = useState(false);
+    const [glassRemountKey, setGlassRemountKey] = useState(0);
 
     const pressScale = useRef(new Animated.Value(1)).current;
     const holdCharge = useRef(new Animated.Value(0)).current;
@@ -143,6 +144,20 @@ const WalletScreen = () => {
     );
 
     const isLightningLoading = activeWallet?.type !== 'watch-only' && !isLightningInitialized && !lightningInitError;
+
+    // Explicitly stops and resets the native-driven sonar ring animations.
+    // Used before navigating away from a successful NFC scan, since relying
+    // solely on the isScanningNfc-triggered effect can race against the native
+    // thread being busy with the screen transition, leaving a ring frozen
+    // mid-frame instead of cleanly resetting to invisible.
+    const resetNfcVisuals = useCallback(() => {
+        ring1.stopAnimation();
+        ring2.stopAnimation();
+        nfcPulseAnim.stopAnimation();
+        ring1.setValue(0);
+        ring2.setValue(0);
+        nfcPulseAnim.setValue(1);
+    }, [ring1, ring2, nfcPulseAnim]);
 
     useEffect(() => {
         if (!isScanningNfc) {
@@ -333,6 +348,11 @@ const WalletScreen = () => {
                 autoConfirm: shouldAutoConfirm
             } as any);
 
+            // Reset immediately rather than waiting on the isScanningNfc effect,
+            // which can lose the race against the native thread handling the
+            // screen transition above.
+            resetNfcVisuals();
+
         } catch (err) {
             if (err instanceof NfcCancelledError) {
             } else if (err instanceof NfcUnsupportedError) {
@@ -343,7 +363,7 @@ const WalletScreen = () => {
         } finally {
             setIsScanningNfc(false);
         }
-    }, [isScanningNfc, navigation]);
+    }, [isScanningNfc, navigation, resetNfcVisuals]);
 
     const handleSendPressIn = useCallback(() => {
         if (isLightningMode) {
@@ -400,9 +420,37 @@ const WalletScreen = () => {
         if (isFocused) loadPreference();
     }, [isFocused]);
 
+    // Safety net: whenever this screen regains focus (closing Send, Receive,
+    // etc.), hard-reset the NFC button's visual state regardless of how it was
+    // left. This guarantees a stuck/frozen ring animation can never persist
+    // across a screen visit, even if some other path leaves it inconsistent.
+    useEffect(() => {
+        if (isFocused) {
+            resetNfcVisuals();
+            holdCharge.stopAnimation();
+            holdCharge.setValue(0);
+            pressScale.stopAnimation();
+            pressScale.setValue(1);
+            if (isScanningNfc) {
+                setIsScanningNfc(false);
+            }
+        }
+    }, [isFocused]);
+
+    // A plain re-render doesn't change any prop the native GlassView actually
+    // receives, so it never triggers a native recomposite. Forcing a full
+    // remount (fresh key) destroys and recreates the native SwiftUI Host
+    // instance, which is what actually resolves the stuck first-paint state.
+    useEffect(() => {
+        const task = InteractionManager.runAfterInteractions(() => {
+            setGlassRemountKey(k => k + 1);
+        });
+        return () => task.cancel();
+    }, []);
+
     // Native RefreshControl is only attached once any in-flight navigation
     // transition has fully settled. Attaching it while the native thread is
-    // still busy with a screen-dismiss animation is what makes pull-to-refresh
+    // still busy with a screen-dismiss animation is what made pull-to-refresh
     // snap straight to "refreshing" instead of building up with drag resistance.
     useEffect(() => {
         if (!isFocused) {
@@ -520,7 +568,7 @@ const WalletScreen = () => {
     const recentTransactions = displayTransactions.slice(0, 10);
 
     const toggleIconElement = (
-        <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
+        <GlassView key={`toggle-glass-${glassRemountKey}`} style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
             <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
                 <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
                     <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
