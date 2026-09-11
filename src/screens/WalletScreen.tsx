@@ -437,17 +437,6 @@ const WalletScreen = () => {
         }
     }, [isFocused]);
 
-    // A plain re-render doesn't change any prop the native GlassView actually
-    // receives, so it never triggers a native recomposite. Forcing a full
-    // remount (fresh key) destroys and recreates the native SwiftUI Host
-    // instance, which is what actually resolves the stuck first-paint state.
-    useEffect(() => {
-        const task = InteractionManager.runAfterInteractions(() => {
-            setGlassRemountKey(k => k + 1);
-        });
-        return () => task.cancel();
-    }, []);
-
     // Native RefreshControl is only attached once any in-flight navigation
     // transition has fully settled. Attaching it while the native thread is
     // still busy with a screen-dismiss animation is what made pull-to-refresh
@@ -465,6 +454,18 @@ const WalletScreen = () => {
 
         return () => task.cancel();
     }, [isFocused]);
+
+    useEffect(() => {
+        if (!pullToRefreshReady) {
+            return;
+        }
+
+        const frame = requestAnimationFrame(() => {
+            setGlassRemountKey(k => k + 1);
+        });
+
+        return () => cancelAnimationFrame(frame);
+    }, [pullToRefreshReady]);
 
     useEffect(() => {
         const loadInitialWalletMode = async () => {
