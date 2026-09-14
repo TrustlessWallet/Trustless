@@ -140,7 +140,7 @@ const RecoverWalletScreen = () => {
                         ) : (
                             <View style={styles.button_content_row_centered}>
                                 <Feather name="key" size={18} color={theme.colors.inversePrimary} />
-                                <Text style={styles.button_text}>Recover wallet</Text>
+                                <Text style={styles.button_text}>Import wallet</Text>
                             </View>
                         )}
                     </TouchableOpacity>

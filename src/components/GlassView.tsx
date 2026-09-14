@@ -79,7 +79,7 @@ export const GlassView: React.FC<GlassViewProps> = ({
           shadowColor: theme.colors.primary,
           shadowOffset: { width: 0, height: 0 },
           shadowOpacity: 0.25,
-          shadowRadius: 2,
+          shadowRadius: 1,
         },
         style
       ]}
