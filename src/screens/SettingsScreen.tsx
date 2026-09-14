@@ -55,7 +55,6 @@ const SettingsScreen = () => {
     activeWallet,
     isLightningInitialized,
     lightningInitAttempted,
-    lightningApiKeyPresent,
     lightningInitError,
   } = useWallet();
   const { theme, isDark, toggleTheme } = useTheme();
@@ -504,7 +503,6 @@ const SettingsScreen = () => {
                     if (!activeWallet) return 'No wallet';
                     if (activeWallet.type === 'watch-only') return 'Disabled';
                     if (isLightningInitialized) return 'Working';
-                    if (!lightningApiKeyPresent) return 'Needs API key';
                     if (lightningInitError) return 'Needs attention';
                     if (!lightningInitAttempted) return 'Not started';
                     return 'Not ready';
@@ -515,9 +513,6 @@ const SettingsScreen = () => {
                 </Text>
                 <Text style={styles.lightning_details_text}>
                   Initialized: {isLightningInitialized ? 'Yes' : 'No'}
-                </Text>
-                <Text style={styles.lightning_details_text}>
-                  Breez API key: {lightningApiKeyPresent ? 'Present' : 'Missing'}
                 </Text>
                 <Text style={styles.lightning_details_text}>
                   Init attempted: {lightningInitAttempted ? 'Yes' : 'No'}

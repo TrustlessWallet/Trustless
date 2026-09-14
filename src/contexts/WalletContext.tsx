@@ -135,7 +135,6 @@ interface WalletContextType {
 
     isLightningInitialized: boolean;
     lightningInitAttempted: boolean;
-    lightningApiKeyPresent: boolean;
     lightningInitError: string | null;
     lightningBalance: number;
     lightningTransactions: LightningTransaction[];
@@ -171,7 +170,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const [isLightningInitialized, setIsLightningInitialized] = useState(false);
     const [lightningInitAttempted, setLightningInitAttempted] = useState(false);
-    const [lightningApiKeyPresent, setLightningApiKeyPresent] = useState(false);
     const [lightningInitError, setLightningInitError] = useState<string | null>(null);
     const [lightningBalance, setLightningBalance] = useState(0);
     const [lightningTransactions, setLightningTransactions] = useState<LightningTransaction[]>([]);
@@ -418,7 +416,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const apiKey = process.env.EXPO_PUBLIC_BREEZ_API_KEY;
 
             setLightningInitAttempted(true);
-            setLightningApiKeyPresent(Boolean(apiKey));
 
             if (!apiKey) {
                 setIsLightningInitialized(false);
@@ -954,7 +951,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 } else {
                     setIsLightningInitialized(false);
                     setLightningInitAttempted(false);
-                    setLightningApiKeyPresent(Boolean(process.env.EXPO_PUBLIC_BREEZ_API_KEY));
                     setLightningBalance(0);
                     setLightningTransactions([]);
                     setLightningInitError('Mnemonic not found in Keychain for this wallet');
@@ -962,7 +958,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             } else {
                 setIsLightningInitialized(false);
                 setLightningInitAttempted(false);
-                setLightningApiKeyPresent(Boolean(process.env.EXPO_PUBLIC_BREEZ_API_KEY));
                 setLightningBalance(0);
                 setLightningTransactions([]);
                 setLightningInitError('Active wallet is watch-only');
@@ -1534,7 +1529,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         isLightningInitialized,
         lightningInitAttempted,
-        lightningApiKeyPresent,
         lightningInitError,
         lightningBalance,
         lightningTransactions,
