@@ -7,6 +7,10 @@ const mockOpenDatabaseAsync = jest.fn().mockResolvedValue({
   execAsync: (...args: any[]) => mockExecAsync(...args),
   getAllAsync: (...args: any[]) => mockGetAllAsync(...args),
   runAsync: (...args: any[]) => mockRunAsync(...args),
+  // expo-sqlite's real withTransactionAsync just runs the callback, wrapped
+  // in BEGIN/COMMIT under the hood; for tests we only need it to invoke and
+  // await the callback so the batch-write functions in database.ts resolve.
+  withTransactionAsync: (callback: () => Promise<void>) => callback(),
 });
 
 jest.mock('expo-sqlite', () => ({

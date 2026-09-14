@@ -282,7 +282,9 @@ describe('Electrum Service', () => {
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('blockchain.transaction.get'));
             expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('tx123'));
-            expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('true'));
+            // Requested non-verbose (raw hex) on purpose: bitcoin.ts consumes
+            // the result as a raw hex string, not the verbose JSON form.
+            expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('false'));
         });
 
         it('electrumBroadcast sends correct format', async () => {
@@ -348,7 +350,8 @@ describe('Electrum Service', () => {
             await flushPromises();
             expect(mockSocket.write).toHaveBeenCalledTimes(2);
             expect(mockSocket.write.mock.calls[0][0]).toContain('blockchain.transaction.get');
-            expect(mockSocket.write.mock.calls[0][0]).toContain('true');
+            // Non-verbose (raw hex) request, same as electrumGetTransaction.
+            expect(mockSocket.write.mock.calls[0][0]).toContain('false');
         });
     });
 
@@ -384,8 +387,25 @@ describe('Electrum Service', () => {
     describe('Advanced Edge Cases', () => {
         beforeEach(() => {
             resetActiveConnection();
-            mockTcp.connectTLS.mockClear();
             mockSocket.write.mockClear();
+
+            // 'Peer Exhaustion Routing' below replaces connectTLS/createConnection
+            // with an implementation that never calls the connect callback, to
+            // simulate every peer refusing the connection. jest.clearAllMocks()
+            // (global beforeEach) and .mockClear() only reset call history, not
+            // implementations set via .mockImplementation(), so that override
+            // otherwise leaks into every later test in this block and makes
+            // getElectrumClient() hang forever waiting on a connection that's
+            // never going to complete. Re-assert the default (callback-invoking)
+            // behavior here so each test starts from a connectable mock.
+            mockTcp.connectTLS.mockReset().mockImplementation((options: any, callback: any) => {
+                if (callback) setTimeout(callback, 10);
+                return mockSocket;
+            });
+            mockTcp.createConnection.mockReset().mockImplementation((options: any, callback: any) => {
+                if (callback) setTimeout(callback, 10);
+                return mockSocket;
+            });
         });
 
         it('attempts all hardcoded peers sequentially and throws if all fail (Peer Exhaustion Routing)', async () => {
