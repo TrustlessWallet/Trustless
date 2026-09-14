@@ -2,9 +2,30 @@ import React from 'react';
 import { render, waitFor } from '@testing-library/react-native';
 import { Alert, Keyboard } from 'react-native';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SendScreen from '../../screens/SendScreen';
 import { useWallet } from '../../contexts/WalletContext';
 import { resolveLnurlOrAddress, fetchLnurlInvoice } from '../../services/lnurl';
+
+// SendScreen pulls in useWalletUTXOs (react-query) via useBalance.ts, so every
+// render needs a QueryClientProvider ancestor, same as the wallet context tests.
+const create_test_query_client = () => new QueryClient({
+    defaultOptions: {
+        queries: {
+            retry: false,
+            gcTime: 0,
+        },
+    },
+});
+
+const renderSendScreen = () => {
+    const test_query_client = create_test_query_client();
+    return render(
+        <QueryClientProvider client={test_query_client}>
+            <SendScreen />
+        </QueryClientProvider>
+    );
+};
 
 // --- Mocks ---
 
@@ -121,7 +142,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         
         // Default Wallet Context Setup (can be overridden in specific tests)
         (useWallet as jest.Mock).mockReturnValue({
-            activeWallet: { id: 'test-wallet', type: 'standard' },
+            activeWallet: { id: 'test-wallet', type: 'standard', derivedAddressInfoCache: [], derivedChangeAddresses: [] },
             lightningBalance: 100000, // 100k sats
             payLightningInvoice: mockPayLightningInvoice,
             estimateLightningFee: mockEstimateLightningFee,
@@ -150,7 +171,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         (resolveLnurlOrAddress as jest.Mock).mockResolvedValue(null);
         mockPayLightningInvoice.mockResolvedValue(true);
 
-        render(<SendScreen />);
+        renderSendScreen();
 
         // Assert that the payment fires automatically without user interaction
         await waitFor(() => {
@@ -184,7 +205,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
             callback: 'https://test.com/pay'
         });
 
-        const { getByPlaceholderText } = render(<SendScreen />);
+        const { getByPlaceholderText } = renderSendScreen();
 
         // Wait for the async resolver to finish
         await waitFor(() => {
@@ -209,7 +230,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
 
         // Mock wallet having only 10,000 sats (lower than 50k invoice)
         (useWallet as jest.Mock).mockReturnValue({
-            activeWallet: { id: 'test-wallet', type: 'standard' },
+            activeWallet: { id: 'test-wallet', type: 'standard', derivedAddressInfoCache: [], derivedChangeAddresses: [] },
             lightningBalance: 10000, 
             payLightningInvoice: mockPayLightningInvoice,
             estimateLightningFee: mockEstimateLightningFee,
@@ -218,7 +239,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
 
         (resolveLnurlOrAddress as jest.Mock).mockResolvedValue(null);
 
-        render(<SendScreen />);
+        renderSendScreen();
 
         await waitFor(() => {
             expect(Alert.alert).toHaveBeenCalledWith(

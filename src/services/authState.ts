@@ -6,6 +6,7 @@ let is_biometric_prompt_shown = false;
 let is_backup_flow_active = false;
 
 export const TX_BIOMETRIC_CONFIRM_KEY = '@require_biometric_tx_confirm';
+const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 
 export const authenticate_session = async (): Promise<boolean> => {
   try {
@@ -52,6 +53,15 @@ export const is_tx_biometrics_enabled = async (): Promise<boolean> => {
   const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
   if (!isBiometricAvailable || !isEnrolled) return false;
+
+  // The master "Enable Biometrics" toggle in Settings gates ALL biometric
+  // prompts, including the tap-to-pay / transaction confirm ones below.
+  // Without this check, a null TX_BIOMETRIC_CONFIRM_KEY (its normal state
+  // whenever the master toggle has never been turned on, since the sub-
+  // setting UI is only reachable once it is) defaulted to `true`, causing
+  // Face ID/Touch ID to fire even though Settings showed biometrics Off.
+  const isMasterBiometricsEnabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
+  if (isMasterBiometricsEnabled !== 'true') return false;
 
   const pref = await AsyncStorage.getItem(TX_BIOMETRIC_CONFIRM_KEY);
   return pref === null ? true : pref === 'true';
