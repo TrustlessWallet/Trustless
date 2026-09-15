@@ -1,16 +1,29 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, SafeAreaView, FlatList, Dimensions, Image, Linking } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, FlatList, Dimensions, Image, Linking, Clipboard } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Text } from '../components/StyledText';
+import { Feather } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
 
 
 const { width } = Dimensions.get('window');
 const REPO_URL = 'https://github.com/TrustlessWallet/Trustless';
+const OPEN_SOURCE_IMAGE_WIDTH = 1486;
+const OPEN_SOURCE_IMAGE_HEIGHT = 3040;
+const IMAGE_ASPECT_RATIO = OPEN_SOURCE_IMAGE_WIDTH / OPEN_SOURCE_IMAGE_HEIGHT;
+const QR_OVERLAY = {
+  left: 230 / OPEN_SOURCE_IMAGE_WIDTH,
+  top: 1010 / OPEN_SOURCE_IMAGE_HEIGHT,
+  width: 1015 / OPEN_SOURCE_IMAGE_WIDTH,
+  height: 1045 / OPEN_SOURCE_IMAGE_HEIGHT,
+};
+const QR_CARD_PADDING = 16;
+
 
 const slides = [
   {
@@ -62,18 +75,64 @@ const slides = [
     link_text: 'Audit the code yourself.',
     link: REPO_URL,
     image: require('../../assets/Open-source-onboarding.png'),
+    qr_value: REPO_URL,
   },
 ];
 
-const SlideItem = React.memo(({ item, styles, handle_link_press }: any) => {
+const SlideItem = React.memo(({ item, styles, handle_link_press, theme }: any) => {
+  const [copied, set_copied] = useState(false);
+  const [qr_box_width, set_qr_box_width] = useState(0);
+  const copy_timeout_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copy_timeout_ref.current) clearTimeout(copy_timeout_ref.current);
+    };
+  }, []);
+
+  const copy_repo_url = () => {
+    if (!item.qr_value) return;
+    Clipboard.setString(item.qr_value);
+    set_copied(true);
+    if (copy_timeout_ref.current) clearTimeout(copy_timeout_ref.current);
+    copy_timeout_ref.current = setTimeout(() => set_copied(false), 1500);
+  };
+
   return (
     <View style={styles.slide}>
       <View style={styles.phone_container}>
-        <Image
-          source={item.image}
-          style={styles.image_fill}
-          resizeMode="contain"
-        />
+        <View style={styles.image_aspect_wrapper}>
+          <Image
+            source={item.image}
+            style={styles.image_fill}
+            resizeMode="contain"
+          />
+
+          {item.qr_value && (
+            <View style={styles.qr_overlay_position} pointerEvents="box-none">
+              <Pressable
+                style={({ pressed }) => [styles.qr_card, { opacity: pressed ? 0.8 : 1 }]}
+                onPress={copy_repo_url}
+                onLayout={(e) => set_qr_box_width(e.nativeEvent.layout.width)}
+              >
+                {copied && (
+                  <View style={styles.qr_copied_overlay} pointerEvents="none">
+                    <Feather name="copy" size={28} color={theme.colors.primary} />
+                    <Text style={styles.qr_copied_text}>Copied!</Text>
+                  </View>
+                )}
+                {qr_box_width > 0 && (
+                  <QRCode
+                    value={item.qr_value}
+                    size={qr_box_width - QR_CARD_PADDING * 2}
+                    backgroundColor={theme.colors.background}
+                    color={theme.colors.primary}
+                  />
+                )}
+              </Pressable>
+            </View>
+          )}
+        </View>
       </View>
 
       <View style={styles.text_container}>
@@ -144,6 +203,7 @@ const OnboardingWalletScreen = () => {
       item={item}
       styles={styles}
       handle_link_press={handle_link_press}
+      theme={theme}
     />
   );
 
@@ -203,9 +263,53 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  image_aspect_wrapper: {
+    width: '100%',
+    aspectRatio: IMAGE_ASPECT_RATIO,
+  },
   image_fill: {
     width: '100%',
     height: '100%',
+  },
+  qr_overlay_position: {
+    position: 'absolute',
+    left: `${QR_OVERLAY.left * 100}%`,
+    top: `${QR_OVERLAY.top * 100}%`,
+    width: `${QR_OVERLAY.width * 100}%`,
+    height: `${QR_OVERLAY.height * 100}%`,
+  },
+  qr_card: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: QR_CARD_PADDING,
+    backgroundColor: theme.colors.background,
+    borderRadius: 8,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: isDark ? 0.3 : 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  qr_copied_overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background + 'CC',
+    borderRadius: 8,
+    gap: 8,
+    zIndex: 10,
+  },
+  qr_copied_text: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
   },
   text_container: {
     alignItems: 'center',
