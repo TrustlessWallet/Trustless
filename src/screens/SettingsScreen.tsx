@@ -16,7 +16,7 @@ import { getElectrumClient, resetActiveConnection, getActiveHostName, test_custo
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import build_info from '../constants/build.json';
-import { is_tx_biometrics_enabled, set_tx_biometrics_enabled } from '../services/authState';
+import { is_tx_biometrics_enabled, set_tx_biometrics_enabled, TX_BIOMETRIC_CONFIRM_KEY } from '../services/authState';
 
 
 type navigation_prop = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -104,13 +104,21 @@ const SettingsScreen = () => {
     } else {
       set_is_biometrics_enabled(saved_setting === 'true' && is_enrolled);
     }
+
+    // The "Confirm transaction" sub-toggle is gated by the master switch
+    // above (see is_tx_biometrics_enabled), so its displayed value can only
+    // ever be trusted if it's re-derived from that same function every time
+    // the master state is (re-)checked - on mount, on screen focus, and
+    // whenever biometrics gets auto-disabled here because it's unenrolled.
+    // Anything less and the switch can show one thing while tap-to-pay/send
+    // actually does another, which is exactly the bug this closes.
+    const tx_biometrics = await is_tx_biometrics_enabled();
+    set_is_tx_confirm_enabled(tx_biometrics);
   }, []);
 
   useEffect(() => {
     const load_settings = async () => {
       check_biometric_status();
-      const tx_biometrics = await is_tx_biometrics_enabled();
-      set_is_tx_confirm_enabled(tx_biometrics);
       const saved_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
       if (saved_lock_time !== null) {
         const index = auto_lock_options.findIndex(opt => opt.toString() === saved_lock_time);
@@ -195,6 +203,26 @@ const SettingsScreen = () => {
         const new_value = !is_biometrics_enabled;
         await AsyncStorage.setItem(BIOMETRICS_ENABLED_KEY, new_value.toString());
         set_is_biometrics_enabled(new_value);
+
+        if (new_value) {
+          // Enabling biometrics for the first time: persist "Confirm
+          // transaction" as explicitly on, rather than leaving it to the
+          // implicit null-default inside is_tx_biometrics_enabled(). That
+          // implicit default is what caused the stale-switch bug - relying
+          // on it left room for the persisted state and the displayed
+          // switch to disagree. An explicit write here means there's only
+          // ever one source of truth on disk.
+          const existing_tx_pref = await AsyncStorage.getItem(TX_BIOMETRIC_CONFIRM_KEY);
+          if (existing_tx_pref === null) {
+            await set_tx_biometrics_enabled(true);
+          }
+        }
+
+        // Refresh the sub-toggle immediately so it never lags behind what
+        // authenticate_transaction_action() will actually enforce, instead
+        // of waiting for the next screen focus to catch up.
+        const tx_biometrics = await is_tx_biometrics_enabled();
+        set_is_tx_confirm_enabled(tx_biometrics);
       }
     } catch (error) {
       Alert.alert("Error", "An unexpected error occurred.");
@@ -219,6 +247,7 @@ const SettingsScreen = () => {
                 DEFAULT_SCREEN_KEY,
                 DEFAULT_WALLET_MODE_KEY,
                 BIOMETRICS_ENABLED_KEY,
+                TX_BIOMETRIC_CONFIRM_KEY,
                 AUTO_LOCK_TIME_KEY,
                 HIDE_WALLET_BALANCE_KEY,
                 CUSTOM_NODE_URL_KEY,
@@ -263,8 +292,13 @@ const SettingsScreen = () => {
 
   const toggle_tx_confirm = async () => {
     const new_value = !is_tx_confirm_enabled;
-    set_is_tx_confirm_enabled(new_value);
     await set_tx_biometrics_enabled(new_value);
+    // Re-derive from is_tx_biometrics_enabled() rather than trusting the
+    // optimistic flip above, so this switch always reflects the same
+    // master-gated logic that authenticate_transaction_action() enforces
+    // - not just what was written to the sub-setting key in isolation.
+    const tx_biometrics = await is_tx_biometrics_enabled();
+    set_is_tx_confirm_enabled(tx_biometrics);
   };
 
   const toggle_default_wallet_mode = async () => {
@@ -656,7 +690,7 @@ const SettingsScreen = () => {
           <View style={styles.row_wrapper}>
             <View style={styles.row}>
               <Text style={styles.row_label}>Enable Biometrics</Text>
-              <TouchableOpacity onPress={toggle_biometrics}>
+              <TouchableOpacity testID="toggle-biometrics" onPress={toggle_biometrics}>
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
                   <Text style={styles.switcher_text}>{is_biometrics_enabled ? 'On' : 'Off'}</Text>
@@ -670,7 +704,7 @@ const SettingsScreen = () => {
             <View style={styles.row_wrapper}>
               <View style={styles.row}>
                 <Text style={styles.row_label}>Confirm transaction</Text>
-                <TouchableOpacity onPress={toggle_tx_confirm}>
+                <TouchableOpacity testID="toggle-tx-confirm" onPress={toggle_tx_confirm}>
                   <View style={styles.switcher}>
                     <Feather name="chevron-left" size={24} color={theme.colors.primary} />
                     <Text style={styles.switcher_text}>{is_tx_confirm_enabled ? 'On' : 'Off'}</Text>
