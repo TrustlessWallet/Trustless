@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions, Platform, InteractionManager } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { scanLightningInvoice, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
+import { scanLightningInvoice, finish_nfc_scanning, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
@@ -362,6 +362,7 @@ const WalletScreen = () => {
             }
         } finally {
             setIsScanningNfc(false);
+            finish_nfc_scanning();
         }
     }, [isScanningNfc, navigation, resetNfcVisuals]);
 

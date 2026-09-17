@@ -1,3 +1,4 @@
+import { AppState } from 'react-native';
 import NfcManager, { NfcTech, Ndef } from 'react-native-nfc-manager';
 
 let nfcManagerStarted = false;
@@ -174,9 +175,11 @@ export const scanLightningInvoice = async (): Promise<string> => {
   } finally {
     console.log('[NFC] Cleaning up NFC technology request...');
     NfcManager.cancelTechnologyRequest();
+  }
+};
 
-    setTimeout(() => {
-      is_scanning = false;
-    }, 500);
+export const finish_nfc_scanning = (force: boolean = false) => {
+  if (force || AppState.currentState === 'active') {
+    is_scanning = false;
   }
 };

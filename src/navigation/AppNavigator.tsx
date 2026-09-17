@@ -42,7 +42,7 @@ import SupportScreen from '../screens/SupportScreen';
 import { get_biometric_prompt_shown, set_biometric_prompt_shown } from '../services/authState';
 import { LightningTopUpScreen } from '../screens/LightningTopUpScreen';
 import { WithdrawToOnchainScreen } from '../screens/WithdrawToOnchainScreen';
-import { get_is_nfc_scanning } from '../services/nfc';
+import { get_is_nfc_scanning, finish_nfc_scanning } from '../services/nfc';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import { GlassView } from '../components/GlassView';
 
@@ -129,6 +129,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           }
         }
         set_biometric_prompt_shown(false);
+        finish_nfc_scanning(true);
       } else if (next_app_state.match(/inactive|background/)) {
         if (!is_prompt_active && !is_nfc_active) {
           await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
