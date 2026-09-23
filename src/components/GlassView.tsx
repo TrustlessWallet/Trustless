@@ -47,28 +47,39 @@ export const GlassView: React.FC<GlassViewProps> = ({
   const { theme } = useTheme();
   const activeTintColor = tintColor ?? theme.colors.surface + '99';
   const activeFallbackColor = fallbackColor ?? theme.colors.surface;
-
+  
   const glassOptions: any = {
     variant,
     interactive,
     tint: activeTintColor
   };
-
+  
   const swiftModifiers: any[] = [
     frame({ width, height }),
     glassEffect({ glass: glassOptions, shape }),
     ignoreSafeArea()
   ];
-
+  
   const hasIndividualCorners =
     borderTopLeftRadius !== undefined ||
     borderTopRightRadius !== undefined ||
     borderBottomLeftRadius !== undefined ||
     borderBottomRightRadius !== undefined;
-
+    
   if (borderRadius > 0 && !hasIndividualCorners) {
     swiftModifiers.push(cornerRadiusModifier(borderRadius));
   }
+
+  const isSupportedIOS = Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 26;
+
+  const computedBorderRadius = shape === 'circle' || shape === 'capsule' 
+    ? Math.min(width, height) / 2 
+    : borderRadius;
+
+  const finalTopLeft = borderTopLeftRadius ?? computedBorderRadius;
+  const finalTopRight = borderTopRightRadius ?? computedBorderRadius;
+  const finalBottomLeft = borderBottomLeftRadius ?? computedBorderRadius;
+  const finalBottomRight = borderBottomRightRadius ?? computedBorderRadius;
 
   return (
     <View
@@ -80,6 +91,11 @@ export const GlassView: React.FC<GlassViewProps> = ({
           shadowOffset: { width: 0, height: 0 },
           shadowOpacity: 0.25,
           shadowRadius: 1,
+          borderRadius: computedBorderRadius,
+          borderTopLeftRadius: finalTopLeft,
+          borderTopRightRadius: finalTopRight,
+          borderBottomLeftRadius: finalBottomLeft,
+          borderBottomRightRadius: finalBottomRight,
         },
         style
       ]}
@@ -89,15 +105,15 @@ export const GlassView: React.FC<GlassViewProps> = ({
           StyleSheet.absoluteFill,
           {
             overflow: 'visible',
-            borderRadius: borderRadius,
-            borderTopLeftRadius: borderTopLeftRadius ?? borderRadius,
-            borderTopRightRadius: borderTopRightRadius ?? borderRadius,
-            borderBottomLeftRadius: borderBottomLeftRadius ?? borderRadius,
-            borderBottomRightRadius: borderBottomRightRadius ?? borderRadius,
+            borderRadius: computedBorderRadius,
+            borderTopLeftRadius: finalTopLeft,
+            borderTopRightRadius: finalTopRight,
+            borderBottomLeftRadius: finalBottomLeft,
+            borderBottomRightRadius: finalBottomRight,
           }
         ]}
       >
-        {Platform.OS === 'ios' ? (
+        {isSupportedIOS ? (
           <Host style={StyleSheet.absoluteFill}>
             <ZStack modifiers={swiftModifiers}>
               <View />
@@ -110,6 +126,12 @@ export const GlassView: React.FC<GlassViewProps> = ({
               {
                 backgroundColor: activeFallbackColor,
                 opacity: fallbackOpacity,
+                overflow: 'hidden',
+                borderRadius: computedBorderRadius,
+                borderTopLeftRadius: finalTopLeft,
+                borderTopRightRadius: finalTopRight,
+                borderBottomLeftRadius: finalBottomLeft,
+                borderBottomRightRadius: finalBottomRight,
               },
             ]}
           />

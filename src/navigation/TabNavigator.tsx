@@ -25,7 +25,7 @@ const TabNavigator = () => {
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: theme.colors.primary,
-          tabBarInactiveTintColor: theme.colors.surface,
+          tabBarInactiveTintColor: theme.colors.muted, 
         }}
       >
         {/* Map Screen */}
