@@ -456,17 +456,24 @@ const WalletScreen = () => {
         return () => task.cancel();
     }, [isFocused]);
 
+    const activeWalletId = activeWallet?.id;
     useEffect(() => {
-        if (!pullToRefreshReady) {
+        if (!pullToRefreshReady || walletLoading || !activeWalletId) {
             return;
         }
 
         const frame = requestAnimationFrame(() => {
             setGlassRemountKey(k => k + 1);
         });
+        const timer = setTimeout(() => {
+            setGlassRemountKey(k => k + 1);
+        }, 500);
 
-        return () => cancelAnimationFrame(frame);
-    }, [pullToRefreshReady]);
+        return () => {
+            cancelAnimationFrame(frame);
+            clearTimeout(timer);
+        };
+    }, [pullToRefreshReady, walletLoading, activeWalletId]);
 
     useEffect(() => {
         const loadInitialWalletMode = async () => {
@@ -570,7 +577,7 @@ const WalletScreen = () => {
     const recentTransactions = displayTransactions.slice(0, 10);
 
     const toggleIconElement = (
-        <GlassView key={`toggle-glass-${glassRemountKey}`} style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
+        <GlassView key={`toggle-glass-${activeWalletId ?? 'none'}-${glassRemountKey}`} style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
             <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
                 <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
                     <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
