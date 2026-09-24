@@ -141,9 +141,10 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 ```
 
 4. **Build the local unsigned package:**
+   The official APK is built inside GitHub Actions, whose internal workspace path is `/__w/Trustless/Trustless`. Some native modules embed this absolute build path into their compiled `.so` libraries, so your local build must be mounted at that exact container path to match, regardless of what your local folder is actually named or where it lives on disk.
 ```bash
    docker run --rm --platform linux/amd64 \
-     -v "$(pwd):/app" -w /app \
+     -v "$(pwd):/__w/Trustless/Trustless" -w /__w/Trustless/Trustless \
      reactnativecommunity/react-native-android@sha256:88d93a9282e0f54f84cec7b979da6c5e3f20d87f5be246b75c231838be852fec \
      bash -c "
      curl -fsSL -o /tmp/node.tar.gz https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.gz && \
@@ -154,6 +155,13 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
      "
 ```
    *Note: on macOS this runs under emulation and will be slow. A native Linux machine is recommended for faster verification.*
+
+   *If the build fails with a DNS-related error (e.g. `Temporary failure in name resolution`) while Gradle is downloading dependencies, retry with an explicit DNS server:*
+```bash
+   docker run --rm --platform linux/amd64 --dns 8.8.8.8 \
+     -v "$(pwd):/__w/Trustless/Trustless" -w /__w/Trustless/Trustless \
+     ...
+```
 
 5. **Unpack both packages:**
    Android packages are zip archives. Extract both into separate directories for comparison.
