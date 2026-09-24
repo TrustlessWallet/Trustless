@@ -804,7 +804,7 @@ const SettingsScreen = () => {
 
         <View style={styles.version_container}>
           <Text style={styles.version_text}>
-            Version 3.2.0
+            Version 3.2.1
           </Text>
           <Text style={styles.commit_text}>
             Commit: {build_info?.commitHash || 'Unknown'}
