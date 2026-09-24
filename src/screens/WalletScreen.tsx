@@ -650,6 +650,7 @@ const WalletScreen = () => {
             </Animated.View>
 
             <Animated.FlatList
+                contentInsetAdjustmentBehavior="automatic"
                 extraData={theme}
                 data={recentTransactions}
                 renderItem={renderTransactionItem}
