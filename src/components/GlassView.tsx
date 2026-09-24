@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Platform, StyleSheet, StyleProp, ViewStyle } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Platform, StyleSheet, StyleProp, ViewStyle, InteractionManager } from 'react-native';
 import { Host, ZStack } from '@expo/ui/swift-ui';
 import {
   glassEffect,
@@ -45,6 +45,24 @@ export const GlassView: React.FC<GlassViewProps> = ({
   children,
 }) => {
   const { theme } = useTheme();
+  const isSupportedIOS = Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 26;
+
+  const [hostKey, setHostKey] = useState(0);
+  useEffect(() => {
+    if (!isSupportedIOS) return;
+    let frame: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const task = InteractionManager.runAfterInteractions(() => {
+      frame = requestAnimationFrame(() => setHostKey(k => k + 1));
+      timer = setTimeout(() => setHostKey(k => k + 1), 500);
+    });
+    return () => {
+      task.cancel();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [isSupportedIOS]);
+
   const activeTintColor = tintColor ?? theme.colors.surface + '99';
   const activeFallbackColor = fallbackColor ?? theme.colors.surface;
   
@@ -69,8 +87,6 @@ export const GlassView: React.FC<GlassViewProps> = ({
   if (borderRadius > 0 && !hasIndividualCorners) {
     swiftModifiers.push(cornerRadiusModifier(borderRadius));
   }
-
-  const isSupportedIOS = Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 26;
 
   const computedBorderRadius = shape === 'circle' || shape === 'capsule' 
     ? Math.min(width, height) / 2 
@@ -114,7 +130,7 @@ export const GlassView: React.FC<GlassViewProps> = ({
         ]}
       >
         {isSupportedIOS ? (
-          <Host style={StyleSheet.absoluteFill}>
+          <Host key={`glass-host-${hostKey}`} style={StyleSheet.absoluteFill}>
             <ZStack modifiers={swiftModifiers}>
               <View />
             </ZStack>
@@ -137,7 +153,7 @@ export const GlassView: React.FC<GlassViewProps> = ({
           />
         )}
       </View>
-      <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', zIndex: 1 }]}>
         {children}
       </View>
     </View>
