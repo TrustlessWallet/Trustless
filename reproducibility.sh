@@ -20,6 +20,11 @@ npx expo prebuild --clean
 echo "4. Injecting reproducibility settings..."
 echo "" >> android/gradle.properties
 echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
+# The React Native Gradle plugin bakes the build machine's first non-loopback IPv4 address
+# into resources.arsc (string "react_native_dev_server_ip"), even for release builds. Inside
+# Docker that is the container IP (e.g. 172.17.0.2 vs 172.18.0.2), which differs between
+# machines and breaks bit-for-bit reproducibility. So we pin it to a constant.
+echo "reactNativeDevServerIp=localhost" >> android/gradle.properties
 
 cat <<EOF >> android/app/build.gradle
 
