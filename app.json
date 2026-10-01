@@ -30,6 +30,7 @@
       }
     },
     "android": {
+      "versionCode": 1,
       "Icon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
