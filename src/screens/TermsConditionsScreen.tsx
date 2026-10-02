@@ -10,21 +10,25 @@ const TermsConditionsScreen = () => {
     <ScrollView style={styles.container} contentContainerStyle={styles.content} bounces={false}>
       <Text style={styles.heading}>1. Non-Custodial Service</Text>
       <Text style={styles.paragraph}>
-        This software is a self-custodial Bitcoin wallet. You have sole control over your private keys and funds. The developers of this app never have access to your funds and cannot retrieve them for you.
+        This software is a self-custodial Bitcoin wallet. You have sole control over your private keys at all times, for both your on-chain funds and your Lightning balance. The developers of this app never have access to your keys or funds and cannot retrieve them for you.
       </Text>
-      <Text style={styles.heading}>2. Your Responsibilities</Text>
+      <Text style={styles.heading}>2. Lightning Balance and Cooperative Withdrawal</Text>
+      <Text style={styles.paragraph}>
+        Your Lightning balance is held using a Spark wallet, provided via Breez SDK. While your keys are never shared with Breez, the liquidity provider, or any other party, withdrawing or moving funds out of your Lightning balance requires the cooperation of the liquidity provider's servers to complete. This is different from your on-chain balance, which you can always move unilaterally with only your own keys. If the liquidity provider is unavailable, you may be temporarily unable to withdraw your Lightning balance. Nobody but you can access, move, or spend these funds; the cooperation requirement affects availability, not control.
+      </Text>
+      <Text style={styles.heading}>3. Your Responsibilities</Text>
       <Text style={styles.paragraph}>
         You are responsible for securing your device and backing up your 12-24 word recovery phrase. If you lose this phrase or your device is compromised, your funds may be lost permanently.
       </Text>
-      <Text style={styles.heading}>3. No Warranty ("As Is")</Text>
+      <Text style={styles.heading}>4. No Warranty ("As Is")</Text>
       <Text style={styles.paragraph}>
         This software is provided "as is", without warranty of any kind, express or implied. The developers utilize best practices for security but do not guarantee that the software is error-free. You use this software at your own risk.
       </Text>
-      <Text style={styles.heading}>4. Bitcoin Network Risks</Text>
+      <Text style={styles.heading}>5. Bitcoin Network Risks</Text>
       <Text style={styles.paragraph}>
         Bitcoin transactions are irreversible. Once sent, funds cannot be recovered. You acknowledge the risks associated with cryptocurrency, including value volatility and network congestion.
       </Text>
-      <Text style={styles.heading}>5. Third-Party Availability</Text>
+      <Text style={styles.heading}>6. Third-Party Availability</Text>
       <Text style={styles.paragraph}>
         This app relies on public APIs (such as Mempool.space and Blockstream) to function. We do not control these services and cannot guarantee their uptime. If these services are unavailable, the app may fail to update balances or send transactions temporarily.
       </Text>
