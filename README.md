@@ -134,7 +134,7 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 1. **Download the signed release:**
    Download the official signed file from the GitHub releases page into a new empty directory. *(Replace the version number with the one you are testing)*.
 ```bash
-   curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/3.2.1/trustless-v3.2.1-release.apk
+   curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/3.2.2/trustless-v3.2.2-release.apk
 ```
 
 2. **Verify the hash matches the one listed on GitHub:**
@@ -146,7 +146,7 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 ```bash
    git clone https://github.com/trustlesswallet/trustless.git
    cd trustless
-   git checkout 3.2.1
+   git checkout 3.2.2
 ```
 
 4. **Build the local unsigned package:**
