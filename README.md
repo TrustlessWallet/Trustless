@@ -189,6 +189,9 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 ```
    If the `diff` command returns empty output, the contents are identical bit-for-bit. The build is reproducible.
 
+#### Important note
+For now Android APKs are used exclusively to prove reproducibility. There is no published app on Google Play right now. We don't recommend sideloading the APK to Android devices, since the app hasn't been properly tested there.
+
 #### Lightning reproducibility implications
 Trustless uses [Breez SDK](https://github.com/breez) to handle lightning operations. The SDK requires an API key, which is not committed to the repository. Therefore, proper code reproduction is only possible without an API key, meaning lightning won't work in a locally built version. With that said, even without the `.env` file, all lightning-related code is still compiled into the build, guaranteeing code integrity.
 
