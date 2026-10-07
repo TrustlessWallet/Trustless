@@ -307,7 +307,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const refreshLightningState = async () => {
         if (!activeSdkInstance) return;
         try {
-            const info = await activeSdkInstance.getInfo({ ensureSynced: true });
+            const info = await activeSdkInstance.getInfo({ ensureSynced: false });
             setLightningBalance(Number(info.balanceSats ?? 0));
             try {
                 const addressInfo = await activeSdkInstance.getLightningAddress();
@@ -457,10 +457,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setLightningInitError(null);
 
             if (sdk && typeof sdk.addEventListener === 'function') {
-                sdk.addEventListener({
-                    onEvent: async (e: any) => {
-                        if (e && (e.type === "invoicePaid" || e.type === "paymentSucceed" || e.type === "swapUpdated")) {
+                await sdk.addEventListener({
+                    onEvent: async (event: any) => {
+                        if (!event) return;
+
+                        const shouldRefresh =
+                            event.tag === breezSdk.SdkEvent_Tags.Synced ||
+                            event.tag === breezSdk.SdkEvent_Tags.PaymentPending ||
+                            event.tag === breezSdk.SdkEvent_Tags.PaymentSucceeded ||
+                            event.tag === breezSdk.SdkEvent_Tags.PaymentFailed;
+
+                        if (shouldRefresh) {
                             await refreshLightningState();
+                        }
+
+                        if (
+                            event.tag === breezSdk.SdkEvent_Tags.PaymentPending ||
+                            event.tag === breezSdk.SdkEvent_Tags.PaymentSucceeded
+                        ) {
                             setDefaultLightningInvoice('');
                         }
                     }
@@ -545,7 +559,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     prepareResponse: prepareResponse
                 } as any);
             } catch (error: any) {
-                throw new Error(`Send error (${error.message}).`);
+                const sdkMessage = String(error?.message || error || '');
+
+                if (
+                    sdkMessage.toLowerCase().includes('insufficient') ||
+                    sdkMessage.toLowerCase().includes('sparkerror')
+                ) {
+                    throw new Error(
+                        'Payment could not be completed. Your Lightning balance may not cover the invoice amount plus its routing fee.'
+                    );
+                }
+
+                throw new Error(`Send error: ${sdkMessage || 'Unknown Lightning SDK error'}`);
             }
 
         } else if (type === 'lightningaddress' || type === 'lnurlpay') {
