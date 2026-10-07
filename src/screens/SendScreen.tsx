@@ -558,8 +558,15 @@ const SendScreen = () => {
             return;
         }
 
-        if (sats > lightningBalance) {
-            Alert.alert('Insufficient balance', `You do not have enough sats to pay this invoice.`);
+        const estimatedFeeSats = lnFeeEstimate ?? 0;
+        const totalRequiredSats = sats + estimatedFeeSats;
+
+        if (totalRequiredSats > lightningBalance) {
+            const message = estimatedFeeSats > 0
+                ? `Sending ${sats} sats requires an estimated ${estimatedFeeSats}-sat Lightning fee, for a total of ${totalRequiredSats} sats. Your available Lightning balance is ${lightningBalance} sats.`
+                : `You have ${lightningBalance} sats available, which is not enough to send ${sats} sats.`;
+
+            Alert.alert('Insufficient balance for fee', message);
             return;
         }
 
