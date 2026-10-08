@@ -9,7 +9,7 @@ import * as bitcoin from 'bitcoinjs-lib';
 import { payments } from 'bitcoinjs-lib';
 import { ECPairFactory } from 'ecpair';
 import { useQueryClient } from '@tanstack/react-query';
-import { Alert } from 'react-native';
+import { Alert, AppState, AppStateStatus } from 'react-native';
 import * as breezSdk from '@breeztech/breez-sdk-spark-react-native';
 import * as FileSystem from 'expo-file-system';
 
@@ -36,6 +36,7 @@ import { InteractionManager } from 'react-native';
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
 
 let activeSdkInstance: any = null;
+let activeSdkListenerId: string | null = null;
 
 const formatLightningInitError = (error: any): string => {
     try {
@@ -104,7 +105,7 @@ interface WalletContextType {
     activeWallet: ActiveWallet | null;
     loading: boolean;
     lastRefreshTime: number;
-    triggerRefresh: () => void;
+    triggerRefresh: () => Promise<void>;
     generateMnemonic: (strength?: number) => Promise<string | null>;
     addWallet: (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; }) => Promise<Wallet | null>;
     switchWallet: (walletId: string) => Promise<void>;
@@ -181,6 +182,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // UTXO scanning) so they can be cancelled if the provider unmounts,
     // instead of firing later against a torn-down environment / stale wallet.
     const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+    const lightningInitVersionRef = useRef(0);
+    const lightningRefreshQueueRef = useRef<Promise<void>>(Promise.resolve());
 
     const scheduleDeferred = useCallback((fn: () => void, delayMs: number) => {
         const id = setTimeout(() => {
@@ -193,8 +196,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     useEffect(() => {
         return () => {
+            ++lightningInitVersionRef.current;
+            lightningRefreshQueueRef.current = Promise.resolve();
             pendingTimeoutsRef.current.forEach(id => clearTimeout(id));
             pendingTimeoutsRef.current.clear();
+            void disposeActiveLightningNode();
         };
     }, []);
 
@@ -304,25 +310,51 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return () => { isMounted = false; };
     }, [isLightningInitialized, defaultLightningInvoice]);
 
-    const refreshLightningState = async () => {
-        if (!activeSdkInstance) return;
-        try {
-            const info = await activeSdkInstance.getInfo({ ensureSynced: false });
-            setLightningBalance(Number(info.balanceSats ?? 0));
-            try {
-                const addressInfo = await activeSdkInstance.getLightningAddress();
-                if (addressInfo && addressInfo.lightningAddress) {
-                    setLightningAddress(addressInfo.lightningAddress);
-                } else {
-                    setLightningAddress('');
-                }
-            } catch (err) {
-                console.error("Failed to fetch Lightning address:", err);
-                setLightningAddress('');
-            }
+    const refreshLightningState = (forceSync = false): Promise<void> => {
+        const sdk = activeSdkInstance;
+        const initVersion = lightningInitVersionRef.current;
+        if (!sdk) return Promise.resolve();
 
-            const paymentsResponse = await activeSdkInstance.listPayments({ limit: 100 });
-            const paymentsList = Array.isArray(paymentsResponse) ? paymentsResponse : (paymentsResponse?.payments || []);
+        if (forceSync) {
+            // Update from the local cache immediately. Keep the network sync
+            // outside the read queue so its latency cannot delay SDK events.
+            void refreshLightningState().catch(error => {
+                console.warn('Failed to read cached Lightning state:', error);
+            });
+            return sdk.syncWallet({}).then(() => {
+                if (sdk !== activeSdkInstance || initVersion !== lightningInitVersionRef.current) return;
+                return refreshLightningState();
+            });
+        }
+
+        // Serialize local reads so an older result cannot overwrite a newer one.
+        const task = lightningRefreshQueueRef.current.catch(() => {}).then(async () => {
+            if (sdk !== activeSdkInstance || initVersion !== lightningInitVersionRef.current) return;
+
+            // Show the balance as soon as it is available. Payment history can
+            // take longer and should not hold the balance UI hostage.
+            const info = await sdk.getInfo({ ensureSynced: false });
+            if (sdk !== activeSdkInstance || initVersion !== lightningInitVersionRef.current) return;
+            setLightningBalance(Number(info.balanceSats ?? 0));
+
+            // Address lookup is independent of both balance and history.
+            void sdk.getLightningAddress().then((addressInfo: any) => {
+                if (sdk === activeSdkInstance && initVersion === lightningInitVersionRef.current) {
+                    setLightningAddress(addressInfo?.lightningAddress || '');
+                }
+            }).catch((error: any) => {
+                console.warn("Failed to fetch Lightning address:", error);
+            });
+
+            const paymentsResponse = await sdk.listPayments({
+                offset: 0,
+                limit: 100,
+                sortAscending: false,
+            } as any);
+
+            const paymentsList = Array.isArray(paymentsResponse)
+                ? paymentsResponse
+                : (paymentsResponse?.payments || []);
 
             const u128ToNumber = (v: any): number => {
                 try {
@@ -341,40 +373,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const SDK_STATUS = breezSdk.PaymentStatus as any;
                 const SDK_TYPE = breezSdk.PaymentType as any;
 
-                const isComplete = p.status === SDK_STATUS.COMPLETED ||
-                    p.status === SDK_STATUS.Completed ||
-                    p.status === SDK_STATUS.COMPLETE;
+                const finalStatus: 'complete' | 'pending' | 'failed' =
+                    p.status === SDK_STATUS.Completed ? 'complete'
+                        : p.status === SDK_STATUS.Failed ? 'failed'
+                            : 'pending';
 
-                const isPending = p.status === SDK_STATUS.PENDING ||
-                    p.status === SDK_STATUS.Pending;
-
-                const isFailed = p.status === SDK_STATUS.FAILED ||
-                    p.status === SDK_STATUS.Failed ||
-                    p.status === SDK_STATUS.FAIL;
-
-                const isReceive = p.paymentType === SDK_TYPE.RECEIVE ||
-                    p.paymentType === SDK_TYPE.Receive ||
-                    p.paymentType === SDK_TYPE.RECEIVED;
-
-                let finalStatus: 'complete' | 'pending' | 'failed' = 'pending';
-                if (isComplete) {
-                    finalStatus = 'complete';
-                } else if (isFailed) {
-                    finalStatus = 'failed';
-                } else if (isPending) {
-                    finalStatus = 'pending';
-                } else if (String(p.status).toLowerCase().includes('complete') || p.status === 1) {
-                    finalStatus = 'complete';
-                } else if (String(p.status).toLowerCase().includes('fail') || p.status === 2 || p.status === -1) {
-                    finalStatus = 'failed';
-                }
-
-                let finalType: 'receive' | 'send' = 'send';
-                if (isReceive) {
-                    finalType = 'receive';
-                } else if (String(p.paymentType).toLowerCase().includes('receive') || p.paymentType === 1) {
-                    finalType = 'receive';
-                }
+                const finalType: 'receive' | 'send' =
+                    p.paymentType === SDK_TYPE.Receive ? 'receive' : 'send';
 
                 const amountSats = u128ToNumber(p.amount ?? p.amountSat ?? p.amountSats ?? 0);
                 const feeSats = u128ToNumber(p.fees ?? p.fee ?? p.feeSat ?? p.feeSats ?? 0);
@@ -405,13 +410,63 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 };
             });
 
+            if (sdk !== activeSdkInstance || initVersion !== lightningInitVersionRef.current) return;
             setLightningTransactions(formattedTxs);
+        });
+
+        lightningRefreshQueueRef.current = task;
+        return task;
+    };
+
+    useEffect(() => {
+        const subscription = AppState.addEventListener(
+            'change',
+            (nextAppState: AppStateStatus) => {
+                if (nextAppState === 'active' && isLightningInitialized) {
+                    refreshLightningState(true).catch(error => {
+                        console.error('Failed to refresh Lightning state on app foreground:', error);
+                    });
+                }
+            }
+        );
+
+        return () => subscription.remove();
+    }, [isLightningInitialized]);
+
+    const disposeActiveLightningNode = async () => {
+        const sdk = activeSdkInstance;
+        const listenerId = activeSdkListenerId;
+
+        // Clear first, so stale callbacks cannot use this instance.
+        activeSdkInstance = null;
+        activeSdkListenerId = null;
+
+        if (!sdk) return;
+
+        try {
+            if (listenerId && typeof sdk.removeEventListener === 'function') {
+                await sdk.removeEventListener(listenerId);
+            }
         } catch (error) {
-            console.error("Failed to fetch Lightning state:", error);
+            console.warn('Failed to remove Breez event listener:', error);
+        }
+
+        try {
+            if (typeof sdk.disconnect === 'function') {
+                await sdk.disconnect();
+            }
+        } catch (error) {
+            console.warn('Failed to disconnect Breez SDK:', error);
         }
     };
 
-    const initLightningNode = async (mnemonic: string) => {
+    const initLightningNode = async (
+        mnemonic: string,
+        walletId: string,
+        initVersion: number
+    ) => {
+        if (initVersion !== lightningInitVersionRef.current) return;
+
         try {
             const apiKey = process.env.EXPO_PUBLIC_BREEZ_API_KEY;
 
@@ -435,7 +490,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             config.lnurlDomain = "pay.hd-apps.com";
 
             const documentDir = FileSystem.Paths.document;
-            const storageDirPath = `${documentDir.uri}breezSdkSpark`;
+            const storageDirPath = `${documentDir.uri}breezSdkSpark/${walletId}`;
             const storageDir = new FileSystem.Directory(storageDirPath);
 
             const dirInfo = await storageDir.info();
@@ -453,13 +508,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 storageDir: storageDir.uri.replace('file://', '')
             });
 
+            if (initVersion !== lightningInitVersionRef.current) {
+                await sdk.disconnect();
+                return;
+            }
+
             activeSdkInstance = sdk;
             setLightningInitError(null);
 
             if (sdk && typeof sdk.addEventListener === 'function') {
-                await sdk.addEventListener({
+                const listenerId = await sdk.addEventListener({
                     onEvent: async (event: any) => {
-                        if (!event) return;
+                        if (
+                            !event ||
+                            activeSdkInstance !== sdk ||
+                            initVersion !== lightningInitVersionRef.current
+                        ) {
+                            return;
+                        }
 
                         const shouldRefresh =
                             event.tag === breezSdk.SdkEvent_Tags.Synced ||
@@ -468,24 +534,61 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                             event.tag === breezSdk.SdkEvent_Tags.PaymentFailed;
 
                         if (shouldRefresh) {
-                            await refreshLightningState();
+                            // Do not await here: syncWallet may wait for event
+                            // handlers while this refresh is queued behind it.
+                            void refreshLightningState().catch(error => {
+                                console.error('Failed to refresh Lightning state after SDK event:', error);
+                            });
                         }
 
                         if (
-                            event.tag === breezSdk.SdkEvent_Tags.PaymentPending ||
-                            event.tag === breezSdk.SdkEvent_Tags.PaymentSucceeded
+                            event.tag === breezSdk.SdkEvent_Tags.PaymentSucceeded &&
+                            activeSdkInstance === sdk &&
+                            initVersion === lightningInitVersionRef.current
                         ) {
                             setDefaultLightningInvoice('');
                         }
                     }
                 });
+
+                if (
+                    initVersion !== lightningInitVersionRef.current ||
+                    activeSdkInstance !== sdk
+                ) {
+                    if (activeSdkInstance === sdk) {
+                        activeSdkInstance = null;
+                    }
+
+                    try {
+                        await sdk.removeEventListener(listenerId);
+                        await sdk.disconnect();
+                    } catch {
+                    }
+
+                    return;
+                }
+
+                activeSdkListenerId = listenerId;
             }
 
-            await refreshLightningState();
+            // Read the locally cached balance before declaring the SDK ready.
+            // Waiting for the network's initial sync here kept the selector
+            // spinner visible for tens of seconds on a slow connection.
+            const cachedInfo = await sdk.getInfo({ ensureSynced: false });
+            if (initVersion !== lightningInitVersionRef.current || activeSdkInstance !== sdk) return;
+            setLightningBalance(Number(cachedInfo.balanceSats ?? 0));
             setIsLightningInitialized(true);
+
+            // The SDK syncs in the background and emits Synced; waiting for or
+            // forcing that sync here would delay the selector unnecessarily.
+            void refreshLightningState().catch(error => {
+                console.error('Failed to load cached Lightning state:', error);
+            });
         } catch (error: any) {
+            if (initVersion !== lightningInitVersionRef.current) return;
             const formattedError = formatLightningInitError(error);
             console.error("Breez initialization failed:", formattedError);
+            await disposeActiveLightningNode();
             setIsLightningInitialized(false);
             setLightningInitAttempted(true);
             setLightningInitError(formattedError);
@@ -520,13 +623,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     const payLightningInvoice = async (invoiceStr: string, amountSats?: number) => {
-        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+        const sdk = activeSdkInstance;
+        if (!sdk) throw new Error("Lightning node not initialized");
 
         const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
 
         let parsedInput;
         try {
-            parsedInput = await activeSdkInstance.parse(cleanStr);
+            parsedInput = await sdk.parse(cleanStr);
         } catch (error: any) {
             if (cleanStr.toLowerCase().startsWith('lnbc')) {
                 parsedInput = { type: 'bolt11invoice' };
@@ -549,21 +653,36 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             let prepareResponse;
             try {
-                prepareResponse = await activeSdkInstance.prepareSendPayment(prepareRequest);
+                prepareResponse = await sdk.prepareSendPayment(prepareRequest);
             } catch (error: any) {
                 throw new Error(`Prepare Error (${error.message}). Ensure you are not overriding a fixed-amount invoice or missing an amount for a 0-amount invoice. Zero balance also triggers this.`);
             }
 
+            if (prepareResponse.paymentMethod?.tag === breezSdk.SendPaymentMethod_Tags.Bolt11Invoice) {
+                // The receiver amount and Lightning routing fee are both paid
+                // from this wallet. Check the SDK's actual quote before sending.
+                await sdk.syncWallet({});
+                const info = await sdk.getInfo({ ensureSynced: false });
+                const amount = BigInt(prepareResponse.amount);
+                const fee = BigInt(prepareResponse.paymentMethod.inner.lightningFeeSats);
+                const available = BigInt(info.balanceSats);
+
+                if (amount + fee > available) {
+                    throw new Error(
+                        `Insufficient Lightning balance: ${amount} sats plus a ${fee}-sat fee requires ${amount + fee} sats, but only ${available} sats are available.`
+                    );
+                }
+            }
+
             try {
-                await activeSdkInstance.sendPayment({
+                await sdk.sendPayment({
                     prepareResponse: prepareResponse
                 } as any);
             } catch (error: any) {
                 const sdkMessage = String(error?.message || error || '');
 
                 if (
-                    sdkMessage.toLowerCase().includes('insufficient') ||
-                    sdkMessage.toLowerCase().includes('sparkerror')
+                    sdkMessage.toLowerCase().includes('insufficient')
                 ) {
                     throw new Error(
                         'Payment could not be completed. Your Lightning balance may not cover the invoice amount plus its routing fee.'
@@ -594,13 +713,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             let prepareResponse;
             try {
-                prepareResponse = await activeSdkInstance.prepareLnurlPay(prepareLnurlPayRequest);
+                prepareResponse = await sdk.prepareLnurlPay(prepareLnurlPayRequest);
             } catch (error: any) {
                 throw new Error(`Prepare LNURL error (${error.message}).`);
             }
 
             try {
-                await activeSdkInstance.lnurlPay({
+                await sdk.lnurlPay({
                     prepareResponse: prepareResponse,
                     idempotencyKey: undefined
                 } as any);
@@ -612,16 +731,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             throw new Error(`Unsupported lightning format. Parsed type: ${rawType}`);
         }
 
-        await refreshLightningState();
+        // A display refresh must not turn a completed send into a payment error.
+        await refreshLightningState().catch(error => {
+            console.warn('Payment sent, but Lightning display refresh failed:', error);
+        });
     };
 
     const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
-        if (!activeSdkInstance) return null;
+        const sdk = activeSdkInstance;
+        if (!sdk) return null;
 
         let cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
 
         try {
-            const parsedInput = await activeSdkInstance.parse(cleanStr);
+            const parsedInput = await sdk.parse(cleanStr);
             const rawType = parsedInput.type || parsedInput.tag || '';
             const type = String(rawType).toLowerCase();
 
@@ -643,7 +766,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                         feePolicy: undefined
                     };
 
-                    const prepareResponse = await activeSdkInstance.prepareLnurlPay(prepareLnurlPayRequest);
+                    const prepareResponse = await sdk.prepareLnurlPay(prepareLnurlPayRequest);
                     if (prepareResponse && prepareResponse.feeSats) {
                         return Number(prepareResponse.feeSats);
                     }
@@ -663,16 +786,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         try {
-            const prepareResponse = await activeSdkInstance.prepareSendPayment(prepareRequest);
+            const prepareResponse = await sdk.prepareSendPayment(prepareRequest);
             let totalFeeSats = 0;
 
             if (prepareResponse.paymentMethod) {
                 const paymentMethod = prepareResponse.paymentMethod.inner || prepareResponse.paymentMethod;
 
                 if (prepareResponse.paymentMethod.tag === 'Bolt11Invoice' || paymentMethod.lightningFeeSats !== undefined) {
-                    const lightningFee = Number(paymentMethod.lightningFeeSats || 0);
-                    const sparkFee = Number(paymentMethod.sparkTransferFeeSats || 0);
-                    totalFeeSats = lightningFee + sparkFee;
+                    // The SDK uses either Lightning routing or a Spark transfer,
+                    // not both fees for one payment.
+                    totalFeeSats = Number(paymentMethod.lightningFeeSats || 0);
                 } else if (paymentMethod.fee !== undefined) {
                     totalFeeSats = Number(paymentMethod.fee || 0);
                 }
@@ -746,7 +869,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     const withdrawToOnchain = async (prepareResponse: any, feeTier: 'fast' | 'normal' | 'slow') => {
-        if (!activeSdkInstance) throw new Error("Lightning node not initialized");
+        const sdk = activeSdkInstance;
+        if (!sdk) throw new Error("Lightning node not initialized");
 
         let speed;
         try {
@@ -768,12 +892,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 confirmationSpeed: speed
             });
 
-            await activeSdkInstance.sendPayment({
+            await sdk.sendPayment({
                 prepareResponse: prepareResponse,
                 options: options
             });
 
-            await refreshLightningState();
+            await refreshLightningState().catch(error => {
+                console.warn('Withdrawal sent, but Lightning display refresh failed:', error);
+            });
         } catch (error: any) {
             throw new Error(`Withdrawal failed: ${error.message}`);
         }
@@ -925,11 +1051,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    const triggerRefresh = () => {
+    const triggerRefresh = async () => {
         setLastRefreshTime(Date.now());
-        queryClient.invalidateQueries({ queryKey: ['wallet-balances'] });
-        queryClient.invalidateQueries({ queryKey: ['saved', 'balances'] });
-        if (isLightningInitialized) refreshLightningState();
+
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['wallet-balances'] }),
+            queryClient.invalidateQueries({ queryKey: ['saved', 'balances'] }),
+            isLightningInitialized ? refreshLightningState(true) : Promise.resolve(),
+        ]);
     };
 
     const getRootNode = async (wallet: Wallet) => {
@@ -950,6 +1079,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
+        const initVersion = ++lightningInitVersionRef.current;
+        lightningRefreshQueueRef.current = Promise.resolve();
+        setIsLightningInitialized(false);
+        setLightningInitAttempted(false);
+        setLightningInitError(null);
+        setLightningBalance(0);
+        setLightningTransactions([]);
+        setLightningAddress('');
+        setDefaultLightningInvoice('');
+        await disposeActiveLightningNode();
         let wallet = await buildActiveWallet(walletId);
         if (!wallet) return false;
 
@@ -959,10 +1098,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const script_type = wallet.scriptType || 'p2wpkh';
             let derived_new = false;
 
-            // Reset lightning state immediately to prevent stale states on switch
-            setIsLightningInitialized(false);
-            setLightningInitError(null);
-
             // --- LIGHTNING INIT (DEFERRED) ---
             if (!is_watch_only) {
                 const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
@@ -970,7 +1105,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     // DEFER: Push Lightning initialization to macro task queue so UI renders first
                     scheduleDeferred(() => {
                         InteractionManager.runAfterInteractions(() => {
-                            initLightningNode(credentials.password).catch((e) => console.error("Deferred Lightning Init failed", e));
+                            initLightningNode(credentials.password, walletId, initVersion).catch((e) =>
+                                console.error("Deferred Lightning Init failed", e)
+                            );
                         });
                     }, 800);
                 } else {
@@ -1113,13 +1250,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
 
             if (wallet) {
+                if (initVersion !== lightningInitVersionRef.current) return false;
                 setActiveWallet(wallet);
                 return true;
             }
             return false;
         } catch (e) {
             console.warn(`Failed to load wallet ${wallet?.name}:`, e);
-            setActiveWallet(null);
+            if (initVersion === lightningInitVersionRef.current) {
+                setActiveWallet(null);
+            }
             return false;
         }
     };
@@ -1320,12 +1460,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const switchWallet = async (walletId: string) => {
         if (activeWallet?.id === walletId) return;
         try {
+            const loaded = await loadAndSetActiveWallet(walletId);
+            if (!loaded) throw new Error(`Could not load wallet ${walletId}`);
             await Keychain.setGenericPassword('user', walletId, { service: ACTIVE_WALLET_KEY });
-            await loadAndSetActiveWallet(walletId);
         } catch (error) {
             console.error("Failed to switch wallet:", error);
+            throw error;
         }
-        setDefaultLightningInvoice('');
     };
 
     const updateWalletName = async (walletId: string, newName: string) => {
@@ -1348,6 +1489,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (remaining.length > 0) {
                 await switchWallet(remaining[0].id);
             } else {
+                ++lightningInitVersionRef.current;
+                lightningRefreshQueueRef.current = Promise.resolve();
+                await disposeActiveLightningNode();
+                setIsLightningInitialized(false);
+                setLightningInitAttempted(false);
+                setLightningInitError(null);
+                setLightningBalance(0);
+                setLightningTransactions([]);
+                setLightningAddress('');
+                setDefaultLightningInvoice('');
                 setActiveWallet(null);
                 await Keychain.resetGenericPassword({ service: ACTIVE_WALLET_KEY });
             }
@@ -1362,6 +1513,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     const resetWallet = async () => {
+        ++lightningInitVersionRef.current;
+        lightningRefreshQueueRef.current = Promise.resolve();
+        await disposeActiveLightningNode();
         const d = await dbGetWallets(NETWORK_NAME);
         for (const w of d) {
             await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${w.id}` });
@@ -1370,6 +1524,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await Keychain.resetGenericPassword({ service: ACTIVE_WALLET_KEY });
         setWallets([]);
         setActiveWallet(null);
+        setIsLightningInitialized(false);
+        setLightningInitAttempted(false);
+        setLightningInitError(null);
+        setLightningBalance(0);
+        setLightningTransactions([]);
+        setLightningAddress('');
+        setDefaultLightningInvoice('');
     };
 
     const createAndSignTransaction = async (

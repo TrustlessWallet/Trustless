@@ -125,7 +125,6 @@ const WalletScreen = () => {
     }, [activeWallet]);
 
     const [isScanningNfc, setIsScanningNfc] = useState(false);
-    const [glassRemountKey, setGlassRemountKey] = useState(0);
 
     const pressScale = useRef(new Animated.Value(1)).current;
     const holdCharge = useRef(new Animated.Value(0)).current;
@@ -143,7 +142,8 @@ const WalletScreen = () => {
         10,
     );
 
-    const isLightningLoading = activeWallet?.type !== 'watch-only' && !isLightningInitialized && !lightningInitError;
+    const isLightningLoading = !!activeWallet && activeWallet.type !== 'watch-only' && !isLightningInitialized && !lightningInitError;
+    const isToggleDisabled = activeWallet?.type === 'watch-only' || (!isLightningMode && !isLightningInitialized);
 
     // Explicitly stops and resets the native-driven sonar ring animations.
     // Used before navigating away from a successful NFC scan, since relying
@@ -438,10 +438,8 @@ const WalletScreen = () => {
         }
     }, [isFocused]);
 
-    // Native RefreshControl is only attached once any in-flight navigation
-    // transition has fully settled. Attaching it while the native thread is
-    // still busy with a screen-dismiss animation is what made pull-to-refresh
-    // snap straight to "refreshing" instead of building up with drag resistance.
+    // Keep RefreshControl mounted. Adding it to the native list after a delay
+    // can disrupt touch handling while the user is already on this screen.
     useEffect(() => {
         if (!isFocused) {
             setPullToRefreshReady(false);
@@ -455,25 +453,6 @@ const WalletScreen = () => {
 
         return () => task.cancel();
     }, [isFocused]);
-
-    const activeWalletId = activeWallet?.id;
-    useEffect(() => {
-        if (!pullToRefreshReady || walletLoading || !activeWalletId) {
-            return;
-        }
-
-        const frame = requestAnimationFrame(() => {
-            setGlassRemountKey(k => k + 1);
-        });
-        const timer = setTimeout(() => {
-            setGlassRemountKey(k => k + 1);
-        }, 500);
-
-        return () => {
-            cancelAnimationFrame(frame);
-            clearTimeout(timer);
-        };
-    }, [pullToRefreshReady, walletLoading, activeWalletId]);
 
     useEffect(() => {
         const loadInitialWalletMode = async () => {
@@ -490,19 +469,20 @@ const WalletScreen = () => {
     }, [activeWallet?.type, isLightningMode]);
 
     const onRefresh = useCallback(async () => {
+        if (!pullToRefreshReady) return;
         setIsManualRefreshing(true);
         try {
-            triggerRefresh();
+            await triggerRefresh();
             if (!isLightningMode) {
                 await refetchTxs();
             }
         } finally {
             setIsManualRefreshing(false);
         }
-    }, [isLightningMode, triggerRefresh, refetchTxs]);
+    }, [isLightningMode, pullToRefreshReady, triggerRefresh, refetchTxs]);
 
 
-    const toggleMode = () => setIsLightningMode(!isLightningMode);
+    const toggleMode = () => setIsLightningMode(currentMode => !currentMode);
 
     const renderTransactionItem = useCallback(({ item }: { item: any }) => {
         const isLightning = 'paymentHash' in item;
@@ -528,7 +508,7 @@ const WalletScreen = () => {
                             )}
                         </Text>
                         <Text style={styles.txStatus}>
-                            {lnTx.status === 'complete' ? 'Complete' : lnTx.status === 'failed' ? 'Failed' : 'Pending'}
+                            {lnTx.status === 'complete' ? 'Completed' : lnTx.status === 'failed' ? 'Failed' : 'Pending'}
                         </Text>
                     </View>
                 </TouchableOpacity>
@@ -577,13 +557,13 @@ const WalletScreen = () => {
     const recentTransactions = displayTransactions.slice(0, 10);
 
     const toggleIconElement = (
-        <GlassView key={`toggle-glass-${activeWalletId ?? 'none'}-${glassRemountKey}`} style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
+        <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={false}>
             <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
                 <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
                     <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
                 </View>
                 <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
-                    {isLightningLoading || loadingTxs ? (
+                    {isLightningLoading ? (
                         <ActivityIndicator
                             size={18}
                             color={isLightningMode ? theme.colors.inversePrimary : theme.colors.primary}
@@ -673,23 +653,27 @@ const WalletScreen = () => {
                                 activeOpacity={1}
                                 style={styles.toggleTouchable}
                                 onPress={toggleMode}
-                                disabled={(!isLightningInitialized && !isLightningLoading) || activeWallet?.type === 'watch-only'}
+                                disabled={isToggleDisabled}
                             >
-                                {activeWallet?.type !== 'watch-only' && toggleIconElement}
+                                <View pointerEvents="none">
+                                    {activeWallet?.type !== 'watch-only' && toggleIconElement}
+                                </View>
                             </TouchableOpacity>
 
                             <TouchableOpacity activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
-                                <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={true}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
-                                        <Text
-                                            style={[styles.walletName]}
-                                            numberOfLines={1}
-                                            ellipsizeMode="middle"
-                                        >
-                                            {activeWallet?.name || 'Wallet'}
-                                        </Text>
-                                    </View>
-                                </GlassView>
+                                <View pointerEvents="none">
+                                    <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={false}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
+                                            <Text
+                                                style={[styles.walletName]}
+                                                numberOfLines={1}
+                                                ellipsizeMode="middle"
+                                            >
+                                                {activeWallet?.name || 'Wallet'}
+                                            </Text>
+                                        </View>
+                                    </GlassView>
+                                </View>
                             </TouchableOpacity>
 
                             <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
@@ -820,15 +804,13 @@ const WalletScreen = () => {
                 }
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    pullToRefreshReady ? (
-                        <RefreshControl
-                            refreshing={isManualRefreshing}
-                            onRefresh={onRefresh}
-                            tintColor={theme.colors.primary}
-                            colors={[theme.colors.primary]}
-                            progressViewOffset={screenHeight * 0.1}
-                        />
-                    ) : undefined
+                    <RefreshControl
+                        refreshing={isManualRefreshing}
+                        onRefresh={onRefresh}
+                        tintColor={theme.colors.primary}
+                        colors={[theme.colors.primary]}
+                        progressViewOffset={screenHeight * 0.1}
+                    />
                 }
             />
 
