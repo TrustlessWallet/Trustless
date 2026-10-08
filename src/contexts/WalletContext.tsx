@@ -85,6 +85,44 @@ const traceLightningStep = <T,>(context: LightningTraceContext, step: string, op
     return promise;
 };
 
+// Only forward native sync phase markers; never dump the raw SDK log stream.
+let nativeLightningLoggingStarted = false;
+const startNativeLightningDiagnostics = () => {
+    if (nativeLightningLoggingStarted) return;
+    const context = { wallet: 'native-global', session: 0 };
+    try {
+        breezSdk.initLogging(undefined, {
+            log: entry => {
+                const line = entry.line;
+                const duration = line.match(/(?:completed|failed|storage|metadata|deposits) in ([0-9.]+(?:ns|µs|μs|us|ms|s))/)?.[1];
+                const starting = line.match(/sync_wallet_internal: Starting (Wallet|WalletState|LnurlMetadata|Deposits) sync/);
+                const completed = line.match(/sync_wallet_internal: (Wallet|WalletState|LnurlMetadata|Deposits) sync completed/);
+                const failed = line.match(/sync_wallet_internal: (Spark wallet sync failed|Failed to sync wallet state to storage|Failed to sync lnurl metadata|Failed to check and claim static deposits)/);
+                const queued = line.match(/Running sync type (\w+) for (\d+) waiters/);
+                if (starting) lightningTrace(context, 'native.sync.phase', { phase: starting[1], status: 'start' });
+                else if (completed) lightningTrace(context, 'native.sync.phase', {
+                    phase: line.includes('InternalSyncedEvent') ? 'FullSummary' : completed[1], status: 'success', duration,
+                    // A full sync can report success while individual substeps failed.
+                    walletOk: line.match(/wallet: (true|false)/)?.[1],
+                    walletStateOk: line.match(/wallet_state: (true|false)/)?.[1],
+                    metadataOk: line.match(/lnurl_metadata: (true|false)/)?.[1],
+                    depositsOk: line.match(/deposits: (true|false)/)?.[1],
+                });
+                else if (failed) lightningTrace(context, 'native.sync.phase', {
+                    phase: failed[1], status: 'error', duration,
+                    category: lightningErrorDetails(line).errorCategory,
+                });
+                else if (queued) lightningTrace(context, 'native.sync.batch', { syncType: queued[1], waiters: Number(queued[2]) });
+            },
+        }, 'warn,breez_sdk_spark::sdk::sync=debug,breez_sdk_spark::sdk::sync_coordinator=debug');
+        nativeLightningLoggingStarted = true;
+        lightningTrace(context, 'native.logging.ready');
+    } catch (error) {
+        // Diagnostics must never prevent connecting (including a logger already installed natively).
+        lightningTrace(context, 'native.logging.unavailable', lightningErrorDetails(error));
+    }
+};
+
 type LightningSdk = Awaited<ReturnType<typeof breezSdk.connect>>;
 const HISTORY_PAGE_SIZE = 50;
 
@@ -552,6 +590,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setLightningInitAttempted(true);
             setLightningInitError(null);
             try {
+                startNativeLightningDiagnostics();
                 const apiKey = process.env.EXPO_PUBLIC_BREEZ_API_KEY;
                 if (!apiKey) throw new Error('Missing EXPO_PUBLIC_BREEZ_API_KEY at runtime');
                 const sdk = await withDeadline(lifecycleRef.current.replace(async () => {
