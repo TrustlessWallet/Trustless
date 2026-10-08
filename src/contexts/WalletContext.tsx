@@ -517,17 +517,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             readHistory().then(() => current() ? readHistory() : undefined),
         ]).then(() => {}).catch(error => { lightningTrace(lightningTraceContext(), 'refresh.cache.error', lightningErrorDetails(error)); throw error; });
 
-        return flights.run('refresh', async () => {
+        // Breez can legitimately take longer than the UI deadline while it catches
+        // up a wallet. Start at most one native synchronization and let callers
+        // return after the fast, local cache reads instead of falsely reporting a
+        // failure or queuing another full sync.
+        const cachedState = Promise.all([readBalance(), readHistory()]).then(() => {});
+        const synchronization = flights.run('refresh', async () => {
             if (!current()) return;
             setLightningSyncing(true);
             setLightningSyncError(null);
-            // Cache reads remain independent of network synchronization and each other.
-            void Promise.all([readBalance(), readHistory()]).catch(error => lightningTrace(lightningTraceContext(), 'refresh.cache.error', lightningErrorDetails(error)));
             try {
-                await withDeadline(flights.run('sync', () => traceLightningStep(lightningTraceContext(), 'sdk.syncWallet', () => sdk.syncWallet({}))), 'Lightning synchronization');
+                await flights.run('sync', () =>
+                    traceLightningStep(lightningTraceContext(), 'sdk.syncWallet', () => sdk.syncWallet({}))
+                );
                 if (!current()) return;
-                // Finish any pre-sync reads and re-read each stream independently.
-                // A stuck history call must not hold back a post-sync balance read.
                 await Promise.all([
                     (async () => {
                         await readBalance();
@@ -540,12 +543,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             } catch (error) {
                 lightningTrace(lightningTraceContext(), 'refresh.sync.error', { responseSession: version, ...lightningErrorDetails(error) });
                 if (current()) setLightningSyncError(error instanceof Error ? error.message : 'Lightning refresh failed.');
-                throw error;
             } finally {
                 lightningTrace(lightningTraceContext(), 'refresh.sync.finished', { responseSession: version, accepted: current() });
                 if (current()) setLightningSyncing(false);
             }
         });
+        // Keep any background error handled: it is represented in lightningSyncError.
+        void synchronization.catch(() => {});
+        return cachedState;
     };
 
     const loadMoreLightningTransactions = async () => {
