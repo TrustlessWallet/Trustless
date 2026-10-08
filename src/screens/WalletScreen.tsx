@@ -79,10 +79,14 @@ const WalletScreen = () => {
         loading: walletLoading,
         triggerRefresh,
         lightningBalance,
+        lightningBalanceKnown,
         lightningTransactions,
         isLightningInitialized,
         lightningInitError,
         lightningSyncing,
+        lightningSyncError,
+        lightningLastSyncedAt,
+        retryLightning,
         isWalletSwitching
     } = useWallet();
 
@@ -714,7 +718,7 @@ const WalletScreen = () => {
                                     <Text style={styles.balanceText}>
                                         {hideBalance ? '*******' : (
                                             isLightningMode ? (
-                                                <>{new Intl.NumberFormat('en-US').format(displayBalance)} sats</>
+                                                <>{lightningBalanceKnown ? `${new Intl.NumberFormat('en-US').format(displayBalance)} sats` : '— sats'}</>
                                             ) : (
                                                 <>{formatBalance(displayBalance)} <Text style={styles.orangeSymbol}>₿</Text></>
                                             )
@@ -727,6 +731,28 @@ const WalletScreen = () => {
 
                             <View style={styles.balanceSideSpacerRight} />
                         </View>
+
+                        {isLightningMode && (
+                            <View style={{ alignItems: 'center', marginTop: 6, marginBottom: 8 }} accessibilityLiveRegion="polite">
+                                <Text style={{ color: theme.colors.muted, fontSize: 12, textAlign: 'center' }}>
+                                    {lightningInitError || lightningSyncError
+                                        ? (lightningBalanceKnown ? 'Showing last known balance. Update failed.' : 'Unable to load Lightning balance.')
+                                        : isLightningLoading
+                                            ? (lightningBalanceKnown ? 'Updating balance…' : 'Loading Lightning balance…')
+                                            : lightningLastSyncedAt ? `Updated ${new Date(lightningLastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for synchronization…'}
+                                </Text>
+                                {!!(lightningInitError || lightningSyncError) && !lightningSyncing && (
+                                    <TouchableOpacity
+                                        accessibilityRole="button"
+                                        disabled={isWalletSwitching}
+                                        onPress={() => { void retryLightning().catch(error => Alert.alert('Lightning unavailable', error instanceof Error ? error.message : 'Please try again.')); }}
+                                        style={{ padding: 10 }}
+                                    >
+                                        <Text style={{ color: theme.colors.primary }}>Retry connection</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        )}
 
                         <View style={styles.actionsWrapper}>
                             <View style={styles.actionsContainer}>
