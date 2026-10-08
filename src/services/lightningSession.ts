@@ -1,7 +1,14 @@
+export class LightningTimeoutError extends Error {
+    constructor(label: string) {
+        super(`${label} timed out. Please try again.`);
+        this.name = 'LightningTimeoutError';
+    }
+}
+
 /** A deadline releases the UI, not the native operation. Always guard late results. */
 export function withDeadline<T>(operation: Promise<T>, label: string, timeoutMs = 20000): Promise<T> {
     return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${label} timed out. Please try again.`)), timeoutMs);
+        const timer = setTimeout(() => reject(new LightningTimeoutError(label)), timeoutMs);
         operation.then(value => { clearTimeout(timer); resolve(value); }, error => {
             clearTimeout(timer);
             reject(error);

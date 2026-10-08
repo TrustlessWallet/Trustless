@@ -125,7 +125,7 @@ it('releases refresh with an error when synchronization exceeds its deadline', a
     await act(async () => {
         const refresh = result.current.triggerRefresh('lightning').catch(error => { outcome = error; });
         await Promise.resolve(); await Promise.resolve();
-        await jest.advanceTimersByTimeAsync(20001);
+        await jest.advanceTimersByTimeAsync(12001);
         await refresh;
     });
     expect(outcome.message).toContain('timed out');
@@ -239,4 +239,84 @@ it('coalesces concurrent retry requests into one replacement connection', async 
     const before = (sdkModule.connect as jest.Mock).mock.calls.length;
     await act(async () => { await Promise.all([result.current.retryLightning(), result.current.retryLightning()]); });
     expect((sdkModule.connect as jest.Mock).mock.calls.length).toBe(before + 1);
+});
+
+
+it('applies payment completion immediately and does not regress to a stale pending list', async () => {
+    const { result } = await connected();
+    const history = deferred<any>();
+    a.listPayments.mockReturnValue(history.promise);
+    await act(async () => { await a.emit({ tag: 'Synced' }); });
+    const incoming = { ...payment('incoming'), paymentType: 0 };
+    await act(async () => { await a.emit({ tag: 'PaymentSucceeded', inner: { payment: incoming } }); });
+    expect(result.current.lightningTransactions.find(tx => tx.paymentHash === 'incoming')?.status).toBe('complete');
+    await act(async () => { history.resolve({ payments: [{ ...incoming, status: 1 }] }); });
+    await waitFor(() => expect(result.current.lightningSyncing).toBe(false));
+    expect(result.current.lightningTransactions.find(tx => tx.paymentHash === 'incoming')?.status).toBe('complete');
+});
+
+it('recovers a stuck balance read only after disconnect, and ignores its late result', async () => {
+    const { result } = await connected();
+    jest.useFakeTimers();
+    const oldRead = deferred<any>();
+    const disconnect = deferred<void>();
+    const recovered = session(321);
+    a.getInfo.mockReturnValue(oldRead.promise);
+    a.disconnect.mockReturnValue(disconnect.promise);
+    const connect = sdkModule.connect as jest.Mock;
+    const before = connect.mock.calls.length;
+    connect.mockResolvedValueOnce(recovered);
+    await act(async () => {
+        await a.emit({ tag: 'Synced' });
+        await jest.advanceTimersByTimeAsync(8751);
+    });
+    expect(a.disconnect).toHaveBeenCalledTimes(1);
+    expect(connect.mock.calls.length).toBe(before);
+    await act(async () => { disconnect.resolve(); });
+    await waitFor(() => expect(result.current.lightningBalance).toBe(321));
+    expect(connect.mock.calls.length).toBe(before + 1);
+    await act(async () => { oldRead.resolve({ balanceSats: 99999n }); });
+    expect(result.current.lightningBalance).toBe(321);
+});
+
+it('opens Lightning while on-chain address discovery is still waiting', async () => {
+    const { result } = await connected();
+    const db = require('../../services/database');
+    const bitcoin = require('../../services/bitcoin');
+    const discovery = deferred<any[]>();
+    db.dbGetDerivedAddresses.mockImplementationOnce(async (id: string, chain: number) =>
+        Array.from({ length: 19 }, (_, index) => ({ address: `${id}-${chain}-${index}`, index })));
+    bitcoin.fetchAddressInfoBatch.mockReturnValueOnce(discovery.promise);
+    await act(async () => { await result.current.switchWallet('b'); });
+    await waitFor(() => expect(result.current.lightningBalance).toBe(900));
+    expect(result.current.activeWallet?.id).toBe('b');
+    expect(result.current.isWalletSwitching).toBe(false);
+    expect(bitcoin.fetchAddressInfoBatch).toHaveBeenCalled();
+    await act(async () => { discovery.resolve([]); });
+});
+
+it('shows the last known balance immediately when switching back before connection finishes', async () => {
+    const { result } = await connected();
+    await act(async () => { await result.current.switchWallet('b'); });
+    await waitFor(() => expect(result.current.lightningBalance).toBe(900));
+    const connection = deferred<any>();
+    (sdkModule.connect as jest.Mock).mockReturnValueOnce(connection.promise);
+    await act(async () => { await result.current.switchWallet('a'); });
+    expect(result.current.lightningBalance).toBe(100);
+    expect(result.current.lightningBalanceKnown).toBe(true);
+    await act(async () => { connection.resolve(a); });
+    await waitFor(() => expect(result.current.isLightningInitialized).toBe(true));
+});
+
+it('does not present an unsynchronized default zero as a known balance', async () => {
+    const sync = deferred<any>();
+    a.getInfo.mockResolvedValue({ balanceSats: 0n });
+    a.syncWallet.mockReturnValue(sync.promise);
+    const { result } = renderHook(() => useWallet(), { wrapper });
+    await waitFor(() => expect(result.current.isLightningInitialized).toBe(true));
+    expect(result.current.lightningBalanceKnown).toBe(false);
+    a.getInfo.mockResolvedValue({ balanceSats: 456n });
+    await act(async () => { sync.resolve({}); });
+    await waitFor(() => expect(result.current.lightningBalance).toBe(456));
+    expect(result.current.lightningBalanceKnown).toBe(true);
 });
