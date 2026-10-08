@@ -117,21 +117,34 @@ it('updates balance even when an earlier history request is stuck', async () => 
     await act(async () => { history.resolve({ payments: [] }); });
 });
 
-it('releases refresh with an error when synchronization exceeds its deadline', async () => {
+it('returns refresh promptly while a slow synchronization continues in the background', async () => {
     const { result } = await connected();
     jest.useFakeTimers();
     const sync = deferred<any>(); a.syncWallet.mockReturnValue(sync.promise);
-    let outcome: any;
+    const before = a.syncWallet.mock.calls.length;
     await act(async () => {
-        const refresh = result.current.triggerRefresh('lightning').catch(error => { outcome = error; });
+        const refresh = result.current.triggerRefresh('lightning');
         await Promise.resolve(); await Promise.resolve();
-        await jest.advanceTimersByTimeAsync(20001);
         await refresh;
     });
-    expect(outcome.message).toContain('timed out');
-    expect(result.current.lightningSyncing).toBe(false);
-    expect(result.current.lightningSyncError).toContain('timed out');
+    expect(result.current.lightningSyncing).toBe(true);
+    expect(result.current.lightningSyncError).toBeNull();
+    expect(a.syncWallet).toHaveBeenCalledTimes(before + 1);
+    await act(async () => { sync.resolve({}); await Promise.resolve(); });
+    await waitFor(() => expect(result.current.lightningSyncing).toBe(false));
+});
+
+it('does not queue another native synchronization while one is already running', async () => {
+    const { result } = await connected();
+    const sync = deferred<any>(); a.syncWallet.mockReturnValue(sync.promise);
+    const before = a.syncWallet.mock.calls.length;
+    await act(async () => {
+        await result.current.triggerRefresh('lightning');
+        await result.current.triggerRefresh('lightning');
+    });
+    expect(a.syncWallet).toHaveBeenCalledTimes(before + 1);
     await act(async () => { sync.resolve({}); });
+    await waitFor(() => expect(result.current.lightningSyncing).toBe(false));
 });
 
 it('does not wait for on-chain queries during Lightning refresh', async () => {

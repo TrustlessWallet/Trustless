@@ -82,7 +82,6 @@ const WalletScreen = () => {
         lightningTransactions,
         isLightningInitialized,
         lightningInitError,
-        lightningSyncing,
         isWalletSwitching
     } = useWallet();
 
@@ -144,8 +143,10 @@ const WalletScreen = () => {
         10,
     );
 
+    // Synchronization runs in the background. The wallet is usable as soon as
+    // the SDK is connected; a slow Breez catch-up must not keep this spinner on.
     const isLightningLoading = !!activeWallet && activeWallet.type !== 'watch-only' &&
-        (lightningSyncing || (!isLightningInitialized && !lightningInitError));
+        (!isLightningInitialized && !lightningInitError);
     const isToggleDisabled = isWalletSwitching || activeWallet?.type === 'watch-only';
 
     // Explicitly stops and resets the native-driven sonar ring animations.
