@@ -558,17 +558,8 @@ const SendScreen = () => {
             return;
         }
 
-        const estimatedFeeSats = lnFeeEstimate ?? 0;
-        const totalRequiredSats = sats + estimatedFeeSats;
-
-        if (totalRequiredSats > lightningBalance) {
-            const message = estimatedFeeSats > 0
-                ? `Sending ${sats} sats requires an estimated ${estimatedFeeSats}-sat Lightning fee, for a total of ${totalRequiredSats} sats. Your available Lightning balance is ${lightningBalance} sats.`
-                : `You have ${lightningBalance} sats available, which is not enough to send ${sats} sats.`;
-
-            Alert.alert('Insufficient balance for fee', message);
-            return;
-        }
+        // The SDK validates the actual quote and balance. A cached UI balance
+        // may not yet include an incoming payment.
 
         if (!skipAuth) {
             const authenticated = await authenticate_transaction_action('Authorize Lightning payment');
@@ -577,49 +568,11 @@ const SendScreen = () => {
 
         setLoading(true);
         try {
-            if (lnurlData) {
-                const invoicePr = await fetchLnurlInvoice(lnurlData.callback, sats * 1000);
-                await payLightningInvoice(invoicePr);
-
-                triggerRefresh();
-
-                const pendingLnTx = {
-                    paymentHash: lightningInvoice.trim(),
-                    type: 'send',
-                    amountMsat: sats * 1000,
-                    feeMsat: (lnFeeEstimate || 0) * 1000,
-                    status: 'complete',
-                    paymentTime: Math.floor(Date.now() / 1000),
-                    description: lnurlDomain ? `Paid ${lnurlDomain}` : 'LNURL Payment',
-                };
-
-                navigation.navigate('TransactionSuccess', {
-                    type: 'lightning',
-                    transaction: pendingLnTx as any
-                });
-            } else {
-                await payLightningInvoice(
-                    lightningInvoice.trim(),
-                    hasFixedAmount ? undefined : sats
-                );
-
-                triggerRefresh();
-
-                const pendingLnTx = {
-                    paymentHash: lightningInvoice.trim(),
-                    type: 'send',
-                    amountMsat: sats * 1000,
-                    feeMsat: (lnFeeEstimate || 0) * 1000,
-                    status: 'complete',
-                    paymentTime: Math.floor(Date.now() / 1000),
-                    description: lightningInvoice.trim(),
-                };
-
-                navigation.navigate('TransactionSuccess', {
-                    type: 'lightning',
-                    transaction: pendingLnTx as any
-                });
-            }
+            const paymentRequest = lnurlData
+                ? await fetchLnurlInvoice(lnurlData.callback, sats * 1000)
+                : lightningInvoice.trim();
+            const transaction = await payLightningInvoice(paymentRequest, lnurlData || hasFixedAmount ? undefined : sats);
+            navigation.navigate('TransactionSuccess', { type: 'lightning', transaction });
         } catch (error: any) {
             console.error("Lightning payment failed:", error);
             Alert.alert('Payment error', error.message || 'Failed to process lightning payment.');

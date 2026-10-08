@@ -122,14 +122,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
         setAmountStr(numericStr);
         resetReviewState();
 
-        const numSats = parseInt(numericStr, 10);
-        if (!numericStr || isNaN(numSats)) {
-            setLocalValidationErr(null);
-        } else if (numSats > lightningBalance) {
-            setLocalValidationErr("Amount exceeds balance");
-        } else {
-            setLocalValidationErr(null);
-        }
+        setLocalValidationErr(null);
     };
 
     const handleReview = async () => {
@@ -180,12 +173,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                 }
             }
 
-            if (amountSats + totalFeeSats > lightningBalance) {
-                setCalculationError("Insufficient funds for fees");
-                setReviewStatus('idle');
-                return;
-            }
-
+            // The SDK quote validates spendability; the displayed balance may be stale.
             setTxMetrics({ totalFeeSats, prepareResponse: estimate.prepareResponse });
             setReviewStatus('reviewed');
         } catch (err: any) {

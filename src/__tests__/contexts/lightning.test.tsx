@@ -1,565 +1,242 @@
 import React from 'react';
-import { renderHook, waitFor, act } from '@testing-library/react-native';
+import { act, renderHook, waitFor, cleanup } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WalletProvider, useWallet as use_wallet } from '../../contexts/WalletContext';
-import * as keychain from 'react-native-keychain';
+import { WalletProvider, useWallet } from '../../contexts/WalletContext';
+import * as sdkModule from '@breeztech/breez-sdk-spark-react-native';
 
-// Mock dependencies
+jest.mock('uuid', () => ({ v4: () => 'test-request-id' }));
 jest.mock('react-native-keychain', () => ({
-    getGenericPassword: jest.fn(),
-    setGenericPassword: jest.fn(),
-    resetGenericPassword: jest.fn(),
+    getGenericPassword: jest.fn(async ({ service }) => ({ password: service.includes('activeWalletId') ? 'a' : 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' })),
+    setGenericPassword: jest.fn(async () => true), resetGenericPassword: jest.fn(async () => true),
 }));
-
 jest.mock('../../services/database', () => ({
-    dbGetWallets: jest.fn(() => Promise.resolve([])),
-    dbCreateWallet: jest.fn(),
-    dbDeleteWallet: jest.fn(),
-    dbUpdateWalletName: jest.fn(),
-    dbGetDerivedAddresses: jest.fn(() => Promise.resolve([])),
-    dbGetAddressCache: jest.fn(() => Promise.resolve([])),
-    dbSaveAddress: jest.fn(),
-    dbUpdateAddressInfoBatch: jest.fn(),
-    dbGetUtxoLabels: jest.fn(() => Promise.resolve({})),
-    dbSyncUtxos: jest.fn(),
-    dbUpdateUtxoLabel: jest.fn(),
-    dbGetSavedAddresses: jest.fn(() => Promise.resolve([])),
-    dbAddSavedAddress: jest.fn(),
-    dbRemoveSavedAddress: jest.fn(),
-    dbUpdateSavedAddress: jest.fn(),
-    dbUpdateChangeIndex: jest.fn(),
-    dbFindWalletByAddress: jest.fn(),
-    dbFindWalletByXpub: jest.fn(),
+    dbGetWallets: jest.fn(async () => ['a', 'b'].map(id => ({ id, name: id, type: 'standard', nextUtxoCount: 0 }))),
+    dbGetDerivedAddresses: jest.fn(async (id, chain) => Array.from({ length: 20 }, (_, index) => ({ address: `${id}-${chain}-${index}`, index }))),
+    dbGetAddressCache: jest.fn(async () => []), dbGetUtxoLabels: jest.fn(async () => ({})),
+    dbGetSavedAddresses: jest.fn(async () => []), dbUpdateAddressInfoBatch: jest.fn(), dbSaveAddress: jest.fn(),
 }));
-
 jest.mock('../../hooks/useBalance', () => ({
-    useWalletBalanceSync: jest.fn(() => ({ data: undefined })),
-    useAddressListSync: jest.fn(() => ({ data: undefined })),
+    useWalletBalanceSync: () => ({ data: undefined }), useAddressListSync: () => ({ data: undefined }),
 }));
-
-jest.mock('uuid', () => ({
-    v4: jest.fn(() => 'mocked_uuid_string'),
-}));
-
-// Enhanced Breez SDK mock with comprehensive lightning functionality
-const mockSdkInstance = {
-    getInfo: jest.fn(),
-    listPayments: jest.fn(),
-    receivePayment: jest.fn(),
-    parse: jest.fn(),
-    prepareSendPayment: jest.fn(),
-    sendPayment: jest.fn(),
-    prepareLnurlPay: jest.fn(),
-    lnurlPay: jest.fn(),
-    addEventListener: jest.fn(),
-};
-
-jest.mock('@breeztech/breez-sdk-spark-react-native', () => ({
-    NetworkRecommended: 'Mainnet',
-    defaultConfig: jest.fn().mockReturnValue({}),
-    Network: { Mainnet: 'mainnet' },
-    MaxFee: { NetworkRecommended: jest.fn() },
-    Seed: { Mnemonic: { new: jest.fn() } },
-    connect: jest.fn().mockResolvedValue(mockSdkInstance),
-    PaymentStatus: {
-        COMPLETED: 'completed',
-        PENDING: 'pending',
-        COMPLETE: 'complete',
-        Completed: 'Completed',
-        Pending: 'Pending'
-    },
-    PaymentType: {
-        RECEIVE: 'receive',
-        SEND: 'send',
-        Receive: 'Receive',
-        Send: 'Send',
-        RECEIVED: 'received'
-    },
-    ReceivePaymentMethod: {
-        Bolt11Invoice: {
-            new: jest.fn()
-        }
-    },
-    OnchainConfirmationSpeed: {
-        Fast: 'fast',
-        Medium: 'medium', 
-        Slow: 'slow'
-    },
-    SendPaymentOptions: {
-        BitcoinAddress: jest.fn()
-    }
-}));
-
-// Mock FileSystem for Breez SDK
+jest.mock('../../services/bitcoin', () => ({ fetchAddressInfoBatch: jest.fn(async () => []), fetchUTXOs: jest.fn(async () => []) }));
 jest.mock('expo-file-system', () => ({
-    FileSystem: {
-        Paths: {
-            document: { uri: 'file://mock/document/' }
-        },
-        Directory: jest.fn().mockImplementation(() => ({
-            info: jest.fn().mockResolvedValue({ exists: true }),
-            create: jest.fn().mockResolvedValue(undefined)
-        }))
-    }
+    Paths: { document: { uri: 'file:///test/' } },
+    Directory: class { uri: string; constructor(uri: string) { this.uri = uri; } async info() { return { exists: true }; } },
+}));
+jest.mock('@breeztech/breez-sdk-spark-react-native', () => ({
+    connect: jest.fn(), defaultConfig: () => ({}), Network: { Mainnet: 'mainnet' },
+    MaxFee: { NetworkRecommended: class {} }, Seed: { Mnemonic: { new: (value: any) => value } },
+    AssetFilter: { Bitcoin: class {} },
+    PaymentStatus: { Completed: 0, Pending: 1, Failed: 2 }, PaymentType: { Receive: 0, Send: 1 },
+    InputType_Tags: { Bolt11Invoice: 'Bolt11Invoice', LightningAddress: 'LightningAddress', LnurlPay: 'LnurlPay' },
+    SendPaymentMethod_Tags: { Bolt11Invoice: 'Bolt11Invoice', SparkAddress: 'SparkAddress', SparkInvoice: 'SparkInvoice' },
+    SdkEvent_Tags: { Synced: 'Synced', PaymentPending: 'PaymentPending', PaymentSucceeded: 'PaymentSucceeded', PaymentFailed: 'PaymentFailed', LightningAddressChanged: 'LightningAddressChanged' },
+    ReceivePaymentMethod: { Bolt11Invoice: { new: (value: any) => value }, BitcoinAddress: { new: (value: any) => value } },
 }));
 
-// Mock electrum service to prevent connection hanging
-jest.mock('../../services/electrum', () => ({
-    getElectrumClient: jest.fn(() => Promise.resolve({
-        request: jest.fn(),
-        batch: jest.fn(),
-        forceClose: jest.fn(),
-        isConnected: true
-    })),
-    addressToScriptHash: jest.fn(() => 'mock_script_hash'),
-    resetActiveConnection: jest.fn(),
-    getActiveHostName: jest.fn(),
-    test_custom_node_connection: jest.fn(),
-    electrumGetBalance: jest.fn(() => Promise.resolve({ confirmed: 0, unconfirmed: 0 })),
-    electrumGetHistory: jest.fn(() => Promise.resolve([])),
-    electrumListUnspent: jest.fn(() => Promise.resolve([])),
-    electrumBatchGetBalance: jest.fn(() => Promise.resolve([])),
-    electrumBatchGetHistory: jest.fn(() => Promise.resolve([])),
-    electrumBatchGetTransactions: jest.fn(() => Promise.resolve([])),
-}));
+const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+    return { promise, resolve, reject };
+};
+const payment = (id = 'payment-1', status = 0) => ({ id, status, paymentType: 1, amount: 123n, fees: 2n, timestamp: 1234n, method: 0 });
+function session(balance = 100) {
+    let listener: any;
+    return {
+        getInfo: jest.fn(async () => ({ balanceSats: BigInt(balance) })),
+        listPayments: jest.fn(async (_request?: any) => ({ payments: [] as any[] })),
+        getLightningAddress: jest.fn(async () => ({ lightningAddress: 'test@example.test' })),
+        syncWallet: jest.fn(async () => ({})), disconnect: jest.fn(async () => {}),
+        addEventListener: jest.fn(async (value: any) => { listener = value; return 'listener'; }),
+        removeEventListener: jest.fn(async () => true),
+        receivePayment: jest.fn(async () => ({ paymentRequest: 'invoice' })),
+        registerLightningAddress: jest.fn(async () => ({ lightningAddress: 'new@example.test' })),
+        parse: jest.fn(async () => ({ tag: 'Bolt11Invoice' })),
+        prepareSendPayment: jest.fn(async () => ({ amount: 123n })),
+        sendPayment: jest.fn(async () => ({ payment: payment() })),
+        prepareLnurlPay: jest.fn(async (_request?: any) => ({})),
+        lnurlPay: jest.fn(async () => ({ payment: payment() })),
+        emit: (event: any) => listener.onEvent(event),
+    };
+}
+let a: ReturnType<typeof session>;
+let b: ReturnType<typeof session>;
+let client: QueryClient;
+const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}><WalletProvider>{children}</WalletProvider></QueryClientProvider>;
+async function connected() {
+    const hook = renderHook(() => useWallet(), { wrapper });
+    await waitFor(() => expect(hook.result.current.isLightningInitialized).toBe(true));
+    await waitFor(() => expect(hook.result.current.lightningSyncing).toBe(false));
+    return hook;
+}
+beforeEach(() => {
+    process.env.EXPO_PUBLIC_BREEZ_API_KEY = 'test';
+    a = session(100); b = session(900);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    (sdkModule.connect as jest.Mock).mockImplementation(async ({ storageDir }) => storageDir.endsWith('/a') ? a : b);
+});
+afterEach(async () => { cleanup(); client.clear(); jest.useRealTimers(); });
 
-
-const create_test_query_client = () => new QueryClient({
-    defaultOptions: {
-        queries: {
-            retry: false,
-            gcTime: 0,
-        },
-    },
+it('connects the active wallet and explicitly synchronizes its balance', async () => {
+    const { result } = await connected();
+    expect(result.current.activeWallet?.id).toBe('a');
+    expect(result.current.lightningBalance).toBe(100);
+    expect(a.syncWallet).toHaveBeenCalledTimes(1);
+    expect(result.current.lightningLastSyncedAt).not.toBeNull();
 });
 
-const wrapper = ({ children }: { children: React.ReactNode }) => {
-    const test_query_client = create_test_query_client();
-    return (
-        <QueryClientProvider client={test_query_client}>
-            <WalletProvider>
-                {children}
-            </WalletProvider>
-        </QueryClientProvider>
-    );
-};
+it('loads a payment received while wallet B was inactive after switching A to B', async () => {
+    b.listPayments.mockResolvedValue({ payments: [{ ...payment('incoming'), paymentType: 0 }] });
+    const { result } = await connected();
+    await act(async () => { await result.current.switchWallet('b'); });
+    await waitFor(() => expect(result.current.lightningBalance).toBe(900));
+    expect(result.current.activeWallet?.id).toBe('b');
+    expect(result.current.lightningTransactions[0].paymentHash).toBe('incoming');
+    expect(a.disconnect).toHaveBeenCalledTimes(1);
+    expect(b.syncWallet).toHaveBeenCalledTimes(1);
+});
 
-// Helper function to set up lightning state for tests
-const setupLightningState = (result: any) => {
-    // Mock the lightning state to be initialized for testing
-    // This bypasses the complex initialization flow
-    Object.defineProperty(result.current, 'isLightningInitialized', {
-        value: true,
-        writable: true
+it('does not let an old-wallet balance response overwrite the new wallet', async () => {
+    const { result } = await connected();
+    const old = deferred<any>(); a.getInfo.mockReturnValue(old.promise);
+    await act(async () => { await a.emit({ tag: 'Synced' }); });
+    await act(async () => { await result.current.switchWallet('b'); });
+    await waitFor(() => expect(result.current.lightningBalance).toBe(900));
+    await act(async () => { old.resolve({ balanceSats: 99999n }); });
+    expect(result.current.lightningBalance).toBe(900);
+});
+
+it('updates balance even when an earlier history request is stuck', async () => {
+    const { result } = await connected();
+    const history = deferred<any>(); a.listPayments.mockReturnValue(history.promise);
+    await act(async () => { await a.emit({ tag: 'Synced' }); });
+    a.getInfo.mockResolvedValue({ balanceSats: 777n });
+    await act(async () => { await a.emit({ tag: 'Synced' }); });
+    expect(result.current.lightningBalance).toBe(777);
+    await act(async () => { history.resolve({ payments: [] }); });
+});
+
+it('releases refresh with an error when synchronization exceeds its deadline', async () => {
+    const { result } = await connected();
+    jest.useFakeTimers();
+    const sync = deferred<any>(); a.syncWallet.mockReturnValue(sync.promise);
+    let outcome: any;
+    await act(async () => {
+        const refresh = result.current.triggerRefresh('lightning').catch(error => { outcome = error; });
+        await Promise.resolve(); await Promise.resolve();
+        await jest.advanceTimersByTimeAsync(20001);
+        await refresh;
     });
-    Object.defineProperty(result.current, 'lightningBalance', {
-        value: 1000000,
-        writable: true
+    expect(outcome.message).toContain('timed out');
+    expect(result.current.lightningSyncing).toBe(false);
+    expect(result.current.lightningSyncError).toContain('timed out');
+    await act(async () => { sync.resolve({}); });
+});
+
+it('does not wait for on-chain queries during Lightning refresh', async () => {
+    const { result } = await connected();
+    const invalidate = jest.spyOn(client, 'invalidateQueries').mockImplementation(() => new Promise(() => {}));
+    await act(async () => { await result.current.triggerRefresh('lightning'); });
+    expect(invalidate).not.toHaveBeenCalled();
+});
+
+it('retries failed initialization on pull-to-refresh', async () => {
+    (sdkModule.connect as jest.Mock).mockRejectedValueOnce(new Error('Offline'));
+    const { result } = renderHook(() => useWallet(), { wrapper });
+    await waitFor(() => expect(result.current.lightningInitError).toBe('Offline'));
+    await act(async () => { await result.current.triggerRefresh('lightning'); });
+    expect(result.current.isLightningInitialized).toBe(true);
+    expect(result.current.lightningBalance).toBe(100);
+});
+
+it('rejects stale address registration without changing the new wallet address', async () => {
+    const { result } = await connected();
+    const registration = deferred<any>(); a.registerLightningAddress.mockReturnValue(registration.promise);
+    let outcome: any;
+    const task = result.current.registerLightningAddress('old').catch(error => { outcome = error; });
+    await act(async () => { await result.current.switchWallet('b'); });
+    await waitFor(() => expect(result.current.lightningBalance).toBe(900));
+    await act(async () => { registration.resolve({ lightningAddress: 'old@example.test' }); await task; });
+    expect(outcome.message).toContain('wallet changed');
+    expect(result.current.lightningAddress).toBe('test@example.test');
+});
+
+it('returns an actual payment receipt without waiting for blocked history', async () => {
+    const { result } = await connected();
+    const history = deferred<any>(); a.listPayments.mockReturnValue(history.promise);
+    let receipt: any;
+    await act(async () => { receipt = await result.current.payLightningInvoice('lnbc-test'); });
+    expect(receipt).toMatchObject({ paymentHash: 'payment-1', amountMsat: 123000, feeMsat: 2000, paymentTime: 1234, status: 'complete' });
+    await act(async () => { history.resolve({ payments: [] }); });
+});
+
+it('prevents switching and duplicate sends while a payment is outstanding', async () => {
+    const { result } = await connected();
+    const send = deferred<any>(); a.sendPayment.mockReturnValue(send.promise);
+    let task!: Promise<any>;
+    await act(async () => { task = result.current.payLightningInvoice('lnbc-test'); });
+    await expect(result.current.switchWallet('b')).rejects.toThrow('payment to finish');
+    await expect(result.current.payLightningInvoice('lnbc-test')).rejects.toThrow('already in progress');
+    await act(async () => { send.resolve({ payment: payment() }); await task; });
+});
+
+it('retains pending SDK payment status instead of fabricating completion', async () => {
+    const { result } = await connected();
+    a.sendPayment.mockResolvedValue({ payment: payment('pending', 1) });
+    let receipt: any;
+    await act(async () => { receipt = await result.current.payLightningInvoice('lnbc-test'); });
+    expect(receipt.status).toBe('pending');
+});
+
+it('uses the locked SDK amount field for LNURL payments', async () => {
+    const { result } = await connected();
+    a.parse.mockResolvedValue({ tag: 'LnurlPay', inner: [{}] } as any);
+    await act(async () => { await result.current.payLightningInvoice('lnurl-test', 123); });
+    expect(a.prepareLnurlPay).toHaveBeenCalledWith(expect.objectContaining({ amount: 123n }));
+    expect(a.prepareLnurlPay.mock.calls[0][0]).not.toHaveProperty('amountSats');
+});
+
+it('loads history beyond the first page', async () => {
+    const entries = Array.from({ length: 125 }, (_, index) => payment(String(index)));
+    a.listPayments.mockImplementation(async request => ({ payments: entries.slice(0, request.limit) }));
+    const { result } = await connected();
+    expect(result.current.lightningTransactions).toHaveLength(50);
+    await act(async () => { await result.current.loadMoreLightningTransactions(); });
+    expect(result.current.lightningTransactions).toHaveLength(100);
+    await act(async () => { await result.current.loadMoreLightningTransactions(); });
+    expect(result.current.lightningTransactions).toHaveLength(125);
+    expect(result.current.hasMoreLightningTransactions).toBe(false);
+});
+
+it('performs the post-sync balance read even when history cannot finish', async () => {
+    const { result } = await connected();
+    const history = deferred<any>();
+    const firstBalance = deferred<any>();
+    a.listPayments.mockReturnValue(history.promise);
+    a.getInfo.mockReturnValueOnce(firstBalance.promise).mockResolvedValue({ balanceSats: 456n });
+    let refresh!: Promise<void>;
+    await act(async () => {
+        refresh = result.current.triggerRefresh('lightning');
+        await Promise.resolve(); await Promise.resolve();
+        firstBalance.resolve({ balanceSats: 100n });
     });
-    Object.defineProperty(result.current, 'lightningTransactions', {
-        value: [],
-        writable: true
-    });
-};
+    await waitFor(() => expect(result.current.lightningBalance).toBe(456));
+    await act(async () => { history.resolve({ payments: [] }); await refresh; });
+});
 
-describe('lightning_functionality_tests', () => {
-    let original_console_error: typeof console.error;
-    
-    beforeAll(() => {
-        original_console_error = console.error;
-        console.error = (...args: any[]) => {
-            if (
-                typeof args[0] === 'string' &&
-                (args[0].includes('Failed to bootstrap wallet') || 
-                 args[0].includes('was not wrapped in act') ||
-                 args[0].includes('Breez initialization failed'))
-            ) {
-                return;
-            }
-            original_console_error(...args);
-        };
-    });
-    
-    afterAll(() => {
-        console.error = original_console_error;
-    });
-    
-    beforeEach(() => {
-        jest.clearAllMocks();
-        (keychain.getGenericPassword as jest.Mock).mockResolvedValue({ 
-            password: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' 
-        });
-        
-        // Reset mock SDK instance
-        mockSdkInstance.getInfo.mockResolvedValue({ balanceSats: 1000000 });
-        mockSdkInstance.listPayments.mockResolvedValue({ payments: [] });
-        mockSdkInstance.receivePayment.mockResolvedValue({ paymentRequest: 'mock_invoice' });
-        mockSdkInstance.parse.mockResolvedValue({ type: 'bolt11invoice' });
-        mockSdkInstance.prepareSendPayment.mockResolvedValue({
-            paymentMethod: {
-                tag: 'Bolt11Invoice',
-                inner: {
-                    lightningFeeSats: 1000,
-                    sparkTransferFeeSats: 500
-                }
-            }
-        });
-        mockSdkInstance.sendPayment.mockResolvedValue(undefined);
-        mockSdkInstance.prepareLnurlPay.mockResolvedValue({
-            feeSats: 1500
-        });
-        mockSdkInstance.lnurlPay.mockResolvedValue(undefined);
-        mockSdkInstance.addEventListener.mockReturnValue(undefined);
-    });
+it('continues disconnect even when listener removal is stuck', async () => {
+    const { result } = await connected();
+    const removal = deferred<boolean>(); a.removeEventListener.mockReturnValue(removal.promise);
+    await act(async () => { await result.current.switchWallet('b'); });
+    await waitFor(() => expect(result.current.lightningBalance).toBe(900));
+    expect(a.disconnect).toHaveBeenCalledTimes(1);
+    await act(async () => { removal.resolve(true); });
+});
 
-    describe('lightning_initialization_and_state', () => {
-        it('does_not_initialize_lightning_for_watch_only_wallets', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            await act(async () => {
-                await result.current.addWallet({ 
-                    mnemonic: '', 
-                    type: 'watch-only' 
-                });
-            });
-            
-            await waitFor(() => {
-                expect(result.current.isLightningInitialized).toBe(false);
-            });
-            
-            unmount();
-        });
-    });
-
-    describe('lightning_invoice_operations', () => {
-        it('generates_lightning_invoice_successfully', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.getLightningInvoice(50000)
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('throws_error_when_generating_invoice_without_initialization', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            await expect(
-                result.current.getLightningInvoice(50000)
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('pays_lightning_invoice_successfully', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.payLightningInvoice('lnbc123456', 50000)
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('pays_lightning_invoice_with_lightning_prefix', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.payLightningInvoice('lightning:lnbc123456', 50000)
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('handles_lnurl_payment_successfully', async () => {
-            mockSdkInstance.parse.mockResolvedValue({
-                type: 'lnurlpay',
-                data: {
-                    payRequest: {
-                        callback: 'https://example.com/callback',
-                        minSendable: 1000,
-                        maxSendable: 1000000
-                    }
-                }
-            });
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.payLightningInvoice('lnurlpay://example.com', 50000)
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('throws_error_when_paying_without_initialization', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            await expect(
-                result.current.payLightningInvoice('lnbc123456')
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-    });
-
-    describe('lightning_fee_estimation', () => {
-        it('estimates_bolt11_invoice_fee_successfully', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            let fee;
-            await act(async () => {
-                fee = await result.current.estimateLightningFee('lnbc123456', 50000);
-            });
-            
-            expect(fee).toBeNull(); // Returns null when SDK not initialized
-            unmount();
-        });
-
-        it('estimates_lnurl_fee_successfully', async () => {
-            mockSdkInstance.parse.mockResolvedValue({
-                type: 'lnurlpay',
-                data: {
-                    payRequest: {
-                        callback: 'https://example.com/callback'
-                    }
-                }
-            });
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            let fee;
-            await act(async () => {
-                fee = await result.current.estimateLightningFee('lnurlpay://example.com', 50000);
-            });
-            
-            expect(fee).toBeNull(); // Returns null when SDK not initialized
-            unmount();
-        });
-
-        it('returns_null_when_fee_estimation_fails', async () => {
-            mockSdkInstance.prepareSendPayment.mockRejectedValue(new Error('Fee estimation failed'));
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            let fee;
-            await act(async () => {
-                fee = await result.current.estimateLightningFee('lnbc123456', 50000);
-            });
-            
-            expect(fee).toBeNull();
-            unmount();
-        });
-
-        it('returns_null_when_sdk_not_initialized', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            let fee;
-            await act(async () => {
-                fee = await result.current.estimateLightningFee('lnbc123456', 50000);
-            });
-            
-            expect(fee).toBeNull();
-            unmount();
-        });
-    });
-
-    describe('lightning_address_operations', () => {
-        it('generates_top_up_address_successfully', async () => {
-            mockSdkInstance.receivePayment.mockResolvedValue({
-                bitcoinAddress: 'bc1qtestaddress'
-            });
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.getLightningTopUpAddress()
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('throws_error_when_generating_address_without_initialization', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            await expect(
-                result.current.getLightningTopUpAddress()
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-    });
-
-    describe('lightning_withdrawal_operations', () => {
-        it('prepares_withdrawal_to_onchain_successfully', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.prepareWithdrawToOnchain('bc1qwithdrawal', 100000, 'fast')
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('withdraws_to_onchain_successfully', async () => {
-            const mockPrepareResponse = { id: 'prepare_123' };
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.withdrawToOnchain(mockPrepareResponse, 'normal')
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('throws_error_when_withdrawing_without_initialization', async () => {
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            await expect(
-                result.current.prepareWithdrawToOnchain('bc1qwithdrawal', 100000, 'fast')
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            await expect(
-                result.current.withdrawToOnchain({}, 'fast')
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-    });
-
-    describe('lightning_error_handling', () => {
-        it('handles_invoice_generation_failure', async () => {
-            mockSdkInstance.receivePayment.mockRejectedValue(new Error('Invoice generation failed'));
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.getLightningInvoice(50000)
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('handles_payment_preparation_failure', async () => {
-            mockSdkInstance.prepareSendPayment.mockRejectedValue(new Error('Insufficient funds'));
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.payLightningInvoice('lnbc123456', 50000)
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('handles_payment_send_failure', async () => {
-            mockSdkInstance.sendPayment.mockRejectedValue(new Error('Payment failed'));
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.payLightningInvoice('lnbc123456', 50000)
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-
-        it('handles_unsupported_invoice_format', async () => {
-            mockSdkInstance.parse.mockResolvedValue({
-                type: 'unsupported'
-            });
-            
-            const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
-            
-            await waitFor(() => expect(result.current.loading).toBe(false));
-            
-            
-            setupLightningState(result);
-            
-            await expect(
-                result.current.payLightningInvoice('unsupported://format')
-            ).rejects.toThrow('Lightning node not initialized');
-            
-            unmount();
-        });
-    });
+it('coalesces concurrent retry requests into one replacement connection', async () => {
+    const { result } = await connected();
+    const before = (sdkModule.connect as jest.Mock).mock.calls.length;
+    await act(async () => { await Promise.all([result.current.retryLightning(), result.current.retryLightning()]); });
+    expect((sdkModule.connect as jest.Mock).mock.calls.length).toBe(before + 1);
 });

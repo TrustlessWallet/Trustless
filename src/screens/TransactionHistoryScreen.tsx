@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -34,9 +34,21 @@ const TransactionHistoryScreen = () => {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
-  const { activeWallet, lightningTransactions, triggerRefresh } = useWallet();
+  const { activeWallet, lightningTransactions, triggerRefresh, hasMoreLightningTransactions, loadMoreLightningTransactions, lightningSyncing, lightningSyncError, lightningInitError } = useWallet();
   const [hideBalance, setHideBalance] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const epochRef = useRef(0);
+  const refreshRef = useRef(false);
+  const moreRef = useRef(false);
+  useEffect(() => {
+    ++epochRef.current;
+    refreshRef.current = false;
+    moreRef.current = false;
+    setRefreshing(false);
+    setLoadingMore(false);
+    return () => { ++epochRef.current; };
+  }, [activeWallet?.id]);
 
   // Freeze the mode selected on the wallet screen so the user sees the
   // matching on-chain or Lightning history after tapping the link.
@@ -85,14 +97,32 @@ const TransactionHistoryScreen = () => {
   }, [lightningTransactions, mode, onchainTransactions]);
 
   const onRefresh = useCallback(async () => {
+    if (refreshRef.current) return;
+    const epoch = epochRef.current;
+    refreshRef.current = true;
     setRefreshing(true);
     try {
-      triggerRefresh();
+      await triggerRefresh(mode);
       if (mode === 'onchain') await refetchOnchainTransactions();
+    } catch (error) {
+      if (epoch === epochRef.current) Alert.alert('Refresh failed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
-      setRefreshing(false);
+      if (epoch === epochRef.current) { refreshRef.current = false; setRefreshing(false); }
     }
   }, [mode, refetchOnchainTransactions, triggerRefresh]);
+
+  const loadMore = async () => {
+    if (moreRef.current || refreshRef.current || !hasMoreLightningTransactions) return;
+    const epoch = epochRef.current;
+    moreRef.current = true;
+    setLoadingMore(true);
+    try { await loadMoreLightningTransactions(); }
+    catch (error) {
+      if (epoch === epochRef.current) Alert.alert('History unavailable', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      if (epoch === epochRef.current) { moreRef.current = false; setLoadingMore(false); }
+    }
+  };
 
   const renderItem = useCallback(({ item }: { item: Transaction | LightningTransaction }) => {
     if ('paymentHash' in item) {
@@ -168,6 +198,12 @@ const TransactionHistoryScreen = () => {
             ? <ActivityIndicator style={styles.loading} color={theme.colors.primary} />
             : <Text style={styles.empty}>No transactions yet</Text>
         }
+        ListHeaderComponent={mode === 'lightning' && (lightningInitError || lightningSyncError || lightningSyncing)
+          ? <Text style={styles.empty}>{lightningInitError || lightningSyncError || 'Updating Lightning history…'}</Text> : null}
+        ListFooterComponent={mode === 'lightning' && hasMoreLightningTransactions
+          ? <TouchableOpacity disabled={loadingMore} onPress={loadMore}>
+              {loadingMore ? <ActivityIndicator /> : <Text style={styles.empty}>Load older payments</Text>}
+            </TouchableOpacity> : null}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} colors={[theme.colors.primary]} />}
       />

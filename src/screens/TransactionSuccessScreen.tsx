@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Animated, InteractionManager, Dimen
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
+import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { RootStackParamList } from '../types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -15,7 +16,11 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TransactionSuccessScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<RoutePropType>();
-    const { type, txId, transaction } = route.params as any;
+    const { type, txId, transaction: initialTransaction } = route.params as any;
+    const { lightningTransactions } = useWallet();
+    const transaction = type === 'lightning'
+        ? lightningTransactions.find(tx => tx.paymentHash === initialTransaction?.paymentHash) || initialTransaction
+        : initialTransaction;
 
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
@@ -118,14 +123,14 @@ const TransactionSuccessScreen = () => {
                         ]}
                     />
                     <View style={styles.iconCircle}>
-                        <Feather name="check" size={44} color={theme.colors.background} strokeWidth={3} />
+                        <Feather name={type === 'lightning' && transaction?.status !== 'complete' ? (transaction?.status === 'failed' ? 'x' : 'clock') : 'check'} size={44} color={theme.colors.background} strokeWidth={3} />
                     </View>
                 </Animated.View>
 
                 <Animated.View style={{ opacity: opacityAnim, alignItems: 'center' }}>
                     <Text style={styles.title}>
                         {type === 'lightning'
-                            ? 'Your lightning invoice has been paid!'
+                            ? (transaction?.status === 'complete' ? 'Your Lightning invoice has been paid!' : transaction?.status === 'failed' ? 'Your Lightning payment failed.' : 'Your Lightning payment is pending.')
                             : 'Your transaction has been broadcasted!'}
                     </Text>
                 </Animated.View>
@@ -148,7 +153,7 @@ const TransactionSuccessScreen = () => {
                 ]}
             >
 
-                {type === 'onchain' && txId && (
+                {(txId || transaction) && (
                     <TouchableOpacity
                         style={styles.detailsButton}
                         onPress={handleDetails}

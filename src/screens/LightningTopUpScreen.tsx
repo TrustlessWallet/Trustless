@@ -64,6 +64,9 @@ export const LightningTopUpScreen: React.FC = () => {
     const [calculationError, setCalculationError] = useState<string | null>(null);
 
     useEffect(() => {
+        let cancelled = false;
+        setSwapAddress('');
+        setLoadingData(true);
         const initData = async () => {
             try {
                 if (!isLightningInitialized) return;
@@ -73,6 +76,7 @@ export const LightningTopUpScreen: React.FC = () => {
                     getLightningTopUpAddress()
                 ]);
 
+                if (cancelled) return;
                 setFeeOptions(fees);
                 setSwapAddress(fetchedAddress);
 
@@ -80,16 +84,18 @@ export const LightningTopUpScreen: React.FC = () => {
                 setCustomRate(fees.normal.toString());
 
             } catch (err: any) {
+                if (cancelled) return;
                 console.error("[Breez Node UI] Init error:", err);
                 Alert.alert("Initialization error", err.message || "Failed to connect to lightning node parameters.");
                 navigation.goBack();
             } finally {
-                setLoadingData(false);
+                if (!cancelled) setLoadingData(false);
             }
         };
 
-        initData();
-    }, [isLightningInitialized]);
+        void initData();
+        return () => { cancelled = true; };
+    }, [isLightningInitialized, activeWallet?.id]);
 
     useEffect(() => {
         if (reviewStatus === 'reviewed') {

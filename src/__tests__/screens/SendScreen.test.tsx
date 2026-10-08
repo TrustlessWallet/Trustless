@@ -169,7 +169,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
 
         // BOLT11 parsing doesn't use LNURL resolver, so it returns null
         (resolveLnurlOrAddress as jest.Mock).mockResolvedValue(null);
-        mockPayLightningInvoice.mockResolvedValue(true);
+        mockPayLightningInvoice.mockResolvedValue({ paymentHash: 'sdk-id', status: 'complete', amountMsat: 10000000, feeMsat: 2000 });
 
         renderSendScreen();
 
@@ -185,7 +185,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         // Assert it navigates to the success screen
         await waitFor(() => {
             expect(mockNavigate).toHaveBeenCalledWith('TransactionSuccess', expect.objectContaining({
-                type: 'lightning'
+                type: 'lightning', transaction: expect.objectContaining({ paymentHash: 'sdk-id', feeMsat: 2000 })
             }));
         });
     });
@@ -220,7 +220,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         expect(amountInput.props.editable).toBe(true);
     });
 
-    it('Insufficient Balance Halt: Halts auto-pay and alerts user if balance is too low', async () => {
+    it('lets the SDK validate balance and displays its insufficient-funds error', async () => {
         // lnbc500u1... = 50,000 sats
         const expensiveBolt11 = 'lightning:lnbc500u1p3x...'; 
         
@@ -228,7 +228,8 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
             params: { mode: 'lightning', prefill: expensiveBolt11, autoConfirm: true }
         });
 
-        // Mock wallet having only 10,000 sats (lower than 50k invoice)
+        mockPayLightningInvoice.mockRejectedValueOnce(new Error('Insufficient funds from SDK'));
+        // The cached balance does not decide whether the SDK can spend.
         (useWallet as jest.Mock).mockReturnValue({
             activeWallet: { id: 'test-wallet', type: 'standard', derivedAddressInfoCache: [], derivedChangeAddresses: [] },
             lightningBalance: 10000, 
@@ -243,11 +244,11 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
 
         await waitFor(() => {
             expect(Alert.alert).toHaveBeenCalledWith(
-                'Insufficient balance',
-                expect.stringContaining('You do not have enough sats')
+                'Payment error',
+                'Insufficient funds from SDK'
             );
         });
 
-        expect(mockPayLightningInvoice).not.toHaveBeenCalled();
+        expect(mockPayLightningInvoice).toHaveBeenCalledTimes(1);
     });
 });

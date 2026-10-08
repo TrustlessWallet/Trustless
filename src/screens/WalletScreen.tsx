@@ -81,7 +81,9 @@ const WalletScreen = () => {
         lightningBalance,
         lightningTransactions,
         isLightningInitialized,
-        lightningInitError
+        lightningInitError,
+        lightningSyncing,
+        isWalletSwitching
     } = useWallet();
 
     useTipHeight(!!activeWallet);
@@ -142,8 +144,9 @@ const WalletScreen = () => {
         10,
     );
 
-    const isLightningLoading = !!activeWallet && activeWallet.type !== 'watch-only' && !isLightningInitialized && !lightningInitError;
-    const isToggleDisabled = activeWallet?.type === 'watch-only' || (!isLightningMode && !isLightningInitialized);
+    const isLightningLoading = !!activeWallet && activeWallet.type !== 'watch-only' &&
+        (lightningSyncing || (!isLightningInitialized && !lightningInitError));
+    const isToggleDisabled = isWalletSwitching || activeWallet?.type === 'watch-only';
 
     // Explicitly stops and resets the native-driven sonar ring animations.
     // Used before navigating away from a successful NFC scan, since relying
@@ -468,18 +471,34 @@ const WalletScreen = () => {
         }
     }, [activeWallet?.type, isLightningMode]);
 
+    const refreshEpoch = useRef(0);
+    const manualRefreshRef = useRef(false);
+    useEffect(() => {
+        ++refreshEpoch.current;
+        manualRefreshRef.current = false;
+        setIsManualRefreshing(false);
+        return () => { ++refreshEpoch.current; };
+    }, [activeWallet?.id]);
+
     const onRefresh = useCallback(async () => {
-        if (!pullToRefreshReady) return;
+        if (!pullToRefreshReady || manualRefreshRef.current || isWalletSwitching) return;
+        const epoch = refreshEpoch.current;
+        manualRefreshRef.current = true;
         setIsManualRefreshing(true);
         try {
-            await triggerRefresh();
+            await triggerRefresh(isLightningMode ? 'lightning' : 'onchain');
             if (!isLightningMode) {
                 await refetchTxs();
             }
+        } catch (error) {
+            if (epoch === refreshEpoch.current) Alert.alert('Refresh failed', error instanceof Error ? error.message : 'Please try again.');
         } finally {
-            setIsManualRefreshing(false);
+            if (epoch === refreshEpoch.current) {
+                manualRefreshRef.current = false;
+                setIsManualRefreshing(false);
+            }
         }
-    }, [isLightningMode, pullToRefreshReady, triggerRefresh, refetchTxs]);
+    }, [isLightningMode, pullToRefreshReady, triggerRefresh, refetchTxs, isWalletSwitching]);
 
 
     const toggleMode = () => setIsLightningMode(currentMode => !currentMode);

@@ -28,12 +28,10 @@ const WalletSwitcherScreen = () => {
         set_switching_to_wallet_id(wallet_id);
         try {
             await switchWallet(wallet_id);
-            setTimeout(() => {
-                navigation.goBack();
-                set_switching_to_wallet_id(null);
-            }, 500);
+            navigation.goBack();
         } catch (error) {
             Alert.alert("Error", "Failed to switch wallet.");
+        } finally {
             set_switching_to_wallet_id(null);
         }
     };
@@ -53,7 +51,7 @@ const WalletSwitcherScreen = () => {
                 style={[styles.wallet_item, is_active && styles.active_item]}
                 onPress={() => handle_switch_wallet(item.id)}
                 activeOpacity={0.7}
-                disabled={is_switching}
+                disabled={!!switching_to_wallet_id}
             >
                 <View style={styles.wallet_info}>
                     <Text style={styles.wallet_name}>{item.name}</Text>
@@ -68,7 +66,7 @@ const WalletSwitcherScreen = () => {
                                 <Feather name="eye" size={16} color={theme.colors.muted} />
                             </View>
                         )}
-                        <TouchableOpacity style={styles.action_button} onPress={() => handle_open_options(item.id)}>
+                        <TouchableOpacity disabled={!!switching_to_wallet_id} style={styles.action_button} onPress={() => handle_open_options(item.id)}>
                             <Feather name="more-vertical" size={20} color={theme.colors.primary} />
                         </TouchableOpacity>
                     </View>
@@ -88,7 +86,7 @@ const WalletSwitcherScreen = () => {
                 style={styles.list}
             />
             <View style={styles.footer}>
-                <TouchableOpacity style={styles.add_button} onPress={() => navigation.navigate('AddWalletOptions')}>
+                <TouchableOpacity disabled={!!switching_to_wallet_id} style={styles.add_button} onPress={() => navigation.navigate('AddWalletOptions')}>
                     <Feather name="plus-circle" size={20} color={theme.colors.inversePrimary} />
                     <Text style={styles.add_button_text}>Add wallet</Text>
                 </TouchableOpacity>

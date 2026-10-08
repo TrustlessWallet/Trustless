@@ -38,7 +38,9 @@ const ReceiveScreen = () => {
     defaultLightningInvoice,
     updateAddressLabel,
     lightningAddress,
-    registerLightningAddress
+    registerLightningAddress,
+    retryLightning,
+    lightningInitError,
   } = useWallet();
 
   const { theme, isDark } = useTheme();
@@ -54,6 +56,9 @@ const ReceiveScreen = () => {
 
   const [lightningInvoice, setLightningInvoice] = useState<string>('');
   const [isGeneratingLightning, setIsGeneratingLightning] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
+  const [invoiceRetry, setInvoiceRetry] = useState(0);
+  const invoiceRequestRef = useRef(0);
   const [isAmountModalVisible, setIsAmountModalVisible] = useState(false);
   const [modalAmountStr, setModalAmountStr] = useState('');
   const [appliedAmountSats, setAppliedAmountSats] = useState<number>(0);
@@ -106,31 +111,36 @@ const ReceiveScreen = () => {
   useEffect(() => {
     setAppliedAmountSats(0);
     setModalAmountStr('');
-    if (mode === 'lightning' && defaultLightningInvoice) {
-      setLightningInvoice(defaultLightningInvoice);
-      setIsGeneratingLightning(false);
-    } else {
-      setLightningInvoice('');
-    }
-  }, [mode, defaultLightningInvoice]);
+    setLightningInvoice('');
+    setInvoiceError(null);
+    ++invoiceRequestRef.current;
+  }, [mode, activeWallet?.id]);
 
   useEffect(() => {
-    if (mode === 'lightning' && isLightningInitialized) {
-      if (appliedAmountSats === 0 && defaultLightningInvoice) {
-        setLightningInvoice(defaultLightningInvoice);
-        setIsGeneratingLightning(false);
-      } else if (!lightningInvoice && !isGeneratingLightning) {
-        setIsGeneratingLightning(true);
-        getLightningInvoice(appliedAmountSats)
-          .then(setLightningInvoice)
-          .catch(err => {
-            console.error("Failed to fetch initial BOLT11 invoice", err);
-            setLightningInvoice('lnbc1...');
-          })
-          .finally(() => setIsGeneratingLightning(false));
-      }
+    const request = ++invoiceRequestRef.current;
+    let cancelled = false;
+    setInvoiceError(null);
+    setLightningInvoice('');
+    if (mode !== 'lightning' || !isLightningInitialized) {
+      setIsGeneratingLightning(false);
+      return;
     }
-  }, [mode, isLightningInitialized, lightningInvoice, getLightningInvoice, appliedAmountSats, defaultLightningInvoice]);
+    if (appliedAmountSats === 0 && defaultLightningInvoice) {
+      setLightningInvoice(defaultLightningInvoice);
+      setIsGeneratingLightning(false);
+      return;
+    }
+    setIsGeneratingLightning(true);
+    getLightningInvoice(appliedAmountSats).then(invoice => {
+      if (!cancelled && request === invoiceRequestRef.current) setLightningInvoice(invoice);
+    }).catch(error => {
+      if (!cancelled && request === invoiceRequestRef.current) setInvoiceError(error.message || 'Unable to create invoice.');
+    }).finally(() => {
+      if (!cancelled && request === invoiceRequestRef.current) setIsGeneratingLightning(false);
+    });
+    return () => { cancelled = true; };
+  }, [mode, activeWallet?.id, isLightningInitialized, getLightningInvoice, appliedAmountSats,
+    appliedAmountSats === 0 ? defaultLightningInvoice : '', invoiceRetry]);
 
   const path_prefix = useMemo(() => {
     if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
@@ -223,17 +233,7 @@ const ReceiveScreen = () => {
     setAppliedAmountSats(sats);
     setIsAmountModalVisible(false);
 
-    if (mode === 'lightning' && isLightningInitialized) {
-      setIsGeneratingLightning(true);
-      try {
-        const invoice = await getLightningInvoice(sats);
-        setLightningInvoice(invoice);
-      } catch (e) {
-        Alert.alert("Error", "Failed to generate lightning invoice with this amount.");
-      } finally {
-        setIsGeneratingLightning(false);
-      }
-    }
+    // The guarded effect generates the invoice for the selected amount.
   };
 
   const handleDiscardAmount = () => {
@@ -614,10 +614,18 @@ const ReceiveScreen = () => {
         ) : (
           <View style={styles.lnContainer}>
             <View style={styles.lnContainer}>
+              {invoiceError && (
+                <TouchableOpacity onPress={() => setInvoiceRetry(value => value + 1)}>
+                  <Text style={styles.lnErrorText}>{invoiceError} Tap to retry.</Text>
+                </TouchableOpacity>
+              )}
               {!isLightningInitialized ? (
                 <View style={styles.lnError}>
                   <Feather name="alert-circle" size={48} color={theme.colors.error} style={{ marginBottom: 16 }} />
-                  <Text style={styles.lnErrorText}>Lightning node is not initialized.</Text>
+                  <Text style={styles.lnErrorText}>{lightningInitError || 'Connecting to Lightning…'}</Text>
+                  {!!lightningInitError && <TouchableOpacity onPress={() => { void retryLightning().catch(error => Alert.alert('Lightning', error.message)); }}>
+                    <Text style={styles.actionButtonText}>Retry Lightning connection</Text>
+                  </TouchableOpacity>}
                 </View>
               ) : (
                 <>
@@ -629,7 +637,7 @@ const ReceiveScreen = () => {
                     <Pressable
                       style={({ pressed }) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]}
                       onPress={() => !isGeneratingLightning && copy_to_clipboard(currentLnString)}
-                      disabled={isGeneratingLightning}
+                      disabled={isGeneratingLightning || !currentLnString}
                     >
                       {copied && (
                         <View style={styles.copiedOverlay} pointerEvents="none">
@@ -722,7 +730,7 @@ const ReceiveScreen = () => {
                     <TouchableOpacity
                       style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]}
                       onPress={() => copy_to_clipboard(currentLnString)}
-                      disabled={isGeneratingLightning}
+                      disabled={isGeneratingLightning || !currentLnString}
                     >
                       <Feather name="copy" size={24} color={theme.colors.primary} />
                       <Text style={styles.actionButtonText}>Copy</Text>
@@ -736,7 +744,7 @@ const ReceiveScreen = () => {
                     <TouchableOpacity
                       style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]}
                       onPress={() => on_share(currentLnString)}
-                      disabled={isGeneratingLightning}
+                      disabled={isGeneratingLightning || !currentLnString}
                     >
                       <Feather name="share-2" size={24} color={theme.colors.primary} />
                       <Text style={styles.actionButtonText}>Share</Text>
