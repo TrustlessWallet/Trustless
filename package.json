@@ -16,7 +16,7 @@
   "dependencies": {
     "@azure/core-asynciterator-polyfill": "^1.0.2",
     "@bitcoinerlab/secp256k1": "^1.2.0",
-    "@breeztech/breez-sdk-spark-react-native": "0.23.1",
+    "@breeztech/breez-sdk-spark-react-native": "0.24.1",
     "@expo-google-fonts/space-mono": "^0.4.2",
     "@expo/ui": "~56.0.17",
     "@expo/vector-icons": "^15.0.3",
