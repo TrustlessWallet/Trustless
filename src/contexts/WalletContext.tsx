@@ -13,6 +13,7 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import * as breezSdk from '@breeztech/breez-sdk-spark-react-native';
 import * as FileSystem from 'expo-file-system';
 import { LightningLifecycle, SingleFlight, withDeadline } from '../services/lightningSession';
+import { summarizeLightningClaimLog } from '../services/lightningDiagnostics';
 
 import { Wallet, DerivedAddress, BitcoinAddress, LightningTransaction } from '../types';
 import {
@@ -91,7 +92,7 @@ const traceLightningStep = <T,>(context: LightningTraceContext, step: string, op
     return promise;
 };
 
-// Only forward native sync phase markers; never dump the raw SDK log stream.
+// Forward selected native diagnostics; never dump the raw SDK log stream.
 let nativeLightningLoggingStarted = false;
 const startNativeLightningDiagnostics = () => {
     if (nativeLightningLoggingStarted) return;
@@ -100,6 +101,11 @@ const startNativeLightningDiagnostics = () => {
         breezSdk.initLogging(undefined, {
             log: entry => {
                 const line = entry.line;
+                const claimFailure = summarizeLightningClaimLog(line);
+                if (claimFailure) {
+                    lightningTrace(context, 'native.claim.error', { message: claimFailure });
+                    return;
+                }
                 const duration = line.match(/(?:completed|failed|storage|metadata|deposits) in ([0-9.]+(?:ns|µs|μs|us|ms|s))/)?.[1];
                 const starting = line.match(/sync_wallet_internal: Starting (Wallet|WalletState|LnurlMetadata|Deposits) sync/);
                 const completed = line.match(/sync_wallet_internal: (Wallet|WalletState|LnurlMetadata|Deposits) sync completed/);
@@ -107,8 +113,9 @@ const startNativeLightningDiagnostics = () => {
                 const queued = line.match(/Running sync type (\w+) for (\d+) waiters/);
                 if (starting) lightningTrace(context, 'native.sync.phase', { phase: starting[1], status: 'start' });
                 else if (completed) lightningTrace(context, 'native.sync.phase', {
-                    phase: line.includes('InternalSyncedEvent') ? 'FullSummary' : completed[1], status: 'success', duration,
-                    // A full sync can report success while individual substeps failed.
+                    phase: line.includes('InternalSyncedEvent') ? 'SyncSummary' : completed[1], status: 'success', duration,
+                    // False also means skipped for partial syncs. Individual
+                    // transfer claim failures are reported separately above.
                     walletOk: line.match(/wallet: (true|false)/)?.[1],
                     walletStateOk: line.match(/wallet_state: (true|false)/)?.[1],
                     metadataOk: line.match(/lnurl_metadata: (true|false)/)?.[1],
@@ -120,7 +127,7 @@ const startNativeLightningDiagnostics = () => {
                 });
                 else if (queued) lightningTrace(context, 'native.sync.batch', { syncType: queued[1], waiters: Number(queued[2]) });
             },
-        }, 'warn,breez_sdk_spark::sdk::sync=debug,breez_sdk_spark::sdk::sync_coordinator=debug');
+        }, 'warn,breez_sdk_spark::sdk::sync=debug,breez_sdk_spark::sdk::sync_coordinator=debug,spark_wallet::wallet=debug');
         nativeLightningLoggingStarted = true;
         lightningTrace(context, 'native.logging.ready');
     } catch (error) {
@@ -490,7 +497,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return () => { isMounted = false; };
     }, [isLightningInitialized, lightningLastSyncedAt, lightningSyncing, defaultLightningInvoice, activeWallet?.id]);
 
-    const refreshLightningState = (forceSync = false, waitForSync = false): Promise<void> => {
+    const refreshLightningState = (forceSync = false): Promise<void> => {
         const sdk = sdkRef.current;
         const version = lightningInitVersionRef.current;
         lightningTrace(lightningTraceContext(), 'refresh.request', { forceSync, connected: !!sdk, historyLimit: historyLimitRef.current });
@@ -566,7 +573,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         });
         // Keep any background error handled: it is represented in lightningSyncError.
         void synchronization.catch(() => {});
-        return waitForSync ? synchronization : cachedState;
+        return cachedState;
     };
 
     const loadMoreLightningTransactions = async () => {
@@ -633,33 +640,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 if (!sdk || !current()) return;
                 sdkRef.current = sdk;
                 sdkWalletIdRef.current = walletId;
-                let incomingReconciliationRunning = false;
-                let incomingReconciliationRequested = false;
-                const reconcileIncomingPayment = () => {
-                    incomingReconciliationRequested = true;
-                    if (incomingReconciliationRunning) return;
-                    incomingReconciliationRunning = true;
-                    void (async () => {
-                        try {
-                            while (current() && sdkRef.current === sdk && incomingReconciliationRequested) {
-                                incomingReconciliationRequested = false;
-                                // A pending receive commonly arrives while the initial
-                                // sync is finishing. Join it first, then run a fresh
-                                // full sync so the transfer claim is visible locally.
-                                const joinedExistingSync = flightsRef.current.isRunning('refresh');
-                                await refreshLightningState(true, true);
-                                if (joinedExistingSync && current() && sdkRef.current === sdk) {
-                                    await refreshLightningState(true, true);
-                                }
-                            }
-                        } catch (error) {
-                            lightningTrace(lightningTraceContext(), 'incoming.reconcile.error', lightningErrorDetails(error));
-                            if (current()) setLightningSyncError(String(error instanceof Error ? error.message : error));
-                        } finally {
-                            incomingReconciliationRunning = false;
-                        }
-                    })();
-                };
                 const listenerTask = traceLightningStep(lightningTraceContext(), 'sdk.addEventListener', () => sdk.addEventListener({ onEvent: async (event: any) => {
                     lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'event', { tag: event.tag, accepted: current() && sdkRef.current === sdk, paymentStatus: event.inner?.payment?.status, paymentType: event.inner?.payment?.paymentType });
                     if (!current() || sdkRef.current !== sdk) return;
@@ -674,10 +654,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                         }).catch(error => {
                             if (current()) setLightningSyncError(String(error?.message || error));
                         });
-                    }
-                    if ([breezSdk.SdkEvent_Tags.PaymentPending, breezSdk.SdkEvent_Tags.PaymentSucceeded].includes(event.tag) &&
-                        event.inner?.payment?.paymentType === breezSdk.PaymentType.Receive) {
-                        reconcileIncomingPayment();
                     }
                     // The SDK owns payment settlement. Its Synced event means the
                     // local store has changed, so refresh that store only. Calling
