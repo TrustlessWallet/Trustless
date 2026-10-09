@@ -49,7 +49,13 @@ const lightningTrace = (context: LightningTraceContext, step: string, details: R
     console.log('[LightningDebug]', JSON.stringify({ at: new Date().toISOString(), ...context, step, ...details }));
 };
 const lightningErrorDetails = (error: unknown) => {
-    const text = error instanceof Error ? error.message : String(error);
+    const nativeDetail = error && typeof error === 'object' &&
+        Array.isArray((error as { inner?: unknown }).inner)
+        ? (error as { inner: unknown[] }).inner[0] : undefined;
+    const text = [
+        error instanceof Error ? error.message : String(error),
+        typeof nativeDetail === 'string' ? nativeDetail : '',
+    ].filter(Boolean).join(': ');
     return {
         errorType: error instanceof Error ? error.name : typeof error,
         // Avoid dumping native error objects: they may contain complete payment requests.
@@ -486,6 +492,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const version = lightningInitVersionRef.current;
         lightningTrace(lightningTraceContext(), 'refresh.request', { forceSync, connected: !!sdk, historyLimit: historyLimitRef.current });
         if (!sdk) return Promise.reject(new Error('Lightning is not connected. Please retry.'));
+        // Spark temporarily reserves selected leaves while a send is in progress.
+        // Do not start a wallet sync or publish that transient reservation as the
+        // wallet balance. The SDK emits its final payment/sync event afterward.
+        if (paymentInFlightRef.current) {
+            lightningTrace(lightningTraceContext(), 'refresh.deferredForPayment');
+            return Promise.resolve();
+        }
         const flights = flightsRef.current;
         const current = () => sdk === sdkRef.current && version === lightningInitVersionRef.current;
         const readBalance = () => withDeadline(flights.run('balance', async () => {
@@ -779,11 +792,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (sdkRef.current === sdk) {
                 ++historyRevisionRef.current;
                 setLightningTransactions(previous => [transaction, ...previous.filter(tx => tx.paymentHash !== transaction.paymentHash)]);
-                void refreshLightningState().catch(error => console.warn('Payment display refresh failed:', error));
             }
             return transaction;
         } finally {
             paymentInFlightRef.current = false;
+            // Read the settled local state only after the send has returned. This
+            // also handles a failed send releasing its temporary reservation.
+            void refreshLightningState().catch(error => console.warn('Payment display refresh failed:', error));
         }
     };
 
