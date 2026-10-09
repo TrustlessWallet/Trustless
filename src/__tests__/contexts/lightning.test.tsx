@@ -55,6 +55,8 @@ function session(balance = 100) {
         parse: jest.fn(async () => ({ tag: 'Bolt11Invoice' })),
         prepareSendPayment: jest.fn(async () => ({ amount: 123n })),
         sendPayment: jest.fn(async () => ({ payment: payment() })),
+        getLeafOptimizationProgress: jest.fn(() => ({ isRunning: false, currentRound: 0, totalRounds: 0 })),
+        cancelLeafOptimization: jest.fn(async () => {}),
         prepareLnurlPay: jest.fn(async (_request?: any) => ({})),
         lnurlPay: jest.fn(async () => ({ payment: payment() })),
         emit: (event: any) => listener.onEvent(event),
@@ -186,6 +188,13 @@ it('does not wait for on-chain queries during Lightning refresh', async () => {
     expect(invalidate).not.toHaveBeenCalled();
 });
 
+it('keeps fee estimation stable across Lightning balance refreshes', async () => {
+    const { result } = await connected();
+    const estimate = result.current.estimateLightningFee;
+    await act(async () => { await result.current.triggerRefresh('lightning'); });
+    expect(result.current.estimateLightningFee).toBe(estimate);
+});
+
 it('retries failed initialization on pull-to-refresh', async () => {
     (sdkModule.connect as jest.Mock).mockRejectedValueOnce(new Error('Offline'));
     const { result } = renderHook(() => useWallet(), { wrapper });
@@ -214,6 +223,31 @@ it('returns an actual payment receipt without waiting for blocked history', asyn
     await act(async () => { receipt = await result.current.payLightningInvoice('lnbc-test'); });
     expect(receipt).toMatchObject({ paymentHash: 'payment-1', amountMsat: 123000, feeMsat: 2000, paymentTime: 1234, status: 'complete' });
     await act(async () => { history.resolve({ payments: [] }); });
+});
+
+it('does not publish a temporary SDK balance reservation after a failed send', async () => {
+    const { result } = await connected();
+    a.getInfo.mockClear();
+    a.listPayments.mockClear();
+    a.sendPayment.mockRejectedValueOnce(new Error('SdkError.SparkError'));
+
+    await act(async () => {
+        await expect(result.current.payLightningInvoice('lnbc-test')).rejects.toThrow('SdkError.SparkError');
+        await Promise.resolve();
+    });
+
+    expect(a.getInfo).not.toHaveBeenCalled();
+    expect(a.listPayments).not.toHaveBeenCalled();
+});
+
+it('releases optimizer-reserved leaves before sending a payment', async () => {
+    const { result } = await connected();
+    a.getLeafOptimizationProgress.mockReturnValue({ isRunning: true, currentRound: 1, totalRounds: 2 });
+
+    await act(async () => { await result.current.payLightningInvoice('lnbc-test'); });
+
+    expect(a.cancelLeafOptimization).toHaveBeenCalledTimes(1);
+    expect(a.cancelLeafOptimization.mock.invocationCallOrder[0]).toBeLessThan(a.sendPayment.mock.invocationCallOrder[0]);
 });
 
 it('prevents switching and duplicate sends while a payment is outstanding', async () => {

@@ -756,10 +756,31 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return req.paymentRequest;
     }, []);
 
+    const makeLightningLeavesAvailable = async (sdk: LightningSdk) => {
+        try {
+            const progress = sdk.getLeafOptimizationProgress();
+            lightningTrace(lightningTraceContext(), 'sdk.getLeafOptimizationProgress', {
+                isRunning: progress.isRunning,
+                currentRound: progress.currentRound,
+                totalRounds: progress.totalRounds,
+            });
+            if (!progress.isRunning) return;
+            // Automatic optimization temporarily reserves the leaves it is
+            // swapping. Breez provides this method specifically to release
+            // those leaves before an interactive payment.
+            await traceLightningStep(lightningTraceContext(), 'sdk.cancelLeafOptimization', () => sdk.cancelLeafOptimization());
+        } catch (error) {
+            // Keep the actual send as the authority: a diagnostic/cancellation
+            // failure must not replace its result with a secondary error.
+            lightningTrace(lightningTraceContext(), 'sdk.cancelLeafOptimization.error', lightningErrorDetails(error));
+        }
+    };
+
     const payLightningInvoice = async (invoiceStr: string, amountSats?: number): Promise<LightningTransaction> => {
         const { sdk, assertCurrent } = requireLightningSession();
         if (paymentInFlightRef.current) throw new Error('A payment is already in progress.');
         paymentInFlightRef.current = true;
+        let completedPayment = false;
         try {
             const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
             const parsed = await withDeadline(traceLightningStep(lightningTraceContext(), 'sdk.parse', () => sdk.parse(cleanStr)), 'Reading Lightning payment');
@@ -771,6 +792,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     amount: amountSats && amountSats > 0 ? BigInt(amountSats) : undefined,
                     tokenIdentifier: undefined, conversionOptions: undefined, feePolicy: undefined,
                 })), 'Preparing Lightning payment');
+                assertCurrent();
+                await makeLightningLeavesAvailable(sdk);
                 assertCurrent();
                 // Let the SDK validate the live spendable balance and route. The
                 // displayed balance is a cache and cannot authorize/reject a send.
@@ -785,12 +808,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     conversionOptions: undefined, feePolicy: undefined,
                 })), 'Preparing Lightning payment');
                 assertCurrent();
+                await makeLightningLeavesAvailable(sdk);
+                assertCurrent();
                 const response = await traceLightningStep(lightningTraceContext(), 'sdk.lnurlPay', () => sdk.lnurlPay({ prepareResponse: quote, idempotencyKey: uuidv4() }), value => ({ status: value.payment.status, paymentType: value.payment.paymentType }));
                 payment = response.payment;
             } else {
                 throw new Error(`Unsupported Lightning payment: ${parsed.tag}`);
             }
             const transaction = toLightningTransaction(payment);
+            completedPayment = transaction.status === 'complete';
             // Publish the authoritative receipt immediately; a blocked history read
             // must not keep a completed payment in the sending state.
             if (sdkRef.current === sdk) {
@@ -798,15 +824,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 setLightningTransactions(previous => [transaction, ...previous.filter(tx => tx.paymentHash !== transaction.paymentHash)]);
             }
             return transaction;
+        } catch (error) {
+            // React Native surfaces only the outer SdkError in the alert. Preserve
+            // the safe native cause so a payment failure is actionable.
+            throw new Error(lightningErrorDetails(error).message);
         } finally {
             paymentInFlightRef.current = false;
-            // Read the settled local state only after the send has returned. This
-            // also handles a failed send releasing its temporary reservation.
-            void refreshLightningState().catch(error => console.warn('Payment display refresh failed:', error));
+            // A failed or pending send can leave a short-lived SDK reservation in
+            // its local balance. Do not publish that intermediate value as the
+            // wallet balance. Payment events reconcile those states; a completed
+            // receipt can safely refresh the settled balance.
+            if (completedPayment) {
+                void refreshLightningState().catch(error => console.warn('Payment display refresh failed:', error));
+            }
         }
     };
 
-    const estimateLightningFee = async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
+    const estimateLightningFee = useCallback(async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
         try {
             const { sdk, assertCurrent } = requireLightningSession();
             const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
@@ -833,7 +867,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (method.tag === breezSdk.SendPaymentMethod_Tags.SparkAddress || method.tag === breezSdk.SendPaymentMethod_Tags.SparkInvoice) return Number(method.inner.fee);
             return null;
         } catch { return null; }
-    };
+    }, []);
 
     const getLightningTopUpAddress = async (): Promise<string> => {
         const { sdk, assertCurrent } = requireLightningSession();
