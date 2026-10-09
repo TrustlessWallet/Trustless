@@ -157,6 +157,18 @@ it('does not start a full synchronization from a payment event', async () => {
     expect(a.syncWallet).toHaveBeenCalledTimes(before);
 });
 
+it('defers a wallet refresh while a Lightning send is in progress', async () => {
+    const { result } = await connected();
+    const send = deferred<any>();
+    a.sendPayment.mockReturnValue(send.promise);
+    let paymentTask!: Promise<any>;
+    await act(async () => { paymentTask = result.current.payLightningInvoice('lnbc-test'); });
+    const before = a.syncWallet.mock.calls.length;
+    await act(async () => { await result.current.triggerRefresh('lightning'); });
+    expect(a.syncWallet).toHaveBeenCalledTimes(before);
+    await act(async () => { send.resolve({ payment: payment() }); await paymentTask; });
+});
+
 it('does not wait for on-chain queries during Lightning refresh', async () => {
     const { result } = await connected();
     const invalidate = jest.spyOn(client, 'invalidateQueries').mockImplementation(() => new Promise(() => {}));
