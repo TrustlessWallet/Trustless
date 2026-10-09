@@ -477,7 +477,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     useEffect(() => {
         let isMounted = true;
         const version = lightningInitVersionRef.current;
-        if (isLightningInitialized && !defaultLightningInvoice) {
+        // An invoice belongs to the synchronized Spark wallet state. Creating it
+        // while an imported wallet is still restoring can leave its receive claim
+        // behind the initial sync.
+        if (isLightningInitialized && lightningLastSyncedAt && !lightningSyncing && !defaultLightningInvoice) {
             getLightningInvoice(0)
                 .then(invoice => {
                     if (isMounted && version === lightningInitVersionRef.current) setDefaultLightningInvoice(invoice);
@@ -485,7 +488,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 .catch(err => console.error("Background invoice generation failed:", err));
         }
         return () => { isMounted = false; };
-    }, [isLightningInitialized, defaultLightningInvoice, activeWallet?.id]);
+    }, [isLightningInitialized, lightningLastSyncedAt, lightningSyncing, defaultLightningInvoice, activeWallet?.id]);
 
     const refreshLightningState = (forceSync = false): Promise<void> => {
         const sdk = sdkRef.current;
@@ -614,6 +617,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const sdk = await withDeadline(lifecycleRef.current.replace(async () => {
                     const config = breezSdk.defaultConfig(breezSdk.Network.Mainnet);
                     config.apiKey = apiKey;
+                    config.privateEnabledDefault = true;
                     config.maxDepositClaimFee = new breezSdk.MaxFee.NetworkRecommended({ leewaySatPerVbyte: BigInt(1) });
                     config.lnurlDomain = 'pay.hd-apps.com';
                     lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'storage.prepare.start');
