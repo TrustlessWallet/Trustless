@@ -616,29 +616,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 if (!sdk || !current()) return;
                 sdkRef.current = sdk;
                 sdkWalletIdRef.current = walletId;
-                let paymentSyncRequested = false;
-                let paymentSyncRunning = false;
-                const syncAfterPayment = () => {
-                    paymentSyncRequested = true;
-                    if (paymentSyncRunning) return;
-                    paymentSyncRunning = true;
-                    // A payment event can precede the SDK's cached balance update.
-                    // Drain any refresh already running, then request a sync which
-                    // starts AFTER the payment event. Coalesce bursts of events.
-                    void (async () => {
-                        try {
-                            await refreshLightningState(true).catch(() => {});
-                            while (current() && sdkRef.current === sdk && paymentSyncRequested) {
-                                paymentSyncRequested = false;
-                                await refreshLightningState(true);
-                            }
-                        } catch (error) {
-                            if (current()) setLightningSyncError(error instanceof Error ? error.message : String(error));
-                        } finally {
-                            paymentSyncRunning = false;
-                        }
-                    })();
-                };
                 const listenerTask = traceLightningStep(lightningTraceContext(), 'sdk.addEventListener', () => sdk.addEventListener({ onEvent: async (event: any) => {
                     lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'event', { tag: event.tag, accepted: current() && sdkRef.current === sdk, paymentStatus: event.inner?.payment?.status, paymentType: event.inner?.payment?.paymentType });
                     if (!current() || sdkRef.current !== sdk) return;
@@ -654,12 +631,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                             if (current()) setLightningSyncError(String(error?.message || error));
                         });
                     }
-                    if ([breezSdk.SdkEvent_Tags.PaymentPending, breezSdk.SdkEvent_Tags.PaymentSucceeded,
-                        breezSdk.SdkEvent_Tags.PaymentFailed].includes(event.tag)) {
-                        syncAfterPayment();
-                    }
-                    // Synced only reads the cache above: forcing another sync on
-                    // Synced would create an endless synchronization loop.
+                    // The SDK owns payment settlement. Its Synced event means the
+                    // local store has changed, so refresh that store only. Calling
+                    // syncWallet from a payment callback queues another full sync
+                    // while the SDK is reconciling the same payment.
                     if (event.tag === breezSdk.SdkEvent_Tags.PaymentSucceeded &&
                         event.inner?.payment?.paymentType === breezSdk.PaymentType.Receive) setDefaultLightningInvoice('');
                     if (event.tag === breezSdk.SdkEvent_Tags.LightningAddressChanged) {

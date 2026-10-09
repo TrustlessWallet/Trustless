@@ -147,6 +147,16 @@ it('does not queue another native synchronization while one is already running',
     await waitFor(() => expect(result.current.lightningSyncing).toBe(false));
 });
 
+it('does not start a full synchronization from a payment event', async () => {
+    await connected();
+    const before = a.syncWallet.mock.calls.length;
+    await act(async () => {
+        await a.emit({ tag: 'PaymentPending', inner: { payment: payment('incoming', 1) } });
+        await Promise.resolve();
+    });
+    expect(a.syncWallet).toHaveBeenCalledTimes(before);
+});
+
 it('does not wait for on-chain queries during Lightning refresh', async () => {
     const { result } = await connected();
     const invalidate = jest.spyOn(client, 'invalidateQueries').mockImplementation(() => new Promise(() => {}));
