@@ -1,5 +1,12 @@
 set -e
 
+required_node_version=$(node -p "require('./package.json').engines.node")
+current_node_version=$(node --version)
+if [ "$current_node_version" != "v$required_node_version" ]; then
+    echo "Node.js $required_node_version is required; found $current_node_version."
+    exit 1
+fi
+
 echo "0. Hiding environment variables..."
 if [ -f .env ]; then
     mv .env .env.backup

@@ -51,7 +51,7 @@ Hi! Trustless is a fully open-source, non-custodial (only you have access to you
 
 ## Getting started
 
-To run the project in development mode, you need node-js and a setup for ios (xcode) or android (android studio).
+To run the project in development mode, you need Node.js 22.14.0 and a setup for ios (xcode) or android (android studio). The required Node version is also recorded in `.nvmrc` and `package.json`.
 
 1.  **Clone the repository:**
     ```bash
@@ -59,12 +59,18 @@ To run the project in development mode, you need node-js and a setup for ios (xc
     cd trustless
     ```
 
-2.  **Install dependencies:**
+2.  **Use Node.js 22.14.0:**
     ```bash
-    npm install
+    node --version
+    ```
+    The command must print `v22.14.0` before installing dependencies.
+
+3.  **Install dependencies:**
+    ```bash
+    npm ci --legacy-peer-deps
     ```
 
-3.  **Run on device / simulator:**
+4.  **Run on device / simulator:**
 
     * **ios (mac only):**
         ```bash
