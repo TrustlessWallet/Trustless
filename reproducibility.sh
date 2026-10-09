@@ -13,6 +13,9 @@ node src/scripts/write-version.js
 echo "2. Installing dependencies..."
 npm ci --legacy-peer-deps
 
+echo "2.1. Verifying Breez SDK native artifact version..."
+node -e 'const name = "@breeztech/breez-sdk-spark-react-native"; const expected = require("./package.json").dependencies[name]; const actual = require(`./node_modules/${name}/package.json`).version; if (expected !== actual) { throw new Error(`Breez SDK version mismatch: package.json requires ${expected}, but its native artifact downloader will use ${actual}`); }'
+
 echo "3. Generating android and ios directories..."
 export CI=1
 npx expo prebuild --clean
