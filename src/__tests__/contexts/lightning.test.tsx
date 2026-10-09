@@ -86,6 +86,16 @@ it('connects the active wallet and explicitly synchronizes its balance', async (
     expect(result.current.lightningLastSyncedAt).not.toBeNull();
 });
 
+it('creates the default invoice only after the initial Lightning sync completes', async () => {
+    const sync = deferred<any>();
+    a.syncWallet.mockReturnValue(sync.promise);
+    const hook = renderHook(() => useWallet(), { wrapper });
+    await waitFor(() => expect(hook.result.current.isLightningInitialized).toBe(true));
+    expect(a.receivePayment).not.toHaveBeenCalled();
+    await act(async () => { sync.resolve({}); });
+    await waitFor(() => expect(a.receivePayment).toHaveBeenCalledTimes(1));
+});
+
 it('loads a payment received while wallet B was inactive after switching A to B', async () => {
     b.listPayments.mockResolvedValue({ payments: [{ ...payment('incoming'), paymentType: 0 }] });
     const { result } = await connected();
