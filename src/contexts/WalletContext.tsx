@@ -490,7 +490,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return () => { isMounted = false; };
     }, [isLightningInitialized, lightningLastSyncedAt, lightningSyncing, defaultLightningInvoice, activeWallet?.id]);
 
-    const refreshLightningState = (forceSync = false): Promise<void> => {
+    const refreshLightningState = (forceSync = false, waitForSync = false): Promise<void> => {
         const sdk = sdkRef.current;
         const version = lightningInitVersionRef.current;
         lightningTrace(lightningTraceContext(), 'refresh.request', { forceSync, connected: !!sdk, historyLimit: historyLimitRef.current });
@@ -566,7 +566,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         });
         // Keep any background error handled: it is represented in lightningSyncError.
         void synchronization.catch(() => {});
-        return cachedState;
+        return waitForSync ? synchronization : cachedState;
     };
 
     const loadMoreLightningTransactions = async () => {
@@ -633,6 +633,33 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 if (!sdk || !current()) return;
                 sdkRef.current = sdk;
                 sdkWalletIdRef.current = walletId;
+                let incomingReconciliationRunning = false;
+                let incomingReconciliationRequested = false;
+                const reconcileIncomingPayment = () => {
+                    incomingReconciliationRequested = true;
+                    if (incomingReconciliationRunning) return;
+                    incomingReconciliationRunning = true;
+                    void (async () => {
+                        try {
+                            while (current() && sdkRef.current === sdk && incomingReconciliationRequested) {
+                                incomingReconciliationRequested = false;
+                                // A pending receive commonly arrives while the initial
+                                // sync is finishing. Join it first, then run a fresh
+                                // full sync so the transfer claim is visible locally.
+                                const joinedExistingSync = flightsRef.current.isRunning('refresh');
+                                await refreshLightningState(true, true);
+                                if (joinedExistingSync && current() && sdkRef.current === sdk) {
+                                    await refreshLightningState(true, true);
+                                }
+                            }
+                        } catch (error) {
+                            lightningTrace(lightningTraceContext(), 'incoming.reconcile.error', lightningErrorDetails(error));
+                            if (current()) setLightningSyncError(String(error instanceof Error ? error.message : error));
+                        } finally {
+                            incomingReconciliationRunning = false;
+                        }
+                    })();
+                };
                 const listenerTask = traceLightningStep(lightningTraceContext(), 'sdk.addEventListener', () => sdk.addEventListener({ onEvent: async (event: any) => {
                     lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'event', { tag: event.tag, accepted: current() && sdkRef.current === sdk, paymentStatus: event.inner?.payment?.status, paymentType: event.inner?.payment?.paymentType });
                     if (!current() || sdkRef.current !== sdk) return;
@@ -647,6 +674,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                         }).catch(error => {
                             if (current()) setLightningSyncError(String(error?.message || error));
                         });
+                    }
+                    if ([breezSdk.SdkEvent_Tags.PaymentPending, breezSdk.SdkEvent_Tags.PaymentSucceeded].includes(event.tag) &&
+                        event.inner?.payment?.paymentType === breezSdk.PaymentType.Receive) {
+                        reconcileIncomingPayment();
                     }
                     // The SDK owns payment settlement. Its Synced event means the
                     // local store has changed, so refresh that store only. Calling

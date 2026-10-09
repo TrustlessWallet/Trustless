@@ -13,6 +13,10 @@ export function withDeadline<T>(operation: Promise<T>, label: string, timeoutMs 
 export class SingleFlight {
     private pending = new Map<string, Promise<unknown>>();
 
+    isRunning(key: string): boolean {
+        return this.pending.has(key);
+    }
+
     run<T>(key: string, operation: () => Promise<T>): Promise<T> {
         const existing = this.pending.get(key);
         if (existing) return existing as Promise<T>;

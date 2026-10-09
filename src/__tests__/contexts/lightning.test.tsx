@@ -169,6 +169,29 @@ it('does not start a full synchronization from a payment event', async () => {
     expect(a.syncWallet).toHaveBeenCalledTimes(before);
 });
 
+it('reconciles an incoming pending payment with a full synchronization', async () => {
+    await connected();
+    const before = a.syncWallet.mock.calls.length;
+    await act(async () => {
+        await a.emit({ tag: 'PaymentPending', inner: { payment: { ...payment('incoming', 1), paymentType: 0 } } });
+    });
+    await waitFor(() => expect(a.syncWallet).toHaveBeenCalledTimes(before + 1));
+});
+
+it('runs a post-event sync when an incoming payment arrives during another sync', async () => {
+    const { result } = await connected();
+    const sync = deferred<any>();
+    a.syncWallet.mockReturnValue(sync.promise);
+    const before = a.syncWallet.mock.calls.length;
+    await act(async () => { await result.current.triggerRefresh('lightning'); });
+    await act(async () => {
+        await a.emit({ tag: 'PaymentPending', inner: { payment: { ...payment('incoming', 1), paymentType: 0 } } });
+    });
+    expect(a.syncWallet).toHaveBeenCalledTimes(before + 1);
+    await act(async () => { sync.resolve({}); await Promise.resolve(); });
+    await waitFor(() => expect(a.syncWallet).toHaveBeenCalledTimes(before + 2));
+});
+
 it('defers a wallet refresh while a Lightning send is in progress', async () => {
     const { result } = await connected();
     const send = deferred<any>();
