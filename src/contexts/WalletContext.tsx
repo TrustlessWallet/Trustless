@@ -795,7 +795,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             let payment: breezSdk.Payment;
             if (parsed.tag === breezSdk.InputType_Tags.Bolt11Invoice) {
                 const quote = await withDeadline(traceLightningStep(lightningTraceContext(), 'sdk.prepareSendPayment', () => sdk.prepareSendPayment({
-                    paymentRequest: cleanStr,
+                    paymentRequest: breezSdk.PaymentRequest.Input.new({ input: cleanStr }),
                     amount: amountSats && amountSats > 0 ? BigInt(amountSats) : undefined,
                     tokenIdentifier: undefined, conversionOptions: undefined, feePolicy: undefined,
                 })), 'Preparing Lightning payment');
@@ -865,7 +865,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 return Number(quote.feeSats);
             }
             const quote = await withDeadline(traceLightningStep(lightningTraceContext(), 'sdk.prepareSendPayment', () => sdk.prepareSendPayment({
-                paymentRequest: cleanStr, amount: amountSats && amountSats > 0 ? BigInt(amountSats) : undefined,
+                paymentRequest: breezSdk.PaymentRequest.Input.new({ input: cleanStr }), amount: amountSats && amountSats > 0 ? BigInt(amountSats) : undefined,
                 tokenIdentifier: undefined, conversionOptions: undefined, feePolicy: undefined,
             })), 'Estimating Lightning fee');
             assertCurrent();
@@ -898,7 +898,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const { sdk, assertCurrent } = requireLightningSession();
         try {
             const prepareRequest = {
-                paymentRequest: address, amount: BigInt(amountSats),
+                paymentRequest: breezSdk.PaymentRequest.Input.new({ input: address }), amount: BigInt(amountSats),
                 tokenIdentifier: undefined, conversionOptions: undefined, feePolicy: undefined,
             };
             const res = await withDeadline(traceLightningStep(lightningTraceContext(), 'sdk.prepareSendPayment', () => sdk.prepareSendPayment(prepareRequest)), 'Preparing withdrawal');
