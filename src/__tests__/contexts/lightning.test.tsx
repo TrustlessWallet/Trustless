@@ -30,6 +30,7 @@ jest.mock('@breeztech/breez-sdk-spark-react-native', () => ({
     PaymentStatus: { Completed: 0, Pending: 1, Failed: 2 }, PaymentType: { Receive: 0, Send: 1 },
     InputType_Tags: { Bolt11Invoice: 'Bolt11Invoice', LightningAddress: 'LightningAddress', LnurlPay: 'LnurlPay' },
     SendPaymentMethod_Tags: { Bolt11Invoice: 'Bolt11Invoice', SparkAddress: 'SparkAddress', SparkInvoice: 'SparkInvoice' },
+    PaymentRequest: { Input: { new: (value: any) => ({ tag: 'Input', inner: value }) } },
     SdkEvent_Tags: { Synced: 'Synced', PaymentPending: 'PaymentPending', PaymentSucceeded: 'PaymentSucceeded', PaymentFailed: 'PaymentFailed', LightningAddressChanged: 'LightningAddressChanged' },
     ReceivePaymentMethod: { Bolt11Invoice: { new: (value: any) => value }, BitcoinAddress: { new: (value: any) => value } },
 }));
@@ -193,6 +194,14 @@ it('keeps fee estimation stable across Lightning balance refreshes', async () =>
     const estimate = result.current.estimateLightningFee;
     await act(async () => { await result.current.triggerRefresh('lightning'); });
     expect(result.current.estimateLightningFee).toBe(estimate);
+});
+
+it('uses a typed payment request when preparing a Lightning fee estimate', async () => {
+    const { result } = await connected();
+    await act(async () => { await result.current.estimateLightningFee('lnbc-test'); });
+    expect(a.prepareSendPayment).toHaveBeenCalledWith(expect.objectContaining({
+        paymentRequest: { tag: 'Input', inner: { input: 'lnbc-test' } },
+    }));
 });
 
 it('retries failed initialization on pull-to-refresh', async () => {
