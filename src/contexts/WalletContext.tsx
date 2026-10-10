@@ -13,7 +13,6 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import * as breezSdk from '@breeztech/breez-sdk-spark-react-native';
 import * as FileSystem from 'expo-file-system';
 import { LightningLifecycle, SingleFlight, withDeadline } from '../services/lightningSession';
-import { summarizeLightningClaimLog } from '../services/lightningDiagnostics';
 
 import { Wallet, DerivedAddress, BitcoinAddress, LightningTransaction } from '../types';
 import {
@@ -37,104 +36,29 @@ import {
 import { InteractionManager } from 'react-native';
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
 
-// Temporary diagnostic logging. Never log request arguments, seeds, invoices, or payment records.
+// Keep the call sites grouped around each SDK operation without retaining the
+// temporary diagnostics or installing a process-global native logger.
 type LightningTraceContext = { wallet: string; session: number };
-let lightningTraceSequence = 0;
 const lightningWalletLabels = new Map<string, string>();
 const lightningWalletLabel = (id: string | null) => {
     if (!id) return 'none';
     if (!lightningWalletLabels.has(id)) lightningWalletLabels.set(id, `wallet-${lightningWalletLabels.size + 1}`);
     return lightningWalletLabels.get(id)!;
 };
-const lightningTrace = (context: LightningTraceContext, step: string, details: Record<string, unknown> = {}) => {
-    console.log('[LightningDebug]', JSON.stringify({ at: new Date().toISOString(), ...context, step, ...details }));
-};
-const lightningErrorDetails = (error: unknown) => {
-    const nativeDetail = error && typeof error === 'object' &&
-        Array.isArray((error as { inner?: unknown }).inner)
+const lightningTrace = (_context: LightningTraceContext, _step: string, _details: Record<string, unknown> = {}) => {};
+const lightningErrorMessage = (error: unknown) => {
+    const nativeDetail = error && typeof error === 'object' && Array.isArray((error as { inner?: unknown }).inner)
         ? (error as { inner: unknown[] }).inner[0] : undefined;
-    const text = [
-        error instanceof Error ? error.message : String(error),
-        typeof nativeDetail === 'string' ? nativeDetail : '',
-    ].filter(Boolean).join(': ');
-    return {
-        errorType: error instanceof Error ? error.name : typeof error,
-        // Avoid dumping native error objects: they may contain complete payment requests.
-        errorCategory: /timed? ?out|timeout/i.test(text) ? 'timeout'
-            : /network|connect|dns|offline/i.test(text) ? 'network'
-            : /sqlite|database|storage|locked/i.test(text) ? 'storage'
-            : /decode|deserialize|parse|invalid type/i.test(text) ? 'decoding' : 'other',
-        message: text.replace(/(?:https?:\/\/|lnbc|lntb|lnbcrt|lno1|lnurl1)\S+/gi, '[redacted]')
-            .replace(/\b[A-Za-z0-9_+/=-]{32,}\b/g, '[redacted]').slice(0, 600),
-    };
+    return [error instanceof Error ? error.message : String(error), typeof nativeDetail === 'string' ? nativeDetail : '']
+        .filter(Boolean)
+        .join(': ');
 };
-const traceLightningStep = <T,>(context: LightningTraceContext, step: string, operation: () => Promise<T>, summarize?: (value: T) => Record<string, unknown>): Promise<T> => {
-    const request = ++lightningTraceSequence;
-    const started = Date.now();
-    const log = (phase: string, details: Record<string, unknown> = {}) =>
-        lightningTrace(context, step, { request, phase, elapsedMs: Date.now() - started, ...details });
-    log('start');
-    let promise: Promise<T>;
-    try { promise = operation(); } catch (error) {
-        log('error', step === 'sdk.connect' ? { errorType: 'connect threw synchronously' } : lightningErrorDetails(error));
-        throw error;
-    }
-    // Observe the original promise without adding deadlines, retries, or extra SDK calls.
-    const pending = setTimeout(() => log('still-pending'), 5000);
-    void promise.then(value => {
-        clearTimeout(pending);
-        try { log('success', summarize?.(value)); }
-        catch { log('success', { summaryUnavailable: true }); }
-    }, error => {
-        clearTimeout(pending);
-        log('error', step === 'sdk.connect' ? { errorType: 'connect rejected' } : lightningErrorDetails(error));
-    });
-    return promise;
-};
-
-// Forward selected native diagnostics; never dump the raw SDK log stream.
-let nativeLightningLoggingStarted = false;
-const startNativeLightningDiagnostics = () => {
-    if (nativeLightningLoggingStarted) return;
-    const context = { wallet: 'native-global', session: 0 };
-    try {
-        breezSdk.initLogging(undefined, {
-            log: entry => {
-                const line = entry.line;
-                const claimFailure = summarizeLightningClaimLog(line);
-                if (claimFailure) {
-                    lightningTrace(context, 'native.claim.error', { message: claimFailure });
-                    return;
-                }
-                const duration = line.match(/(?:completed|failed|storage|metadata|deposits) in ([0-9.]+(?:ns|µs|μs|us|ms|s))/)?.[1];
-                const starting = line.match(/sync_wallet_internal: Starting (Wallet|WalletState|LnurlMetadata|Deposits) sync/);
-                const completed = line.match(/sync_wallet_internal: (Wallet|WalletState|LnurlMetadata|Deposits) sync completed/);
-                const failed = line.match(/sync_wallet_internal: (Spark wallet sync failed|Failed to sync wallet state to storage|Failed to sync lnurl metadata|Failed to check and claim static deposits)/);
-                const queued = line.match(/Running sync type (\w+) for (\d+) waiters/);
-                if (starting) lightningTrace(context, 'native.sync.phase', { phase: starting[1], status: 'start' });
-                else if (completed) lightningTrace(context, 'native.sync.phase', {
-                    phase: line.includes('InternalSyncedEvent') ? 'SyncSummary' : completed[1], status: 'success', duration,
-                    // False also means skipped for partial syncs. Individual
-                    // transfer claim failures are reported separately above.
-                    walletOk: line.match(/wallet: (true|false)/)?.[1],
-                    walletStateOk: line.match(/wallet_state: (true|false)/)?.[1],
-                    metadataOk: line.match(/lnurl_metadata: (true|false)/)?.[1],
-                    depositsOk: line.match(/deposits: (true|false)/)?.[1],
-                });
-                else if (failed) lightningTrace(context, 'native.sync.phase', {
-                    phase: failed[1], status: 'error', duration,
-                    category: lightningErrorDetails(line).errorCategory,
-                });
-                else if (queued) lightningTrace(context, 'native.sync.batch', { syncType: queued[1], waiters: Number(queued[2]) });
-            },
-        }, 'warn,breez_sdk_spark::sdk::sync=debug,breez_sdk_spark::sdk::sync_coordinator=debug,spark_wallet::wallet=debug');
-        nativeLightningLoggingStarted = true;
-        lightningTrace(context, 'native.logging.ready');
-    } catch (error) {
-        // Diagnostics must never prevent connecting (including a logger already installed natively).
-        lightningTrace(context, 'native.logging.unavailable', lightningErrorDetails(error));
-    }
-};
+const traceLightningStep = async <T,>(
+    _context: LightningTraceContext,
+    _step: string,
+    operation: () => Promise<T>,
+    _summarize?: (value: T) => Record<string, unknown>,
+): Promise<T> => operation();
 
 type LightningSdk = Awaited<ReturnType<typeof breezSdk.connect>>;
 const HISTORY_PAGE_SIZE = 50;
@@ -330,18 +254,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         session: lightningInitVersionRef.current,
     });
 
-    useEffect(() => {
-        lightningTrace(lightningTraceContext(), 'react.state', {
-            initialized: isLightningInitialized, syncing: lightningSyncing,
-            balanceSats: lightningBalance, historyCount: lightningTransactions.length,
-            pendingCount: lightningTransactions.filter(tx => tx.status === 'pending').length,
-            hasInitError: !!lightningInitError, hasSyncError: !!lightningSyncError,
-        });
-    }, [activeWallet?.id, isLightningInitialized, lightningSyncing, lightningBalance,
-        lightningTransactions, lightningInitError, lightningSyncError]);
-
     const resetLightningState = () => {
-        lightningTrace(lightningTraceContext(), 'state.reset');
         readyRef.current = false;
         flightsRef.current = new SingleFlight();
         initializationRef.current = null;
@@ -492,7 +405,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 .then(invoice => {
                     if (isMounted && version === lightningInitVersionRef.current) setDefaultLightningInvoice(invoice);
                 })
-                .catch(err => console.error("Background invoice generation failed:", err));
+                // A wallet switch invalidates the outgoing session. This invoice
+                // is only a preloaded convenience value, so the Receive screen
+                // will create a fresh one if this background request is stale.
+                .catch(() => {});
         }
         return () => { isMounted = false; };
     }, [isLightningInitialized, lightningLastSyncedAt, lightningSyncing, defaultLightningInvoice, activeWallet?.id]);
@@ -538,7 +454,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (!forceSync) return Promise.all([
             readBalance().then(() => current() ? readBalance() : undefined),
             readHistory().then(() => current() ? readHistory() : undefined),
-        ]).then(() => {}).catch(error => { lightningTrace(lightningTraceContext(), 'refresh.cache.error', lightningErrorDetails(error)); throw error; });
+        ]).then(() => {});
 
         // Breez can legitimately take longer than the UI deadline while it catches
         // up a wallet. Start at most one native synchronization and let callers
@@ -564,7 +480,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     readHistory().then(() => current() ? readHistory() : undefined),
                 ]);
             } catch (error) {
-                lightningTrace(lightningTraceContext(), 'refresh.sync.error', { responseSession: version, ...lightningErrorDetails(error) });
                 if (current()) setLightningSyncError(error instanceof Error ? error.message : 'Lightning refresh failed.');
             } finally {
                 lightningTrace(lightningTraceContext(), 'refresh.sync.finished', { responseSession: version, accepted: current() });
@@ -593,18 +508,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [activeWallet?.id, isLightningInitialized]);
 
     const disposeActiveLightningNode = async () => {
-        lightningTrace(lightningTraceContext(), 'dispose.request');
         const sdk = sdkRef.current;
         const listenerId = listenerRef.current;
         readyRef.current = false;
         sdkRef.current = null;
         listenerRef.current = null;
         sdkWalletIdRef.current = null;
-        // A stuck listener removal must not prevent native disconnect. Generation
-        // checks already make any remaining callbacks harmless.
+        // A stuck listener removal must not delay wallet switching. Generation
+        // checks make callbacks from the retiring session harmless.
         if (sdk && listenerId) {
-            void withDeadline(traceLightningStep(lightningTraceContext(), 'sdk.removeEventListener', () => sdk.removeEventListener(listenerId)), 'Removing Lightning listener', 5000)
-                .catch(error => console.warn('Lightning listener cleanup failed:', error));
+            void withDeadline(sdk.removeEventListener(listenerId), 'Removing Lightning listener', 5000)
+                .catch(() => {});
         }
         await traceLightningStep(lightningTraceContext(), 'lifecycle.dispose', () => withDeadline(lifecycleRef.current.dispose(sdk || undefined), 'Disconnecting Lightning', 15000));
     };
@@ -618,7 +532,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setLightningInitAttempted(true);
             setLightningInitError(null);
             try {
-                startNativeLightningDiagnostics();
                 const apiKey = process.env.EXPO_PUBLIC_BREEZ_API_KEY;
                 if (!apiKey) throw new Error('Missing EXPO_PUBLIC_BREEZ_API_KEY at runtime');
                 const sdk = await withDeadline(lifecycleRef.current.replace(async () => {
@@ -779,7 +692,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (error) {
             // Keep the actual send as the authority: a diagnostic/cancellation
             // failure must not replace its result with a secondary error.
-            lightningTrace(lightningTraceContext(), 'sdk.cancelLeafOptimization.error', lightningErrorDetails(error));
+            void error;
         }
     };
 
@@ -834,7 +747,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (error) {
             // React Native surfaces only the outer SdkError in the alert. Preserve
             // the safe native cause so a payment failure is actionable.
-            throw new Error(lightningErrorDetails(error).message);
+            throw new Error(lightningErrorMessage(error));
         } finally {
             paymentInFlightRef.current = false;
             // A failed or pending send can leave a short-lived SDK reservation in
