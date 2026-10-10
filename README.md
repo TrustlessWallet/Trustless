@@ -106,20 +106,20 @@ To get the API key just fill out the [form](https://breez.technology/request-api
 
 1. Ensure the working tree is completely clean to avoid the dirty flag.
 2. **Bump `android.versionCode` in `app.json`.** It must strictly increase on every release regardless of the version name — check the previous release's value and increment by 1. This is a manual step; nothing enforces it automatically.
-3. Bump `expo.version` in `app.json` to the new version name (e.g. `3.2.2`).
+3. Bump `expo.version` in `app.json` to the new version name (e.g. `3.2.3`).
 4. Create and push the new tag:
-   `git tag -a 3.2.2 -m "release 3.2.2"`
-   `git push origin 3.2.2`
+   `git tag -a 3.2.3 -m "release 3.2.3"`
+   `git push origin 3.2.3`
 5. Go to GitHub Actions → "Reproducible release build" → Run workflow → enter the tag.
 6. Wait for the build to complete and download the unsigned APK artifact (`trustless-unsigned-apk`).
 7. **Sign with the existing release keystore. Do not generate a new one** unless you are certain the original is permanently lost (see the recovery note below) — every release must share the same signer so users can install updates in place and verifiers can confirm releases come from the same source.
    `apksigner_path=$(find ~/Library/Android/sdk/build-tools -name "apksigner" | sort -r | head -n 1)`
-   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v3.2.2-release.apk app-release-unsigned.apk`
+   `$apksigner_path sign --ks trustless-release.keystore --ks-key-alias trustless-alias --out trustless-v3.2.3-release.apk app-release-unsigned.apk`
 8. Generate the official hash:
-   `shasum -a 256 trustless-v3.2.2-release.apk`
+   `shasum -a 256 trustless-v3.2.3-release.apk`
 9. Create the GitHub release. Upload the signed package and paste the hash into the release notes.
 10. **Verify the signer matches the previous release** before publishing:
-    `$apksigner_path verify --print-certs trustless-v3.2.2-release.apk`
+    `$apksigner_path verify --print-certs trustless-v3.2.3-release.apk`
     Compare the SHA-256 cert fingerprint against the last release. If it doesn't match, stop, something is wrong with step 7.
 
 **If the keystore is genuinely lost** (not just misplaced, actually unrecoverable from any backup): generating a replacement is a last resort, not a routine step. It breaks in-place updates for every existing install and resets the signer identity that past releases have been verified against. Only do this if there is truly no way to recover the original file.
@@ -140,7 +140,7 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 1. **Download the signed release:**
    Download the official signed file from the GitHub releases page into a new empty directory. *(Replace the version number with the one you are testing)*.
 ```bash
-   curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/3.2.2/trustless-v3.2.2-release.apk
+   curl -L -o trustless-release.apk https://github.com/trustlesswallet/trustless/releases/download/3.2.3/trustless-v3.2.3-release.apk
 ```
 
 2. **Verify the hash matches the one listed on GitHub:**
@@ -152,7 +152,7 @@ The official APK is built on Linux (amd64) inside a pinned Docker container. To 
 ```bash
    git clone https://github.com/trustlesswallet/trustless.git
    cd trustless
-   git checkout 3.2.2
+   git checkout 3.2.3
 ```
 
 4. **Build the local unsigned package:**
