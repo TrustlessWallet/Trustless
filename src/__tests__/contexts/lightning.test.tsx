@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WalletProvider, useWallet } from '../../contexts/WalletContext';
 import * as sdkModule from '@breeztech/breez-sdk-spark-react-native';
 
+jest.mock('../../services/exitStorage', () => ({ assertNoActiveExit: jest.fn(async () => {}), loadExit: jest.fn(async () => null) }));
 jest.mock('uuid', () => ({ v4: () => 'test-request-id' }));
 jest.mock('react-native-keychain', () => ({
     getGenericPassword: jest.fn(async ({ service }) => ({ password: service.includes('activeWalletId') ? 'a' : 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' })),
@@ -249,14 +250,12 @@ it('does not publish a temporary SDK balance reservation after a failed send', a
     expect(a.listPayments).not.toHaveBeenCalled();
 });
 
-it('releases optimizer-reserved leaves before sending a payment', async () => {
+it('blocks payments when a recovery has reserved this wallet', async () => {
     const { result } = await connected();
-    a.getLeafOptimizationProgress.mockReturnValue({ isRunning: true, currentRound: 1, totalRounds: 2 });
-
-    await act(async () => { await result.current.payLightningInvoice('lnbc-test'); });
-
-    expect(a.cancelLeafOptimization).toHaveBeenCalledTimes(1);
-    expect(a.cancelLeafOptimization.mock.invocationCallOrder[0]).toBeLessThan(a.sendPayment.mock.invocationCallOrder[0]);
+    const storage = require('../../services/exitStorage');
+    storage.assertNoActiveExit.mockRejectedValueOnce(new Error('A unilateral exit is in progress.'));
+    await expect(result.current.payLightningInvoice('lnbc-test')).rejects.toThrow('unilateral exit');
+    expect(a.sendPayment).not.toHaveBeenCalled();
 });
 
 it('prevents switching and duplicate sends while a payment is outstanding', async () => {

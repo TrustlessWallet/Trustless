@@ -789,6 +789,12 @@ const SettingsScreen = () => {
 
         <View style={styles.section}>
           <Text style={styles.section_title}>Danger Zone</Text>
+          {activeWallet?.type !== 'watch-only' && activeWallet && (
+            <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('UnilateralExit')}>
+              <Text style={styles.row_label}>Unilateral exit &amp; recovery</Text>
+              <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.button_container}
             onPress={handle_reset}

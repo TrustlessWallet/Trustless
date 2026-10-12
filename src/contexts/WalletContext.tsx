@@ -13,6 +13,8 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import * as breezSdk from '@breeztech/breez-sdk-spark-react-native';
 import * as FileSystem from 'expo-file-system';
 import { LightningLifecycle, SingleFlight, withDeadline } from '../services/lightningSession';
+import { assertNoActiveExit, loadExit } from '../services/exitStorage';
+import type { RunExit } from '../services/unilateralExit';
 
 import { Wallet, DerivedAddress, BitcoinAddress, LightningTransaction } from '../types';
 import {
@@ -22,7 +24,7 @@ import {
     inferScriptType,
     fetchAddressInfoBatch
 } from '../services/bitcoin';
-import { NETWORK, DERIVATION_PARENT_PATH, NETWORK_NAME } from '../constants/network';
+import { NETWORK, DERIVATION_PARENT_PATH, NETWORK_NAME, IS_TESTNET } from '../constants/network';
 import {
     dbGetWallets, dbCreateWallet, dbDeleteWallet, dbUpdateWalletName,
     dbGetDerivedAddresses, dbGetAddressCache, dbSaveAddress,
@@ -140,6 +142,7 @@ interface ActiveWallet extends Wallet {
 }
 
 interface WalletContextType {
+    runLightningRecovery: RunExit;
     wallets: Wallet[];
     activeWallet: ActiveWallet | null;
     loading: boolean;
@@ -230,6 +233,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
     const lightningInitVersionRef = useRef(0);
     const sdkRef = useRef<LightningSdk | null>(null);
+    const recoveryModeRef = useRef(false);
     const listenerRef = useRef<string | null>(null);
     const readyRef = useRef(false);
     const sdkWalletIdRef = useRef<string | null>(null);
@@ -400,7 +404,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // An invoice belongs to the synchronized Spark wallet state. Creating it
         // while an imported wallet is still restoring can leave its receive claim
         // behind the initial sync.
-        if (isLightningInitialized && lightningLastSyncedAt && !lightningSyncing && !defaultLightningInvoice) {
+        if (!recoveryModeRef.current && isLightningInitialized && lightningLastSyncedAt && !lightningSyncing && !defaultLightningInvoice) {
             getLightningInvoice(0)
                 .then(invoice => {
                     if (isMounted && version === lightningInitVersionRef.current) setDefaultLightningInvoice(invoice);
@@ -414,6 +418,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [isLightningInitialized, lightningLastSyncedAt, lightningSyncing, defaultLightningInvoice, activeWallet?.id]);
 
     const refreshLightningState = (forceSync = false): Promise<void> => {
+        if (recoveryModeRef.current) forceSync = false;
         const sdk = sdkRef.current;
         const version = lightningInitVersionRef.current;
         lightningTrace(lightningTraceContext(), 'refresh.request', { forceSync, connected: !!sdk, historyLimit: historyLimitRef.current });
@@ -447,7 +452,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const address = await traceLightningStep(lightningTraceContext(), 'sdk.getLightningAddress', () => sdk.getLightningAddress(), value => ({ hasAddress: !!value?.lightningAddress }));
             if (current()) setLightningAddress(address?.lightningAddress || '');
         }), 'Reading Lightning address');
-        void readAddress().catch(error => console.warn('Lightning address lookup failed:', error));
+        if (!recoveryModeRef.current) void readAddress().catch(error => console.warn('Lightning address lookup failed:', error));
         // Each stream independently performs a trailing read. A payment event may
         // arrive while a previous read is in flight; sharing only that old read
         // could otherwise lose the event's newer state.
@@ -523,7 +528,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await traceLightningStep(lightningTraceContext(), 'lifecycle.dispose', () => withDeadline(lifecycleRef.current.dispose(sdk || undefined), 'Disconnecting Lightning', 15000));
     };
 
-    const initLightningNode = (mnemonic: string, walletId: string, initVersion: number): Promise<void> => {
+    const initLightningNode = (mnemonic: string, walletId: string, initVersion: number, forceRecovery = false): Promise<void> => {
         lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'init.request', { stale: initVersion !== lightningInitVersionRef.current || activeWalletIdRef.current !== walletId, joiningExistingInit: !!initializationRef.current });
         if (initVersion !== lightningInitVersionRef.current || activeWalletIdRef.current !== walletId) return Promise.resolve();
         if (initializationRef.current) return initializationRef.current;
@@ -535,7 +540,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const apiKey = process.env.EXPO_PUBLIC_BREEZ_API_KEY;
                 if (!apiKey) throw new Error('Missing EXPO_PUBLIC_BREEZ_API_KEY at runtime');
                 const sdk = await withDeadline(lifecycleRef.current.replace(async () => {
-                    const config = breezSdk.defaultConfig(breezSdk.Network.Mainnet);
+                    const storedExit = await loadExit(walletId);
+                    recoveryModeRef.current = forceRecovery || (!!storedExit && storedExit.phase !== 'done');
+                    const config = recoveryModeRef.current
+                        ? breezSdk.defaultServerConfig(breezSdk.Network.Mainnet)
+                        : breezSdk.defaultConfig(breezSdk.Network.Mainnet);
                     config.apiKey = apiKey;
                     config.privateEnabledDefault = true;
                     config.maxDepositClaimFee = new breezSdk.MaxFee.NetworkRecommended({ leewaySatPerVbyte: BigInt(1) });
@@ -664,35 +673,58 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const getLightningInvoice = useCallback(async (amountSats: number) => {
         const { sdk, assertCurrent } = requireLightningSession();
+        await assertNoActiveExit(activeWalletIdRef.current || undefined);
+        assertCurrent();
         const req = await withDeadline(traceLightningStep(lightningTraceContext(), 'sdk.receivePayment', () => sdk.receivePayment({
             paymentMethod: breezSdk.ReceivePaymentMethod.Bolt11Invoice.new({
                 description: "Send to Trustless Wallet",
                 amountSats: amountSats > 0 ? BigInt(amountSats) : undefined,
                 expirySecs: undefined,
                 paymentHash: undefined,
+                receiverIdentityPublicKey: undefined,
             })
         })), 'Generating Lightning invoice');
         assertCurrent();
         return req.paymentRequest;
     }, []);
 
-    const makeLightningLeavesAvailable = async (sdk: LightningSdk) => {
+    const runLightningRecovery: RunExit = async (operation, recoveryOnly = false) => {
+        if (IS_TESTNET) throw new Error('Unilateral recovery currently supports Bitcoin mainnet only.');
+        let { sdk, assertCurrent } = requireLightningSession();
+        if (!activeWallet || activeWallet.type === 'watch-only') throw new Error('Open a signing wallet first.');
+        if (paymentInFlightRef.current) throw new Error('Another wallet operation is running.');
+        paymentInFlightRef.current = true;
         try {
-            const progress = sdk.getLeafOptimizationProgress();
-            lightningTrace(lightningTraceContext(), 'sdk.getLeafOptimizationProgress', {
-                isRunning: progress.isRunning,
-                currentRound: progress.currentRound,
-                totalRounds: progress.totalRounds,
-            });
-            if (!progress.isRunning) return;
-            // Automatic optimization temporarily reserves the leaves it is
-            // swapping. Breez provides this method specifically to release
-            // those leaves before an interactive payment.
-            await traceLightningStep(lightningTraceContext(), 'sdk.cancelLeafOptimization', () => sdk.cancelLeafOptimization());
-        } catch (error) {
-            // Keep the actual send as the authority: a diagnostic/cancellation
-            // failure must not replace its result with a secondary error.
-            void error;
+            const wallet = activeWallet;
+            if (recoveryOnly && !recoveryModeRef.current) {
+                const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${wallet.id}` });
+                if (!credentials) throw new Error('Wallet credentials are unavailable.');
+                const version = ++lightningInitVersionRef.current;
+                resetLightningState();
+                setIsLightningInitialized(false);
+                await disposeActiveLightningNode();
+                await initLightningNode(credentials.password, wallet.id, version, true);
+                ({ sdk, assertCurrent } = requireLightningSession());
+            }
+            const root = await getRootNode(wallet);
+            assertCurrent();
+            return await operation({ sdk, wallet, root, assertCurrent });
+        } finally {
+            try {
+                const saved = await loadExit(activeWallet.id);
+                if (recoveryModeRef.current && (!saved || saved.phase === 'done')) {
+                    const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${activeWallet.id}` });
+                    if (!credentials) throw new Error('Wallet credentials are unavailable.');
+                    const version = ++lightningInitVersionRef.current;
+                    resetLightningState();
+                    setIsLightningInitialized(false);
+                    await disposeActiveLightningNode();
+                    await initLightningNode(credentials.password, activeWallet.id, version);
+                }
+            } finally {
+                paymentInFlightRef.current = false;
+                void refreshLightningState(!recoveryModeRef.current).catch(() => {});
+            }
         }
     };
 
@@ -702,6 +734,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         paymentInFlightRef.current = true;
         let completedPayment = false;
         try {
+            await assertNoActiveExit(activeWalletIdRef.current || undefined);
+            assertCurrent();
             const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
             const parsed = await withDeadline(traceLightningStep(lightningTraceContext(), 'sdk.parse', () => sdk.parse(cleanStr)), 'Reading Lightning payment');
             assertCurrent();
@@ -712,8 +746,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     amount: amountSats && amountSats > 0 ? BigInt(amountSats) : undefined,
                     tokenIdentifier: undefined, conversionOptions: undefined, feePolicy: undefined,
                 })), 'Preparing Lightning payment');
-                assertCurrent();
-                await makeLightningLeavesAvailable(sdk);
                 assertCurrent();
                 // Let the SDK validate the live spendable balance and route. The
                 // displayed balance is a cache and cannot authorize/reject a send.
@@ -727,8 +759,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     comment: undefined, validateSuccessActionUrl: undefined, tokenIdentifier: undefined,
                     conversionOptions: undefined, feePolicy: undefined,
                 })), 'Preparing Lightning payment');
-                assertCurrent();
-                await makeLightningLeavesAvailable(sdk);
                 assertCurrent();
                 const response = await traceLightningStep(lightningTraceContext(), 'sdk.lnurlPay', () => sdk.lnurlPay({ prepareResponse: quote, idempotencyKey: uuidv4() }), value => ({ status: value.payment.status, paymentType: value.payment.paymentType }));
                 payment = response.payment;
@@ -761,6 +791,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     const estimateLightningFee = useCallback(async (invoiceStr: string, amountSats?: number): Promise<number | null> => {
+        if (paymentInFlightRef.current || recoveryModeRef.current) return null;
         try {
             const { sdk, assertCurrent } = requireLightningSession();
             const cleanStr = invoiceStr.replace(/^lightning:/i, '').trim();
@@ -872,6 +903,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         paymentInFlightRef.current = true;
         try {
+            await assertNoActiveExit(activeWalletIdRef.current || undefined);
             assertCurrent();
             const options = new breezSdk.SendPaymentOptions.BitcoinAddress({
                 confirmationSpeed: speed
@@ -1484,6 +1516,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const removeWallet = async (walletId: string) => {
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
+        await assertNoActiveExit(walletId);
         await dbDeleteWallet(walletId);
         await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
 
@@ -1519,6 +1552,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     const resetWallet = async () => {
+        await assertNoActiveExit();
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
         activeWalletIdRef.current = null;
         ++lightningInitVersionRef.current;
@@ -1545,6 +1579,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         recipient: string, amount: number, utxos: any[], feeRate: number
     ): Promise<{ txHex: string | null; usedChangeIndex: number | null }> => {
         if (!activeWallet) throw new Error("No active wallet.");
+        if (paymentInFlightRef.current) throw new Error("Another wallet operation is running.");
+        await assertNoActiveExit(activeWallet.id);
         if (activeWallet.type === 'watch-only') throw new Error("Watch-only wallets cannot sign transactions.");
 
         const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${activeWallet.id}` });
@@ -1738,6 +1774,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         checkLightningAddressAvailable,
         registerLightningAddress,
         getLightningInvoice,
+        runLightningRecovery,
         payLightningInvoice,
         estimateLightningFee,
         getLightningTopUpAddress,

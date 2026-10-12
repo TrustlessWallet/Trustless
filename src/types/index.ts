@@ -120,6 +120,7 @@ export type RootStackParamList = {
   ImportWatchOnly: undefined;
   LightningTopUp: undefined;
   WithdrawToOnchain: undefined;
+  UnilateralExit: undefined;
   Send: {
     selectedAddress?: string; mode?: 'onchain' | 'lightning'; prefill?: string;
     autoConfirm?: boolean;
