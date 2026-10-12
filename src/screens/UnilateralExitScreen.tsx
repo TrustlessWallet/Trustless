@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -41,14 +42,28 @@ export function UnilateralExitScreen() {
     const [exported, setExported] = useState(false);
     const styles = StyleSheet.create({
         page: { flex: 1, backgroundColor: theme.colors.background },
-        content: { padding: 20, gap: 16, paddingBottom: 50 },
-        card: { padding: 16, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 14, gap: 12 },
-        title: { fontSize: 19, fontWeight: '600', color: theme.colors.primary },
-        body: { color: theme.colors.primary, lineHeight: 22 },
-        input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, padding: 12, color: theme.colors.primary },
-        button: { backgroundColor: theme.colors.primary, padding: 14, borderRadius: 10, alignItems: 'center' },
+        content: { padding: 20, gap: 20, paddingBottom: 50 },
+        card: { padding: 20, backgroundColor: theme.colors.surface, borderRadius: 20, gap: 16 },
+        title: { fontSize: 20, fontWeight: '600', color: theme.colors.primary },
+        body: { color: theme.colors.muted, fontSize: 14, lineHeight: 22 },
+        input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 14, minHeight: 50, backgroundColor: theme.colors.background, color: theme.colors.primary },
+        button: { backgroundColor: theme.colors.primary, padding: 16, minHeight: 52, borderRadius: 14, alignItems: 'center' },
         label: { color: theme.colors.inversePrimary, fontWeight: '600' },
-        error: { color: theme.colors.primary, lineHeight: 22 },
+        error: { color: theme.colors.error, lineHeight: 22, padding: 16, borderRadius: 12, backgroundColor: theme.colors.surface },
+        hero: { alignItems: 'center', gap: 12, paddingVertical: 12 },
+        heroIcon: { backgroundColor: theme.colors.surface, padding: 18, borderRadius: 24 },
+        heroTitle: { fontSize: 27, fontWeight: '700', color: theme.colors.primary, textAlign: 'center' },
+        sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+        fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.primary },
+        amountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 16 },
+        amountLabel: { flex: 1, color: theme.colors.muted, fontSize: 14 },
+        amountValue: { color: theme.colors.primary, fontWeight: '600', fontSize: 14 },
+        quote: { backgroundColor: theme.colors.background, borderRadius: 14, padding: 16, gap: 14 },
+        selectedCoin: { borderColor: theme.colors.primary, borderWidth: 2 },
+        transaction: { backgroundColor: theme.colors.background, padding: 14, borderRadius: 12, gap: 8 },
+        txid: { fontFamily: 'monospace', fontSize: 12, lineHeight: 18, color: theme.colors.muted },
+        status: { color: theme.colors.primary, fontWeight: '600', fontSize: 13 },
+        checkbox: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
     });
     const usable = loaded && isLightningInitialized && !IS_TESTNET && activeWallet?.type !== 'watch-only';
     const execute = async (task: () => Promise<void>, allowOffline = false) => {
@@ -92,7 +107,9 @@ export function UnilateralExitScreen() {
         return () => { clearInterval(interval); subscription.remove(); };
     }, [focused, usable, activeWallet?.id]);
 
-    const button = (label: string, action: () => void, enabled = true) => <TouchableOpacity accessibilityRole="button" disabled={busy || !enabled} style={[styles.button, (busy || !enabled) && { opacity: 0.4 }]} onPress={action}><Text style={styles.label}>{label}</Text></TouchableOpacity>;
+    const button = (label: string, action: () => void, enabled = true) => <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: busy || !enabled }} disabled={busy || !enabled} style={[styles.button, (busy || !enabled) && { opacity: 0.4 }]} onPress={action}><Text style={styles.label}>{label}</Text></TouchableOpacity>;
+    const sectionHeading = (icon: React.ComponentProps<typeof Feather>['name'], title: string) => <View style={styles.sectionHeading}><Feather name={icon} size={20} color={theme.colors.primary} /><Text style={[styles.title, { flex: 1 }]}>{title}</Text></View>;
+    const amountRow = (label: string, value: bigint) => <View style={styles.amountRow}><Text style={styles.amountLabel}>{label}</Text><Text style={styles.amountValue}>{value.toLocaleString()} sats</Text></View>;
     const changeConfig = (next: Broadcaster) => { setConfig(next); setConnection(''); };
     const review = () => execute(async () => {
         const next = await runRef.current(async access => {
@@ -149,7 +166,11 @@ export function UnilateralExitScreen() {
     });
 
     return <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Unilateral exit &amp; recovery</Text>
+        <View style={styles.hero}>
+            <View style={styles.heroIcon}><Feather name="shield" size={30} color={theme.colors.primary} /></View>
+            <Text style={styles.heroTitle}>Recover your Lightning funds</Text>
+            <Text style={[styles.body, { textAlign: 'center' }]}>An independent path back to Bitcoin.</Text>
+        </View>
         <Text style={styles.body}>Recover this wallet’s Spark funds to Bitcoin without operator approval. This can take days and requires separate on-chain funds for mining fees. Normal withdrawal is usually cheaper and faster. During recovery, do not use this wallet in another app or spend its fee-funding output.</Text>
         {!record && button('Normal withdrawal', () => navigation.navigate('WithdrawToOnchain'), usable)}
         {IS_TESTNET && <Text style={styles.body}>This recovery flow supports mainnet only. The app’s Bitcoin testnet setting is not Spark regtest.</Text>}
@@ -157,24 +178,36 @@ export function UnilateralExitScreen() {
         {busy && <ActivityIndicator color={theme.colors.primary} />}
         {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
         <View style={styles.card}>
-            <Text style={styles.title}>Package broadcaster</Text>
+            {sectionHeading('server', 'Package broadcaster')}
             <Text style={styles.body}>Enter your HTTPS Bitcoin Core RPC or Alchemy Bitcoin mainnet URL. Alchemy format: https://bitcoin-mainnet.g.alchemy.com/v2/YOUR_API_KEY</Text>
+            <Text style={styles.fieldLabel}>HTTPS RPC URL</Text>
             <TextInput accessibilityLabel="Broadcaster URL" style={styles.input} value={config.url} onChangeText={url => changeConfig({ ...config, url })} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="HTTPS RPC URL" placeholderTextColor={theme.colors.muted} editable={!busy} />
+            <Text style={styles.fieldLabel}>Username (optional)</Text>
             <TextInput accessibilityLabel="RPC username" style={styles.input} value={config.username} onChangeText={username => changeConfig({ ...config, username })} autoCapitalize="none" placeholder="RPC username (optional)" placeholderTextColor={theme.colors.muted} editable={!busy} />
+            <Text style={styles.fieldLabel}>Password (optional)</Text>
             <TextInput accessibilityLabel="RPC password" style={styles.input} value={config.password} onChangeText={password => changeConfig({ ...config, password })} secureTextEntry placeholder="RPC password (optional)" placeholderTextColor={theme.colors.muted} editable={!busy} />
             {button('Test and save broadcaster', () => execute(async () => { await testBroadcaster(config); await saveBroadcaster(config); setConnection('Mainnet connection and package submission method verified.'); }, true), !!config.url)}
             {!!connection && <Text style={styles.body}>{connection}</Text>}
         </View>
         {!record || record.phase === 'redo' || record.phase === 'building' ? <View style={styles.card}>
-            <Text style={styles.title}>{record ? 'Rebuild remaining exit' : 'Review recovery'}</Text>
+            {sectionHeading('sliders', record ? 'Rebuild remaining exit' : 'Review recovery')}
+            <Text style={styles.fieldLabel}>Bitcoin destination</Text>
             <TextInput accessibilityLabel="Bitcoin destination" style={styles.input} value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); }} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" placeholderTextColor={theme.colors.muted} />
-            <Text>Fee rate (sat/vB)</Text>
+            <Text style={styles.fieldLabel}>Fee rate (sat/vB)</Text>
             <TextInput accessibilityLabel="Exit fee rate" style={styles.input} value={fee} onChangeText={text => { setFee(text); setQuote(null); }} keyboardType="number-pad" editable={!busy} />
             {button('Get recovery quote', () => { void review(); }, usable)}
             {quote && <>
-                <Text style={styles.body}>Recoverable: {quote.recoverableValueSat.toString()} sats{'\n'}Total mining fees: {quote.totalFeeSat.toString()} sats{'\n'}Package fees: {quote.cpfpFeeSat.toString()} sats{'\n'}Funding split fee: {quote.fanoutFeeSat.toString()} sats{'\n'}Final sweep fee: {quote.sweepFeeSat.toString()} sats{'\n'}Required separate funding: {quote.singleUtxoFundingSat.toString()} sats{'\n'}Selected portions: {quote.leaves.length}</Text>
+                <View style={styles.quote}>
+                    {amountRow('Recoverable balance', quote.recoverableValueSat)}
+                    {amountRow('Total mining fees', quote.totalFeeSat)}
+                    {amountRow('Package fees', quote.cpfpFeeSat)}
+                    {amountRow('Funding split fee', quote.fanoutFeeSat)}
+                    {amountRow('Final sweep fee', quote.sweepFeeSat)}
+                    {amountRow('Separate funding needed', quote.singleUtxoFundingSat)}
+                    <Text style={styles.body}>{quote.leaves.length} selected portions</Text>
+                </View>
                 <Text style={styles.body}>Choose one confirmed native SegWit output from this wallet to fund the fees. Unspent funding returns to the destination.</Text>
-                {coins.map(c => <TouchableOpacity key={`${c.txid}:${c.vout}`} disabled={busy || (!record && BigInt(c.value) < quote.singleUtxoFundingSat)} onPress={() => setCoin(c)} style={styles.input}>
+                {coins.map(c => <TouchableOpacity key={`${c.txid}:${c.vout}`} disabled={busy || (!record && BigInt(c.value) < quote.singleUtxoFundingSat)} accessibilityRole="radio" accessibilityState={{ checked: coin?.txid === c.txid && coin.vout === c.vout }} onPress={() => setCoin(c)} style={[styles.input, coin?.txid === c.txid && coin.vout === c.vout && styles.selectedCoin]}>
                     <Text>{coin?.txid === c.txid && coin.vout === c.vout ? '✓ ' : ''}{c.value} sats · {c.txid.slice(0, 10)}…:{c.vout}</Text>
                 </TouchableOpacity>)}
                 {!coins.length && <Text style={styles.body}>No eligible confirmed output found. Receive on-chain funds into this wallet, then request a new quote.</Text>}
@@ -185,18 +218,18 @@ export function UnilateralExitScreen() {
             </>}
         </View> : null}
         {record && <View style={styles.card}>
-            <Text style={styles.title}>{record.phase === 'done' ? 'Recovery completed' : 'Recovery progress'}</Text>
+            {sectionHeading(record.phase === 'done' ? 'check-circle' : 'clock', record.phase === 'done' ? 'Recovery completed' : 'Recovery progress')}
             <Text selectable style={styles.body}>Destination: {record.destination}</Text>
             {!!record.reason && <Text style={styles.body}>{record.reason}</Text>}
             {record.phase === 'building' && <Text style={styles.body}>Build was interrupted. Re-quote and build using the saved funding and original leaves.</Text>}
-            {record.response?.transactions.map(tx => <View key={tx.txid}>
-                <Text selectable style={styles.body}>{tx.txid}</Text>
-                <Text style={styles.body}>{tx.status.tag === 'Confirmed' ? 'Confirmed' : tx.status.tag === 'Ready' ? 'Ready to broadcast' : tx.status.tag === 'WaitingForDependencies' ? 'Waiting for earlier confirmations' : tx.status.tag === 'WaitingForTimelock' ? `Waiting for timelock${tx.status.inner.spendableAtHeight ? ` · block ${tx.status.inner.spendableAtHeight}` : ''}` : 'Chain status could not be verified'}</Text>
+            {record.response?.transactions.map(tx => <View key={tx.txid} style={styles.transaction}>
+                <Text selectable style={styles.txid}>{tx.txid}</Text>
+                <Text style={styles.status}>{tx.status.tag === 'Confirmed' ? 'Confirmed' : tx.status.tag === 'Ready' ? 'Ready to broadcast' : tx.status.tag === 'WaitingForDependencies' ? 'Waiting for earlier confirmations' : tx.status.tag === 'WaitingForTimelock' ? `Waiting for timelock${tx.status.inner.spendableAtHeight ? ` · block ${tx.status.inner.spendableAtHeight}` : ''}` : 'Chain status could not be verified'}</Text>
             </View>)}
             {button('Check progress', () => execute(async () => { setRecord(await runRef.current(access => checkExit(access, record))); }), usable && !!record.response)}
             <Text style={styles.body}>Reopen this screen regularly to broadcast newly ready steps. iOS cannot guarantee continuous background execution. Keep your backup until the destination funds confirm.</Text>
             {record.phase !== 'done' && <>
-                <TouchableOpacity disabled={!exported || busy} onPress={() => setBackupSaved(!backupSaved)}><Text style={styles.body}>{backupSaved ? '☑' : '☐'} I saved the encrypted backup outside this app.</Text></TouchableOpacity>
+                <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: backupSaved, disabled: !exported || busy }} style={[styles.checkbox, !exported && { opacity: 0.5 }]} disabled={!exported || busy} onPress={() => setBackupSaved(!backupSaved)}><Feather name={backupSaved ? 'check-square' : 'square'} size={22} color={theme.colors.primary} /><Text style={[styles.body, { flex: 1 }]}>I saved the encrypted backup outside this app.</Text></TouchableOpacity>
                 <Text style={styles.body}>You can also export ready packages for another broadcaster. That file is unencrypted and allows anyone holding it to broadcast these signed transactions.</Text>
                 {button('Export ready packages', () => { void exportPackages(); }, usable && backupSaved && record.phase === 'active')}
                 {button('Broadcast ready steps', () => Alert.alert('Start or continue exit?', 'Ready transactions will be sent to your configured broadcaster. Confirmed steps cannot be undone.', [
@@ -208,8 +241,9 @@ export function UnilateralExitScreen() {
             </>}
         </View>}
         <View style={styles.card}>
-            <Text style={styles.title}>Encrypted recovery backup</Text>
+            {sectionHeading('lock', 'Recovery backup')}
             <Text style={styles.body}>Save the signed exit and recovery data somewhere outside this phone. Your seed alone does not replace this data if operators are unavailable. Keep the backup password separately.</Text>
+            <Text style={styles.fieldLabel}>Backup password</Text>
             <TextInput accessibilityLabel="Backup password" style={styles.input} secureTextEntry value={password} onChangeText={setPassword} placeholder="At least 12 characters" placeholderTextColor={theme.colors.muted} editable={!busy} />
             {record ? button('Export encrypted backup', () => { void exportBackup(); }, password.length >= 12) : button('Import encrypted backup', () => { void importBackup(); }, usable && password.length >= 12)}
         </View>
