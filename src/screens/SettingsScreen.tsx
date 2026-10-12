@@ -790,9 +790,13 @@ const SettingsScreen = () => {
         <View style={styles.section}>
           <Text style={styles.section_title}>Danger Zone</Text>
           {activeWallet?.type !== 'watch-only' && activeWallet && (
-            <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('UnilateralExit')}>
-              <Text style={styles.row_label}>Unilateral exit &amp; recovery</Text>
-              <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            <TouchableOpacity accessibilityRole="button" style={[styles.button_container, { marginBottom: 12 }]} onPress={() => navigation.navigate('UnilateralExit')}>
+              <View style={styles.button}>
+                <View style={styles.button_content_row_centered}>
+                  <Feather name="log-out" size={16} color={theme.colors.inversePrimary} />
+                  <Text style={styles.button_text}>Unilateral exit &amp; recovery</Text>
+                </View>
+              </View>
             </TouchableOpacity>
           )}
           <TouchableOpacity

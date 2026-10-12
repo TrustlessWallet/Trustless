@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Clipboard } from 'react-native';
+import React, { useState, useMemo, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Text } from '../components/StyledText';
+import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -8,6 +9,7 @@ import { Theme } from '../constants/theme';
 import { AddressText } from '../components/AddressText';
 
 const DONATION_ADDRESS = 'bc1q835gw6aqf6jmgs5pja5xf5xzcp76w75cqfvek6';
+const LIGHTNING_DONATION_ADDRESS = 'trustless@pay.hd-apps.com';
 const QR_SIZE = 220;
 
 const SupportScreen = () => {
@@ -15,10 +17,18 @@ const SupportScreen = () => {
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
   const [copied, setCopied] = useState(false);
 
-  const copyToClipboard = () => {
-    Clipboard.setString(DONATION_ADDRESS);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const [method, setMethod] = useState<'bitcoin' | 'lightning'>('bitcoin');
+  const donationAddress = method === 'lightning' ? LIGHTNING_DONATION_ADDRESS : DONATION_ADDRESS;
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const copyToClipboard = async () => {
+    try {
+      await Clipboard.setStringAsync(donationAddress);
+      setCopied(true);
+    } catch { Alert.alert('Unable to copy', 'Please select and copy the address below.'); }
   };
 
   return (
@@ -51,9 +61,20 @@ const SupportScreen = () => {
 
       <Text style={styles.heading}>Donate</Text>
       <Text style={styles.paragraph}>
-        If you are able, you can donate to the bitcoin address below to support the open source development. Thank you!
+        If you are able, you can donate with Bitcoin or Lightning below to support the open source development. Thank you!
       </Text>
 
+      <View style={styles.methodSelector} accessibilityRole="tablist">
+        {(['bitcoin', 'lightning'] as const).map(option => (
+          <TouchableOpacity key={option} accessibilityRole="tab" accessibilityState={{ selected: method === option }}
+            style={[styles.methodTab, method === option && styles.selectedTab]}
+            onPress={() => { setMethod(option); setCopied(false); }}>
+            <Feather name={option === 'lightning' ? 'zap' : 'link'} size={18} color={method === option ? theme.colors.inversePrimary : theme.colors.primary} />
+            <Text style={[styles.methodLabel, method === option && { color: theme.colors.inversePrimary }]}>{option === 'lightning' ? 'Lightning' : 'Bitcoin'}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={styles.donationHint}>{method === 'lightning' ? 'Send sats instantly to our Lightning address.' : 'Donate directly on the Bitcoin network.'}</Text>
       <View style={styles.qrContainer}>
         {copied && (
           <View style={styles.copiedOverlay}>
@@ -63,7 +84,7 @@ const SupportScreen = () => {
         )}
         <TouchableOpacity style={styles.qrCodeWrapper} onPress={copyToClipboard} activeOpacity={0.8}>
           <QRCode 
-            value={DONATION_ADDRESS} 
+            value={method === 'lightning' ? `lightning:${LIGHTNING_DONATION_ADDRESS}` : DONATION_ADDRESS}
             size={QR_SIZE} 
             backgroundColor={theme.colors.background} 
             color={theme.colors.primary} 
@@ -71,14 +92,16 @@ const SupportScreen = () => {
         </TouchableOpacity>
         
         <TouchableOpacity onPress={copyToClipboard}>
-            <AddressText style={styles.addressText} address={DONATION_ADDRESS} />
+            {method === 'lightning'
+              ? <Text selectable style={styles.addressText}>{LIGHTNING_DONATION_ADDRESS}</Text>
+              : <AddressText style={styles.addressText} address={DONATION_ADDRESS} />}
         </TouchableOpacity>
       </View>
 
       <View style={styles.actionsContainer}>
-        <TouchableOpacity style={styles.actionButton} onPress={copyToClipboard}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Copy donation address" style={styles.actionButton} onPress={copyToClipboard}>
           <Feather name="copy" size={20} color={theme.colors.inversePrimary} />
-          <Text style={styles.actionButtonText}>Copy Address</Text>
+          <Text style={styles.actionButtonText}>{copied ? 'Copied!' : 'Copy address'}</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -86,6 +109,11 @@ const SupportScreen = () => {
 };
 
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
+  methodSelector: { flexDirection: 'row', padding: 4, borderRadius: 14, backgroundColor: theme.colors.surface, marginBottom: 12 },
+  methodTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 10 },
+  selectedTab: { backgroundColor: theme.colors.primary },
+  methodLabel: { color: theme.colors.primary, fontWeight: '600' },
+  donationHint: { color: theme.colors.muted, textAlign: 'center', lineHeight: 22, marginBottom: 16 },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
