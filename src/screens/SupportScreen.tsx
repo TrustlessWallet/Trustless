@@ -93,7 +93,10 @@ const SupportScreen = () => {
         
         <TouchableOpacity onPress={copyToClipboard}>
             {method === 'lightning'
-              ? <Text selectable style={styles.addressText}>{LIGHTNING_DONATION_ADDRESS}</Text>
+              ? <Text selectable style={styles.lightningAddressText}>
+                  <Text style={{ fontWeight: 'bold', color: theme.colors.bitcoin }}>{LIGHTNING_DONATION_ADDRESS.split('@')[0]}</Text>
+                  <Text style={{ fontWeight: 'bold', color: theme.colors.primary }}>@{LIGHTNING_DONATION_ADDRESS.split('@').slice(1).join('@')}</Text>
+                </Text>
               : <AddressText style={styles.addressText} address={DONATION_ADDRESS} />}
         </TouchableOpacity>
       </View>
@@ -203,6 +206,13 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     fontSize: 20, 
     fontWeight: 'bold', 
     color: theme.colors.primary 
+  },
+  lightningAddressText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 24,
+    paddingHorizontal: 16,
   },
   addressText: { 
     fontFamily: 'monospace', 
