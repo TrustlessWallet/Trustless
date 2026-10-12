@@ -42,7 +42,7 @@ export function UnilateralExitScreen() {
     const [exported, setExported] = useState(false);
     const styles = StyleSheet.create({
         page: { flex: 1, backgroundColor: theme.colors.background },
-        content: { padding: 20, gap: 20, paddingBottom: 50 },
+        content: { paddingTop: 20, paddingBottom: 100, paddingHorizontal: 20, gap: 20, },
         card: { padding: 20, backgroundColor: theme.colors.surface, borderRadius: 20, gap: 16 },
         title: { fontSize: 20, fontWeight: '600', color: theme.colors.primary },
         body: { color: theme.colors.muted, fontSize: 14, lineHeight: 22 },
@@ -51,7 +51,6 @@ export function UnilateralExitScreen() {
         label: { color: theme.colors.inversePrimary, fontWeight: '600' },
         error: { color: theme.colors.error, lineHeight: 22, padding: 16, borderRadius: 12, backgroundColor: theme.colors.surface },
         hero: { alignItems: 'center', gap: 12, paddingVertical: 12 },
-        heroIcon: { backgroundColor: theme.colors.surface, padding: 18, borderRadius: 24 },
         heroTitle: { fontSize: 27, fontWeight: '700', color: theme.colors.primary, textAlign: 'center' },
         sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
         fieldLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.primary },
@@ -167,8 +166,7 @@ export function UnilateralExitScreen() {
 
     return <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.hero}>
-            <View style={styles.heroIcon}><Feather name="shield" size={30} color={theme.colors.primary} /></View>
-            <Text style={styles.heroTitle}>Recover your Lightning funds</Text>
+            <Text style={styles.heroTitle}>Lightning Recovery</Text>
             <Text style={[styles.body, { textAlign: 'center' }]}>An independent path back to Bitcoin.</Text>
         </View>
         <Text style={styles.body}>Recover this wallet’s Spark funds to Bitcoin without operator approval. This can take days and requires separate on-chain funds for mining fees. Normal withdrawal is usually cheaper and faster. During recovery, do not use this wallet in another app or spend its fee-funding output.</Text>

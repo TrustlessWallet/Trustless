@@ -74,7 +74,7 @@ const SupportScreen = () => {
           </TouchableOpacity>
         ))}
       </View>
-      <Text style={styles.donationHint}>{method === 'lightning' ? 'Send sats instantly to our Lightning address.' : 'Donate directly on the Bitcoin network.'}</Text>
+      <Text style={styles.donationHint}>{method === 'lightning' ? 'Donate to our Lightning address.' : 'Donate directly on the Bitcoin network.'}</Text>
       <View style={styles.qrContainer}>
         {copied && (
           <View style={styles.copiedOverlay}>
