@@ -14,7 +14,7 @@ const TermsConditionsScreen = () => {
       </Text>
       <Text style={styles.heading}>2. Lightning Balance and Cooperative Withdrawal</Text>
       <Text style={styles.paragraph}>
-        Your Lightning balance is held using a Spark wallet, provided via Breez SDK. While your keys are never shared with Breez, the liquidity provider, or any other party, withdrawing or moving funds out of your Lightning balance requires the cooperation of the liquidity provider's servers to complete. This is different from your on-chain balance, which you can always move unilaterally with only your own keys. If the liquidity provider is unavailable, you may be temporarily unable to withdraw your Lightning balance. Nobody but you can access, move, or spend these funds; the cooperation requirement affects availability, not control.
+        Your Lightning balance uses Spark through Breez SDK. Normal payments and withdrawals require cooperation from the service. Unilateral exit is available as a last-resort recovery option in Settings. It requires saved recovery data, separate on-chain fee funding, a compatible transaction broadcaster, and waiting for confirmations and timelocks. Your seed alone may not be enough to recover during a service outage; keep an encrypted recovery backup. The developers cannot retrieve your keys or funds.
       </Text>
       <Text style={styles.heading}>3. Your Responsibilities</Text>
       <Text style={styles.paragraph}>

@@ -41,6 +41,7 @@ import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import { get_biometric_prompt_shown, set_biometric_prompt_shown } from '../services/authState';
 import { LightningTopUpScreen } from '../screens/LightningTopUpScreen';
+import { UnilateralExitScreen } from '../screens/UnilateralExitScreen';
 import { WithdrawToOnchainScreen } from '../screens/WithdrawToOnchainScreen';
 import { get_is_nfc_scanning, finish_nfc_scanning } from '../services/nfc';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
@@ -414,6 +415,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
           <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
+          <Stack.Screen name="UnilateralExit" component={UnilateralExitScreen} options={{ title: 'Unilateral exit & recovery' }} />
           <Stack.Screen name="WithdrawToOnchain" component={WithdrawToOnchainScreen} options={{ title: 'Withdraw to on-chain' }} />
           <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
           <Stack.Screen name="TransactionSuccess" component={TransactionSuccessScreen} options={{ headerShown: false }} />
