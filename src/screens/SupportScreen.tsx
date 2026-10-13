@@ -116,7 +116,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   methodTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 10 },
   selectedTab: { backgroundColor: theme.colors.primary },
   methodLabel: { color: theme.colors.primary, fontWeight: '600' },
-  donationHint: { color: theme.colors.muted, textAlign: 'center', lineHeight: 22, marginBottom: 16 },
+  donationHint: { color: theme.colors.muted, textAlign: 'center', lineHeight: 22, marginBottom: 8 },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
