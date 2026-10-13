@@ -794,7 +794,7 @@ const SettingsScreen = () => {
               <View style={styles.button}>
                 <View style={styles.button_content_row_centered}>
                   <Feather name="log-out" size={16} color={theme.colors.inversePrimary} />
-                  <Text style={styles.button_text}>Unilateral exit &amp; recovery</Text>
+                  <Text style={styles.button_text}>Unilateral exit</Text>
                 </View>
               </View>
             </TouchableOpacity>

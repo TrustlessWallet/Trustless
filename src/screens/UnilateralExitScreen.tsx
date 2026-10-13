@@ -47,7 +47,7 @@ export function UnilateralExitScreen() {
         title: { fontSize: 20, fontWeight: '600', color: theme.colors.primary },
         body: { color: theme.colors.muted, fontSize: 14, lineHeight: 22 },
         input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 14, minHeight: 50, backgroundColor: theme.colors.background, color: theme.colors.primary },
-        button: { backgroundColor: theme.colors.primary, padding: 16, minHeight: 52, borderRadius: 14, alignItems: 'center' },
+        button: { backgroundColor: theme.colors.primary, padding: 16, minHeight: 52, borderRadius: theme.LAYOUT.radius, alignItems: 'center' },
         label: { color: theme.colors.inversePrimary, fontWeight: '600' },
         error: { color: theme.colors.error, lineHeight: 22, padding: 16, borderRadius: 12, backgroundColor: theme.colors.surface },
         hero: { alignItems: 'center', gap: 12, paddingVertical: 12 },
