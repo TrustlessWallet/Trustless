@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { File, Paths } from 'expo-file-system';
@@ -7,7 +7,9 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import type { PrepareUnilateralExitResponse } from '@breeztech/breez-sdk-spark-react-native';
 import { Text } from '../components/StyledText';
+import { StyledInput } from '../components/StyledInput';
 import { useTheme } from '../contexts/ThemeContext';
+import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import { useWallet } from '../contexts/WalletContext';
 import { IS_TESTNET } from '../constants/network';
 import { authenticate_transaction_action } from '../services/authState';
@@ -21,6 +23,10 @@ export function UnilateralExitScreen() {
     const { activeWallet, isLightningInitialized, runLightningRecovery } = useWallet();
     const navigation = useNavigation<any>();
     const focused = useIsFocused();
+    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
+        basePaddingBottom: 100,
+        animateLayoutChanges: true,
+    });
     const runRef = useRef(runLightningRecovery); runRef.current = runLightningRecovery;
     const walletRef = useRef(activeWallet?.id); walletRef.current = activeWallet?.id;
     const working = useRef(false);
@@ -46,7 +52,6 @@ export function UnilateralExitScreen() {
         card: { padding: 20, backgroundColor: theme.colors.surface, borderRadius: 20, gap: 16 },
         title: { fontSize: 20, fontWeight: '600', color: theme.colors.primary },
         body: { color: theme.colors.muted, fontSize: 14, lineHeight: 22 },
-        input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 14, minHeight: 50, backgroundColor: theme.colors.background, color: theme.colors.primary },
         button: { backgroundColor: theme.colors.primary, padding: 16, minHeight: 52, borderRadius: theme.LAYOUT.radius, alignItems: 'center' },
         label: { color: theme.colors.inversePrimary, fontWeight: '600' },
         error: { color: theme.colors.error, lineHeight: 22, padding: 16, borderRadius: 12, backgroundColor: theme.colors.surface },
@@ -58,6 +63,7 @@ export function UnilateralExitScreen() {
         amountLabel: { flex: 1, color: theme.colors.muted, fontSize: 14 },
         amountValue: { color: theme.colors.primary, fontWeight: '600', fontSize: 14 },
         quote: { backgroundColor: theme.colors.background, borderRadius: 14, padding: 16, gap: 14 },
+        coin: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.LAYOUT.radius, padding: 14, minHeight: 50, backgroundColor: theme.colors.background, justifyContent: 'center' },
         selectedCoin: { borderColor: theme.colors.primary, borderWidth: 2 },
         transaction: { backgroundColor: theme.colors.background, padding: 14, borderRadius: 12, gap: 8 },
         txid: { fontFamily: 'monospace', fontSize: 12, lineHeight: 18, color: theme.colors.muted },
@@ -164,7 +170,7 @@ export function UnilateralExitScreen() {
         } finally { if (file.exists) file.delete(); }
     });
 
-    return <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    return <ScrollView ref={scrollViewRef} style={styles.page} contentContainerStyle={[styles.content, { paddingBottom }]} keyboardShouldPersistTaps="handled">
         <View style={styles.hero}>
             <Text style={styles.heroTitle}>Lightning Recovery</Text>
             <Text style={[styles.body, { textAlign: 'center' }]}>An independent path back to Bitcoin.</Text>
@@ -179,20 +185,20 @@ export function UnilateralExitScreen() {
             {sectionHeading('server', 'Package broadcaster')}
             <Text style={styles.body}>Enter your HTTPS Bitcoin Core RPC or Alchemy Bitcoin mainnet URL. Alchemy format: https://bitcoin-mainnet.g.alchemy.com/v2/YOUR_API_KEY</Text>
             <Text style={styles.fieldLabel}>HTTPS RPC URL</Text>
-            <TextInput accessibilityLabel="Broadcaster URL" style={styles.input} value={config.url} onChangeText={url => changeConfig({ ...config, url })} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="HTTPS RPC URL" placeholderTextColor={theme.colors.muted} editable={!busy} />
+            <StyledInput accessibilityLabel="Broadcaster URL" value={config.url} onChangeText={url => changeConfig({ ...config, url })} onFocus={handleInputFocus} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="HTTPS RPC URL" editable={!busy} />
             <Text style={styles.fieldLabel}>Username (optional)</Text>
-            <TextInput accessibilityLabel="RPC username" style={styles.input} value={config.username} onChangeText={username => changeConfig({ ...config, username })} autoCapitalize="none" placeholder="RPC username (optional)" placeholderTextColor={theme.colors.muted} editable={!busy} />
+            <StyledInput accessibilityLabel="RPC username" value={config.username} onChangeText={username => changeConfig({ ...config, username })} onFocus={handleInputFocus} autoCapitalize="none" placeholder="RPC username (optional)" editable={!busy} />
             <Text style={styles.fieldLabel}>Password (optional)</Text>
-            <TextInput accessibilityLabel="RPC password" style={styles.input} value={config.password} onChangeText={password => changeConfig({ ...config, password })} secureTextEntry placeholder="RPC password (optional)" placeholderTextColor={theme.colors.muted} editable={!busy} />
+            <StyledInput accessibilityLabel="RPC password" value={config.password} onChangeText={password => changeConfig({ ...config, password })} onFocus={handleInputFocus} secureTextEntry placeholder="RPC password (optional)" editable={!busy} />
             {button('Test and save broadcaster', () => execute(async () => { await testBroadcaster(config); await saveBroadcaster(config); setConnection('Mainnet connection and package submission method verified.'); }, true), !!config.url)}
             {!!connection && <Text style={styles.body}>{connection}</Text>}
         </View>
         {!record || record.phase === 'redo' || record.phase === 'building' ? <View style={styles.card}>
             {sectionHeading('sliders', record ? 'Rebuild remaining exit' : 'Review recovery')}
             <Text style={styles.fieldLabel}>Bitcoin destination</Text>
-            <TextInput accessibilityLabel="Bitcoin destination" style={styles.input} value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); }} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" placeholderTextColor={theme.colors.muted} />
+            <StyledInput accessibilityLabel="Bitcoin destination" value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); }} onFocus={handleInputFocus} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" />
             <Text style={styles.fieldLabel}>Fee rate (sat/vB)</Text>
-            <TextInput accessibilityLabel="Exit fee rate" style={styles.input} value={fee} onChangeText={text => { setFee(text); setQuote(null); }} keyboardType="number-pad" editable={!busy} />
+            <StyledInput accessibilityLabel="Exit fee rate" value={fee} onChangeText={text => { setFee(text); setQuote(null); }} onFocus={handleInputFocus} keyboardType="number-pad" editable={!busy} />
             {button('Get recovery quote', () => { void review(); }, usable)}
             {quote && <>
                 <View style={styles.quote}>
@@ -205,13 +211,13 @@ export function UnilateralExitScreen() {
                     <Text style={styles.body}>{quote.leaves.length} selected portions</Text>
                 </View>
                 <Text style={styles.body}>Choose one confirmed native SegWit output from this wallet to fund the fees. Unspent funding returns to the destination.</Text>
-                {coins.map(c => <TouchableOpacity key={`${c.txid}:${c.vout}`} disabled={busy || (!record && BigInt(c.value) < quote.singleUtxoFundingSat)} accessibilityRole="radio" accessibilityState={{ checked: coin?.txid === c.txid && coin.vout === c.vout }} onPress={() => setCoin(c)} style={[styles.input, coin?.txid === c.txid && coin.vout === c.vout && styles.selectedCoin]}>
+                {coins.map(c => <TouchableOpacity key={`${c.txid}:${c.vout}`} disabled={busy || (!record && BigInt(c.value) < quote.singleUtxoFundingSat)} accessibilityRole="radio" accessibilityState={{ checked: coin?.txid === c.txid && coin.vout === c.vout }} onPress={() => setCoin(c)} style={[styles.coin, coin?.txid === c.txid && coin.vout === c.vout && styles.selectedCoin]}>
                     <Text>{coin?.txid === c.txid && coin.vout === c.vout ? '✓ ' : ''}{c.value} sats · {c.txid.slice(0, 10)}…:{c.vout}</Text>
                 </TouchableOpacity>)}
                 {!coins.length && <Text style={styles.body}>No eligible confirmed output found. Receive on-chain funds into this wallet, then request a new quote.</Text>}
                 {coin && !record && <Text style={styles.body}>Expected total at the destination: {(quote.recoverableValueSat + BigInt(coin.value) - quote.totalFeeSat).toString()} sats, including unused funding.</Text>}
                 <Text style={styles.body}>Once built, this wallet’s normal spending is paused to protect recovery funds. After broadcasting, an exit cannot be cancelled. Type EXIT to build and save the transactions.</Text>
-                <TextInput accessibilityLabel="Type EXIT" style={styles.input} value={confirmation} onChangeText={setConfirmation} autoCapitalize="characters" editable={!busy} />
+                <StyledInput accessibilityLabel="Type EXIT" value={confirmation} onChangeText={setConfirmation} onFocus={handleInputFocus} autoCapitalize="characters" editable={!busy} />
                 {button('Build and save exit', () => { void build(); }, usable && !!coin && confirmation === 'EXIT')}
             </>}
         </View> : null}
@@ -242,7 +248,7 @@ export function UnilateralExitScreen() {
             {sectionHeading('lock', 'Recovery backup')}
             <Text style={styles.body}>Save the signed exit and recovery data somewhere outside this phone. Your seed alone does not replace this data if operators are unavailable. Keep the backup password separately.</Text>
             <Text style={styles.fieldLabel}>Backup password</Text>
-            <TextInput accessibilityLabel="Backup password" style={styles.input} secureTextEntry value={password} onChangeText={setPassword} placeholder="At least 12 characters" placeholderTextColor={theme.colors.muted} editable={!busy} />
+            <StyledInput accessibilityLabel="Backup password" secureTextEntry value={password} onChangeText={setPassword} onFocus={handleInputFocus} placeholder="At least 12 characters" editable={!busy} />
             {record ? button('Export encrypted backup', () => { void exportBackup(); }, password.length >= 12) : button('Import encrypted backup', () => { void importBackup(); }, usable && password.length >= 12)}
         </View>
     </ScrollView>;
