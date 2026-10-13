@@ -97,7 +97,7 @@ const SupportScreen = () => {
                   <Text style={{ fontWeight: 'bold', color: theme.colors.bitcoin }}>{LIGHTNING_DONATION_ADDRESS.split('@')[0]}</Text>
                   <Text style={{ fontWeight: 'bold', color: theme.colors.primary }}>@{LIGHTNING_DONATION_ADDRESS.split('@').slice(1).join('@')}</Text>
                 </Text>
-              : <AddressText style={styles.addressText} address={DONATION_ADDRESS} />}
+              : <AddressText style={styles.addressText} selectable address={DONATION_ADDRESS} groupSize={6} padLastLine />}
         </TouchableOpacity>
       </View>
 
@@ -214,8 +214,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     lineHeight: 24,
     paddingHorizontal: 16,
   },
-  addressText: { 
-    fontFamily: 'monospace', 
+  addressText: {
     fontSize: 14,
     textAlign: 'center', 
     color: theme.colors.primary, 
