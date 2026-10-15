@@ -48,7 +48,7 @@ export function UnilateralExitScreen() {
     const [exported, setExported] = useState(false);
     const styles = StyleSheet.create({
         page: { flex: 1, backgroundColor: theme.colors.background },
-        content: { paddingTop: 20, paddingBottom: 100, paddingHorizontal: 20, gap: 20, },
+        content: { paddingTop: 20, paddingBottom: 120, paddingHorizontal: 20, gap: 20, },
         card: { padding: 20, backgroundColor: theme.colors.surface, borderRadius: 20, gap: 16 },
         title: { fontSize: 20, fontWeight: '600', color: theme.colors.primary },
         body: { color: theme.colors.muted, fontSize: 14, lineHeight: 22 },
