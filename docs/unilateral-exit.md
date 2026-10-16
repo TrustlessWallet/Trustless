@@ -1,6 +1,6 @@
 # Unilateral exit and recovery
 
-Settings → Danger Zone → **Unilateral exit & recovery** uses Breez Spark SDK 0.26.1. Normal withdrawal remains the preferred path. Recovery is a multi-stage Bitcoin operation that may take days, requires separate mining-fee funding, and cannot be cancelled after broadcasting.
+Settings → Danger Zone → **Unilateral exit** uses Breez Spark SDK 0.26.1. Normal withdrawal remains the preferred path. Recovery is a multi-stage Bitcoin operation that may take days, requires separate mining-fee funding, and cannot be cancelled after broadcasting.
 
 ## Requirements
 

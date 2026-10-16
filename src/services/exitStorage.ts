@@ -41,5 +41,5 @@ export async function assertNoActiveExit(wallet?: string): Promise<void> {
     const row = wallet
         ? await (await db()).getFirstAsync('SELECT wallet FROM exits WHERE active = 1 AND wallet = ?', wallet)
         : await (await db()).getFirstAsync('SELECT wallet FROM exits WHERE active = 1 LIMIT 1');
-    if (row) throw new Error('A unilateral exit is in progress. Open Unilateral exit & recovery to continue it before spending or deleting this wallet.');
+    if (row) throw new Error('A unilateral exit is in progress. Open Unilateral exit to continue it before spending or deleting this wallet.');
 }

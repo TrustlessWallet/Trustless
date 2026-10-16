@@ -18,7 +18,7 @@ Hi! Trustless is a fully open-source, non-custodial (only you have access to you
   <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/44bff39e-ebb7-4ba9-bff5-468240dbda1c" />
 
 
-* **Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your Lightning balance at anytime. Lightning is powered by [Breez SDK](https://breez.technology/https://breez.technology/) that never has access to your seed phrase. Normal payments and withdrawals require service availability. Settings → Danger Zone → Unilateral exit & recovery provides a last-resort on-chain recovery flow; see [recovery and testing](docs/unilateral-exit.md) for its funding, backup and timelock requirements.
+* **Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your Lightning balance at anytime. Lightning is powered by [Breez SDK](https://breez.technology/https://breez.technology/) that never has access to your seed phrase. Normal payments and withdrawals require service availability. Settings → Danger Zone → Unilateral exit provides a last-resort on-chain recovery flow; see [recovery and testing](docs/unilateral-exit.md) for its funding, backup and timelock requirements.
 
   <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/f06b089b-8ff5-455a-a663-06e25d59e1d0" />
   <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/eb9725f0-f4d0-468e-ad8b-234f011d2ded" />

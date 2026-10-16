@@ -33,6 +33,7 @@ export function UnilateralExitScreen() {
     const [busy, setBusy] = useState(false);
     const [loaded, setLoaded] = useState(false);
     const [error, setError] = useState('');
+    const [quoteError, setQuoteError] = useState('');
     const [record, setRecord] = useState<ExitRecord | null>(null);
     const recordRef = useRef(record); recordRef.current = record;
     const [config, setConfig] = useState<Broadcaster>({ url: '', username: '', password: '' });
@@ -71,14 +72,16 @@ export function UnilateralExitScreen() {
         checkbox: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
     });
     const usable = loaded && isLightningInitialized && !IS_TESTNET && activeWallet?.type !== 'watch-only';
-    const execute = async (task: () => Promise<void>, allowOffline = false) => {
+    const execute = async (task: () => Promise<void>, allowOffline = false, errorLocation: 'general' | 'quote' = 'general') => {
         if (working.current || (!usable && !allowOffline)) return;
         const id = walletRef.current;
-        working.current = true; setBusy(true); setError('');
+        working.current = true; setBusy(true); setError(''); setQuoteError('');
         try { await task(); }
         catch (e) {
             if (walletRef.current === id) {
-                setError(e instanceof Error ? e.message : 'Recovery operation failed.');
+                const message = e instanceof Error ? e.message : 'Recovery operation failed.';
+                if (errorLocation === 'quote') setQuoteError(message);
+                else setError(message);
                 // A build or broadcast may have persisted newer state before an error.
                 if (id) try { setRecord(await loadExit(id)); } catch { /* Keep original error visible. */ }
             }
@@ -87,7 +90,7 @@ export function UnilateralExitScreen() {
     useEffect(() => {
         let cancelled = false;
         setLoaded(false); setRecord(null); setQuote(null); setCoin(null); setCoins([]);
-        setConfirmation(''); setBackupSaved(false); setExported(false); setPassword(''); setError('');
+        setConfirmation(''); setBackupSaved(false); setExported(false); setPassword(''); setError(''); setQuoteError('');
         if (!activeWallet) return;
         const id = activeWallet.id;
         Promise.all([loadExit(id), loadBroadcaster()]).then(([saved, rpc]) => {
@@ -122,7 +125,7 @@ export function UnilateralExitScreen() {
             return { prepared, available: record ? [record.funding] : await recoveryCoins(access) };
         });
         setQuote(next.prepared); setCoins(next.available); setCoin(null); setConfirmation('');
-    });
+    }, false, 'quote');
     const build = () => execute(async () => {
         if (!quote || !coin || confirmation !== 'EXIT') return;
         if (!await authenticate_transaction_action('Authorize unilateral exit')) return;
@@ -195,11 +198,13 @@ export function UnilateralExitScreen() {
         </View>
         {!record || record.phase === 'redo' || record.phase === 'building' ? <View style={styles.card}>
             {sectionHeading('sliders', record ? 'Rebuild remaining exit' : 'Review recovery')}
+            {!record && <Text style={styles.body}>A quote only estimates the recovery and fees. After you review it, “Build and save exit” creates the recovery data and saves it encrypted on this device. You can then export your own backup.</Text>}
             <Text style={styles.fieldLabel}>Bitcoin destination</Text>
-            <StyledInput accessibilityLabel="Bitcoin destination" value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); }} onFocus={handleInputFocus} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" />
+            <StyledInput accessibilityLabel="Bitcoin destination" value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); setQuoteError(''); }} onFocus={handleInputFocus} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" />
             <Text style={styles.fieldLabel}>Fee rate (sat/vB)</Text>
-            <StyledInput accessibilityLabel="Exit fee rate" value={fee} onChangeText={text => { setFee(text); setQuote(null); }} onFocus={handleInputFocus} keyboardType="number-pad" editable={!busy} />
+            <StyledInput accessibilityLabel="Exit fee rate" value={fee} onChangeText={text => { setFee(text); setQuote(null); setQuoteError(''); }} onFocus={handleInputFocus} keyboardType="number-pad" editable={!busy} />
             {button('Get recovery quote', () => { void review(); }, usable)}
+            {!!quoteError && <Text accessibilityRole="alert" style={styles.error}>{quoteError}</Text>}
             {quote && <>
                 <View style={styles.quote}>
                     {amountRow('Recoverable balance', quote.recoverableValueSat)}
@@ -246,9 +251,15 @@ export function UnilateralExitScreen() {
         </View>}
         <View style={styles.card}>
             {sectionHeading('lock', 'Recovery backup')}
-            <Text style={styles.body}>Save the signed exit and recovery data somewhere outside this phone. Your seed alone does not replace this data if operators are unavailable. Keep the backup password separately.</Text>
-            <Text style={styles.fieldLabel}>Backup password</Text>
-            <StyledInput accessibilityLabel="Backup password" secureTextEntry value={password} onChangeText={setPassword} onFocus={handleInputFocus} placeholder="At least 12 characters" editable={!busy} />
+            <Text style={styles.body}>{record
+                ? 'Your recovery data is saved encrypted on this device. Export a separate file and keep it outside the app so you can restore it if this device is lost. Your seed alone may not replace this data.'
+                : 'If you already have a recovery backup from this wallet, import it here. To make a new backup, first build and save an exit above.'}</Text>
+            {record && !record.response && <Text style={styles.body}>The build has not produced signed transactions yet. Finish the build and export a new backup before broadcasting.</Text>}
+            <Text style={styles.body}>{record
+                ? 'Choose a password of at least 12 characters to encrypt the exported file. Keep it separately; you will need it to import the file later. This is not your wallet password or seed.'
+                : 'Enter the password you chose when exporting that backup. It is not your wallet password or seed.'}</Text>
+            <Text style={styles.fieldLabel}>{record ? 'Choose backup file password' : 'Existing backup file password'}</Text>
+            <StyledInput accessibilityLabel="Backup file password" secureTextEntry value={password} onChangeText={setPassword} onFocus={handleInputFocus} placeholder="At least 12 characters" editable={!busy} />
             {record ? button('Export encrypted backup', () => { void exportBackup(); }, password.length >= 12) : button('Import encrypted backup', () => { void importBackup(); }, usable && password.length >= 12)}
         </View>
     </ScrollView>;
