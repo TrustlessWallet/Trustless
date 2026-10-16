@@ -9,6 +9,7 @@ import type { PrepareUnilateralExitResponse } from '@breeztech/breez-sdk-spark-r
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
 import { useTheme } from '../contexts/ThemeContext';
+import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import { useWallet } from '../contexts/WalletContext';
 import { IS_TESTNET } from '../constants/network';
 import { authenticate_transaction_action } from '../services/authState';
@@ -22,41 +23,10 @@ export function UnilateralExitScreen() {
     const { activeWallet, isLightningInitialized, runLightningRecovery } = useWallet();
     const navigation = useNavigation<any>();
     const focused = useIsFocused();
-    const scrollRef = useRef<ScrollView>(null);
-    const scrollY = useRef(0);
-    const quoteScrollY = useRef<number | null>(null);
-    const backupInputRef = useRef<View>(null);
-    const backupFocused = useRef(false);
-    const keyboardTop = useRef<number | null>(null);
-    const [backupKeyboardSpace, setBackupKeyboardSpace] = useState(0);
-    const showBackupInput = () => {
-        if (!backupFocused.current || keyboardTop.current === null) return;
-        backupInputRef.current?.measureInWindow((_x, y, _width, height) => {
-            if (!backupFocused.current || keyboardTop.current === null) return;
-            const overlap = y + height + 20 - keyboardTop.current;
-            if (overlap > 0) scrollRef.current?.scrollTo({ y: scrollY.current + overlap, animated: true });
-        });
-    };
-    const restoreQuotePosition = () => {
-        if (quoteScrollY.current === null) return;
-        const y = quoteScrollY.current;
-        scrollRef.current?.scrollTo({ y, animated: false });
-        scrollY.current = y;
-    };
-    useEffect(() => {
-        const shown = Keyboard.addListener('keyboardDidShow', event => {
-            keyboardTop.current = event.endCoordinates.screenY;
-            if (backupFocused.current) {
-                setBackupKeyboardSpace(event.endCoordinates.height);
-            }
-        });
-        const hidden = Keyboard.addListener('keyboardDidHide', () => {
-            keyboardTop.current = null;
-            setBackupKeyboardSpace(0);
-            restoreQuotePosition();
-        });
-        return () => { shown.remove(); hidden.remove(); };
-    }, []);
+    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
+        basePaddingBottom: 120,
+        animateLayoutChanges: true,
+    });
     const runRef = useRef(runLightningRecovery); runRef.current = runLightningRecovery;
     const walletRef = useRef(activeWallet?.id); walletRef.current = activeWallet?.id;
     const working = useRef(false);
@@ -107,19 +77,19 @@ export function UnilateralExitScreen() {
         if (working.current || (!usable && !allowOffline)) return;
         const id = walletRef.current;
         working.current = true; setBusy(true); setQuoteLoading(errorLocation === 'quote');
-        if (errorLocation === 'quote') setQuoteError('');
-        else setError('');
+        // Keep the previous quote/message visible while retrying, so the sheet
+        // does not collapse and expand the same content on every request.
+        if (errorLocation !== 'quote') setError('');
         try { await task(); }
         catch (e) {
             if (walletRef.current === id) {
                 const message = e instanceof Error ? e.message : 'Recovery operation failed.';
                 if (errorLocation === 'quote') {
-                    quoteScrollY.current = scrollY.current;
                     setQuoteError(message);
                 }
                 else setError(message);
                 // A build or broadcast may have persisted newer state before an error.
-                if (id) try { setRecord(await loadExit(id)); } catch { /* Keep original error visible. */ }
+                if (id && errorLocation !== 'quote') try { setRecord(await loadExit(id)); } catch { /* Keep original error visible. */ }
             }
         } finally { working.current = false; setBusy(false); setQuoteLoading(false); }
     };
@@ -156,13 +126,12 @@ export function UnilateralExitScreen() {
     const amountRow = (label: string, value: bigint) => <View style={styles.amountRow}><Text style={styles.amountLabel}>{label}</Text><Text style={styles.amountValue}>{value.toLocaleString()} sats</Text></View>;
     const changeConfig = (next: Broadcaster) => { setConfig(next); setConnection(''); };
     const review = () => execute(async () => {
-        quoteScrollY.current = scrollY.current;
         Keyboard.dismiss();
         const next = await runRef.current(async access => {
             const prepared = await quoteExit(access, record?.destination || destination.trim(), fee, record || undefined);
             return { prepared, available: record ? [record.funding] : await recoveryCoins(access) };
         });
-        quoteScrollY.current = scrollY.current;
+        setQuoteError('');
         setQuote(next.prepared); setCoins(next.available); setCoin(null); setConfirmation('');
     }, false, 'quote');
     const build = () => execute(async () => {
@@ -212,19 +181,9 @@ export function UnilateralExitScreen() {
         } finally { if (file.exists) file.delete(); }
     });
 
-    return <ScrollView ref={scrollRef} style={styles.page}
-        contentContainerStyle={[styles.content, { paddingBottom: 120 + backupKeyboardSpace }]}
-        scrollEventThrottle={16}
-        onScroll={event => {
-            if (quoteScrollY.current === null) scrollY.current = event.nativeEvent.contentOffset.y;
-        }}
-        onScrollBeginDrag={() => { quoteScrollY.current = null; }}
-        onTouchStart={() => { quoteScrollY.current = null; }}
-        onLayout={restoreQuotePosition}
-        onContentSizeChange={() => {
-            restoreQuotePosition();
-            showBackupInput();
-        }}
+    return <ScrollView ref={scrollViewRef} style={styles.page}
+        contentContainerStyle={[styles.content, { paddingBottom }]}
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" bounces={false}>
         <View style={styles.hero}>
@@ -257,7 +216,7 @@ export function UnilateralExitScreen() {
             <Text style={styles.fieldLabel}>Fee rate (sat/vB)</Text>
             <StyledInput accessibilityLabel="Exit fee rate" containerStyle={{ backgroundColor: theme.colors.background }} value={fee} onChangeText={text => { setFee(text); setQuote(null); setQuoteError(''); }} keyboardType="number-pad" editable={!busy} />
             {button('Get recovery quote', () => { void review(); }, usable, quoteLoading)}
-            {!!quoteError && <Text accessibilityRole="alert" style={styles.error}>{quoteError}</Text>}
+            <Text accessibilityRole={quoteError ? "alert" : undefined} style={[styles.error, { minHeight: 22 }]}>{quoteError}</Text>
             {quote && <>
                 <View style={styles.quote}>
                     {amountRow('Recoverable balance', quote.recoverableValueSat)}
@@ -312,21 +271,7 @@ export function UnilateralExitScreen() {
                 ? 'Choose a password of at least 12 characters to encrypt the exported file. Keep it separately; you will need it to import the file later. This is not your wallet password or seed.'
                 : 'Enter the password you chose when exporting that backup. It is not your wallet password or seed.'}</Text>
             <Text style={styles.fieldLabel}>{record ? 'Choose backup file password' : 'Existing backup file password'}</Text>
-            <View ref={backupInputRef} collapsable={false}>
-                <StyledInput accessibilityLabel="Backup file password" containerStyle={{ backgroundColor: theme.colors.background }} secureTextEntry value={password} onChangeText={setPassword} placeholder="At least 12 characters" editable={!busy}
-                    onFocus={() => {
-                        quoteScrollY.current = null;
-                        backupFocused.current = true;
-                        const keyboard = Keyboard.metrics();
-                        if (keyboard) {
-                            keyboardTop.current = keyboard.screenY;
-                            setBackupKeyboardSpace(keyboard.height);
-                            showBackupInput();
-                        }
-                    }}
-                    onBlur={() => { backupFocused.current = false; }}
-                />
-            </View>
+            <StyledInput accessibilityLabel="Backup file password" containerStyle={{ backgroundColor: theme.colors.background }} secureTextEntry value={password} onChangeText={setPassword} placeholder="At least 12 characters" editable={!busy} onFocus={handleInputFocus} />
             {record ? button('Export encrypted backup', () => { void exportBackup(); }, password.length >= 12) : button('Import encrypted backup', () => { void importBackup(); }, usable && password.length >= 12)}
         </View>
     </ScrollView>;
