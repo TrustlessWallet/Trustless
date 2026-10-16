@@ -88,10 +88,13 @@
       ],
       "expo-sqlite",
       "expo-status-bar",
-      ["react-native-nfc-manager",
-    {
-      "includeNdefEntitlement": false
-    }]
+      [
+        "react-native-nfc-manager",
+        {
+          "includeNdefEntitlement": false
+        }
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Keyboard, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { ActivityIndicator, Alert, AppState, Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { File, Paths } from 'expo-file-system';
@@ -176,8 +175,8 @@ export function UnilateralExitScreen() {
     // Keep one keyboard controller. Insets avoid reflow; hiding the keyboard must
     // not restore the old scroll position when requesting a quote. The offset is
     // measured from the caret, so include the lower half of the styled input.
-    return <KeyboardAwareScrollView style={styles.page} contentContainerStyle={styles.content}
-        mode="insets" bottomOffset={theme.LAYOUT.inputHeight / 2 + 16} disableScrollOnKeyboardHide
+    return <ScrollView style={styles.page} contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" bounces={false}>
         <View style={styles.hero}>
             <Text style={styles.heroTitle}>Lightning Recovery</Text>
@@ -267,5 +266,5 @@ export function UnilateralExitScreen() {
             <StyledInput accessibilityLabel="Backup file password" containerStyle={{ backgroundColor: theme.colors.background }} secureTextEntry value={password} onChangeText={setPassword} placeholder="At least 12 characters" editable={!busy} />
             {record ? button('Export encrypted backup', () => { void exportBackup(); }, password.length >= 12) : button('Import encrypted backup', () => { void importBackup(); }, usable && password.length >= 12)}
         </View>
-    </KeyboardAwareScrollView>;
+    </ScrollView>;
 }
