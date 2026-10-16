@@ -415,7 +415,11 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
           <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
-          <Stack.Screen name="UnilateralExit" component={UnilateralExitScreen} options={{ title: 'Unilateral exit' }} />
+          <Stack.Screen name="UnilateralExit" component={UnilateralExitScreen} options={({ navigation }) => ({
+            title: 'Unilateral exit',
+            presentation: 'fullScreenModal',
+            headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
+          })} />
           <Stack.Screen name="WithdrawToOnchain" component={WithdrawToOnchainScreen} options={{ title: 'Withdraw to on-chain' }} />
           <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
           <Stack.Screen name="TransactionSuccess" component={TransactionSuccessScreen} options={{ headerShown: false }} />

@@ -64,6 +64,7 @@
     "react-native-crypto": "^2.2.1",
     "react-native-gesture-handler": "~2.31.1",
     "react-native-get-random-values": "^1.11.0",
+    "react-native-keyboard-controller": "1.21.6",
     "react-native-keychain": "^10.0.0",
     "react-native-maps": "^1.27.2",
     "react-native-nfc-manager": "^3.17.2",

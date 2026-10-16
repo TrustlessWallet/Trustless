@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar, LogBox, View, Image, Text, TextInput, Animated, AppState } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import AppNavigator from './src/navigation/AppNavigator';
 import { WalletProvider } from './src/contexts/WalletContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
@@ -188,7 +189,9 @@ export default function App() {
                   <ThemedStatusBar />
                   {/* ADDED: Passed the showLaunchOverlay state as a prop */}
                   <PrivacySwitcherOverlay isBooting={showLaunchOverlay} />
-                  <AppNavigator onBootReady={() => setNavBootReady(true)} />
+                  <KeyboardProvider>
+                    <AppNavigator onBootReady={() => setNavBootReady(true)} />
+                  </KeyboardProvider>
                 </View>
               </WalletProvider>
             ) : (
