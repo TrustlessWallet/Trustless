@@ -790,26 +790,19 @@ const SettingsScreen = () => {
         <View style={styles.section}>
           <Text style={styles.section_title}>Danger Zone</Text>
           {activeWallet?.type !== 'watch-only' && activeWallet && (
-            <TouchableOpacity accessibilityRole="button" style={[styles.button_container, { marginBottom: 12 }]} onPress={() => navigation.navigate('UnilateralExit')}>
-              <View style={styles.button}>
-                <View style={styles.button_content_row_centered}>
-                  <Feather name="log-out" size={16} color={theme.colors.inversePrimary} />
-                  <Text style={styles.button_text}>Unilateral exit</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.button_container}
-            onPress={handle_reset}
-          >
-            <View style={styles.button}>
-              <View style={styles.button_content_row_centered}>
-                <Feather name="alert-triangle" size={16} color={theme.colors.inversePrimary} />
-                <Text style={styles.button_text}>Reset App</Text>
-              </View>
+            <View style={styles.row_wrapper}>
+              <TouchableOpacity accessibilityRole="button" style={styles.row} onPress={() => navigation.navigate('UnilateralExit')}>
+                <Text style={styles.row_label}>Unilateral exit</Text>
+                <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          )}
+          <View style={styles.row_wrapper}>
+            <TouchableOpacity accessibilityRole="button" style={styles.row} onPress={handle_reset}>
+              <Text style={styles.row_label}>Reset App</Text>
+              <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.version_container}>
@@ -890,26 +883,6 @@ const get_styles = (theme: Theme) => StyleSheet.create({
     minWidth: 90,
     textAlign: 'center',
     color: theme.colors.primary,
-  },
-  button_container: {
-    alignSelf: 'flex-start',
-  },
-  button: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  button_text: {
-    color: theme.colors.inversePrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  button_content_row_centered: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
   },
   node_input_container: {
     marginTop: 4,
