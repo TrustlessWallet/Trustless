@@ -31,6 +31,7 @@ export function UnilateralExitScreen() {
     const walletRef = useRef(activeWallet?.id); walletRef.current = activeWallet?.id;
     const working = useRef(false);
     const [busy, setBusy] = useState(false);
+    const [quoteLoading, setQuoteLoading] = useState(false);
     const [loaded, setLoaded] = useState(false);
     const [error, setError] = useState('');
     const [quoteError, setQuoteError] = useState('');
@@ -55,7 +56,7 @@ export function UnilateralExitScreen() {
         body: { color: theme.colors.muted, fontSize: 14, lineHeight: 22 },
         button: { backgroundColor: theme.colors.primary, padding: 16, minHeight: 52, borderRadius: theme.LAYOUT.radius, alignItems: 'center' },
         label: { color: theme.colors.inversePrimary, fontWeight: '600' },
-        error: { color: theme.colors.error, lineHeight: 22, padding: 16, borderRadius: 12, backgroundColor: theme.colors.surface },
+        error: { color: theme.colors.error, lineHeight: 22 },
         hero: { alignItems: 'center', gap: 12, paddingVertical: 12 },
         heroTitle: { fontSize: 27, fontWeight: '700', color: theme.colors.primary, textAlign: 'center' },
         sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -75,7 +76,7 @@ export function UnilateralExitScreen() {
     const execute = async (task: () => Promise<void>, allowOffline = false, errorLocation: 'general' | 'quote' = 'general') => {
         if (working.current || (!usable && !allowOffline)) return;
         const id = walletRef.current;
-        working.current = true; setBusy(true); setError(''); setQuoteError('');
+        working.current = true; setBusy(true); setQuoteLoading(errorLocation === 'quote'); setError(''); setQuoteError('');
         try { await task(); }
         catch (e) {
             if (walletRef.current === id) {
@@ -85,7 +86,7 @@ export function UnilateralExitScreen() {
                 // A build or broadcast may have persisted newer state before an error.
                 if (id) try { setRecord(await loadExit(id)); } catch { /* Keep original error visible. */ }
             }
-        } finally { working.current = false; setBusy(false); }
+        } finally { working.current = false; setBusy(false); setQuoteLoading(false); }
     };
     useEffect(() => {
         let cancelled = false;
@@ -182,7 +183,7 @@ export function UnilateralExitScreen() {
         {!record && button('Normal withdrawal', () => navigation.navigate('WithdrawToOnchain'), usable)}
         {IS_TESTNET && <Text style={styles.body}>This recovery flow supports mainnet only. The app’s Bitcoin testnet setting is not Spark regtest.</Text>}
         {!isLightningInitialized && <Text style={styles.body}>Waiting for the Lightning wallet to connect. A successful network sync is not required to resume saved recovery data.</Text>}
-        {busy && <ActivityIndicator color={theme.colors.primary} />}
+        {busy && !quoteLoading && <ActivityIndicator color={theme.colors.primary} />}
         {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
         <View style={styles.card}>
             {sectionHeading('server', 'Package broadcaster')}
@@ -204,6 +205,7 @@ export function UnilateralExitScreen() {
             <Text style={styles.fieldLabel}>Fee rate (sat/vB)</Text>
             <StyledInput accessibilityLabel="Exit fee rate" value={fee} onChangeText={text => { setFee(text); setQuote(null); setQuoteError(''); }} onFocus={handleInputFocus} keyboardType="number-pad" editable={!busy} />
             {button('Get recovery quote', () => { void review(); }, usable)}
+            {quoteLoading && <View accessibilityLabel="Getting recovery quote" style={styles.sectionHeading}><ActivityIndicator color={theme.colors.primary} /><Text style={styles.body}>Getting recovery quote…</Text></View>}
             {!!quoteError && <Text accessibilityRole="alert" style={styles.error}>{quoteError}</Text>}
             {quote && <>
                 <View style={styles.quote}>
@@ -250,10 +252,10 @@ export function UnilateralExitScreen() {
             </>}
         </View>}
         <View style={styles.card}>
-            {sectionHeading('lock', 'Recovery backup')}
+            {sectionHeading('lock', record ? 'Export recovery backup' : 'Import existing backup')}
             <Text style={styles.body}>{record
                 ? 'Your recovery data is saved encrypted on this device. Export a separate file and keep it outside the app so you can restore it if this device is lost. Your seed alone may not replace this data.'
-                : 'If you already have a recovery backup from this wallet, import it here. To make a new backup, first build and save an exit above.'}</Text>
+                : 'Import a backup file you previously exported for this wallet. After you build an exit on this device, this section changes to Export recovery backup. An existing local exit cannot be replaced by an imported file.'}</Text>
             {record && !record.response && <Text style={styles.body}>The build has not produced signed transactions yet. Finish the build and export a new backup before broadcasting.</Text>}
             <Text style={styles.body}>{record
                 ? 'Choose a password of at least 12 characters to encrypt the exported file. Keep it separately; you will need it to import the file later. This is not your wallet password or seed.'
