@@ -178,7 +178,7 @@ export function UnilateralExitScreen() {
     // measured from the caret, so include the lower half of the styled input.
     return <KeyboardAwareScrollView style={styles.page} contentContainerStyle={styles.content}
         mode="insets" bottomOffset={theme.LAYOUT.inputHeight / 2 + 16} disableScrollOnKeyboardHide
-        keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" bounces={false}>
         <View style={styles.hero}>
             <Text style={styles.heroTitle}>Lightning Recovery</Text>
             <Text style={[styles.body, { textAlign: 'center' }]}>An independent path back to Bitcoin.</Text>
