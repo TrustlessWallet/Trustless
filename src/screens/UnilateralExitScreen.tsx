@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { File, Paths } from 'expo-file-system';
@@ -23,10 +23,46 @@ export function UnilateralExitScreen() {
     const { activeWallet, isLightningInitialized, runLightningRecovery } = useWallet();
     const navigation = useNavigation<any>();
     const focused = useIsFocused();
-    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
-        basePaddingBottom: 100,
-        animateLayoutChanges: true,
-    });
+    const { scrollViewRef, keyboardHeight, paddingBottom } = useKeyboardScroll({ basePaddingBottom: 120, keyboardExtraHeight: 0 });
+    const fieldRefs = useRef<Record<string, View | null>>({});
+    const focusedField = useRef<string | null>(null);
+    const focusFrame = useRef<number | null>(null);
+    const scrollOffset = useRef(0);
+    const keepFocusedFieldVisible = () => {
+        const name = focusedField.current;
+        const field = name && fieldRefs.current[name];
+        const keyboardTop = Keyboard.metrics()?.screenY;
+        if (!field || keyboardTop === undefined) return;
+        field.measureInWindow((_x, y, _width, height) => {
+            if (focusedField.current !== name) return;
+            const overlap = y + height + 24 - keyboardTop;
+            if (overlap > 0) scrollViewRef.current?.scrollTo({ y: scrollOffset.current + overlap, animated: true });
+        });
+    };
+    const scheduleFocusedFieldVisibility = () => {
+        if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
+        focusFrame.current = requestAnimationFrame(() => {
+            focusFrame.current = null;
+            keepFocusedFieldVisible();
+        });
+    };
+    const clearFocusedField = () => {
+        focusedField.current = null;
+        if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
+        focusFrame.current = null;
+    };
+    useEffect(() => {
+        if (!keyboardHeight || !focusedField.current) return;
+        scheduleFocusedFieldVisibility();
+        return () => { if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current); };
+    }, [keyboardHeight]);
+    const onFieldFocus = (name: string) => {
+        focusedField.current = name;
+        if (keyboardHeight) scheduleFocusedFieldVisibility();
+    };
+    const onFieldBlur = (name: string) => {
+        if (focusedField.current === name) clearFocusedField();
+    };
     const runRef = useRef(runLightningRecovery); runRef.current = runLightningRecovery;
     const walletRef = useRef(activeWallet?.id); walletRef.current = activeWallet?.id;
     const working = useRef(false);
@@ -121,6 +157,8 @@ export function UnilateralExitScreen() {
     const amountRow = (label: string, value: bigint) => <View style={styles.amountRow}><Text style={styles.amountLabel}>{label}</Text><Text style={styles.amountValue}>{value.toLocaleString()} sats</Text></View>;
     const changeConfig = (next: Broadcaster) => { setConfig(next); setConnection(''); };
     const review = () => execute(async () => {
+        clearFocusedField();
+        Keyboard.dismiss();
         const next = await runRef.current(async access => {
             const prepared = await quoteExit(access, record?.destination || destination.trim(), fee, record || undefined);
             return { prepared, available: record ? [record.funding] : await recoveryCoins(access) };
@@ -174,7 +212,7 @@ export function UnilateralExitScreen() {
         } finally { if (file.exists) file.delete(); }
     });
 
-    return <ScrollView ref={scrollViewRef} style={styles.page} contentContainerStyle={[styles.content, { paddingBottom }]} keyboardShouldPersistTaps="handled">
+    return <ScrollView ref={scrollViewRef} style={styles.page} contentContainerStyle={[styles.content, { paddingBottom }]} keyboardShouldPersistTaps="handled" onScroll={event => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}>
         <View style={styles.hero}>
             <Text style={styles.heroTitle}>Lightning Recovery</Text>
             <Text style={[styles.body, { textAlign: 'center' }]}>An independent path back to Bitcoin.</Text>
@@ -189,11 +227,17 @@ export function UnilateralExitScreen() {
             {sectionHeading('server', 'Package broadcaster')}
             <Text style={styles.body}>Enter your HTTPS Bitcoin Core RPC or Alchemy Bitcoin mainnet URL. Alchemy format: https://bitcoin-mainnet.g.alchemy.com/v2/YOUR_API_KEY</Text>
             <Text style={styles.fieldLabel}>HTTPS RPC URL</Text>
-            <StyledInput accessibilityLabel="Broadcaster URL" value={config.url} onChangeText={url => changeConfig({ ...config, url })} onFocus={handleInputFocus} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="HTTPS RPC URL" editable={!busy} />
+            <View collapsable={false} ref={node => { fieldRefs.current.rpcUrl = node; }}>
+                <StyledInput accessibilityLabel="Broadcaster URL" containerStyle={{ backgroundColor: theme.colors.background }} value={config.url} onChangeText={url => changeConfig({ ...config, url })} onFocus={() => onFieldFocus('rpcUrl')} onBlur={() => onFieldBlur('rpcUrl')} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="HTTPS RPC URL" editable={!busy} />
+            </View>
             <Text style={styles.fieldLabel}>Username (optional)</Text>
-            <StyledInput accessibilityLabel="RPC username" value={config.username} onChangeText={username => changeConfig({ ...config, username })} onFocus={handleInputFocus} autoCapitalize="none" placeholder="RPC username (optional)" editable={!busy} />
+            <View collapsable={false} ref={node => { fieldRefs.current.rpcUsername = node; }}>
+                <StyledInput accessibilityLabel="RPC username" containerStyle={{ backgroundColor: theme.colors.background }} value={config.username} onChangeText={username => changeConfig({ ...config, username })} onFocus={() => onFieldFocus('rpcUsername')} onBlur={() => onFieldBlur('rpcUsername')} autoCapitalize="none" placeholder="RPC username (optional)" editable={!busy} />
+            </View>
             <Text style={styles.fieldLabel}>Password (optional)</Text>
-            <StyledInput accessibilityLabel="RPC password" value={config.password} onChangeText={password => changeConfig({ ...config, password })} onFocus={handleInputFocus} secureTextEntry placeholder="RPC password (optional)" editable={!busy} />
+            <View collapsable={false} ref={node => { fieldRefs.current.rpcPassword = node; }}>
+                <StyledInput accessibilityLabel="RPC password" containerStyle={{ backgroundColor: theme.colors.background }} value={config.password} onChangeText={password => changeConfig({ ...config, password })} onFocus={() => onFieldFocus('rpcPassword')} onBlur={() => onFieldBlur('rpcPassword')} secureTextEntry placeholder="RPC password (optional)" editable={!busy} />
+            </View>
             {button('Test and save broadcaster', () => execute(async () => { await testBroadcaster(config); await saveBroadcaster(config); setConnection('Mainnet connection and package submission method verified.'); }, true), !!config.url)}
             {!!connection && <Text style={styles.body}>{connection}</Text>}
         </View>
@@ -201,9 +245,13 @@ export function UnilateralExitScreen() {
             {sectionHeading('sliders', record ? 'Rebuild remaining exit' : 'Review recovery')}
             {!record && <Text style={styles.body}>A quote only estimates the recovery and fees. After you review it, “Build and save exit” creates the recovery data and saves it encrypted on this device. You can then export your own backup.</Text>}
             <Text style={styles.fieldLabel}>Bitcoin destination</Text>
-            <StyledInput accessibilityLabel="Bitcoin destination" value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); setQuoteError(''); }} onFocus={handleInputFocus} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" />
+            <View collapsable={false} ref={node => { fieldRefs.current.destination = node; }}>
+                <StyledInput accessibilityLabel="Bitcoin destination" containerStyle={{ backgroundColor: theme.colors.background }} value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); setQuoteError(''); }} onFocus={() => onFieldFocus('destination')} onBlur={() => onFieldBlur('destination')} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" />
+            </View>
             <Text style={styles.fieldLabel}>Fee rate (sat/vB)</Text>
-            <StyledInput accessibilityLabel="Exit fee rate" value={fee} onChangeText={text => { setFee(text); setQuote(null); setQuoteError(''); }} onFocus={handleInputFocus} keyboardType="number-pad" editable={!busy} />
+            <View collapsable={false} ref={node => { fieldRefs.current.fee = node; }}>
+                <StyledInput accessibilityLabel="Exit fee rate" containerStyle={{ backgroundColor: theme.colors.background }} value={fee} onChangeText={text => { setFee(text); setQuote(null); setQuoteError(''); }} onFocus={() => onFieldFocus('fee')} onBlur={() => onFieldBlur('fee')} keyboardType="number-pad" editable={!busy} />
+            </View>
             {button('Get recovery quote', () => { void review(); }, usable)}
             {quoteLoading && <View accessibilityLabel="Getting recovery quote" style={styles.sectionHeading}><ActivityIndicator color={theme.colors.primary} /><Text style={styles.body}>Getting recovery quote…</Text></View>}
             {!!quoteError && <Text accessibilityRole="alert" style={styles.error}>{quoteError}</Text>}
@@ -224,7 +272,9 @@ export function UnilateralExitScreen() {
                 {!coins.length && <Text style={styles.body}>No eligible confirmed output found. Receive on-chain funds into this wallet, then request a new quote.</Text>}
                 {coin && !record && <Text style={styles.body}>Expected total at the destination: {(quote.recoverableValueSat + BigInt(coin.value) - quote.totalFeeSat).toString()} sats, including unused funding.</Text>}
                 <Text style={styles.body}>Once built, this wallet’s normal spending is paused to protect recovery funds. After broadcasting, an exit cannot be cancelled. Type EXIT to build and save the transactions.</Text>
-                <StyledInput accessibilityLabel="Type EXIT" value={confirmation} onChangeText={setConfirmation} onFocus={handleInputFocus} autoCapitalize="characters" editable={!busy} />
+                <View collapsable={false} ref={node => { fieldRefs.current.confirmation = node; }}>
+                    <StyledInput accessibilityLabel="Type EXIT" containerStyle={{ backgroundColor: theme.colors.background }} value={confirmation} onChangeText={setConfirmation} onFocus={() => onFieldFocus('confirmation')} onBlur={() => onFieldBlur('confirmation')} autoCapitalize="characters" editable={!busy} />
+                </View>
                 {button('Build and save exit', () => { void build(); }, usable && !!coin && confirmation === 'EXIT')}
             </>}
         </View> : null}
@@ -261,7 +311,9 @@ export function UnilateralExitScreen() {
                 ? 'Choose a password of at least 12 characters to encrypt the exported file. Keep it separately; you will need it to import the file later. This is not your wallet password or seed.'
                 : 'Enter the password you chose when exporting that backup. It is not your wallet password or seed.'}</Text>
             <Text style={styles.fieldLabel}>{record ? 'Choose backup file password' : 'Existing backup file password'}</Text>
-            <StyledInput accessibilityLabel="Backup file password" secureTextEntry value={password} onChangeText={setPassword} onFocus={handleInputFocus} placeholder="At least 12 characters" editable={!busy} />
+            <View collapsable={false} ref={node => { fieldRefs.current.backupPassword = node; }}>
+                <StyledInput accessibilityLabel="Backup file password" containerStyle={{ backgroundColor: theme.colors.background }} secureTextEntry value={password} onChangeText={setPassword} onFocus={() => onFieldFocus('backupPassword')} onBlur={() => onFieldBlur('backupPassword')} placeholder="At least 12 characters" editable={!busy} />
+            </View>
             {record ? button('Export encrypted backup', () => { void exportBackup(); }, password.length >= 12) : button('Import encrypted backup', () => { void importBackup(); }, usable && password.length >= 12)}
         </View>
     </ScrollView>;
