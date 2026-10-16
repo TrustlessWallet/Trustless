@@ -1,8 +1,11 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { ActivityIndicator, ScrollView } from 'react-native';
+import { ActivityIndicator, ScrollView, Keyboard, StyleSheet } from 'react-native';
 import { UnilateralExitScreen } from '../../screens/UnilateralExitScreen';
 import { quoteExit } from '../../services/unilateralExit';
+import { loadExit } from '../../services/exitStorage';
+
+afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
 
 jest.mock('@react-navigation/native', () => ({
     useNavigation: () => ({}), useIsFocused: () => true,
@@ -42,7 +45,8 @@ it.each(['success', 'failure'])('keeps the form mounted through quote %s', async
     await act(async () => {});
     const scroll = screen.UNSAFE_getByType(ScrollView);
     const scrollTo = jest.spyOn(scroll.instance, 'scrollTo').mockImplementation(() => {});
-    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 640 } } });
+    const scrollToEnd = jest.spyOn(scroll.instance, 'scrollToEnd').mockImplementation(() => {});
+    const loadCount = (loadExit as jest.Mock).mock.calls.length;
     const destination = screen.getByLabelText('Bitcoin destination');
     const button = screen.getByRole('button', { name: 'Get recovery quote' });
 
@@ -68,16 +72,65 @@ it.each(['success', 'failure'])('keeps the form mounted through quote %s', async
     expect(destination.props.value).toBe('bc1q-user-destination');
     expect(button.props.accessibilityState.busy).toBe(false);
     expect(screen.UNSAFE_queryAllByType(ActivityIndicator)).toHaveLength(0);
-    // Simulate the sheet reporting a reset while it lays out the new message.
-    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
-    fireEvent(scroll, 'contentSizeChange', 390, 2400);
-    expect(scrollTo).toHaveBeenLastCalledWith({ y: 640, animated: false });
-    scrollTo.mockClear();
-    fireEvent(scroll, 'scrollBeginDrag');
-    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 800 } } });
-    fireEvent(scroll, 'contentSizeChange', 390, 2450);
     expect(scrollTo).not.toHaveBeenCalled();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect((loadExit as jest.Mock).mock.calls.length).toBe(loadCount);
     if (outcome === 'failure') expect(screen.getByText('Quote unavailable')).toBeTruthy();
     else expect(screen.getByText('Recoverable balance')).toBeTruthy();
+    screen.unmount();
+});
+
+it('keeps the previous error visible during retry and does not scroll on repeated requests', async () => {
+    (quoteExit as jest.Mock).mockRejectedValueOnce(new Error('First error'));
+    const screen = render(<UnilateralExitScreen />);
+    await act(async () => {});
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+    const scrollTo = jest.spyOn(scroll.instance, 'scrollTo').mockImplementation(() => {});
+    const scrollToEnd = jest.spyOn(scroll.instance, 'scrollToEnd').mockImplementation(() => {});
+    const button = screen.getByRole('button', { name: 'Get recovery quote' });
+    await act(async () => { fireEvent.press(button); });
+    const message = screen.getByText('First error');
+    let reject!: (error: Error) => void;
+    (quoteExit as jest.Mock).mockReturnValue(new Promise((_resolve, no) => { reject = no; }));
+    const calls = (quoteExit as jest.Mock).mock.calls.length;
+    await act(async () => { fireEvent.press(button); fireEvent.press(button); });
+    expect((quoteExit as jest.Mock).mock.calls.length).toBe(calls + 1);
+    expect(screen.getByText('First error')).toBe(message);
+    await act(async () => { reject(new Error('Second error')); });
+    expect(screen.getByText('Second error')).toBe(message);
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    screen.unmount();
+});
+
+it('uses the Send focus behavior only for the bottom backup field', async () => {
+    jest.useFakeTimers();
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    const addListener = Keyboard.addListener.bind(Keyboard);
+    jest.spyOn(Keyboard, 'addListener').mockImplementation((name, handler) => {
+        keyboardListeners[name] = handler;
+        return addListener(name, handler);
+    });
+    const screen = render(<UnilateralExitScreen />);
+    await act(async () => {});
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+    const scrollToEnd = jest.spyOn(scroll.instance, 'scrollToEnd').mockImplementation(() => {});
+    fireEvent(screen.getByLabelText('Broadcaster URL'), 'focus', {});
+    act(() => { jest.advanceTimersByTime(100); });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    fireEvent(screen.getByLabelText('Backup file password'), 'focus', {});
+    act(() => {
+        const show = keyboardListeners.keyboardWillShow || keyboardListeners.keyboardDidShow;
+        show({ endCoordinates: { height: 300 } });
+        jest.advanceTimersByTime(100);
+    });
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenLastCalledWith({ animated: true });
+    expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(382);
+    act(() => {
+        const hide = keyboardListeners.keyboardWillHide || keyboardListeners.keyboardDidHide;
+        hide({});
+    });
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
     screen.unmount();
 });
