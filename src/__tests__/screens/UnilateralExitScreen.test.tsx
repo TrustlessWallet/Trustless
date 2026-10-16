@@ -103,34 +103,48 @@ it('keeps the previous error visible during retry and does not scroll on repeate
     screen.unmount();
 });
 
-it('uses the Send focus behavior only for the bottom backup field', async () => {
-    jest.useFakeTimers();
-    const keyboardListeners: Record<string, (event: any) => void> = {};
+it('reveals fields and their buttons without changing content padding or scrolling through zero', async () => {
+    const listeners: Record<string, (event: any) => void> = {};
     const addListener = Keyboard.addListener.bind(Keyboard);
     jest.spyOn(Keyboard, 'addListener').mockImplementation((name, handler) => {
-        keyboardListeners[name] = handler;
+        listeners[name] = handler;
         return addListener(name, handler);
     });
+    jest.spyOn(Keyboard, 'metrics').mockReturnValue(undefined);
     const screen = render(<UnilateralExitScreen />);
     await act(async () => {});
     const scroll = screen.UNSAFE_getByType(ScrollView);
-    const scrollToEnd = jest.spyOn(scroll.instance, 'scrollToEnd').mockImplementation(() => {});
+    const scrollTo = jest.spyOn(scroll.instance, 'scrollTo').mockImplementation(() => {});
+    const layout = (node: any, y: number, height: number) => act(() => node.props.onLayout({
+        nativeEvent: { layout: { x: 0, y, width: 390, height } },
+    }));
+    layout(scroll, 0, 700);
+    layout(screen.getByTestId('broadcaster-section'), 400, 500);
+    layout(screen.getByTestId('rpcUrl-bounds'), 100, 56);
+    layout(screen.getByTestId('rpcUser-bounds'), 200, 56);
+    layout(screen.getByRole('button', { name: 'Test and save broadcaster' }), 350, 52);
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 300 } } });
+    const padding = StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom;
     fireEvent(screen.getByLabelText('Broadcaster URL'), 'focus', {});
-    act(() => { jest.advanceTimersByTime(100); });
-    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollTo).not.toHaveBeenCalled();
+    act(() => { listeners.keyboardWillShow({ endCoordinates: { height: 300 } }); });
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 422, animated: true });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 422 } } });
+    fireEvent(screen.getByLabelText('RPC username'), 'focus', {});
+    // The field and section button are already visible.
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+
+    layout(screen.getByTestId('backup-section'), 1800, 400);
+    layout(screen.getByTestId('backupPassword-bounds'), 200, 56);
+    layout(screen.getByRole('button', { name: 'Import encrypted backup' }), 280, 52);
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 1600 } } });
     fireEvent(screen.getByLabelText('Backup file password'), 'focus', {});
-    act(() => {
-        const show = keyboardListeners.keyboardWillShow || keyboardListeners.keyboardDidShow;
-        show({ endCoordinates: { height: 300 } });
-        jest.advanceTimersByTime(100);
-    });
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(scrollToEnd).toHaveBeenLastCalledWith({ animated: true });
-    expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(382);
-    act(() => {
-        const hide = keyboardListeners.keyboardWillHide || keyboardListeners.keyboardDidHide;
-        hide({});
-    });
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 1752, animated: true });
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+    act(() => { listeners.keyboardDidHide({}); });
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+    expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(padding);
+    expect(scroll.props.maintainVisibleContentPosition).toBeUndefined();
     screen.unmount();
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Dimensions, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { File, Paths } from 'expo-file-system';
@@ -9,7 +9,6 @@ import type { PrepareUnilateralExitResponse } from '@breeztech/breez-sdk-spark-r
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
 import { useTheme } from '../contexts/ThemeContext';
-import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import { useWallet } from '../contexts/WalletContext';
 import { IS_TESTNET } from '../constants/network';
 import { authenticate_transaction_action } from '../services/authState';
@@ -23,10 +22,51 @@ export function UnilateralExitScreen() {
     const { activeWallet, isLightningInitialized, runLightningRecovery } = useWallet();
     const navigation = useNavigation<any>();
     const focused = useIsFocused();
-    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
-        basePaddingBottom: 120,
-        animateLayoutChanges: true,
-    });
+    // Fixed spare space avoids resizing the sheet's scroll content on keyboard events.
+    const bottomSpace = useRef(Dimensions.get('screen').height).current;
+    const scrollViewRef = useRef<ScrollView>(null);
+    const viewportHeight = useRef(0);
+    const scrollOffset = useRef(0);
+    const keyboardHeight = useRef(0);
+    const focusedField = useRef<{ section: string; field: string } | null>(null);
+    const sections = useRef<Record<string, number>>({});
+    const fields = useRef<Record<string, { y: number; height: number }>>({});
+    const actions = useRef<Record<string, number>>({});
+    const revealFocusedField = () => {
+        const current = focusedField.current;
+        if (!current || !keyboardHeight.current || !viewportHeight.current) return;
+        const field = fields.current[current.field];
+        const sectionY = sections.current[current.section];
+        if (!field || sectionY === undefined) return;
+        // All positions are relative to scroll content, never sheet/window coordinates.
+        const top = sectionY + field.y;
+        const bottom = top + field.height;
+        // Android's window resizes for the keyboard; iOS overlays it on the sheet.
+        const visibleHeight = Math.max(0, viewportHeight.current - (Platform.OS === 'ios' ? keyboardHeight.current : 0));
+        const actionBottom = sectionY + (actions.current[current.section] ?? field.y + field.height);
+        const targetBottom = actionBottom - top <= visibleHeight - 40 ? Math.max(bottom, actionBottom) : bottom;
+        let y = scrollOffset.current;
+        if (targetBottom > y + visibleHeight - 20) y = targetBottom - visibleHeight + 20;
+        if (top < y + 20) y = top - 20;
+        y = Math.max(0, y);
+        if (Math.abs(y - scrollOffset.current) > 1) scrollViewRef.current?.scrollTo({ y, animated: true });
+    };
+    const focusField = (section: string, field: string) => {
+        focusedField.current = { section, field };
+        keyboardHeight.current = Keyboard.metrics()?.height ?? keyboardHeight.current;
+        revealFocusedField();
+    };
+    const blurField = (field: string) => {
+        if (focusedField.current?.field === field) focusedField.current = null;
+    };
+    useEffect(() => {
+        const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', event => {
+            keyboardHeight.current = event.endCoordinates.height;
+            revealFocusedField();
+        });
+        const hide = Keyboard.addListener('keyboardDidHide', () => { keyboardHeight.current = 0; });
+        return () => { show.remove(); hide.remove(); };
+    }, []);
     const runRef = useRef(runLightningRecovery); runRef.current = runLightningRecovery;
     const walletRef = useRef(activeWallet?.id); walletRef.current = activeWallet?.id;
     const working = useRef(false);
@@ -121,11 +161,12 @@ export function UnilateralExitScreen() {
         return () => { clearInterval(interval); subscription.remove(); };
     }, [focused, usable, activeWallet?.id]);
 
-    const button = (label: string, action: () => void, enabled = true, loading = false) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: busy || !enabled, busy: loading }} disabled={busy || !enabled} style={[styles.button, (busy || !enabled) && !loading && { opacity: 0.4 }]} onPress={action}><Text style={[styles.label, loading && { opacity: 0 }]}>{label}</Text>{loading && <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}><ActivityIndicator color={theme.colors.inversePrimary} /></View>}</TouchableOpacity>;
+    const button = (label: string, action: () => void, enabled = true, loading = false, section?: string) => <TouchableOpacity onLayout={section ? event => { actions.current[section] = event.nativeEvent.layout.y + event.nativeEvent.layout.height; } : undefined} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: busy || !enabled, busy: loading }} disabled={busy || !enabled} style={[styles.button, (busy || !enabled) && !loading && { opacity: 0.4 }]} onPress={action}><Text style={[styles.label, loading && { opacity: 0 }]}>{label}</Text>{loading && <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}><ActivityIndicator color={theme.colors.inversePrimary} /></View>}</TouchableOpacity>;
     const sectionHeading = (icon: React.ComponentProps<typeof Feather>['name'], title: string) => <View style={styles.sectionHeading}><Feather name={icon} size={20} color={theme.colors.primary} /><Text style={[styles.title, { flex: 1 }]}>{title}</Text></View>;
     const amountRow = (label: string, value: bigint) => <View style={styles.amountRow}><Text style={styles.amountLabel}>{label}</Text><Text style={styles.amountValue}>{value.toLocaleString()} sats</Text></View>;
     const changeConfig = (next: Broadcaster) => { setConfig(next); setConnection(''); };
     const review = () => execute(async () => {
+        focusedField.current = null;
         Keyboard.dismiss();
         const next = await runRef.current(async access => {
             const prepared = await quoteExit(access, record?.destination || destination.trim(), fee, record || undefined);
@@ -182,8 +223,10 @@ export function UnilateralExitScreen() {
     });
 
     return <ScrollView ref={scrollViewRef} style={styles.page}
-        contentContainerStyle={[styles.content, { paddingBottom }]}
-        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomSpace }]}
+        onLayout={event => { viewportHeight.current = event.nativeEvent.layout.height; }}
+        onScroll={event => { scrollOffset.current = event.nativeEvent.contentOffset.y; }}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" bounces={false}>
         <View style={styles.hero}>
@@ -196,26 +239,36 @@ export function UnilateralExitScreen() {
         {!isLightningInitialized && <Text style={styles.body}>Waiting for the Lightning wallet to connect. A successful network sync is not required to resume saved recovery data.</Text>}
         {busy && !quoteLoading && <ActivityIndicator color={theme.colors.primary} />}
         {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-        <View style={styles.card}>
+        <View style={styles.card} testID="broadcaster-section" onLayout={event => { sections.current.broadcaster = event.nativeEvent.layout.y; }}>
             {sectionHeading('server', 'Package broadcaster')}
             <Text style={styles.body}>Enter your HTTPS Bitcoin Core RPC or Alchemy Bitcoin mainnet URL. Alchemy format: https://bitcoin-mainnet.g.alchemy.com/v2/YOUR_API_KEY</Text>
             <Text style={styles.fieldLabel}>HTTPS RPC URL</Text>
-            <StyledInput accessibilityLabel="Broadcaster URL" containerStyle={{ backgroundColor: theme.colors.background }} value={config.url} onChangeText={url => changeConfig({ ...config, url })} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="HTTPS RPC URL" editable={!busy} />
+            <View testID="rpcUrl-bounds" onLayout={event => { fields.current.rpcUrl = event.nativeEvent.layout; }}>
+                <StyledInput accessibilityLabel="Broadcaster URL" containerStyle={{ backgroundColor: theme.colors.background }} value={config.url} onChangeText={url => changeConfig({ ...config, url })} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="HTTPS RPC URL" editable={!busy} onFocus={() => focusField('broadcaster', 'rpcUrl')} onBlur={() => blurField('rpcUrl')} />
+            </View>
             <Text style={styles.fieldLabel}>Username (optional)</Text>
-            <StyledInput accessibilityLabel="RPC username" containerStyle={{ backgroundColor: theme.colors.background }} value={config.username} onChangeText={username => changeConfig({ ...config, username })} autoCapitalize="none" placeholder="RPC username (optional)" editable={!busy} />
+            <View testID="rpcUser-bounds" onLayout={event => { fields.current.rpcUser = event.nativeEvent.layout; }}>
+                <StyledInput accessibilityLabel="RPC username" containerStyle={{ backgroundColor: theme.colors.background }} value={config.username} onChangeText={username => changeConfig({ ...config, username })} autoCapitalize="none" placeholder="RPC username (optional)" editable={!busy} onFocus={() => focusField('broadcaster', 'rpcUser')} onBlur={() => blurField('rpcUser')} />
+            </View>
             <Text style={styles.fieldLabel}>Password (optional)</Text>
-            <StyledInput accessibilityLabel="RPC password" containerStyle={{ backgroundColor: theme.colors.background }} value={config.password} onChangeText={password => changeConfig({ ...config, password })} secureTextEntry placeholder="RPC password (optional)" editable={!busy} />
-            {button('Test and save broadcaster', () => execute(async () => { await testBroadcaster(config); await saveBroadcaster(config); setConnection('Mainnet connection and package submission method verified.'); }, true), !!config.url)}
+            <View testID="rpcPassword-bounds" onLayout={event => { fields.current.rpcPassword = event.nativeEvent.layout; }}>
+                <StyledInput accessibilityLabel="RPC password" containerStyle={{ backgroundColor: theme.colors.background }} value={config.password} onChangeText={password => changeConfig({ ...config, password })} secureTextEntry placeholder="RPC password (optional)" editable={!busy} onFocus={() => focusField('broadcaster', 'rpcPassword')} onBlur={() => blurField('rpcPassword')} />
+            </View>
+            {button('Test and save broadcaster', () => execute(async () => { await testBroadcaster(config); await saveBroadcaster(config); setConnection('Mainnet connection and package submission method verified.'); }, true), !!config.url, false, 'broadcaster')}
             {!!connection && <Text style={styles.body}>{connection}</Text>}
         </View>
-        {!record || record.phase === 'redo' || record.phase === 'building' ? <View style={styles.card}>
+        {!record || record.phase === 'redo' || record.phase === 'building' ? <View style={styles.card} testID="review-section" onLayout={event => { sections.current.review = event.nativeEvent.layout.y; }}>
             {sectionHeading('sliders', record ? 'Rebuild remaining exit' : 'Review recovery')}
             {!record && <Text style={styles.body}>A quote only estimates the recovery and fees. After you review it, “Build and save exit” creates the recovery data and saves it encrypted on this device. You can then export your own backup.</Text>}
             <Text style={styles.fieldLabel}>Bitcoin destination</Text>
-            <StyledInput accessibilityLabel="Bitcoin destination" containerStyle={{ backgroundColor: theme.colors.background }} value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); setQuoteError(''); }} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" />
+            <View testID="destination-bounds" onLayout={event => { fields.current.destination = event.nativeEvent.layout; }}>
+                <StyledInput accessibilityLabel="Bitcoin destination" containerStyle={{ backgroundColor: theme.colors.background }} value={record?.destination || destination} onChangeText={text => { setDestination(text); setQuote(null); setQuoteError(''); }} autoCapitalize="none" autoCorrect={false} editable={!busy && !record} placeholder="Bitcoin destination address" onFocus={() => focusField('review', 'destination')} onBlur={() => blurField('destination')} />
+            </View>
             <Text style={styles.fieldLabel}>Fee rate (sat/vB)</Text>
-            <StyledInput accessibilityLabel="Exit fee rate" containerStyle={{ backgroundColor: theme.colors.background }} value={fee} onChangeText={text => { setFee(text); setQuote(null); setQuoteError(''); }} keyboardType="number-pad" editable={!busy} />
-            {button('Get recovery quote', () => { void review(); }, usable, quoteLoading)}
+            <View testID="fee-bounds" onLayout={event => { fields.current.fee = event.nativeEvent.layout; }}>
+                <StyledInput accessibilityLabel="Exit fee rate" containerStyle={{ backgroundColor: theme.colors.background }} value={fee} onChangeText={text => { setFee(text); setQuote(null); setQuoteError(''); }} keyboardType="number-pad" editable={!busy} onFocus={() => focusField('review', 'fee')} onBlur={() => blurField('fee')} />
+            </View>
+            {button('Get recovery quote', () => { void review(); }, usable, quoteLoading, 'review')}
             <Text accessibilityRole={quoteError ? "alert" : undefined} style={[styles.error, { minHeight: 22 }]}>{quoteError}</Text>
             {quote && <>
                 <View style={styles.quote}>
@@ -234,8 +287,10 @@ export function UnilateralExitScreen() {
                 {!coins.length && <Text style={styles.body}>No eligible confirmed output found. Receive on-chain funds into this wallet, then request a new quote.</Text>}
                 {coin && !record && <Text style={styles.body}>Expected total at the destination: {(quote.recoverableValueSat + BigInt(coin.value) - quote.totalFeeSat).toString()} sats, including unused funding.</Text>}
                 <Text style={styles.body}>Once built, this wallet’s normal spending is paused to protect recovery funds. After broadcasting, an exit cannot be cancelled. Type EXIT to build and save the transactions.</Text>
-                <StyledInput accessibilityLabel="Type EXIT" containerStyle={{ backgroundColor: theme.colors.background }} value={confirmation} onChangeText={setConfirmation} autoCapitalize="characters" editable={!busy} />
-                {button('Build and save exit', () => { void build(); }, usable && !!coin && confirmation === 'EXIT')}
+                <View testID="confirmation-bounds" onLayout={event => { fields.current.confirmation = event.nativeEvent.layout; }}>
+                    <StyledInput accessibilityLabel="Type EXIT" containerStyle={{ backgroundColor: theme.colors.background }} value={confirmation} onChangeText={setConfirmation} autoCapitalize="characters" editable={!busy} onFocus={() => focusField('review', 'confirmation')} onBlur={() => blurField('confirmation')} />
+                </View>
+                {button('Build and save exit', () => { void build(); }, usable && !!coin && confirmation === 'EXIT', false, 'review')}
             </>}
         </View> : null}
         {record && <View style={styles.card}>
@@ -261,7 +316,7 @@ export function UnilateralExitScreen() {
                 ]), usable && backupSaved && record.phase === 'active' && !!config.url && !!record.response?.transactions.some(t => t.status.tag === 'Ready'))}
             </>}
         </View>}
-        <View style={styles.card}>
+        <View style={styles.card} testID="backup-section" onLayout={event => { sections.current.backup = event.nativeEvent.layout.y; }}>
             {sectionHeading('lock', record ? 'Export recovery backup' : 'Import existing backup')}
             <Text style={styles.body}>{record
                 ? 'Your recovery data is saved encrypted on this device. Export a separate file and keep it outside the app so you can restore it if this device is lost. Your seed alone may not replace this data.'
@@ -271,8 +326,10 @@ export function UnilateralExitScreen() {
                 ? 'Choose a password of at least 12 characters to encrypt the exported file. Keep it separately; you will need it to import the file later. This is not your wallet password or seed.'
                 : 'Enter the password you chose when exporting that backup. It is not your wallet password or seed.'}</Text>
             <Text style={styles.fieldLabel}>{record ? 'Choose backup file password' : 'Existing backup file password'}</Text>
-            <StyledInput accessibilityLabel="Backup file password" containerStyle={{ backgroundColor: theme.colors.background }} secureTextEntry value={password} onChangeText={setPassword} placeholder="At least 12 characters" editable={!busy} onFocus={handleInputFocus} />
-            {record ? button('Export encrypted backup', () => { void exportBackup(); }, password.length >= 12) : button('Import encrypted backup', () => { void importBackup(); }, usable && password.length >= 12)}
+            <View testID="backupPassword-bounds" onLayout={event => { fields.current.backupPassword = event.nativeEvent.layout; }}>
+                <StyledInput accessibilityLabel="Backup file password" containerStyle={{ backgroundColor: theme.colors.background }} secureTextEntry value={password} onChangeText={setPassword} placeholder="At least 12 characters" editable={!busy} onFocus={() => focusField('backup', 'backupPassword')} onBlur={() => blurField('backupPassword')} />
+            </View>
+            {record ? button('Export encrypted backup', () => { void exportBackup(); }, password.length >= 12, false, 'backup') : button('Import encrypted backup', () => { void importBackup(); }, usable && password.length >= 12, false, 'backup')}
         </View>
     </ScrollView>;
 }
