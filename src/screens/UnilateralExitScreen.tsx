@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Dimensions, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -22,34 +23,43 @@ export function UnilateralExitScreen() {
     const { activeWallet, isLightningInitialized, runLightningRecovery } = useWallet();
     const navigation = useNavigation<any>();
     const focused = useIsFocused();
-    // Fixed spare space avoids resizing the sheet's scroll content on keyboard events.
-    const bottomSpace = useRef(Dimensions.get('screen').height).current;
     const scrollViewRef = useRef<ScrollView>(null);
     const viewportHeight = useRef(0);
+    const windowHeight = useWindowDimensions().height;
+    const headerHeight = useHeaderHeight();
+    const headerOverlap = Platform.OS === 'ios' ? headerHeight : 0;
+    // iOS form sheets give Yoga an unbounded content height. Pin the React layout
+    // to the native viewport so adding a quote/message cannot expand the scroll
+    // view to its full content height and clamp its offset back to zero.
+    const [scrollHeight, setScrollHeight] = useState(windowHeight);
+    useEffect(() => { setScrollHeight(windowHeight); }, [windowHeight]);
     const scrollOffset = useRef(0);
     const keyboardHeight = useRef(0);
+    const [keyboardInset, setKeyboardInset] = useState(0);
     const focusedField = useRef<{ section: string; field: string } | null>(null);
     const sections = useRef<Record<string, number>>({});
     const fields = useRef<Record<string, { y: number; height: number }>>({});
     const actions = useRef<Record<string, number>>({});
+    const frame = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Coalesce focus and keyboard frame notifications (including password bars)
+    // into one scroll, rather than starting competing animations.
     const revealFocusedField = () => {
-        const current = focusedField.current;
-        if (!current || !keyboardHeight.current || !viewportHeight.current) return;
-        const field = fields.current[current.field];
-        const sectionY = sections.current[current.section];
-        if (!field || sectionY === undefined) return;
-        // All positions are relative to scroll content, never sheet/window coordinates.
-        const top = sectionY + field.y;
-        const bottom = top + field.height;
-        // Android's window resizes for the keyboard; iOS overlays it on the sheet.
-        const visibleHeight = Math.max(0, viewportHeight.current - (Platform.OS === 'ios' ? keyboardHeight.current : 0));
-        const actionBottom = sectionY + (actions.current[current.section] ?? field.y + field.height);
-        const targetBottom = actionBottom - top <= visibleHeight - 40 ? Math.max(bottom, actionBottom) : bottom;
-        let y = scrollOffset.current;
-        if (targetBottom > y + visibleHeight - 20) y = targetBottom - visibleHeight + 20;
-        if (top < y + 20) y = top - 20;
-        y = Math.max(0, y);
-        if (Math.abs(y - scrollOffset.current) > 1) scrollViewRef.current?.scrollTo({ y, animated: true });
+        if (frame.current !== null) clearTimeout(frame.current);
+        frame.current = setTimeout(() => {
+            frame.current = null;
+            const current = focusedField.current;
+            if (!current || !keyboardHeight.current || !viewportHeight.current) return;
+            const visibleHeight = viewportHeight.current - headerOverlap - (Platform.OS === 'ios' ? keyboardHeight.current : 0);
+            const field = fields.current[current.field];
+            const sectionY = sections.current[current.section];
+            if (!field || sectionY === undefined || visibleHeight <= 0) return;
+            const top = sectionY + field.y;
+            const actionKey = current.field === 'confirmation' ? 'build' : current.section;
+            const bottom = sectionY + (actions.current[actionKey] ?? field.y + field.height);
+            // Prioritize the field if a small viewport cannot fit the whole group.
+            const target = Math.max(0, Math.min(bottom - visibleHeight + 16, top - 16));
+            if (Math.abs(target - scrollOffset.current) > 1) scrollViewRef.current?.scrollTo({ y: target, animated: true });
+        }, 80);
     };
     const focusField = (section: string, field: string) => {
         focusedField.current = { section, field };
@@ -60,13 +70,20 @@ export function UnilateralExitScreen() {
         if (focusedField.current?.field === field) focusedField.current = null;
     };
     useEffect(() => {
-        const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', event => {
+        const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow', event => {
             keyboardHeight.current = event.endCoordinates.height;
+            setKeyboardInset(Platform.OS === 'ios' ? event.endCoordinates.height : 0);
             revealFocusedField();
         });
-        const hide = Keyboard.addListener('keyboardDidHide', () => { keyboardHeight.current = 0; });
-        return () => { show.remove(); hide.remove(); };
-    }, []);
+        const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
+            keyboardHeight.current = 0;
+            setKeyboardInset(0);
+        });
+        return () => {
+            show.remove(); hide.remove();
+            if (frame.current !== null) clearTimeout(frame.current);
+        };
+    }, [headerOverlap]);
     const runRef = useRef(runLightningRecovery); runRef.current = runLightningRecovery;
     const walletRef = useRef(activeWallet?.id); walletRef.current = activeWallet?.id;
     const working = useRef(false);
@@ -90,7 +107,7 @@ export function UnilateralExitScreen() {
     const [exported, setExported] = useState(false);
     const styles = StyleSheet.create({
         page: { flex: 1, backgroundColor: theme.colors.background },
-        content: { paddingTop: 20, paddingBottom: 120, paddingHorizontal: 20, gap: 20, },
+        content: { paddingTop: 20, paddingBottom: 32, paddingHorizontal: 20, gap: 20, },
         card: { padding: 20, backgroundColor: theme.colors.surface, borderRadius: 20, gap: 16 },
         title: { fontSize: 20, fontWeight: '600', color: theme.colors.primary },
         body: { color: theme.colors.muted, fontSize: 14, lineHeight: 22 },
@@ -222,10 +239,15 @@ export function UnilateralExitScreen() {
         } finally { if (file.exists) file.delete(); }
     });
 
-    return <ScrollView ref={scrollViewRef} style={styles.page}
-        contentContainerStyle={[styles.content, { paddingBottom: bottomSpace }]}
-        onLayout={event => { viewportHeight.current = event.nativeEvent.layout.height; }}
-        onScroll={event => { scrollOffset.current = event.nativeEvent.contentOffset.y; }}
+    return <ScrollView ref={scrollViewRef} style={[styles.page, Platform.OS === 'ios' && { flex: 0, height: scrollHeight }]}
+        contentContainerStyle={styles.content}
+        contentInset={{ bottom: keyboardInset + headerOverlap }}
+        automaticallyAdjustKeyboardInsets={false}
+        onScroll={event => {
+            scrollOffset.current = event.nativeEvent.contentOffset.y;
+            const height = event.nativeEvent.layoutMeasurement.height;
+            if (height !== viewportHeight.current) { viewportHeight.current = height; setScrollHeight(height); revealFocusedField(); }
+        }}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" bounces={false}>
@@ -290,7 +312,7 @@ export function UnilateralExitScreen() {
                 <View testID="confirmation-bounds" onLayout={event => { fields.current.confirmation = event.nativeEvent.layout; }}>
                     <StyledInput accessibilityLabel="Type EXIT" containerStyle={{ backgroundColor: theme.colors.background }} value={confirmation} onChangeText={setConfirmation} autoCapitalize="characters" editable={!busy} onFocus={() => focusField('review', 'confirmation')} onBlur={() => blurField('confirmation')} />
                 </View>
-                {button('Build and save exit', () => { void build(); }, usable && !!coin && confirmation === 'EXIT', false, 'review')}
+                {button('Build and save exit', () => { void build(); }, usable && !!coin && confirmation === 'EXIT', false, 'build')}
             </>}
         </View> : null}
         {record && <View style={styles.card}>
