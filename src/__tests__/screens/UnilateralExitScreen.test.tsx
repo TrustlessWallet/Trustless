@@ -7,6 +7,7 @@ import { loadExit } from '../../services/exitStorage';
 
 afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
 
+jest.mock('@react-navigation/elements', () => ({ useHeaderHeight: () => 58 }));
 jest.mock('@react-navigation/native', () => ({
     useNavigation: () => ({}), useIsFocused: () => true,
 }));
@@ -103,7 +104,8 @@ it('keeps the previous error visible during retry and does not scroll on repeate
     screen.unmount();
 });
 
-it('reveals fields and their buttons without changing content padding or scrolling through zero', async () => {
+it('uses the native sheet viewport, keeps padding small, and reveals each section action', async () => {
+    jest.useFakeTimers();
     const listeners: Record<string, (event: any) => void> = {};
     const addListener = Keyboard.addListener.bind(Keyboard);
     jest.spyOn(Keyboard, 'addListener').mockImplementation((name, handler) => {
@@ -118,33 +120,37 @@ it('reveals fields and their buttons without changing content padding or scrolli
     const layout = (node: any, y: number, height: number) => act(() => node.props.onLayout({
         nativeEvent: { layout: { x: 0, y, width: 390, height } },
     }));
-    layout(scroll, 0, 700);
+
     layout(screen.getByTestId('broadcaster-section'), 400, 500);
     layout(screen.getByTestId('rpcUrl-bounds'), 100, 56);
     layout(screen.getByTestId('rpcUser-bounds'), 200, 56);
     layout(screen.getByRole('button', { name: 'Test and save broadcaster' }), 350, 52);
-    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 300 } } });
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 300 }, layoutMeasurement: { height: 700 } } });
     const padding = StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom;
     fireEvent(screen.getByLabelText('Broadcaster URL'), 'focus', {});
     expect(scrollTo).not.toHaveBeenCalled();
-    act(() => { listeners.keyboardWillShow({ endCoordinates: { height: 300 } }); });
-    expect(scrollTo).toHaveBeenLastCalledWith({ y: 422, animated: true });
+    act(() => { listeners.keyboardWillChangeFrame({ endCoordinates: { height: 300 } }); jest.advanceTimersByTime(80); });
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 476, animated: true });
     expect(scrollTo).toHaveBeenCalledTimes(1);
-    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 422 } } });
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 476 }, layoutMeasurement: { height: 700 } } });
     fireEvent(screen.getByLabelText('RPC username'), 'focus', {});
+    act(() => jest.advanceTimersByTime(80));
     // The field and section button are already visible.
     expect(scrollTo).toHaveBeenCalledTimes(1);
 
     layout(screen.getByTestId('backup-section'), 1800, 400);
     layout(screen.getByTestId('backupPassword-bounds'), 200, 56);
     layout(screen.getByRole('button', { name: 'Import encrypted backup' }), 280, 52);
-    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 1600 } } });
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 1600 }, layoutMeasurement: { height: 700 } } });
     fireEvent(screen.getByLabelText('Backup file password'), 'focus', {});
-    expect(scrollTo).toHaveBeenLastCalledWith({ y: 1752, animated: true });
+    act(() => jest.advanceTimersByTime(80));
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 1806, animated: true });
     expect(scrollTo).toHaveBeenCalledTimes(2);
-    act(() => { listeners.keyboardDidHide({}); });
+    act(() => { listeners.keyboardWillHide({}); jest.advanceTimersByTime(80); });
     expect(scrollTo).toHaveBeenCalledTimes(2);
+    expect(padding).toBe(32);
     expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingBottom).toBe(padding);
+    expect(StyleSheet.flatten(scroll.props.style).height).toBe(700);
     expect(scroll.props.maintainVisibleContentPosition).toBeUndefined();
     screen.unmount();
 });
