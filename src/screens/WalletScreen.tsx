@@ -578,7 +578,7 @@ const WalletScreen = () => {
     const recentTransactions = displayTransactions.slice(0, 10);
 
     const toggleIconElement = (
-        <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={false}>
+        <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
             <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
                 <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
                     <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
@@ -676,25 +676,21 @@ const WalletScreen = () => {
                                 onPress={toggleMode}
                                 disabled={isToggleDisabled}
                             >
-                                <View pointerEvents="none">
-                                    {activeWallet?.type !== 'watch-only' && toggleIconElement}
-                                </View>
+                                {activeWallet?.type !== 'watch-only' && toggleIconElement}
                             </TouchableOpacity>
 
                             <TouchableOpacity activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
-                                <View pointerEvents="none">
-                                    <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={false}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
-                                            <Text
-                                                style={[styles.walletName]}
-                                                numberOfLines={1}
-                                                ellipsizeMode="middle"
-                                            >
-                                                {activeWallet?.name || 'Wallet'}
-                                            </Text>
-                                        </View>
-                                    </GlassView>
-                                </View>
+                                <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={true}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
+                                        <Text
+                                            style={[styles.walletName]}
+                                            numberOfLines={1}
+                                            ellipsizeMode="middle"
+                                        >
+                                            {activeWallet?.name || 'Wallet'}
+                                        </Text>
+                                    </View>
+                                </GlassView>
                             </TouchableOpacity>
 
                             <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
