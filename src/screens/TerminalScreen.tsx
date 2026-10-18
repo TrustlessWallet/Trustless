@@ -4,6 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
+import { GlassView } from '../components/GlassView';
 import { useWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -54,7 +55,7 @@ export default function TerminalScreen() {
   const scope = `${network}:${activeWallet?.id || ''}`;
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
-  const styles = makeStyles(theme.colors.background, theme.colors.primary, theme.colors.surface, theme.colors.muted, theme.colors.border, theme.colors.bitcoin);
+  const styles = makeStyles(theme.colors.background, theme.colors.primary, theme.colors.inversePrimary, theme.colors.surface, theme.colors.muted, theme.colors.border, theme.colors.bitcoin);
 
   useEffect(() => {
     void AsyncStorage.getItem(PREFERRED_UNIT_KEY).then(saved => {
@@ -241,7 +242,7 @@ export default function TerminalScreen() {
   };
 
   const selectUnit = (next: TerminalUnit) => {
-    if (busy.current || next === unit) { setUnitPickerOpen(false); return; }
+    if (busy.current || request || next === unit) { setUnitPickerOpen(false); return; }
     const apply = () => {
       if (!isFiat(unit) && !isFiat(next)) {
         try { setAmount(formatTerminalAmount(parseTerminalAmount(amount, unit), next)); }
@@ -251,11 +252,7 @@ export default function TerminalScreen() {
       setUnit(next); setError(''); setUnitPickerOpen(false);
       void AsyncStorage.setItem(PREFERRED_UNIT_KEY, next).catch(() => setError('Could not save preferred currency.'));
     };
-    if ((isFiat(unit) || isFiat(next)) && amount && amount !== '0' && amount !== '0.00') {
-      Alert.alert('Change currency?', 'The current amount will be cleared.', [
-        { text: 'Keep amount', style: 'cancel' }, { text: 'Change currency', onPress: apply },
-      ]);
-    } else apply();
+    apply();
   };
 
   const key = (digit: string) => {
@@ -289,8 +286,18 @@ export default function TerminalScreen() {
 
   return <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
     <View style={styles.header}>
-      <TouchableOpacity accessibilityLabel="Exit terminal" style={styles.exitButton} disabled={changing || stage === 'creating'} onPress={exit}>
-        <Feather name="x" size={22} color={theme.colors.primary} />
+      {!hasRequest ? <TouchableOpacity accessibilityLabel="Choose currency" style={styles.glassControl} onPress={() => setUnitPickerOpen(true)}>
+          <GlassView width={92} height={40} shape="capsule" interactive={true} style={styles.glassSurface}>
+            <View style={styles.glassRow}>
+              <Text style={styles.glassLabel}>{unit}</Text>
+              <Feather name="chevron-down" size={14} color={theme.colors.primary} />
+            </View>
+          </GlassView>
+        </TouchableOpacity> : <View style={styles.glassControl} />}
+      <TouchableOpacity accessibilityLabel="Exit terminal" style={styles.glassControl} disabled={changing || stage === 'creating'} onPress={exit}>
+        <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
+          <Feather name="x" size={21} color={theme.colors.primary} />
+        </GlassView>
       </TouchableOpacity>
     </View>
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="always">
@@ -304,7 +311,6 @@ export default function TerminalScreen() {
         : !hasRequest ? <View style={styles.entry}>
             <View style={styles.amountArea}>
               <Text testID="terminal-amount" style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.45}>{amountPrefix}{amount || '0'}</Text>
-              <TouchableOpacity accessibilityLabel="Choose currency" style={styles.unit} onPress={() => setUnitPickerOpen(true)}><Text style={styles.unitText}>{unit}  ▾</Text></TouchableOpacity>
               {isFiat(unit) ? <View style={styles.priceLine}>
                 <Text style={styles.approx}>{approxSats !== null ? `≈ ${approxSats} sats` : rateLoading ? 'Fetching price…' : rateFresh ? 'Enter an amount' : 'Price unavailable'}</Text>
                 {(!rateFresh || rateError) && <TouchableOpacity onPress={() => { void refreshRates(); }}><Text style={styles.refresh}>Refresh price</Text></TouchableOpacity>}
@@ -337,31 +343,38 @@ export default function TerminalScreen() {
             <TouchableOpacity style={stage === 'received' ? styles.primary : styles.secondary} onPress={stage === 'received' ? () => { void endRequest(); } : confirmEnd}><Text style={stage === 'received' ? styles.primaryText : styles.secondaryText}>{stage === 'received' ? 'New payment' : 'End request'}</Text></TouchableOpacity>
           </View>}
     </ScrollView>
-    {entry && <TouchableOpacity testID="terminal-request" disabled={stage === 'creating' || (!isLightningInitialized && !hydrationFailed) || (isFiat(unit) && !rateFresh && !hydrationFailed)} style={[styles.charge, { paddingBottom: insets.bottom + 10 }, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
-      <Text style={styles.chargeText}>{hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating request…' : 'Charge'}</Text>
-    </TouchableOpacity>}
+    {entry && <View style={styles.actionBar}>
+      <TouchableOpacity testID="terminal-request" disabled={stage === 'creating' || (!isLightningInitialized && !hydrationFailed) || (isFiat(unit) && !rateFresh && !hydrationFailed)} style={[styles.primaryAction, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
+        <Text style={styles.primaryActionText}>{hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>
+      </TouchableOpacity>
+    </View>}
     <Modal visible={unitPickerOpen} transparent animationType="fade" onRequestClose={() => setUnitPickerOpen(false)}>
-      <View style={styles.modalBackdrop} accessible={false}>
+      <View style={[styles.modalBackdrop, { paddingTop: insets.top + 58 }]} accessible={false}>
         <Pressable style={styles.modalOverlay} accessible={false} onPress={() => setUnitPickerOpen(false)} />
-        <View style={styles.modalCard}>{(['USD','EUR','CHF','sats','BTC'] as TerminalUnit[]).map(choice =>
-          <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={styles.modalRow} onPress={() => selectUnit(choice)}><Text style={[styles.modalText, choice === unit && { color: theme.colors.bitcoin }]}>{choice}</Text></TouchableOpacity>)}</View>
+        <View style={styles.currencyPopover}>
+          <GlassView width={196} height={128} borderRadius={16} shape="rectangle" interactive={true} style={styles.glassSurface}>
+            <View style={styles.currencyGrid}>{(['USD','EUR','CHF','sats','BTC'] as TerminalUnit[]).map(choice =>
+              <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={[styles.currencyOption, choice === unit && styles.currencyOptionSelected]} onPress={() => selectUnit(choice)}><Text style={[styles.currencyText, choice === unit && styles.currencyTextSelected]}>{choice}</Text></TouchableOpacity>)}</View>
+          </GlassView>
+        </View>
       </View>
     </Modal>
   </View>;
 }
 
-function makeStyles(background: string, primary: string, surface: string, muted: string, border: string, bitcoin: string) {
+function makeStyles(background: string, primary: string, inversePrimary: string, surface: string, muted: string, border: string, bitcoin: string) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: background },
-    header: { height: 54, paddingHorizontal: 18, alignItems: 'flex-end', justifyContent: 'center' },
-    exitButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: surface },
+    header: { height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    glassControl: { width: 92, height: 44, justifyContent: 'center' },
+    glassSurface: { overflow: 'visible' },
+    glassRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+    glassLabel: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13, marginRight: 5 },
     scroll: { flex: 1 },
     content: { flexGrow: 1 },
     entry: { flex: 1, paddingHorizontal: 24 },
     amountArea: { flex: 1, minHeight: 150, alignItems: 'center', justifyContent: 'center' },
     amount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 62, textAlign: 'center', width: '100%' },
-    unit: { marginTop: 14, minWidth: 96, height: 40, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: surface },
-    unitText: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
     priceLine: { minHeight: 42, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
     approx: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, textAlign: 'center' },
     refresh: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 12, marginTop: 5 },
@@ -369,8 +382,9 @@ function makeStyles(background: string, primary: string, surface: string, muted:
     keypad: { flexDirection: 'row', flexWrap: 'wrap' },
     key: { width: '33.33%', height: 64, alignItems: 'center', justifyContent: 'center' },
     keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 27 },
-    charge: { backgroundColor: bitcoin, minHeight: 70, alignItems: 'center', justifyContent: 'center', paddingTop: 10 },
-    chargeText: { color: '#000000', fontFamily: 'SpaceMono-Bold', fontSize: 18 },
+    actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 20 },
+    primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+    primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
     disabled: { opacity: 0.55 },
     checkout: { flex: 1, paddingHorizontal: 24, paddingBottom: 24, alignItems: 'center', justifyContent: 'center' },
     checkoutAmount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 40, textAlign: 'center', width: '100%' },
@@ -385,10 +399,13 @@ function makeStyles(background: string, primary: string, surface: string, muted:
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
     message: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 15, textAlign: 'center', marginTop: 18 },
     error: { color: '#CC0000', fontFamily: 'SpaceMono-Regular', fontSize: 12, textAlign: 'center', marginTop: 10 },
-    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 32 },
+    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.16)', alignItems: 'flex-start', paddingLeft: 18 },
     modalOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-    modalCard: { backgroundColor: background, borderRadius: 8, width: '100%', maxWidth: 320, paddingVertical: 8 },
-    modalRow: { height: 54, paddingHorizontal: 24, justifyContent: 'center' },
-    modalText: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 17 },
+    currencyPopover: { width: 196, height: 128 },
+    currencyGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 8, gap: 4 },
+    currencyOption: { width: 56, height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
+    currencyOptionSelected: { backgroundColor: surface },
+    currencyText: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
+    currencyTextSelected: { color: bitcoin },
   });
 }
