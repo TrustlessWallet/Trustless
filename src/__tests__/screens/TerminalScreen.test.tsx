@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import TerminalScreen from '../../screens/TerminalScreen';
+import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
 import { useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 
@@ -25,6 +25,11 @@ beforeEach(async () => {
   validateTerminalInvoice.mockReset();
   verifyTerminalInvoice.mockReset().mockResolvedValue({ status: 'unknown' });
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: wallet, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
+});
+
+it('runs a pending terminal check immediately after the device clock is corrected backward', () => {
+  expect(isTerminalPollDue(10_000, 5_000, 9_000)).toBe(true);
+  expect(isTerminalPollDue(10_000, 5_000, 14_000)).toBe(false);
 });
 
 it('charges a fiat amount using a fresh quote and keeps the frozen amount beside the invoice', async () => {
@@ -178,9 +183,10 @@ it('hides a restored invoice until its amount, network, and expiry are validated
 
 it('allows verification of the next request after ending one with a check in flight', async () => {
   const expiresAt = Date.now() + 60000;
+  const createdAt = Date.now() - 1000;
   await AsyncStorage.setItem('@terminalActiveRequest:mainnet:wallet-a', JSON.stringify({
     id: 'saved', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc', amountSats: 1,
-    createdAt: Date.now(), expiresAt,
+    createdAt, expiresAt,
   }));
   validateTerminalInvoice.mockResolvedValue(expiresAt);
   let finishFirst!: (value: { status: string }) => void;
@@ -190,6 +196,7 @@ it('allows verification of the next request after ending one with a check in fli
   const view = render(<TerminalScreen />);
   await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
   await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(1));
+  expect(verifyTerminalInvoice).toHaveBeenCalledWith('lnbc123abc', createdAt, undefined, false);
   fireEvent.press(view.getByText('End request'));
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));

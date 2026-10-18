@@ -28,6 +28,7 @@ jest.mock('@breeztech/breez-sdk-spark-react-native', () => ({
     connect: jest.fn(), defaultConfig: () => ({}), Network: { Mainnet: 'mainnet' },
     MaxFee: { NetworkRecommended: class {} }, Seed: { Mnemonic: { new: (value: any) => value } },
     AssetFilter: { Bitcoin: class {} },
+    PaymentDetailsFilter: { Lightning: { new: (value: any) => value } },
     PaymentStatus: { Completed: 0, Pending: 1, Failed: 2 }, PaymentType: { Receive: 0, Send: 1 },
     InputType_Tags: { Bolt11Invoice: 'Bolt11Invoice', LightningAddress: 'LightningAddress', LnurlPay: 'LnurlPay' },
     SendPaymentMethod_Tags: { Bolt11Invoice: 'Bolt11Invoice', SparkAddress: 'SparkAddress', SparkInvoice: 'SparkInvoice' },
@@ -129,6 +130,16 @@ it('updates balance even when an earlier history request is stuck', async () => 
     await act(async () => { await a.emit({ tag: 'Synced' }); });
     expect(result.current.lightningBalance).toBe(777);
     await act(async () => { history.resolve({ payments: [] }); });
+});
+
+it('falls back to an unfiltered lookup for a terminal request that may have been saved with a wrong device clock', async () => {
+    const { result } = await connected();
+    a.listPayments.mockClear();
+    await act(async () => {
+        await result.current.verifyTerminalInvoice('lnbc123abc', 1_000_000, undefined, true);
+    });
+    expect(a.listPayments).toHaveBeenNthCalledWith(1, expect.objectContaining({ fromTimestamp: 700n }));
+    expect(a.listPayments).toHaveBeenNthCalledWith(2, expect.objectContaining({ fromTimestamp: undefined }));
 });
 
 it('returns refresh promptly while a slow synchronization continues in the background', async () => {

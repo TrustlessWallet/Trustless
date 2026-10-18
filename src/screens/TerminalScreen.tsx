@@ -16,6 +16,7 @@ import { FiatCurrency, getTerminalRates, TerminalRates } from '../services/termi
 const PREFERRED_UNIT_KEY = '@terminalPreferredUnit';
 const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
 const isFiat = (unit: TerminalUnit): unit is FiatCurrency => FIAT_UNITS.includes(unit as FiatCurrency);
+export const isTerminalPollDue = (lastAttempt: number, intervalMs: number, now = Date.now()) => now < lastAttempt || now - lastAttempt >= intervalMs;
 
 type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expired' | 'verificationUnavailable' | 'creationFailed' | 'walletChanged';
 
@@ -45,6 +46,7 @@ export default function TerminalScreen() {
   const busy = useRef(false);
   const checking = useRef(false);
   const lastCheck = useRef(0);
+  const lastUnfilteredCheck = useRef(0);
   const rateFlight = useRef(false);
   const userSelectedUnit = useRef(false);
   const userEditedAmount = useRef(false);
@@ -89,6 +91,7 @@ export default function TerminalScreen() {
     busy.current = false;
     checking.current = false;
     lastCheck.current = 0;
+    lastUnfilteredCheck.current = Date.now();
     knownPaymentId.current = undefined;
     setRequest(null);
     setValidated(false);
@@ -133,14 +136,16 @@ export default function TerminalScreen() {
 
   const verify = useCallback(async (force = false) => {
     if (!request || !validated || !isLightningInitialized || !active || checking.current || stage === 'received' || stage === 'creating') return;
-    if (!force && Date.now() - lastCheck.current < 5000) return;
+    if (!force && !isTerminalPollDue(lastCheck.current, 5000)) return;
     lastCheck.current = Date.now();
     const captured = generation.current;
     const capturedScope = scope;
     const requestId = request.id;
     checking.current = true;
     try {
-      const result = await verifyTerminalInvoice(request.invoice, knownPaymentId.current);
+      const useUnfilteredFallback = !knownPaymentId.current && (force || isTerminalPollDue(lastUnfilteredCheck.current, 60_000));
+      if (useUnfilteredFallback) lastUnfilteredCheck.current = Date.now();
+      const result = await verifyTerminalInvoice(request.invoice, request.createdAt, knownPaymentId.current, useUnfilteredFallback);
       if (!mounted.current || !activeRef.current || captured !== generation.current || capturedScope !== scopeRef.current || requestId !== request.id) return;
       if (result.paymentId) knownPaymentId.current = result.paymentId;
       if (result.status === 'received') { setStage('received'); setError(''); }
@@ -203,6 +208,7 @@ export default function TerminalScreen() {
       if (!mounted.current || captured !== generation.current || capturedScope !== scopeRef.current) return;
       setRequest(next);
       lastCheck.current = 0;
+      lastUnfilteredCheck.current = Date.now();
       setValidated(true);
       setStage(next.expiresAt <= Date.now() ? 'expired' : 'waiting');
     } catch (e) {
@@ -221,6 +227,7 @@ export default function TerminalScreen() {
       ++generation.current;
       checking.current = false;
       lastCheck.current = 0;
+      lastUnfilteredCheck.current = Date.now();
       knownPaymentId.current = undefined;
       setRequest(null); setStage('entry'); setAmount(''); setError('');
       setValidated(false);
