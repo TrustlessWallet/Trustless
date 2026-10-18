@@ -11,6 +11,8 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import ExportPSBTScreen from '../screens/ExportPSBTScreen';
 import ImportPSBTScreen from '../screens/ImportPSBTScreen';
 import TabNavigator from './TabNavigator';
+import TerminalScreen from '../screens/TerminalScreen';
+import { useWalletMode } from '../contexts/WalletModeContext';
 import QRScannerScreen from '../screens/QRScannerScreen';
 import BackupIntroScreen from '../screens/BackupIntroScreen';
 import ShowMnemonicScreen from '../screens/ShowMnemonicScreen';
@@ -51,6 +53,11 @@ import { GlassView } from '../components/GlassView';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 const AUTO_LOCK_TIME_KEY = '@autoLockTime';
+
+const MainRoot = () => {
+  const { mode } = useWalletMode();
+  return mode === 'terminal' ? <TerminalScreen /> : <TabNavigator />;
+};
 
 const PrivacyOverlayScreen = () => {
   const { isDark } = useTheme();
@@ -394,7 +401,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       >
         <Stack.Screen
           name="MainTabs"
-          component={TabNavigator}
+          component={MainRoot}
           options={{
             headerShown: false,
             contentStyle: { backgroundColor: theme.colors.background }

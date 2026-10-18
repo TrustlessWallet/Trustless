@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppNavigator from './src/navigation/AppNavigator';
 import { WalletProvider } from './src/contexts/WalletContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
+import { WalletModeProvider } from './src/contexts/WalletModeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setNetwork, onNetworkChange } from './src/constants/network';
 import {
@@ -184,12 +185,12 @@ export default function App() {
           <ThemeProvider initialIsDark={initialIsDark}>
             {dbReady && networkLoaded ? (
               <WalletProvider key={appKey}>
-                <View style={{ flex: 1 }}>
+                <WalletModeProvider><View style={{ flex: 1 }}>
                   <ThemedStatusBar />
                   {/* ADDED: Passed the showLaunchOverlay state as a prop */}
                   <PrivacySwitcherOverlay isBooting={showLaunchOverlay} />
                     <AppNavigator onBootReady={() => setNavBootReady(true)} />
-                </View>
+                </View></WalletModeProvider>
               </WalletProvider>
             ) : (
               <View style={{ flex: 1 }}><ThemedStatusBar /></View>

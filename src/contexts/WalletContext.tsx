@@ -36,6 +36,7 @@ import {
     dbUpdateAddressLabel
 } from '../services/database';
 import { InteractionManager } from 'react-native';
+import { matchTerminalPayment, normalizeInvoice } from '../services/terminal';
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
 
 // Keep the call sites grouped around each SDK operation without retaining the
@@ -190,6 +191,9 @@ interface WalletContextType {
     lightningTransactions: LightningTransaction[];
     defaultLightningInvoice: string;
     getLightningInvoice: (amountSats: number) => Promise<string>;
+    createTerminalInvoice: (amountSats: number) => Promise<{ invoice: string; expiresAt: number }>;
+    validateTerminalInvoice: (invoice: string, amountSats: number) => Promise<number>;
+    verifyTerminalInvoice: (invoice: string, knownPaymentId?: string) => Promise<{ status: 'received' | 'pending' | 'unknown'; paymentId?: string }>;
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<LightningTransaction>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
     getLightningTopUpAddress: () => Promise<string>;
@@ -687,6 +691,87 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         assertCurrent();
         return req.paymentRequest;
     }, []);
+
+    const validateTerminalInvoice = async (invoice: string, amountSats: number): Promise<number> => {
+        if (!Number.isSafeInteger(amountSats) || amountSats <= 0) throw new Error('Invalid invoice amount.');
+        const { sdk, assertCurrent } = requireLightningSession();
+        const walletId = activeWalletIdRef.current;
+        const parsed = await withDeadline(sdk.parse(invoice), 'Checking terminal invoice');
+        assertCurrent();
+        if (walletId !== activeWalletIdRef.current || parsed.tag !== breezSdk.InputType_Tags.Bolt11Invoice) throw new Error('Invalid invoice for this wallet.');
+        const details = parsed.inner[0];
+        const expectedNetwork = IS_TESTNET ? breezSdk.BitcoinNetwork.Testnet3 : breezSdk.BitcoinNetwork.Bitcoin;
+        if (details.network !== expectedNetwork || details.amountMsat !== BigInt(amountSats) * 1000n ||
+            normalizeInvoice(details.invoice.bolt11) !== normalizeInvoice(invoice)) {
+            throw new Error('Invoice amount or network does not match the saved request.');
+        }
+        const expiresAtBig = (details.timestamp + details.expiry) * 1000n;
+        if (expiresAtBig > BigInt(Number.MAX_SAFE_INTEGER) || expiresAtBig <= 0n) throw new Error('Invalid invoice expiry.');
+        return Number(expiresAtBig);
+    };
+
+    const createTerminalInvoice = async (amountSats: number): Promise<{ invoice: string; expiresAt: number }> => {
+        if (!Number.isSafeInteger(amountSats) || amountSats <= 0) throw new Error('Enter a valid amount.');
+        if (IS_TESTNET) throw new Error('Lightning checkout is unavailable on Testnet.');
+        const { sdk, assertCurrent } = requireLightningSession();
+        const walletId = activeWalletIdRef.current;
+        if (!walletId || activeWallet?.type === 'watch-only') throw new Error('Open a signing wallet first.');
+        await assertNoActiveExit(walletId);
+        assertCurrent();
+        const response = await withDeadline(sdk.receivePayment({
+            paymentMethod: breezSdk.ReceivePaymentMethod.Bolt11Invoice.new({
+                description: 'Trustless terminal payment', amountSats: BigInt(amountSats),
+                expirySecs: undefined, paymentHash: undefined, receiverIdentityPublicKey: undefined,
+            }),
+        }), 'Generating terminal invoice');
+        assertCurrent();
+        if (walletId !== activeWalletIdRef.current) throw new Error('The active wallet changed. Please try again.');
+        const invoice = response.paymentRequest;
+        const expiresAt = await validateTerminalInvoice(invoice, amountSats);
+        assertCurrent();
+        if (expiresAt <= Date.now()) {
+            throw new Error('Invoice is already expired or has an invalid expiry.');
+        }
+        return { invoice, expiresAt };
+    };
+
+    const verifyTerminalInvoice = async (invoice: string, knownPaymentId?: string): Promise<{ status: 'received' | 'pending' | 'unknown'; paymentId?: string }> => {
+        const { sdk, assertCurrent } = requireLightningSession();
+        const walletId = activeWalletIdRef.current;
+        const target = normalizeInvoice(invoice);
+        if (!target) throw new Error('Missing invoice.');
+        const evaluate = (payment: breezSdk.Payment) => matchTerminalPayment(
+            payment, target, breezSdk.PaymentType.Receive,
+            breezSdk.PaymentStatus.Completed, breezSdk.PaymentDetails_Tags.Lightning,
+        );
+        if (knownPaymentId) {
+            const result = await withDeadline(sdk.getPayment({ paymentId: knownPaymentId }), 'Checking terminal payment');
+            assertCurrent();
+            if (walletId !== activeWalletIdRef.current) throw new Error('The active wallet changed.');
+            const match = evaluate(result.payment);
+            if (match) return match;
+        }
+        // A resumed request has no SDK payment ID. The SDK has no exact-invoice
+        // filter, so inspect a bounded set of receive payments and retain unknown
+        // when the invoice has not appeared in that set.
+        for (let offset = 0; offset < 250; offset += 50) {
+            const result = await withDeadline(sdk.listPayments({
+                offset, limit: 50, sortAscending: false,
+                typeFilter: [breezSdk.PaymentType.Receive], statusFilter: undefined,
+                assetFilter: new breezSdk.AssetFilter.Bitcoin(),
+                paymentDetailsFilter: [breezSdk.PaymentDetailsFilter.Lightning.new({ htlcStatus: undefined })],
+                fromTimestamp: undefined, toTimestamp: undefined,
+            }), 'Checking terminal payments');
+            assertCurrent();
+            if (walletId !== activeWalletIdRef.current) throw new Error('The active wallet changed.');
+            for (const payment of result.payments) {
+                const match = evaluate(payment);
+                if (match) return match;
+            }
+            if (result.payments.length < 50) break;
+        }
+        return { status: 'unknown' };
+    };
 
     const runLightningRecovery: RunExit = async (operation, recoveryOnly = false) => {
         if (IS_TESTNET) throw new Error('Unilateral recovery currently supports Bitcoin mainnet only.');
@@ -1774,6 +1859,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         checkLightningAddressAvailable,
         registerLightningAddress,
         getLightningInvoice,
+        createTerminalInvoice,
+        validateTerminalInvoice,
+        verifyTerminalInvoice,
         runLightningRecovery,
         payLightningInvoice,
         estimateLightningFee,
