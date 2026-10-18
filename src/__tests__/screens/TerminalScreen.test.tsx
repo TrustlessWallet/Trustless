@@ -1,9 +1,10 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen from '../../screens/TerminalScreen';
 import { useWallet } from '../../contexts/WalletContext';
+import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: jest.fn(), changing: false }) }));
@@ -19,35 +20,111 @@ const verifyTerminalInvoice = jest.fn();
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  clearTerminalRateCacheForTests();
   createTerminalInvoice.mockReset();
   validateTerminalInvoice.mockReset();
   verifyTerminalInvoice.mockReset().mockResolvedValue({ status: 'unknown' });
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: wallet, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
 });
 
+it('charges a fiat amount using a fresh quote and keeps the frozen amount beside the invoice', async () => {
+  (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000.12345678' } } }) });
+  createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
+  const view = render(<TerminalScreen />);
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Choose currency'));
+  fireEvent.press(view.getByLabelText('USD'));
+  await waitFor(() => expect(view.queryByText('Price unavailable')).toBeNull());
+  fireEvent.press(view.getByText('1'));
+  fireEvent.press(view.getByText('0'));
+  fireEvent.press(view.getByText('0'));
+  await waitFor(() => expect(view.getByText('≈ 100000 sats')).toBeTruthy());
+  fireEvent.press(view.getByTestId('terminal-request'));
+  await waitFor(() => expect(createTerminalInvoice).toHaveBeenCalledWith(100000));
+  await waitFor(() => expect(view.getByText('$100.00')).toBeTruthy());
+  expect(view.getByText('100000 sats')).toBeTruthy();
+  const raw = await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a');
+  expect(JSON.parse(raw || '{}').fiat).toEqual({ currency: 'USD', amountMinor: 10000, rate: '100000', fetchedAt: expect.any(Number) });
+});
+
+it('requires an available rate before charging in fiat', async () => {
+  (global as any).fetch = jest.fn().mockRejectedValue(new Error('offline'));
+  const view = render(<TerminalScreen />);
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Choose currency'));
+  fireEvent.press(view.getByLabelText('EUR'));
+  await waitFor(() => expect(view.getByText('Refresh price')).toBeTruthy());
+  expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(true);
+  expect(createTerminalInvoice).not.toHaveBeenCalled();
+});
+
+it('does not reinterpret entered sats when the saved denomination loads late', async () => {
+  const readMock = AsyncStorage.getItem as jest.Mock;
+  const originalRead = readMock.getMockImplementation()!;
+  let finish!: (unit: string) => void;
+  readMock.mockImplementation(key => key === '@terminalPreferredUnit'
+    ? new Promise(resolve => { finish = resolve; }) : originalRead(key));
+  const view = render(<TerminalScreen />);
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
+  fireEvent.press(view.getByText('1'));
+  await act(async () => { finish('BTC'); });
+  expect(view.getByTestId('terminal-amount').props.children).toEqual(['', '1']);
+  expect(view.getByText('sats  ▾')).toBeTruthy();
+  readMock.mockImplementation(originalRead);
+});
+
+it('restores the frozen fiat amount without requesting a new exchange rate', async () => {
+  const expiresAt = Date.now() + 60000;
+  await AsyncStorage.setItem('@terminalActiveRequest:mainnet:wallet-a', JSON.stringify({
+    id: 'fiat-saved', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc',
+    amountSats: 100000, createdAt: Date.now(), expiresAt,
+    fiat: { currency: 'USD', amountMinor: 10000, rate: '100000', fetchedAt: Date.now() - 100000 },
+  }));
+  validateTerminalInvoice.mockResolvedValue(expiresAt);
+  (global as any).fetch = jest.fn();
+  const view = render(<TerminalScreen />);
+  await waitFor(() => expect(view.getByText('$100.00')).toBeTruthy());
+  expect(view.getByText('100000 sats')).toBeTruthy();
+  expect(view.getByTestId('terminal-qr')).toBeTruthy();
+  expect((global as any).fetch).not.toHaveBeenCalled();
+});
+
+it('confirms and clears a nonzero amount when changing into a fiat currency', async () => {
+  (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
+  const confirm = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => { buttons?.[1]?.onPress?.(); });
+  const view = render(<TerminalScreen />);
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
+  fireEvent.press(view.getByText('1'));
+  fireEvent.press(view.getByLabelText('Choose currency'));
+  fireEvent.press(view.getByLabelText('USD'));
+  expect(confirm).toHaveBeenCalledWith('Change currency?', expect.any(String), expect.any(Array));
+  await waitFor(() => expect(view.getByTestId('terminal-amount').props.children).toEqual(['$', '0']));
+  jest.restoreAllMocks();
+});
+
 it('blocks duplicate presses and reveals the QR only after storage succeeds', async () => {
   let resolveInvoice!: (value: { invoice: string; expiresAt: number }) => void;
   createTerminalInvoice.mockImplementation(() => new Promise(resolve => { resolveInvoice = resolve; }));
   const view = render(<TerminalScreen />);
-  await waitFor(() => expect(view.getByText('Request payment')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
-  expect(view.queryByText('Scan to pay with Lightning')).toBeNull();
+  expect(view.queryByTestId('terminal-qr')).toBeNull();
   resolveInvoice({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
-  await waitFor(() => expect(view.getByText('Scan to pay with Lightning')).toBeTruthy());
+  await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
 });
 
 it('does not show a QR if persisting the invoice fails', async () => {
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
   jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('storage full'));
   const view = render(<TerminalScreen />);
-  await waitFor(() => expect(view.getByText('Request payment')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(view.getByText('storage full')).toBeTruthy());
-  expect(view.queryByText('Scan to pay with Lightning')).toBeNull();
+  expect(view.queryByTestId('terminal-qr')).toBeNull();
   jest.restoreAllMocks();
 });
 
@@ -55,50 +132,56 @@ it('discards an invoice response after the active wallet changes', async () => {
   let resolveInvoice!: (value: { invoice: string; expiresAt: number }) => void;
   createTerminalInvoice.mockImplementation(() => new Promise(resolve => { resolveInvoice = resolve; }));
   const view = render(<TerminalScreen />);
-  await waitFor(() => expect(view.getByText('Request payment')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: { ...wallet, id: 'wallet-b' }, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
   view.rerender(<TerminalScreen />);
-  await waitFor(() => expect(view.getByText('Request payment')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
   resolveInvoice({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
-  await waitFor(() => expect(view.queryByText('Scan to pay with Lightning')).toBeNull());
+  await waitFor(() => expect(view.queryByTestId('terminal-qr')).toBeNull());
 });
 
 it('cannot overwrite an unread saved request after keypad input, and retries hydration', async () => {
-  jest.spyOn(AsyncStorage, 'getItem').mockRejectedValueOnce(new Error('storage read failed'));
+  const readMock = AsyncStorage.getItem as jest.Mock;
+  const originalRead = readMock.getMockImplementation()!;
+  let failed = false;
+  readMock.mockImplementation(key => {
+    if (!failed && key.startsWith('@terminalActiveRequest')) { failed = true; return Promise.reject(new Error('storage read failed')); }
+    return originalRead(key);
+  });
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
   const view = render(<TerminalScreen />);
   await waitFor(() => expect(view.getByText('Retry loading')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   expect(view.getByText('Retry loading')).toBeTruthy();
   fireEvent.press(view.getByTestId('terminal-request'));
-  await waitFor(() => expect(view.getByText('Request payment')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
   expect(createTerminalInvoice).not.toHaveBeenCalled();
-  jest.restoreAllMocks();
+  readMock.mockImplementation(originalRead);
 });
 
 it('hides a restored invoice until its amount, network, and expiry are validated by the SDK', async () => {
   const expiresAt = Date.now() + 60000;
-  await AsyncStorage.setItem('@terminalActiveRequest:Bitcoin:wallet-a', JSON.stringify({
-    id: 'saved', walletId: 'wallet-a', network: 'Bitcoin', invoice: 'lnbc123abc', amountSats: 1200,
+  await AsyncStorage.setItem('@terminalActiveRequest:mainnet:wallet-a', JSON.stringify({
+    id: 'saved', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc', amountSats: 1200,
     createdAt: Date.now(), expiresAt,
   }));
   validateTerminalInvoice.mockRejectedValueOnce(new Error('mismatched invoice')).mockResolvedValueOnce(expiresAt);
   const view = render(<TerminalScreen />);
   await waitFor(() => expect(view.getByText('Cannot validate request')).toBeTruthy());
-  expect(view.queryByText('Scan to pay with Lightning')).toBeNull();
+  expect(view.queryByTestId('terminal-qr')).toBeNull();
   expect(view.queryByText('1200 sats')).toBeNull();
-  expect(view.queryByText('Copy invoice')).toBeNull();
+  expect(view.queryByText('Copy')).toBeNull();
   fireEvent.press(view.getByText('Retry validation'));
-  await waitFor(() => expect(view.getByText('Scan to pay with Lightning')).toBeTruthy());
+  await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
   expect(validateTerminalInvoice).toHaveBeenCalledWith('lnbc123abc', 1200);
 });
 
 it('allows verification of the next request after ending one with a check in flight', async () => {
   const expiresAt = Date.now() + 60000;
-  await AsyncStorage.setItem('@terminalActiveRequest:Bitcoin:wallet-a', JSON.stringify({
-    id: 'saved', walletId: 'wallet-a', network: 'Bitcoin', invoice: 'lnbc123abc', amountSats: 1,
+  await AsyncStorage.setItem('@terminalActiveRequest:mainnet:wallet-a', JSON.stringify({
+    id: 'saved', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc', amountSats: 1,
     createdAt: Date.now(), expiresAt,
   }));
   validateTerminalInvoice.mockResolvedValue(expiresAt);
@@ -107,10 +190,10 @@ it('allows verification of the next request after ending one with a check in fli
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc456def', expiresAt });
   jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => { buttons?.[1]?.onPress?.(); });
   const view = render(<TerminalScreen />);
-  await waitFor(() => expect(view.getByText('Scan to pay with Lightning')).toBeTruthy());
+  await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
   await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(1));
   fireEvent.press(view.getByText('End request'));
-  await waitFor(() => expect(view.getByText('Request payment')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Charge')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(2));
@@ -119,17 +202,17 @@ it('allows verification of the next request after ending one with a check in fli
 });
 
 it('shows controls for a saved request while Lightning is disconnected without exposing the invoice', async () => {
-  await AsyncStorage.setItem('@terminalActiveRequest:Bitcoin:wallet-a', JSON.stringify({
-    id: 'saved', walletId: 'wallet-a', network: 'Bitcoin', invoice: 'lnbc123abc', amountSats: 1200,
+  await AsyncStorage.setItem('@terminalActiveRequest:mainnet:wallet-a', JSON.stringify({
+    id: 'saved', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc', amountSats: 1200,
     createdAt: Date.now(), expiresAt: Date.now() + 60000,
   }));
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: wallet, isLightningInitialized: false, lightningInitAttempted: true, lightningInitError: 'Connection unavailable', createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
   const view = render(<TerminalScreen />);
   await waitFor(() => expect(view.getByText('Checking saved request')).toBeTruthy());
   expect(view.getByText('End request')).toBeTruthy();
-  expect(view.getByText('Exit terminal')).toBeTruthy();
+  expect(view.getByLabelText('Exit terminal')).toBeTruthy();
   expect(view.getByText('Connection unavailable')).toBeTruthy();
-  expect(view.queryByText('Scan to pay with Lightning')).toBeNull();
+  expect(view.queryByTestId('terminal-qr')).toBeNull();
   expect(view.queryByText('1200 sats')).toBeNull();
   expect(validateTerminalInvoice).not.toHaveBeenCalled();
 });
