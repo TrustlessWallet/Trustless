@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Clipboard, Modal, Pressable, ScrollView, Share, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Clipboard, Modal, Pressable, Share, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -284,7 +284,7 @@ export default function TerminalScreen() {
   const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${request?.amountSats || 0} sats` : '';
   const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest && stage !== 'loading';
 
-  return <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
+  return <View style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
       {!hasRequest ? <TouchableOpacity accessibilityLabel="Choose currency" style={styles.glassControl} onPress={() => setUnitPickerOpen(true)}>
           <GlassView width={92} height={40} shape="capsule" interactive={true} style={styles.glassSurface}>
@@ -294,13 +294,13 @@ export default function TerminalScreen() {
             </View>
           </GlassView>
         </TouchableOpacity> : <View style={styles.glassControl} />}
-      <TouchableOpacity accessibilityLabel="Exit terminal" style={styles.glassControl} disabled={changing || stage === 'creating'} onPress={exit}>
+      <TouchableOpacity accessibilityLabel="Exit terminal" style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || stage === 'creating'} onPress={exit}>
         <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
           <Feather name="x" size={21} color={theme.colors.primary} />
         </GlassView>
       </TouchableOpacity>
     </View>
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="always">
+    <View style={styles.content}>
       {!activeWallet ? <Text style={styles.message}>Open a wallet to receive payments.</Text>
         : activeWallet.type === 'watch-only' ? <View style={styles.center}>
             <Feather name="eye" size={40} color={theme.colors.muted} />
@@ -342,7 +342,7 @@ export default function TerminalScreen() {
             </View>}
             <TouchableOpacity style={stage === 'received' ? styles.primary : styles.secondary} onPress={stage === 'received' ? () => { void endRequest(); } : confirmEnd}><Text style={stage === 'received' ? styles.primaryText : styles.secondaryText}>{stage === 'received' ? 'New payment' : 'End request'}</Text></TouchableOpacity>
           </View>}
-    </ScrollView>
+    </View>
     {entry && <View style={styles.actionBar}>
       <TouchableOpacity testID="terminal-request" disabled={stage === 'creating' || (!isLightningInitialized && !hydrationFailed) || (isFiat(unit) && !rateFresh && !hydrationFailed)} style={[styles.primaryAction, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
         <Text style={styles.primaryActionText}>{hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>
@@ -367,11 +367,11 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     root: { flex: 1, backgroundColor: background },
     header: { height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     glassControl: { width: 92, height: 44, justifyContent: 'center' },
+    glassControlEnd: { alignItems: 'flex-end' },
     glassSurface: { overflow: 'visible' },
     glassRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
     glassLabel: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13, marginRight: 5 },
-    scroll: { flex: 1 },
-    content: { flexGrow: 1 },
+    content: { flex: 1 },
     entry: { flex: 1, paddingHorizontal: 24 },
     amountArea: { flex: 1, minHeight: 150, alignItems: 'center', justifyContent: 'center' },
     amount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 62, textAlign: 'center', width: '100%' },
@@ -382,7 +382,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     keypad: { flexDirection: 'row', flexWrap: 'wrap' },
     key: { width: '33.33%', height: 64, alignItems: 'center', justifyContent: 'center' },
     keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 27 },
-    actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 20 },
+    actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 28 },
     primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
     disabled: { opacity: 0.55 },
