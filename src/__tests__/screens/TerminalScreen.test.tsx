@@ -95,6 +95,19 @@ it('restores the frozen fiat amount without requesting a new exchange rate', asy
   expect((global as any).fetch).not.toHaveBeenCalled();
 });
 
+it('keeps a validated QR visible while a payment check is temporarily unavailable', async () => {
+  const expiresAt = Date.now() + 60000;
+  await AsyncStorage.setItem('@terminalActiveRequest:mainnet:wallet-a', JSON.stringify({
+    id: 'saved', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc', amountSats: 1200,
+    createdAt: Date.now(), expiresAt,
+  }));
+  validateTerminalInvoice.mockResolvedValue(expiresAt);
+  verifyTerminalInvoice.mockRejectedValueOnce(new Error('offline'));
+  const view = render(<TerminalScreen />);
+  await waitFor(() => expect(view.getByText('Cannot verify payment right now. The invoice may still be paid.')).toBeTruthy());
+  expect(view.getByTestId('terminal-qr')).toBeTruthy();
+});
+
 it('clears a nonzero amount when changing into a fiat currency', async () => {
   (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
   const view = render(<TerminalScreen />);

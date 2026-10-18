@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Clipboard, Modal, Pressable, Share, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, AppState, Clipboard, Modal, Pressable, ScrollView, Share, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +25,7 @@ export default function TerminalScreen() {
   const { setMode, changing } = useWalletMode();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
   const [stage, setStage] = useState<Stage>('loading');
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState<TerminalUnit>('sats');
@@ -49,6 +50,8 @@ export default function TerminalScreen() {
   const lastUnfilteredCheck = useRef(0);
   const rateFlight = useRef(false);
   const userSelectedUnit = useRef(false);
+  const preferredUnit = useRef<TerminalUnit>('sats');
+  const pickerProgress = useRef(new Animated.Value(0)).current;
   const userEditedAmount = useRef(false);
   const hasRequestRef = useRef(false);
   hasRequestRef.current = !!request;
@@ -61,8 +64,12 @@ export default function TerminalScreen() {
 
   useEffect(() => {
     void AsyncStorage.getItem(PREFERRED_UNIT_KEY).then(saved => {
-      if (mounted.current && !userSelectedUnit.current && !userEditedAmount.current && !hasRequestRef.current &&
-          (saved === 'sats' || saved === 'BTC' || isFiat(saved as TerminalUnit))) setUnit(saved as TerminalUnit);
+      if (!userSelectedUnit.current && !userEditedAmount.current && (saved === 'sats' || saved === 'BTC' || isFiat(saved as TerminalUnit))) {
+        preferredUnit.current = saved as TerminalUnit;
+        if (mounted.current && !userSelectedUnit.current && !userEditedAmount.current && !hasRequestRef.current) {
+          setUnit(saved as TerminalUnit);
+        }
+      }
     }).catch(() => undefined);
   }, []);
 
@@ -76,7 +83,9 @@ export default function TerminalScreen() {
     finally { rateFlight.current = false; if (mounted.current) setRateLoading(false); }
   }, []);
 
-  useEffect(() => { if (isFiat(unit) && !request) void refreshRates(); }, [unit, request?.id, refreshRates]);
+  useEffect(() => {
+    if (!request && active && isFiat(unit) && (!rates || Date.now() < rates.fetchedAt || Date.now() - rates.fetchedAt >= 60_000)) void refreshRates();
+  }, [active, unit, request?.id, rates?.fetchedAt, now, refreshRates]);
   useEffect(() => { if (!request && isFiat(unit)) { const timer = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(timer); } }, [request?.id, unit]);
 
   useEffect(() => {
@@ -104,7 +113,7 @@ export default function TerminalScreen() {
       if (saved) {
         setRequest(saved);
         setAmount(formatTerminalAmount(saved.amountSats, 'sats'));
-        setUnit('sats');
+        setUnit(preferredUnit.current);
         setStage('loading');
       } else setStage('entry');
     }).catch(() => {
@@ -165,6 +174,11 @@ export default function TerminalScreen() {
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => { clearInterval(poll); clearInterval(clock); };
   }, [request?.id, validated, active, isLightningInitialized, stage === 'received', verify]);
+
+  useEffect(() => {
+    if (!unitPickerOpen) { pickerProgress.setValue(0); return; }
+    Animated.spring(pickerProgress, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220, mass: 0.7 }).start();
+  }, [unitPickerOpen, pickerProgress]);
 
   useEffect(() => {
     if (request && now >= request.expiresAt && stage === 'waiting') setStage('expired');
@@ -229,7 +243,7 @@ export default function TerminalScreen() {
       lastCheck.current = 0;
       lastUnfilteredCheck.current = Date.now();
       knownPaymentId.current = undefined;
-      setRequest(null); setStage('entry'); setAmount(''); setError('');
+      setRequest(null); setStage('entry'); setAmount(''); setUnit(preferredUnit.current); setError('');
       setValidated(false);
     } catch { setError('Could not end the saved request. Please retry.'); }
     finally { busy.current = false; }
@@ -256,6 +270,7 @@ export default function TerminalScreen() {
         catch { setAmount(''); }
       } else setAmount('');
       userSelectedUnit.current = true;
+      preferredUnit.current = next;
       setUnit(next); setError(''); setUnitPickerOpen(false);
       void AsyncStorage.setItem(PREFERRED_UNIT_KEY, next).catch(() => setError('Could not save preferred currency.'));
     };
@@ -289,6 +304,9 @@ export default function TerminalScreen() {
     : request?.inputUnit === 'BTC' ? `${formatTerminalAmount(request.amountSats, 'BTC')} BTC`
       : `${request?.amountSats || 0} sats`;
   const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${request?.amountSats || 0} sats` : '';
+  const expiresIn = request ? Math.max(0, Math.ceil((request.expiresAt - now) / 1000)) : 0;
+  const expiresLabel = `${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, '0')}`;
+  const qrSize = Math.max(180, Math.min(232, screenWidth - 84));
   const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest && stage !== 'loading';
 
   return <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -319,7 +337,7 @@ export default function TerminalScreen() {
             <View style={styles.amountArea}>
               <Text testID="terminal-amount" style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.45}>{amountPrefix}{amount || '0'}</Text>
               {isFiat(unit) ? <View style={styles.priceLine}>
-                <Text style={styles.approx}>{approxSats !== null ? `≈ ${approxSats} sats` : rateLoading ? 'Fetching price…' : rateFresh ? 'Enter an amount' : 'Price unavailable'}</Text>
+                <Text style={styles.approx}>{approxSats !== null ? `≈ ${approxSats} sats` : rateLoading ? 'Fetching price…' : rateFresh ? '' : 'Price unavailable'}</Text>
                 {(!rateFresh || rateError) && <TouchableOpacity onPress={() => { void refreshRates(); }}><Text style={styles.refresh}>Refresh price</Text></TouchableOpacity>}
               </View> : null}
             </View>
@@ -332,14 +350,18 @@ export default function TerminalScreen() {
               {!isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
             </View>
           </View>
-        : <View style={styles.checkout}>
+        : <ScrollView style={styles.checkoutScroll} contentContainerStyle={styles.checkoutScrollContent} bounces={false} showsVerticalScrollIndicator={false}>
+          <View style={styles.checkout}>
             {stage === 'received' ? <Feather name="check-circle" size={70} color={theme.colors.bitcoin} /> : null}
             {validated ? <>
               <Text style={styles.checkoutAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>{frozenAmount}</Text>
               {frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}
             </> : null}
-            {validated && stage === 'waiting' && !isExpired ? <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={236} color="#000000" backgroundColor="#FFFFFF" /></View> : null}
             <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : isExpired ? 'Request expired' : 'Waiting for payment'}</Text>
+            {validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired ? <View style={styles.qrArea}>
+              <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color="#000000" backgroundColor="#FFFFFF" /></View>
+              <Text style={styles.expiry}>{expiresLabel}</Text>
+            </View> : null}
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {!validated && !isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable. Retry when connected.') : 'Connecting to Lightning…'}</Text> : null}
             {stage !== 'received' && stage !== 'waiting' ? <TouchableOpacity style={styles.secondary} onPress={() => { if (validated) void verify(true); else retryValidation(v => v + 1); }}><Text style={styles.secondaryText}>{validated ? 'Check payment' : 'Retry validation'}</Text></TouchableOpacity> : null}
@@ -348,22 +370,23 @@ export default function TerminalScreen() {
               <TouchableOpacity onPress={() => { void Share.share({ message: request.invoice }); }}><Text style={styles.action}>Share</Text></TouchableOpacity>
             </View>}
             <TouchableOpacity style={stage === 'received' ? styles.primary : styles.secondary} onPress={stage === 'received' ? () => { void endRequest(); } : confirmEnd}><Text style={stage === 'received' ? styles.primaryText : styles.secondaryText}>{stage === 'received' ? 'New payment' : 'End request'}</Text></TouchableOpacity>
-          </View>}
+          </View>
+        </ScrollView>}
     </View>
     {entry && <View style={styles.actionBar}>
       <TouchableOpacity testID="terminal-request" disabled={stage === 'creating' || (!isLightningInitialized && !hydrationFailed) || (isFiat(unit) && !rateFresh && !hydrationFailed)} style={[styles.primaryAction, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
         <Text style={styles.primaryActionText}>{hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>
       </TouchableOpacity>
     </View>}
-    <Modal visible={unitPickerOpen} transparent animationType="fade" onRequestClose={() => setUnitPickerOpen(false)}>
+    <Modal visible={unitPickerOpen} transparent animationType="none" onRequestClose={() => setUnitPickerOpen(false)}>
       <View style={[styles.modalBackdrop, { paddingTop: insets.top + 58 }]} accessible={false}>
         <Pressable style={styles.modalOverlay} accessible={false} onPress={() => setUnitPickerOpen(false)} />
-        <View style={styles.currencyPopover}>
-          <GlassView width={196} height={128} borderRadius={16} shape="rectangle" interactive={true} style={styles.glassSurface}>
+        <Animated.View style={[styles.currencyPopover, { opacity: pickerProgress, transform: [{ scale: pickerProgress.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) }] }]}>
+          <GlassView width={204} height={140} borderRadius={24} shape="rectangle" interactive={false} style={styles.glassSurface}>
             <View style={styles.currencyGrid}>{(['USD','EUR','CHF','sats','BTC'] as TerminalUnit[]).map(choice =>
               <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={[styles.currencyOption, choice === unit && styles.currencyOptionSelected]} onPress={() => selectUnit(choice)}><Text style={[styles.currencyText, choice === unit && styles.currencyTextSelected]}>{choice}</Text></TouchableOpacity>)}</View>
           </GlassView>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   </View>;
@@ -393,14 +416,18 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
     disabled: { opacity: 0.55 },
+    checkoutScroll: { flex: 1 },
+    checkoutScrollContent: { flexGrow: 1, paddingVertical: 20 },
     checkout: { flex: 1, paddingHorizontal: 24, paddingBottom: 24, alignItems: 'center', justifyContent: 'center' },
     checkoutAmount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 40, textAlign: 'center', width: '100%' },
-    checkoutTitle: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 14, textAlign: 'center', marginTop: 22 },
-    qrCard: { padding: 18, backgroundColor: '#FFFFFF', borderRadius: 8, marginTop: 30 },
+    checkoutTitle: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 14, textAlign: 'center', marginTop: 12 },
+    qrArea: { alignItems: 'center', marginTop: 20 },
+    qrCard: { padding: 18, backgroundColor: '#FFFFFF', borderRadius: 24, shadowColor: '#000000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 4 },
+    expiry: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, letterSpacing: 0.8, marginTop: 14 },
     actions: { flexDirection: 'row', gap: 42, marginTop: 24 },
     action: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
-    primary: { backgroundColor: bitcoin, borderRadius: 8, minHeight: 54, minWidth: 210, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, marginTop: 28 },
-    primaryText: { color: '#000000', fontFamily: 'SpaceMono-Bold', fontSize: 15 },
+    primary: { backgroundColor: primary, borderRadius: 8, minHeight: 54, minWidth: 210, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, marginTop: 28 },
+    primaryText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 15 },
     secondary: { borderColor: border, borderWidth: 1, borderRadius: 8, minHeight: 46, minWidth: 150, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, marginTop: 20 },
     secondaryText: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
@@ -408,9 +435,9 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     error: { color: '#CC0000', fontFamily: 'SpaceMono-Regular', fontSize: 12, textAlign: 'center', marginTop: 10 },
     modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.16)', alignItems: 'flex-start', paddingLeft: 18 },
     modalOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-    currencyPopover: { width: 196, height: 128 },
-    currencyGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 8, gap: 4 },
-    currencyOption: { width: 56, height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
+    currencyPopover: { width: 204, height: 140 },
+    currencyGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 10, gap: 4 },
+    currencyOption: { width: 58, height: 56, alignItems: 'center', justifyContent: 'center', borderRadius: 16 },
     currencyOptionSelected: { backgroundColor: surface },
     currencyText: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     currencyTextSelected: { color: bitcoin },
