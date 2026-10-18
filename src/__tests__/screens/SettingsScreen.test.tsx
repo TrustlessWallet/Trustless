@@ -5,6 +5,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useWallet } from '../../contexts/WalletContext';
 import SettingsScreen from '../../screens/SettingsScreen';
+import { WalletModeProvider } from '../../contexts/WalletModeContext';
 import { TX_BIOMETRIC_CONFIRM_KEY } from '../../services/authState';
 
 // This suite exercises the real authState module (real in-memory AsyncStorage,
@@ -79,7 +80,7 @@ describe('SettingsScreen - Biometrics toggle sync', () => {
     });
 
     it('turns "Confirm transaction" on by default the first time biometrics is enabled, with no stale flash', async () => {
-        const { getByTestId, queryByTestId } = render(<SettingsScreen />);
+        const { getByTestId, queryByTestId } = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
 
         await waitFor(() => expect(getByTestId('toggle-biometrics')).toBeTruthy());
         expect(read_toggle_state(getByTestId, 'toggle-biometrics')).toBe('Off');
@@ -100,7 +101,7 @@ describe('SettingsScreen - Biometrics toggle sync', () => {
     });
 
     it('keeps the switch in sync when biometrics is toggled off then back on without touching the sub-setting', async () => {
-        const { getByTestId, queryByTestId } = render(<SettingsScreen />);
+        const { getByTestId, queryByTestId } = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
         await waitFor(() => expect(getByTestId('toggle-biometrics')).toBeTruthy());
 
         // Turn on -> sub-setting defaults on and is persisted explicitly.
@@ -121,7 +122,7 @@ describe('SettingsScreen - Biometrics toggle sync', () => {
     });
 
     it('respects an explicit "off" choice and does not silently re-enable it on remount', async () => {
-        const { getByTestId, unmount } = render(<SettingsScreen />);
+        const { getByTestId, unmount } = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
         await waitFor(() => expect(getByTestId('toggle-biometrics')).toBeTruthy());
 
         press_biometrics_toggle(getByTestId);
@@ -136,7 +137,7 @@ describe('SettingsScreen - Biometrics toggle sync', () => {
 
         // A fresh mount (simulating navigating away and back) must read the
         // same persisted, explicit choice - not re-derive a stale "on".
-        const { getByTestId: getByTestIdAgain } = render(<SettingsScreen />);
+        const { getByTestId: getByTestIdAgain } = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
         await waitFor(() => expect(getByTestIdAgain('toggle-tx-confirm')).toBeTruthy());
         expect(read_toggle_state(getByTestIdAgain, 'toggle-tx-confirm')).toBe('Off');
     });

@@ -4,6 +4,7 @@ import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useWalletMode } from '../contexts/WalletModeContext';
 import { Theme } from '../constants/theme';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -58,6 +59,7 @@ const SettingsScreen = () => {
     lightningInitError,
   } = useWallet();
   const { theme, isDark, toggleTheme } = useTheme();
+  const { mode: appMode, changing: modeChanging, setMode: setAppMode } = useWalletMode();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => get_styles(theme), [theme]);
   const navigation = useNavigation<navigation_prop>();
@@ -471,6 +473,21 @@ const SettingsScreen = () => {
 
         <View style={styles.section}>
           <Text style={styles.section_title}>App Settings</Text>
+
+          <View style={styles.row_wrapper}>
+            <View style={styles.row}>
+              <Text style={styles.row_label}>Wallet mode</Text>
+              <TouchableOpacity disabled={modeChanging} onPress={() => {
+                void setAppMode(appMode === 'wallet' ? 'terminal' : 'wallet').catch(() => Alert.alert('Could not change mode', 'The setting could not be saved. Please retry.'));
+              }}>
+                <View style={styles.switcher}>
+                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  <Text style={styles.switcher_text}>{appMode === 'wallet' ? 'Wallet' : 'Terminal'}</Text>
+                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           <View style={styles.row_wrapper}>
             <View style={styles.row}>
