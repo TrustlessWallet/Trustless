@@ -193,7 +193,7 @@ interface WalletContextType {
     getLightningInvoice: (amountSats: number) => Promise<string>;
     createTerminalInvoice: (amountSats: number) => Promise<{ invoice: string; expiresAt: number }>;
     validateTerminalInvoice: (invoice: string, amountSats: number) => Promise<number>;
-    verifyTerminalInvoice: (invoice: string, knownPaymentId?: string) => Promise<{ status: 'received' | 'pending' | 'unknown'; paymentId?: string }>;
+    verifyTerminalInvoice: (invoice: string, createdAt: number, knownPaymentId?: string, includeUnfilteredFallback?: boolean) => Promise<{ status: 'received' | 'pending' | 'unknown'; paymentId?: string }>;
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<LightningTransaction>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
     getLightningTopUpAddress: () => Promise<string>;
@@ -735,7 +735,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return { invoice, expiresAt };
     };
 
-    const verifyTerminalInvoice = async (invoice: string, knownPaymentId?: string): Promise<{ status: 'received' | 'pending' | 'unknown'; paymentId?: string }> => {
+    const verifyTerminalInvoice = async (invoice: string, createdAt: number, knownPaymentId?: string, includeUnfilteredFallback = false): Promise<{ status: 'received' | 'pending' | 'unknown'; paymentId?: string }> => {
         const { sdk, assertCurrent } = requireLightningSession();
         const walletId = activeWalletIdRef.current;
         const target = normalizeInvoice(invoice);
@@ -752,23 +752,37 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (match) return match;
         }
         // A resumed request has no SDK payment ID. The SDK has no exact-invoice
-        // filter, so inspect a bounded set of receive payments and retain unknown
-        // when the invoice has not appeared in that set.
-        for (let offset = 0; offset < 250; offset += 50) {
-            const result = await withDeadline(sdk.listPayments({
-                offset, limit: 50, sortAscending: false,
-                typeFilter: [breezSdk.PaymentType.Receive], statusFilter: undefined,
-                assetFilter: new breezSdk.AssetFilter.Bitcoin(),
-                paymentDetailsFilter: [breezSdk.PaymentDetailsFilter.Lightning.new({ htlcStatus: undefined })],
-                fromTimestamp: undefined, toTimestamp: undefined,
-            }), 'Checking terminal payments');
-            assertCurrent();
-            if (walletId !== activeWalletIdRef.current) throw new Error('The active wallet changed.');
-            for (const payment of result.payments) {
-                const match = evaluate(payment);
-                if (match) return match;
+        // filter, so restrict its bounded search to the invoice's lifetime. A
+        // five-minute allowance keeps the lookup safe if the device clock was
+        // slightly wrong when the request was saved.
+        const findMatchingPayment = async (fromTimestamp: bigint | undefined) => {
+            for (let offset = 0; offset < 250; offset += 50) {
+                const result = await withDeadline(sdk.listPayments({
+                    offset, limit: 50, sortAscending: false,
+                    typeFilter: [breezSdk.PaymentType.Receive], statusFilter: undefined,
+                    assetFilter: new breezSdk.AssetFilter.Bitcoin(),
+                    paymentDetailsFilter: [breezSdk.PaymentDetailsFilter.Lightning.new({ htlcStatus: undefined })],
+                    fromTimestamp, toTimestamp: undefined,
+                }), 'Checking terminal payments');
+                assertCurrent();
+                if (walletId !== activeWalletIdRef.current) throw new Error('The active wallet changed.');
+                for (const payment of result.payments) {
+                    const match = evaluate(payment);
+                    if (match) return match;
+                }
+                if (result.payments.length < 50) break;
             }
-            if (result.payments.length < 50) break;
+            return null;
+        };
+        const fromTimestamp = BigInt(Math.max(0, Math.floor(createdAt / 1000) - 300));
+        const recentMatch = await findMatchingPayment(fromTimestamp);
+        if (recentMatch) return recentMatch;
+        // The time-window scan is normally sufficient. A periodic full scan
+        // keeps a request recoverable if its device clock was badly wrong when
+        // it was saved, without making every six-second poll expensive.
+        if (includeUnfilteredFallback) {
+            const fallbackMatch = await findMatchingPayment(undefined);
+            if (fallbackMatch) return fallbackMatch;
         }
         return { status: 'unknown' };
     };
