@@ -19,7 +19,7 @@ import { GlassView } from '../components/GlassView';
 import { resolveLnurlOrAddress } from '../services/lnurl';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { authenticate_transaction_action } from '../services/authState';
-import { SHOW_TERMINAL_KEY, useWalletMode } from '../contexts/WalletModeContext';
+import { useWalletMode } from '../contexts/WalletModeContext';
 
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -74,7 +74,7 @@ const WalletScreen = () => {
 
     const navigation = useNavigation<NavigationProp>();
     const insets = useSafeAreaInsets();
-    const { setMode: setAppMode, changing: terminalChanging } = useWalletMode();
+    const { setMode: setAppMode, changing: terminalChanging, showTerminal } = useWalletMode();
 
     const {
         activeWallet,
@@ -95,7 +95,6 @@ const WalletScreen = () => {
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
     const [isSheetMounted, setIsSheetMounted] = useState(false);
     const [pullToRefreshReady, setPullToRefreshReady] = useState(false);
-    const [showTerminal, setShowTerminal] = useState(true);
 
     const isFocused = useIsFocused();
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -470,12 +469,6 @@ const WalletScreen = () => {
         loadInitialWalletMode();
     }, []);
 
-    useEffect(() => {
-        if (!isFocused) return;
-        AsyncStorage.getItem(SHOW_TERMINAL_KEY)
-            .then(value => setShowTerminal(value !== 'false'))
-            .catch(() => setShowTerminal(true));
-    }, [isFocused]);
 
     useEffect(() => {
         if (activeWallet?.type === 'watch-only' && isLightningMode) {
@@ -622,11 +615,8 @@ const WalletScreen = () => {
             onPress={openTerminal}
             disabled={terminalChanging}
         >
-            <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
-                    <View style={[styles.iconWrapper, styles.terminalWalletMark]}><Text style={styles.terminalMarkText}>W</Text></View>
-                    <View style={styles.iconWrapper}><Text style={[styles.terminalMarkText, styles.terminalMarkInactive]}>T</Text></View>
-                </View>
+            <GlassView style={{ overflow: 'visible' }} width={36} height={36} shape="circle" interactive={true}>
+                <Text style={styles.terminalMarkText}>T</Text>
             </GlassView>
         </TouchableOpacity>
     ) : <View style={styles.toggleTouchable} pointerEvents="none" />;
@@ -1026,17 +1016,11 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
     iconWrapperActive: {
         backgroundColor: theme.colors.primary,
     },
-    terminalWalletMark: {
-        backgroundColor: theme.colors.primary,
-    },
     terminalMarkText: {
-        color: theme.colors.inversePrimary,
+        color: theme.colors.primary,
         fontFamily: 'SpaceMono-Bold',
-        fontSize: 12,
-        lineHeight: 18,
-    },
-    terminalMarkInactive: {
-        color: theme.colors.muted,
+        fontSize: 16,
+        lineHeight: 22,
     },
     walletName: {
         fontSize: 16,

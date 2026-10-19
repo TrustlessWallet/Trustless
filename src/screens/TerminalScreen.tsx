@@ -257,9 +257,7 @@ export default function TerminalScreen() {
     finally { busy.current = false; }
   };
 
-  const confirmEnd = () => Alert.alert('End request?', 'This invoice can still be paid after you end it. Check your wallet for late payments.', [
-    { text: 'Keep request', style: 'cancel' }, { text: 'End request', style: 'destructive', onPress: () => { void endRequest(); } },
-  ]);
+
 
   const exit = () => {
     if (busy.current) return;
@@ -320,7 +318,9 @@ export default function TerminalScreen() {
   const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${request?.amountSats || 0} sats` : '';
   const expiresIn = request ? Math.max(0, Math.ceil((request.expiresAt - now) / 1000)) : 0;
   const expiresLabel = `${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, '0')}`;
-  const qrSize = Math.max(220, Math.min(280, screenWidth - 48));
+  const qrSize = Math.max(160, Math.min(280, screenWidth - 82, screenHeight - 360));
+  const qrTop = Math.max(110, screenHeight / 2 - insets.top - 56 - (qrSize + 34) / 2);
+  const invoiceMinHeight = Math.max(screenHeight - insets.top - 56, qrTop + qrSize + 34 + 180);
   const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest && stage !== 'loading';
 
   return <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -366,6 +366,20 @@ export default function TerminalScreen() {
               </View>
             </View>
           </View>
+        : validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired ? <ScrollView style={styles.invoiceCanvas} contentContainerStyle={{ minHeight: invoiceMinHeight }} bounces={false} showsVerticalScrollIndicator={false}>
+            <View style={[styles.invoiceAnchor, { top: qrTop }]}>
+              <View style={styles.invoiceAmount}>
+                <Text style={styles.checkoutAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>{frozenAmount}</Text>
+                {frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}
+              </View>
+              <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View>
+              <View style={styles.invoiceFooter}>
+                <Text style={styles.expiry}>{expiresLabel}</Text>
+                {error ? <Text numberOfLines={3} style={styles.error}>{error}</Text> : null}
+                {stage === 'verificationUnavailable' ? <TouchableOpacity style={styles.secondary} onPress={() => { void verify(true); }}><Text style={styles.secondaryText}>Check payment</Text></TouchableOpacity> : null}
+              </View>
+            </View>
+          </ScrollView>
         : <ScrollView style={styles.checkoutScroll} contentContainerStyle={styles.checkoutScrollContent} bounces={false} showsVerticalScrollIndicator={false}>
           <View style={styles.checkout}>
             {stage === 'received' ? <Feather name="check-circle" size={70} color={theme.colors.bitcoin} /> : null}
@@ -374,10 +388,7 @@ export default function TerminalScreen() {
               {frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}
             </> : null}
             {!validated || stage === 'received' || isExpired ? <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : 'Request expired'}</Text> : null}
-            {validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired ? <View style={styles.qrArea}>
-              <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View>
-              <Text style={styles.expiry}>{expiresLabel}</Text>
-            </View> : null}
+
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {!validated && !isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable. Retry when connected.') : 'Connecting to Lightning…'}</Text> : null}
             {stage !== 'received' && stage !== 'waiting' ? <TouchableOpacity style={styles.secondary} onPress={() => { if (validated) void verify(true); else retryValidation(v => v + 1); }}><Text style={styles.secondaryText}>{validated ? 'Check payment' : 'Retry validation'}</Text></TouchableOpacity> : null}
@@ -437,12 +448,15 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
     disabled: { opacity: 0.55 },
+    invoiceCanvas: { flex: 1 },
+    invoiceAnchor: { position: 'absolute', left: 24, right: 24, alignItems: 'center' },
+    invoiceAmount: { position: 'absolute', bottom: '100%', width: '100%', paddingBottom: 24 },
+    invoiceFooter: { position: 'absolute', top: '100%', alignItems: 'center', width: '100%', gap: 12 },
     checkoutScroll: { flex: 1 },
     checkoutScrollContent: { flexGrow: 1, paddingVertical: 12 },
     checkout: { flex: 1, paddingHorizontal: 24, paddingBottom: 20, alignItems: 'center', justifyContent: 'center' },
     checkoutAmount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 40, textAlign: 'center', width: '100%' },
     checkoutTitle: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 14, textAlign: 'center', marginTop: 12 },
-    qrArea: { alignItems: 'center', alignSelf: 'stretch', marginTop: 18 },
     qrCard: { padding: 16, backgroundColor: background, borderRadius: 8, shadowColor: primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.16, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: border },
     expiry: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, letterSpacing: 0.8, marginTop: 14 },
     primary: { backgroundColor: primary, borderRadius: 8, minHeight: 54, minWidth: 210, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, marginTop: 28 },
@@ -452,7 +466,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
     message: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 15, textAlign: 'center', marginTop: 18 },
     error: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, textAlign: 'center' },
-    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.16)', alignItems: 'flex-start', paddingLeft: 18 },
+    modalBackdrop: { flex: 1, backgroundColor: 'transparent', alignItems: 'flex-start', paddingLeft: 18 },
     modalOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
     currencyPopover: { width: 204, height: 140 },
     currencyGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 10, gap: 4 },
