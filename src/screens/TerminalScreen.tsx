@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, AppState, Clipboard, Modal, Pressable, ScrollView, Share, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { GlassView } from '../components/GlassView';
@@ -157,7 +158,10 @@ export default function TerminalScreen() {
       const result = await verifyTerminalInvoice(request.invoice, request.createdAt, knownPaymentId.current, useUnfilteredFallback);
       if (!mounted.current || !activeRef.current || captured !== generation.current || capturedScope !== scopeRef.current || requestId !== request.id) return;
       if (result.paymentId) knownPaymentId.current = result.paymentId;
-      if (result.status === 'received') { setStage('received'); setError(''); }
+      if (result.status === 'received') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+        setStage('received'); setError('');
+      }
       else { setStage(request.expiresAt <= Date.now() ? 'expired' : 'waiting'); setError(''); }
     } catch {
       if (mounted.current && activeRef.current && captured === generation.current && capturedScope === scopeRef.current) {
@@ -279,6 +283,7 @@ export default function TerminalScreen() {
 
   const key = (digit: string) => {
     if (busy.current) return;
+    Haptics.selectionAsync().catch(() => undefined);
     userEditedAmount.current = true;
     setError('');
     if (digit === 'back') { setAmount(v => v.slice(0, -1)); return; }

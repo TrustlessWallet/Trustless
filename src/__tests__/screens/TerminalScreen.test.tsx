@@ -12,6 +12,7 @@ jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { co
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
+jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn(() => Promise.resolve()), notificationAsync: jest.fn(() => Promise.resolve()), NotificationFeedbackType: { Success: 'success' } }));
 
 const wallet = { id: 'wallet-a', name: 'Shop', type: 'standard' };
 const createTerminalInvoice = jest.fn();
