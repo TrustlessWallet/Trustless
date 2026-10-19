@@ -1030,7 +1030,7 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
         paddingLeft: 4,
     },
     terminalMarkText: {
-        color: theme.colors.primary,
+        color: theme.colors.muted,
         fontFamily: 'SpaceMono-Regular',
         fontSize: 16,
         lineHeight: 22,

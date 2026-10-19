@@ -44,11 +44,11 @@ it('charges a fiat amount using a fresh quote and keeps the frozen amount beside
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByText('0'));
   fireEvent.press(view.getByText('0'));
-  await waitFor(() => expect(view.getByText('≈ 100000 sats')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('≈ 100 000 sats')).toBeTruthy());
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(createTerminalInvoice).toHaveBeenCalledWith(100000));
   await waitFor(() => expect(view.getByText('$100.00')).toBeTruthy());
-  expect(view.getByText('100000 sats')).toBeTruthy();
+  expect(view.getByText('100 000 sats')).toBeTruthy();
   expect(view.queryByLabelText('Choose currency')).toBeNull();
   const raw = await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a');
   expect(JSON.parse(raw || '{}').fiat).toEqual({ currency: 'USD', amountMinor: 10000, rate: '100000', fetchedAt: expect.any(Number) });
@@ -92,7 +92,7 @@ it('restores the frozen fiat amount without requesting a new exchange rate', asy
   (global as any).fetch = jest.fn();
   const view = render(<TerminalScreen />);
   await waitFor(() => expect(view.getByText('$100.00')).toBeTruthy());
-  expect(view.getByText('100000 sats')).toBeTruthy();
+  expect(view.getByText('100 000 sats')).toBeTruthy();
   expect(view.getByTestId('terminal-qr')).toBeTruthy();
   expect((global as any).fetch).not.toHaveBeenCalled();
 });
@@ -272,4 +272,21 @@ it('pauses invoice polling while another route covers Terminal', async () => {
     view.unmount();
     jest.useRealTimers();
   }
+});
+
+
+it('keeps saved-request hydration from creating a second invoice', async () => {
+  const read = AsyncStorage.getItem as jest.Mock;
+  const original = read.getMockImplementation()!;
+  let finish!: (value: null) => void;
+  read.mockImplementation(key => key === '@terminalActiveRequest:mainnet:wallet-a'
+    ? new Promise(resolve => { finish = resolve; }) : original(key));
+  const view = render(<TerminalScreen />);
+  try {
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(view.getByText('Generate invoice')).toBeTruthy();
+    fireEvent.press(view.getByTestId('terminal-request'));
+    expect(createTerminalInvoice).not.toHaveBeenCalled();
+    await act(async () => { finish(null); });
+  } finally { view.unmount(); read.mockImplementation(original); }
 });

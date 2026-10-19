@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, AppState, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Alert, Animated, AppState, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
@@ -11,7 +11,7 @@ import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { NETWORK_NAME } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
+import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalSats, formatTerminalExpiry, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
 import { FiatCurrency, getTerminalRates, TerminalRates } from '../services/terminalRates';
 
 const PREFERRED_UNIT_KEY = '@terminalPreferredUnit';
@@ -82,9 +82,8 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
     if (rateFlight.current) return;
     rateFlight.current = true;
     setRateLoading(true);
-    setRateError('');
-    try { const fetched = await getTerminalRates(); if (mounted.current) { setRates(fetched); setNow(Date.now()); } }
-    catch { if (mounted.current) { setRates(null); setRateError('Price unavailable. Refresh price to charge in fiat.'); } }
+    try { const fetched = await getTerminalRates(); if (mounted.current) { setRates(fetched); setNow(Date.now()); setRateError(''); } }
+    catch { if (mounted.current) setRateError('Price unavailable. Refresh price to charge in fiat.'); }
     finally { rateFlight.current = false; if (mounted.current) setRateLoading(false); }
   }, []);
 
@@ -193,7 +192,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
   }, [now, request, stage]);
 
   const requestPayment = async () => {
-    if (busy.current || request || hydrationFailed || !activeWallet || activeWallet.type === 'watch-only') return;
+    if (busy.current || stage === 'loading' || request || hydrationFailed || !activeWallet || activeWallet.type === 'watch-only') return;
     if (!isLightningInitialized) {
       setError(lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…');
       return;
@@ -293,7 +292,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
   };
 
   const key = (digit: string) => {
-    if (busy.current) return;
+    if (busy.current || stage === 'loading') return;
     Haptics.selectionAsync().catch(() => undefined);
     userEditedAmount.current = true;
     setError('');
@@ -309,23 +308,22 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
 
   const hasRequest = !!request;
   const isExpired = hasRequest && validated && (stage === 'expired' || now >= request.expiresAt);
-  const rateFresh = !!rates && now >= rates.fetchedAt && now - rates.fetchedAt < 60_000;
   let approxSats: number | null = null;
-  if (isFiat(unit) && rateFresh && amount) {
-    try { approxSats = satsFromFiat(parseFiatMinor(amount), rates!.rates[unit]); } catch { /* incomplete keypad amount */ }
+  if (isFiat(unit) && rates && amount) {
+    try { approxSats = satsFromFiat(parseFiatMinor(amount), rates.rates[unit]); } catch { /* incomplete keypad amount */ }
   }
   const amountPrefix = unit === 'USD' ? '$' : unit === 'EUR' ? '€' : unit === 'CHF' ? 'CHF ' : '';
   const frozenAmount = request?.fiat
     ? `${request.fiat.currency === 'USD' ? '$' : request.fiat.currency === 'EUR' ? '€' : 'CHF '}${formatFiatMinor(request.fiat.amountMinor)}`
     : request?.inputUnit === 'BTC' ? `${formatTerminalAmount(request.amountSats, 'BTC')} BTC`
-      : `${request?.amountSats || 0} sats`;
-  const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${request?.amountSats || 0} sats` : '';
+      : `${formatTerminalSats(request?.amountSats || 0)} sats`;
+  const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${formatTerminalSats(request?.amountSats || 0)} sats` : '';
   const expiresIn = request ? Math.max(0, Math.ceil((request.expiresAt - now) / 1000)) : 0;
-  const expiresLabel = `${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, '0')}`;
+  const expiresLabel = formatTerminalExpiry(expiresIn);
   const qrSize = Math.max(160, Math.min(280, screenWidth - 82, screenHeight - 360));
   const qrTop = Math.max(110, screenHeight / 2 - insets.top - 56 - (qrSize + 34) / 2);
   const invoiceMinHeight = Math.max(screenHeight - insets.top - 56, qrTop + qrSize + 34 + 180);
-  const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest && stage !== 'loading';
+  const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest;
 
   return <View style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
@@ -350,14 +348,13 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
             <Text style={styles.message}>This watch-only wallet cannot create Lightning payment requests.</Text>
             <TouchableOpacity style={styles.secondary} onPress={exit}><Text style={styles.secondaryText}>Exit terminal</Text></TouchableOpacity>
           </View>
-        : stage === 'loading' && !hasRequest ? <ActivityIndicator color={theme.colors.bitcoin} />
         : !hasRequest ? <View style={styles.entry}>
             <View style={styles.amountArea}>
               <Text testID="terminal-amount" style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.45}>{amountPrefix}{amount || '0'}</Text>
-              {isFiat(unit) ? <View style={styles.priceLine}>
-                <Text style={styles.approx}>{approxSats !== null ? `≈ ${approxSats} sats` : rateLoading ? 'Fetching price…' : rateFresh ? '' : 'Price unavailable'}</Text>
-                {(!rateFresh || rateError) && <TouchableOpacity onPress={() => { void refreshRates(); }}><Text style={styles.refresh}>Refresh price</Text></TouchableOpacity>}
-              </View> : null}
+              <View style={styles.priceLine}>
+                <Text style={styles.approx}>{approxSats !== null ? `≈ ${formatTerminalSats(approxSats)} sats` : ''}</Text>
+                {isFiat(unit) && rateError ? <TouchableOpacity disabled={rateLoading} onPress={() => { void refreshRates(); }}><Text style={styles.refresh}>Refresh price</Text></TouchableOpacity> : null}
+              </View>
             </View>
             <View style={styles.padArea}>
               <View style={styles.keypad}>{['1','2','3','4','5','6','7','8','9',unit === 'sats' ? '' : '.', '0','back'].map((digit, i) =>
@@ -378,7 +375,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
               </View>
               <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View>
               <View style={styles.invoiceFooter}>
-                <Text style={styles.expiry}>{expiresLabel}</Text>
+                <Text style={styles.expiry}>Expires in {expiresLabel}</Text>
                 {error ? <Text numberOfLines={3} style={styles.error}>{error}</Text> : null}
                 {stage === 'verificationUnavailable' ? <TouchableOpacity style={styles.secondary} onPress={() => { void verify(true); }}><Text style={styles.secondaryText}>Check payment</Text></TouchableOpacity> : null}
               </View>
@@ -401,7 +398,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
         </ScrollView>}
     </View>
     {entry && <View style={styles.actionBar}>
-      <TouchableOpacity testID="terminal-request" disabled={stage === 'creating'} style={[styles.primaryAction, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
+      <TouchableOpacity testID="terminal-request" disabled={stage === 'loading' || stage === 'creating'} style={[styles.primaryAction, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
         <Text style={styles.primaryActionText}>{hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>
       </TouchableOpacity>
     </View>}
@@ -440,7 +437,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     entry: { flex: 1, paddingHorizontal: 24 },
     amountArea: { flex: 1, minHeight: amountMinHeight, alignItems: 'center', justifyContent: 'center' },
     amount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 62, textAlign: 'center', width: '100%' },
-    priceLine: { minHeight: 42, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+    priceLine: { height: 42, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
     approx: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, textAlign: 'center' },
     refresh: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 12, marginTop: 5 },
     padArea: { justifyContent: 'flex-end', paddingBottom: keypadPadding },

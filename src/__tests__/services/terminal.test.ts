@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, isTerminalRequest, loadTerminalRequest, matchTerminalPayment, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalRequest } from '../../services/terminal';
+import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalSats, formatTerminalExpiry, isTerminalRequest, loadTerminalRequest, matchTerminalPayment, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalRequest } from '../../services/terminal';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
@@ -87,4 +87,20 @@ it('does not make a failed write visible as a saved request', async () => {
   (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk unavailable'));
   await expect(saveTerminalRequest(request)).rejects.toThrow('disk unavailable');
   expect(await loadTerminalRequest('wallet-a', 'mainnet')).toBeNull();
+});
+
+
+it('groups displayed sats without changing payment amounts', () => {
+  expect(formatTerminalSats(0)).toBe('0');
+  expect(formatTerminalSats(999)).toBe('999');
+  expect(formatTerminalSats(100000)).toBe('100 000');
+  expect(formatTerminalSats(123456789)).toBe('123 456 789');
+});
+
+it('formats short and long invoice validity in readable units', () => {
+  expect(formatTerminalExpiry(0)).toBe('0:00');
+  expect(formatTerminalExpiry(59)).toBe('0:59');
+  expect(formatTerminalExpiry(3599)).toBe('59:59');
+  expect(formatTerminalExpiry(3600)).toBe('1h 0m');
+  expect(formatTerminalExpiry(2591999)).toBe('29d 23h');
 });
