@@ -37,6 +37,7 @@ import {
 } from '../services/database';
 import { InteractionManager } from 'react-native';
 import { matchTerminalPayment, normalizeInvoice } from '../services/terminal';
+import { reconcileTerminalSales, removeTerminalSales } from '../services/terminalSales';
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
 
 // Keep the call sites grouped around each SDK operation without retaining the
@@ -65,6 +66,20 @@ const traceLightningStep = async <T,>(
 
 type LightningSdk = Awaited<ReturnType<typeof breezSdk.connect>>;
 const HISTORY_PAGE_SIZE = 50;
+
+const reconcileSalesPayments = (walletId: string, payments: breezSdk.Payment[]) => {
+    const matches = payments.flatMap(payment => {
+        const details = payment.details?.inner as { invoice?: unknown } | undefined;
+        if (payment.paymentType !== breezSdk.PaymentType.Receive ||
+            payment.details?.tag !== breezSdk.PaymentDetails_Tags.Lightning ||
+            typeof details?.invoice !== 'string' ||
+            (payment.status !== breezSdk.PaymentStatus.Completed && payment.status !== breezSdk.PaymentStatus.Pending)) return [];
+        return [{ invoice: details.invoice, paymentId: payment.id,
+            status: payment.status === breezSdk.PaymentStatus.Completed ? 'received' as const : 'pending' as const }];
+    });
+    if (!matches.length) return Promise.resolve();
+    return reconcileTerminalSales(walletId, IS_TESTNET ? 'testnet' : 'mainnet', matches);
+};
 
 const toLightningTransaction = (p: any): LightningTransaction => ({
     paymentHash: p.id || p.paymentHash || '',
@@ -450,6 +465,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 if (!current() || revision !== historyRevisionRef.current) return;
                 setLightningTransactions(result.payments.map(toLightningTransaction));
                 setHasMoreLightningTransactions(result.payments.length === limit);
+                // Reuse the SDK history already read for the wallet. Closed
+                // Terminal invoices remain sales without another polling loop.
+                const salesWalletId = sdkWalletIdRef.current;
+                if (salesWalletId) void reconcileSalesPayments(salesWalletId, result.payments).catch(() => {});
             }), 'Reading Lightning history');
         };
         const readAddress = () => withDeadline(flights.run('address', async () => {
@@ -569,6 +588,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const listenerTask = traceLightningStep(lightningTraceContext(), 'sdk.addEventListener', () => sdk.addEventListener({ onEvent: async (event: any) => {
                     lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'event', { tag: event.tag, accepted: current() && sdkRef.current === sdk, paymentStatus: event.inner?.payment?.status, paymentType: event.inner?.payment?.paymentType });
                     if (!current() || sdkRef.current !== sdk) return;
+                    if (event.inner?.payment) {
+                        void reconcileSalesPayments(walletId, [event.inner.payment]).catch(() => {});
+                    }
                     if ([breezSdk.SdkEvent_Tags.Synced, breezSdk.SdkEvent_Tags.PaymentPending,
                         breezSdk.SdkEvent_Tags.PaymentSucceeded, breezSdk.SdkEvent_Tags.PaymentFailed].includes(event.tag)) {
                         // Never await network work inside a native event callback.
@@ -1616,6 +1638,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const removeWallet = async (walletId: string) => {
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
         await assertNoActiveExit(walletId);
+        await removeTerminalSales(walletId, NETWORK_NAME);
         await dbDeleteWallet(walletId);
         await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
 
@@ -1659,6 +1682,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await disposeActiveLightningNode();
         const d = await dbGetWallets(NETWORK_NAME);
         for (const w of d) {
+            await removeTerminalSales(w.id, NETWORK_NAME);
             await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${w.id}` });
             await dbDeleteWallet(w.id);
         }

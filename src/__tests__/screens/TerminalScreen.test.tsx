@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
 import { useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
+import { listTerminalSales, updateTerminalSalePayment } from '../../services/terminalSales';
 
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: jest.fn(), changing: false }) }));
@@ -122,6 +123,32 @@ it('closes an active invoice back to amount entry without leaving Terminal', asy
   fireEvent.press(view.getByLabelText('Close invoice'));
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   expect(view.queryByTestId('terminal-qr')).toBeNull();
+  expect((await listTerminalSales('wallet-a', 'mainnet'))).toHaveLength(1);
+});
+
+it('preserves the active invoice while visiting Today and saves verified payment before closing', async () => {
+  const expiresAt = Date.now() + 60000;
+  createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt });
+  const view = render(<TerminalScreen />);
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByText('2'));
+  fireEvent.press(view.getByTestId('terminal-request'));
+  await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Sales history'));
+  await waitFor(() => expect(view.getByLabelText('Back to terminal')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Back to terminal'));
+  expect(view.getByTestId('terminal-qr')).toBeTruthy();
+  expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
+  view.unmount();
+  const [sale] = await listTerminalSales('wallet-a', 'mainnet');
+  await updateTerminalSalePayment(sale.request, { status: 'received', paymentId: 'paid-one' });
+  validateTerminalInvoice.mockResolvedValue(expiresAt);
+  const resumed = render(<TerminalScreen />);
+  // A temporarily incomplete SDK query cannot turn a known paid sale unpaid.
+  await waitFor(() => expect(resumed.getByText('Paid')).toBeTruthy());
+  fireEvent.press(resumed.getByText('New payment'));
+  await waitFor(() => expect(resumed.getByText('Generate invoice')).toBeTruthy());
+  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].status).toBe('received');
 });
 
 it('clears a nonzero amount when changing into a fiat currency', async () => {

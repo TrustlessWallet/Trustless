@@ -13,6 +13,8 @@ import { NETWORK_NAME } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalSats, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
 import { FiatCurrency, getTerminalRates, TerminalRates } from '../services/terminalRates';
+import { recordTerminalSale, updateTerminalSalePayment } from '../services/terminalSales';
+import TerminalSalesScreen from './TerminalSalesScreen';
 
 const PREFERRED_UNIT_KEY = '@terminalPreferredUnit';
 const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
@@ -31,6 +33,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState<TerminalUnit>('sats');
   const [unitPickerOpen, setUnitPickerOpen] = useState(false);
+  const [salesOpen, setSalesOpen] = useState(false);
   const [rates, setRates] = useState<TerminalRates | null>(null);
   const [rateError, setRateError] = useState('');
   const [rateLoading, setRateLoading] = useState(false);
@@ -110,9 +113,13 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
     setValidated(false);
     setError('');
     setHydrationFailed(false);
+    setSalesOpen(false);
     setStage('loading');
     if (!activeWallet) { setStage('entry'); return; }
-    loadTerminalRequest(activeWallet.id, network).then(saved => {
+    loadTerminalRequest(activeWallet.id, network).then(async saved => {
+      if (!mounted.current || current !== generation.current || capturedScope !== scopeRef.current) return;
+      // Migrate the existing active request before it can be dismissed.
+      if (saved) await recordTerminalSale(saved);
       if (!mounted.current || current !== generation.current || capturedScope !== scopeRef.current) return;
       if (saved) {
         setRequest(saved);
@@ -159,9 +166,13 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
       const useUnfilteredFallback = !knownPaymentId.current && (force || isTerminalPollDue(lastUnfilteredCheck.current, 60_000));
       if (useUnfilteredFallback) lastUnfilteredCheck.current = Date.now();
       const result = await verifyTerminalInvoice(request.invoice, request.createdAt, knownPaymentId.current, useUnfilteredFallback);
+      // Retain a result for this exact invoice even if its screen was closed
+      // while verification was running. It must never update a newer invoice.
+      if (!mounted.current || capturedScope !== scopeRef.current) return;
+      const sale = await updateTerminalSalePayment(request, result);
       if (!mounted.current || !activeRef.current || captured !== generation.current || capturedScope !== scopeRef.current || requestId !== request.id) return;
-      if (result.paymentId) knownPaymentId.current = result.paymentId;
-      if (result.status === 'received') {
+      if (sale.paymentId) knownPaymentId.current = sale.paymentId;
+      if (sale.status === 'received') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
         setStage('received'); setError('');
       }
@@ -229,6 +240,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
         createdAt: Date.now(), expiresAt: created.expiresAt, fiat: fiatQuote,
         inputUnit: isFiat(requestUnit) ? undefined : requestUnit,
       };
+      await recordTerminalSale(next);
       await saveTerminalRequest(next);
       if (!mounted.current || captured !== generation.current || capturedScope !== scopeRef.current) return;
       setRequest(next);
@@ -248,6 +260,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
     if (!request || busy.current) return;
     busy.current = true;
     try {
+      await recordTerminalSale(request);
       await clearTerminalRequest(request);
       ++generation.current;
       checking.current = false;
@@ -332,6 +345,10 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
   const invoiceMinHeight = Math.max(screenHeight - insets.top - 56, qrTop + qrSize + 34 + 180);
   const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest;
 
+  if (salesOpen && activeWallet) return <TerminalSalesScreen
+    key={scope} walletId={activeWallet.id} network={network}
+    visible={visible && foreground} onClose={() => setSalesOpen(false)} />;
+
   return <View style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
       {!hasRequest ? <TouchableOpacity accessibilityLabel="Choose currency" style={styles.glassControl} onPress={() => setUnitPickerOpen(true)}>
@@ -342,6 +359,11 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
             </View>
           </GlassView>
         </TouchableOpacity> : <View style={styles.glassControl} />}
+      <TouchableOpacity accessibilityLabel="Sales history" disabled={stage === 'creating'} onPress={() => setSalesOpen(true)}>
+        <GlassView width={80} height={40} shape="capsule" interactive={true} style={styles.glassSurface}>
+          <Text style={styles.salesLabel}>Today</Text>
+        </GlassView>
+      </TouchableOpacity>
       <TouchableOpacity accessibilityLabel={hasRequest ? 'Close invoice' : 'Exit terminal'} style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || stage === 'creating'} onPress={close}>
         <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
           <Feather name="x" size={21} color={theme.colors.primary} />
@@ -439,6 +461,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     glassSurface: { overflow: 'visible' },
     glassRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
     glassLabel: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13, marginRight: 5 },
+    salesLabel: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, textAlign: 'center' },
     content: { flex: 1 },
     entry: { flex: 1, paddingHorizontal: 24 },
     amountArea: { flex: 1, minHeight: amountMinHeight, alignItems: 'center', justifyContent: 'center' },
