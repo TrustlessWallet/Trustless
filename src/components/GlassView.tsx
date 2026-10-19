@@ -22,7 +22,7 @@ interface GlassViewProps {
   interactive?: boolean;
   fallbackColor?: string;
   fallbackOpacity?: number;
-  shape?: 'circle' | 'capsule' | 'rectangle' | 'ellipse';
+  shape?: 'circle' | 'capsule' | 'rectangle' | 'ellipse' | 'roundedRectangle';
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
 }
@@ -54,9 +54,13 @@ export const GlassView: React.FC<GlassViewProps> = ({
     tint: activeTintColor
   };
   
+  // SwiftUI needs a rounded shape on the glass effect itself. Applying a
+  // corner radius afterwards only clips the visual layer and constrains the
+  // interactive Liquid Glass expansion to a rectangle.
+  const glassShape = shape === 'rectangle' && borderRadius > 0 ? 'roundedRectangle' : shape;
   const swiftModifiers: any[] = [
     frame({ width, height }),
-    glassEffect({ glass: glassOptions, shape }),
+    glassEffect({ glass: glassOptions, shape: glassShape, cornerRadius: glassShape === 'roundedRectangle' ? borderRadius : undefined }),
     ignoreSafeArea()
   ];
   
@@ -66,7 +70,7 @@ export const GlassView: React.FC<GlassViewProps> = ({
     borderBottomLeftRadius !== undefined ||
     borderBottomRightRadius !== undefined;
     
-  if (borderRadius > 0 && !hasIndividualCorners) {
+  if (borderRadius > 0 && !hasIndividualCorners && glassShape !== 'roundedRectangle') {
     swiftModifiers.push(cornerRadiusModifier(borderRadius));
   }
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, AppState, Clipboard, Modal, Pressable, ScrollView, Share, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, AppState, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
@@ -189,7 +189,11 @@ export default function TerminalScreen() {
   }, [now, request, stage]);
 
   const requestPayment = async () => {
-    if (busy.current || request || hydrationFailed || !activeWallet || activeWallet.type === 'watch-only' || !isLightningInitialized) return;
+    if (busy.current || request || hydrationFailed || !activeWallet || activeWallet.type === 'watch-only') return;
+    if (!isLightningInitialized) {
+      setError(lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…');
+      return;
+    }
     if (isFiat(unit) && (!rates || Date.now() < rates.fetchedAt || Date.now() - rates.fetchedAt >= 60_000 || rateError)) {
       setError('Price expired. Refresh price before charging.');
       return;
@@ -266,6 +270,11 @@ export default function TerminalScreen() {
     else leave();
   };
 
+  const close = () => {
+    if (request) { void endRequest(); return; }
+    exit();
+  };
+
   const selectUnit = (next: TerminalUnit) => {
     if (busy.current || request || next === unit) { setUnitPickerOpen(false); return; }
     const apply = () => {
@@ -324,7 +333,7 @@ export default function TerminalScreen() {
             </View>
           </GlassView>
         </TouchableOpacity> : <View style={styles.glassControl} />}
-      <TouchableOpacity accessibilityLabel="Exit terminal" style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || stage === 'creating'} onPress={exit}>
+      <TouchableOpacity accessibilityLabel={hasRequest ? 'Close invoice' : 'Exit terminal'} style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || stage === 'creating'} onPress={close}>
         <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
           <Feather name="x" size={21} color={theme.colors.primary} />
         </GlassView>
@@ -351,8 +360,10 @@ export default function TerminalScreen() {
                 <TouchableOpacity key={i} disabled={!digit} style={styles.key} activeOpacity={0.55} onPress={() => key(digit)}>
                   <Text style={styles.keyText}>{digit === 'back' ? '⌫' : digit}</Text>
                 </TouchableOpacity>)}</View>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              {!isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
+              <View style={styles.feedbackArea}>
+                {error ? <Text numberOfLines={2} style={styles.error}>{error}</Text> : null}
+                {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
+              </View>
             </View>
           </View>
         : <ScrollView style={styles.checkoutScroll} contentContainerStyle={styles.checkoutScrollContent} bounces={false} showsVerticalScrollIndicator={false}>
@@ -364,22 +375,18 @@ export default function TerminalScreen() {
             </> : null}
             <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : isExpired ? 'Request expired' : 'Waiting for payment'}</Text>
             {validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired ? <View style={styles.qrArea}>
-              <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color="#000000" backgroundColor="#FFFFFF" /></View>
+              <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View>
               <Text style={styles.expiry}>{expiresLabel}</Text>
             </View> : null}
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {!validated && !isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable. Retry when connected.') : 'Connecting to Lightning…'}</Text> : null}
             {stage !== 'received' && stage !== 'waiting' ? <TouchableOpacity style={styles.secondary} onPress={() => { if (validated) void verify(true); else retryValidation(v => v + 1); }}><Text style={styles.secondaryText}>{validated ? 'Check payment' : 'Retry validation'}</Text></TouchableOpacity> : null}
-            {validated && stage !== 'received' && <View style={styles.actions}>
-              <TouchableOpacity onPress={() => Clipboard.setString(request.invoice)}><Text style={styles.action}>Copy</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => { void Share.share({ message: request.invoice }); }}><Text style={styles.action}>Share</Text></TouchableOpacity>
-            </View>}
             <TouchableOpacity style={stage === 'received' ? styles.primary : styles.secondary} onPress={stage === 'received' ? () => { void endRequest(); } : confirmEnd}><Text style={stage === 'received' ? styles.primaryText : styles.secondaryText}>{stage === 'received' ? 'New payment' : 'End request'}</Text></TouchableOpacity>
           </View>
         </ScrollView>}
     </View>
     {entry && <View style={styles.actionBar}>
-      <TouchableOpacity testID="terminal-request" disabled={stage === 'creating' || (!isLightningInitialized && !hydrationFailed) || (isFiat(unit) && !rateFresh && !hydrationFailed)} style={[styles.primaryAction, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
+      <TouchableOpacity testID="terminal-request" disabled={stage === 'creating'} style={[styles.primaryAction, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
         <Text style={styles.primaryActionText}>{hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>
       </TouchableOpacity>
     </View>}
@@ -387,7 +394,7 @@ export default function TerminalScreen() {
       <View style={[styles.modalBackdrop, { paddingTop: insets.top + 58 }]} accessible={false}>
         <Pressable style={styles.modalOverlay} accessible={false} onPress={() => setUnitPickerOpen(false)} />
         <Animated.View style={[styles.currencyPopover, { opacity: pickerProgress, transform: [{ scale: pickerProgress.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) }] }]}>
-          <GlassView width={204} height={140} borderRadius={24} shape="rectangle" interactive={false} style={styles.glassSurface}>
+          <GlassView width={204} height={140} borderRadius={24} shape="roundedRectangle" interactive={true} style={styles.glassSurface}>
             <View style={styles.currencyGrid}>{(['USD','EUR','CHF','sats','BTC'] as TerminalUnit[]).map(choice =>
               <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={[styles.currencyOption, choice === unit && styles.currencyOptionSelected]} onPress={() => selectUnit(choice)}><Text style={[styles.currencyText, choice === unit && styles.currencyTextSelected]}>{choice}</Text></TouchableOpacity>)}</View>
           </GlassView>
@@ -417,7 +424,8 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     keypad: { flexDirection: 'row', flexWrap: 'wrap' },
     key: { width: '33.33%', height: 64, alignItems: 'center', justifyContent: 'center' },
     keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 27 },
-    actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 28 },
+    feedbackArea: { height: 44, alignItems: 'center', justifyContent: 'center' },
+    actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
     primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
     disabled: { opacity: 0.55 },
@@ -427,17 +435,15 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     checkoutAmount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 40, textAlign: 'center', width: '100%' },
     checkoutTitle: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 14, textAlign: 'center', marginTop: 12 },
     qrArea: { alignItems: 'center', marginTop: 20 },
-    qrCard: { padding: 18, backgroundColor: '#FFFFFF', borderRadius: 24, shadowColor: '#000000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 4 },
+    qrCard: { padding: 16, backgroundColor: background, borderRadius: 8, shadowColor: primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.16, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: border },
     expiry: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, letterSpacing: 0.8, marginTop: 14 },
-    actions: { flexDirection: 'row', gap: 42, marginTop: 24 },
-    action: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
     primary: { backgroundColor: primary, borderRadius: 8, minHeight: 54, minWidth: 210, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, marginTop: 28 },
     primaryText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 15 },
     secondary: { borderColor: border, borderWidth: 1, borderRadius: 8, minHeight: 46, minWidth: 150, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, marginTop: 20 },
     secondaryText: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
     message: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 15, textAlign: 'center', marginTop: 18 },
-    error: { color: '#CC0000', fontFamily: 'SpaceMono-Regular', fontSize: 12, textAlign: 'center', marginTop: 10 },
+    error: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, textAlign: 'center' },
     modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.16)', alignItems: 'flex-start', paddingLeft: 18 },
     modalOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
     currencyPopover: { width: 204, height: 140 },
