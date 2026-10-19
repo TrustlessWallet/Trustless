@@ -21,7 +21,7 @@ export const isTerminalPollDue = (lastAttempt: number, intervalMs: number, now =
 
 type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expired' | 'verificationUnavailable' | 'creationFailed' | 'walletChanged';
 
-export default function TerminalScreen() {
+export default function TerminalScreen({ visible = true }: { visible?: boolean } = {}) {
   const { activeWallet, isLightningInitialized, lightningInitAttempted, lightningInitError, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const { setMode, changing } = useWalletMode();
   const { theme } = useTheme();
@@ -36,7 +36,10 @@ export default function TerminalScreen() {
   const [rateLoading, setRateLoading] = useState(false);
   const [request, setRequest] = useState<TerminalRequest | null>(null);
   const [error, setError] = useState('');
-  const [active, setActive] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
+  const [foreground, setForeground] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
+  const active = foreground && visible;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   const [now, setNow] = useState(Date.now());
   const [loadRevision, reload] = useState(0);
   const [hydrationFailed, setHydrationFailed] = useState(false);
@@ -44,6 +47,7 @@ export default function TerminalScreen() {
   const [validationRevision, retryValidation] = useState(0);
   const mounted = useRef(true);
   const activeRef = useRef(active);
+  activeRef.current = active;
   const generation = useRef(0);
   const busy = useRef(false);
   const checking = useRef(false);
@@ -87,11 +91,11 @@ export default function TerminalScreen() {
   useEffect(() => {
     if (!request && active && isFiat(unit) && (!rates || Date.now() < rates.fetchedAt || Date.now() - rates.fetchedAt >= 60_000)) void refreshRates();
   }, [active, unit, request?.id, rates?.fetchedAt, now, refreshRates]);
-  useEffect(() => { if (!request && isFiat(unit)) { const timer = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(timer); } }, [request?.id, unit]);
+  useEffect(() => { if (active && !request && isFiat(unit)) { const timer = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(timer); } }, [active, request?.id, unit]);
 
   useEffect(() => {
     mounted.current = true;
-    const listener = AppState.addEventListener('change', state => { activeRef.current = state === 'active'; setActive(state === 'active'); });
+    const listener = AppState.addEventListener('change', state => { activeRef.current = state === 'active' && visibleRef.current; setForeground(state === 'active'); });
     return () => { mounted.current = false; ++generation.current; listener.remove(); };
   }, []);
 

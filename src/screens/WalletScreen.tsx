@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions, Platform, InteractionManager } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { scanLightningInvoice, finish_nfc_scanning, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { formatBitcoinAddressShort } from '../constants/format';
-import { useWalletTransactions, useWalletUTXOs, useTipHeight } from '../hooks/useBalance';
+import { useWalletTransactions, useTipHeight } from '../hooks/useBalance';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GlassView } from '../components/GlassView';
 import { resolveLnurlOrAddress } from '../services/lnurl';
@@ -88,15 +88,16 @@ const WalletScreen = () => {
         isWalletSwitching
     } = useWallet();
 
-    useTipHeight(!!activeWallet);
-
     const [hideBalance, setHideBalance] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
     const [isSheetMounted, setIsSheetMounted] = useState(false);
-    const [pullToRefreshReady, setPullToRefreshReady] = useState(false);
+    const refreshDrag = useRef({ armed: false, dragging: false, distance: 0, releasedAt: 0 });
 
     const isFocused = useIsFocused();
+    const focusedRef = useRef(isFocused);
+    focusedRef.current = isFocused;
+    useTipHeight(!!activeWallet && isFocused && !isLightningMode);
     const scrollY = useRef(new Animated.Value(0)).current;
 
     const sheetTranslateY = useRef(new Animated.Value(SHEET_CLOSED_OFFSET)).current;
@@ -445,20 +446,8 @@ const WalletScreen = () => {
         }
     }, [isFocused]);
 
-    // Keep RefreshControl mounted. Adding it to the native list after a delay
-    // can disrupt touch handling while the user is already on this screen.
     useEffect(() => {
-        if (!isFocused) {
-            setPullToRefreshReady(false);
-            return;
-        }
-
-        setPullToRefreshReady(false);
-        const task = InteractionManager.runAfterInteractions(() => {
-            setPullToRefreshReady(true);
-        });
-
-        return () => task.cancel();
+        refreshDrag.current = { armed: false, dragging: false, distance: 0, releasedAt: 0 };
     }, [isFocused]);
 
     useEffect(() => {
@@ -482,28 +471,38 @@ const WalletScreen = () => {
         ++refreshEpoch.current;
         manualRefreshRef.current = false;
         setIsManualRefreshing(false);
+        refreshDrag.current = { armed: false, dragging: false, distance: 0, releasedAt: 0 };
         return () => { ++refreshEpoch.current; };
-    }, [activeWallet?.id]);
+    }, [activeWallet?.id, isLightningMode]);
 
     const onRefresh = useCallback(async () => {
-        if (!pullToRefreshReady || manualRefreshRef.current || isWalletSwitching) return;
+        // Ignore refresh events caused by inset/layout changes or a tiny pull.
+        const gesture = refreshDrag.current;
+        refreshDrag.current = { armed: false, dragging: false, distance: 0, releasedAt: 0 };
+        const intentionalIosPull = gesture.armed && gesture.distance >= 48 &&
+            (gesture.dragging || Date.now() - gesture.releasedAt < 250);
+        // Android's SwipeRefreshLayout supplies its own threshold; its list
+        // does not produce the negative overscroll offsets that iOS does.
+        if (!isFocused || (Platform.OS === 'ios' && !intentionalIosPull) || manualRefreshRef.current || isWalletSwitching) return;
         const epoch = refreshEpoch.current;
         manualRefreshRef.current = true;
         setIsManualRefreshing(true);
         try {
-            await triggerRefresh(isLightningMode ? 'lightning' : 'onchain');
-            if (!isLightningMode) {
-                await refetchTxs();
-            }
+            const tasks = isLightningMode
+                ? [triggerRefresh('lightning')]
+                : [triggerRefresh('onchain'), refetchTxs()];
+            const results = await Promise.allSettled(tasks);
+            const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+            if (failed) throw failed.reason;
         } catch (error) {
-            if (epoch === refreshEpoch.current) Alert.alert('Refresh failed', error instanceof Error ? error.message : 'Please try again.');
+            if (focusedRef.current && epoch === refreshEpoch.current) Alert.alert('Refresh failed', error instanceof Error ? error.message : 'Please try again.');
         } finally {
             if (epoch === refreshEpoch.current) {
                 manualRefreshRef.current = false;
                 setIsManualRefreshing(false);
             }
         }
-    }, [isLightningMode, pullToRefreshReady, triggerRefresh, refetchTxs, isWalletSwitching]);
+    }, [isLightningMode, isFocused, triggerRefresh, refetchTxs, isWalletSwitching]);
 
 
     const toggleMode = () => setIsLightningMode(currentMode => !currentMode);
@@ -611,7 +610,7 @@ const WalletScreen = () => {
             testID="open-terminal"
             accessibilityLabel="Open terminal"
             activeOpacity={1}
-            style={styles.toggleTouchable}
+            style={[styles.toggleTouchable, styles.terminalTouchable]}
             onPress={openTerminal}
             disabled={terminalChanging}
         >
@@ -674,14 +673,25 @@ const WalletScreen = () => {
             </Animated.View>
 
             <Animated.FlatList
-                contentInsetAdjustmentBehavior="automatic"
+                testID="wallet-transactions"
+                contentInsetAdjustmentBehavior="never"
+                automaticallyAdjustContentInsets={false}
+                bounces={true}
+                alwaysBounceVertical={true}
+                onScrollBeginDrag={() => { refreshDrag.current = { armed: true, dragging: true, distance: 0, releasedAt: 0 }; }}
+                onScrollEndDrag={() => { refreshDrag.current.dragging = false; refreshDrag.current.releasedAt = Date.now(); }}
                 extraData={theme}
                 data={recentTransactions}
                 renderItem={renderTransactionItem}
                 keyExtractor={(item: any) => item.paymentHash || item.txid}
                 onScroll={Animated.event(
                     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                    { useNativeDriver: true }
+                    { useNativeDriver: true, listener: (event: any) => {
+                        if (refreshDrag.current.dragging) {
+                            const offset = event.nativeEvent.contentOffset.y + (event.nativeEvent.contentInset?.top || 0);
+                            refreshDrag.current.distance = Math.max(refreshDrag.current.distance, -offset);
+                        }
+                    } }
                 )}
                 scrollEventThrottle={16}
 
@@ -847,7 +857,6 @@ const WalletScreen = () => {
                         onRefresh={onRefresh}
                         tintColor={theme.colors.primary}
                         colors={[theme.colors.primary]}
-                        progressViewOffset={screenHeight * 0.1}
                     />
                 }
             />
@@ -1016,9 +1025,13 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
     iconWrapperActive: {
         backgroundColor: theme.colors.primary,
     },
+    terminalTouchable: {
+        alignItems: 'flex-start',
+        paddingLeft: 4,
+    },
     terminalMarkText: {
         color: theme.colors.primary,
-        fontFamily: 'SpaceMono-Bold',
+        fontFamily: 'SpaceMono-Regular',
         fontSize: 16,
         lineHeight: 22,
     },

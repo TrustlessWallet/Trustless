@@ -250,3 +250,26 @@ it('shows controls for a saved request while Lightning is disconnected without e
   expect(view.queryByText('1200 sats')).toBeNull();
   expect(validateTerminalInvoice).not.toHaveBeenCalled();
 });
+
+
+it('pauses invoice polling while another route covers Terminal', async () => {
+  jest.useFakeTimers();
+  const expiresAt = Date.now() + 60000;
+  await AsyncStorage.setItem('@terminalActiveRequest:mainnet:wallet-a', JSON.stringify({
+    id: 'covered', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc', amountSats: 1200,
+    createdAt: Date.now(), expiresAt,
+  }));
+  validateTerminalInvoice.mockResolvedValue(expiresAt);
+  const view = render(<TerminalScreen />);
+  try {
+    await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(1));
+    view.rerender(<TerminalScreen visible={false} />);
+    await act(async () => { jest.advanceTimersByTime(12000); });
+    expect(verifyTerminalInvoice).toHaveBeenCalledTimes(1);
+    view.rerender(<TerminalScreen visible={true} />);
+    await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(2));
+  } finally {
+    view.unmount();
+    jest.useRealTimers();
+  }
+});
