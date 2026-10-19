@@ -11,7 +11,7 @@ import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { NETWORK_NAME } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalSats, formatTerminalExpiry, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
+import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalSats, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
 import { FiatCurrency, getTerminalRates, TerminalRates } from '../services/terminalRates';
 
 const PREFERRED_UNIT_KEY = '@terminalPreferredUnit';
@@ -315,11 +315,9 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
   const amountPrefix = unit === 'USD' ? '$' : unit === 'EUR' ? '€' : unit === 'CHF' ? 'CHF ' : '';
   const frozenAmount = request?.fiat
     ? `${request.fiat.currency === 'USD' ? '$' : request.fiat.currency === 'EUR' ? '€' : 'CHF '}${formatFiatMinor(request.fiat.amountMinor)}`
-    : request?.inputUnit === 'BTC' ? `${formatTerminalAmount(request.amountSats, 'BTC')} BTC`
+    : request?.inputUnit === 'BTC' ? formatTerminalAmount(request.amountSats, 'BTC')
       : `${formatTerminalSats(request?.amountSats || 0)} sats`;
   const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${formatTerminalSats(request?.amountSats || 0)} sats` : '';
-  const expiresIn = request ? Math.max(0, Math.ceil((request.expiresAt - now) / 1000)) : 0;
-  const expiresLabel = formatTerminalExpiry(expiresIn);
   const qrSize = Math.max(160, Math.min(280, screenWidth - 82, screenHeight - 360));
   const qrTop = Math.max(110, screenHeight / 2 - insets.top - 56 - (qrSize + 34) / 2);
   const invoiceMinHeight = Math.max(screenHeight - insets.top - 56, qrTop + qrSize + 34 + 180);
@@ -350,7 +348,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
           </View>
         : !hasRequest ? <View style={styles.entry}>
             <View style={styles.amountArea}>
-              <Text testID="terminal-amount" style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.45}>{amountPrefix}{amount || '0'}</Text>
+              <Text testID="terminal-amount" style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.45}>{amountPrefix}{amount || '0'}{unit === 'sats' ? ' sats' : unit === 'BTC' ? <Text style={styles.orangeSymbol}> ₿</Text> : null}</Text>
               <View style={styles.priceLine}>
                 <Text style={styles.approx}>{approxSats !== null ? `≈ ${formatTerminalSats(approxSats)} sats` : ''}</Text>
                 {isFiat(unit) && rateError ? <TouchableOpacity disabled={rateLoading} onPress={() => { void refreshRates(); }}><Text style={styles.refresh}>Refresh price</Text></TouchableOpacity> : null}
@@ -370,12 +368,11 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
         : validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired ? <ScrollView style={styles.invoiceCanvas} contentContainerStyle={{ minHeight: invoiceMinHeight }} bounces={false} showsVerticalScrollIndicator={false}>
             <View style={[styles.invoiceAnchor, { top: qrTop }]}>
               <View style={styles.invoiceAmount}>
-                <Text style={styles.checkoutAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>{frozenAmount}</Text>
+                <Text style={styles.checkoutAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>{frozenAmount}{request?.inputUnit === 'BTC' && !request.fiat ? <Text style={styles.orangeSymbol}> ₿</Text> : null}</Text>
                 {frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}
               </View>
               <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View>
               <View style={styles.invoiceFooter}>
-                <Text style={styles.expiry}>Expires in {expiresLabel}</Text>
                 {error ? <Text numberOfLines={3} style={styles.error}>{error}</Text> : null}
                 {stage === 'verificationUnavailable' ? <TouchableOpacity style={styles.secondary} onPress={() => { void verify(true); }}><Text style={styles.secondaryText}>Check payment</Text></TouchableOpacity> : null}
               </View>
@@ -385,7 +382,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
           <View style={styles.checkout}>
             {stage === 'received' ? <Feather name="check-circle" size={70} color={theme.colors.bitcoin} /> : null}
             {validated ? <>
-              <Text style={styles.checkoutAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>{frozenAmount}</Text>
+              <Text style={styles.checkoutAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>{frozenAmount}{request?.inputUnit === 'BTC' && !request.fiat ? <Text style={styles.orangeSymbol}> ₿</Text> : null}</Text>
               {frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}
             </> : null}
             {!validated || stage === 'received' || isExpired ? <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : 'Request expired'}</Text> : null}
@@ -459,7 +456,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     checkoutAmount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 40, textAlign: 'center', width: '100%' },
     checkoutTitle: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 14, textAlign: 'center', marginTop: 12 },
     qrCard: { padding: 16, backgroundColor: background, borderRadius: 8, shadowColor: primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.16, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: border },
-    expiry: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, letterSpacing: 0.8, marginTop: 14 },
+    orangeSymbol: { color: bitcoin },
     primary: { backgroundColor: primary, borderRadius: 8, minHeight: 54, minWidth: 210, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, marginTop: 28 },
     primaryText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 15 },
     secondary: { borderColor: border, borderWidth: 1, borderRadius: 8, minHeight: 46, minWidth: 150, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, marginTop: 20 },
