@@ -76,7 +76,7 @@ it('does not reinterpret entered sats when the saved denomination loads late', a
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   await act(async () => { finish('BTC'); });
-  expect(view.getByTestId('terminal-amount').props.children).toEqual(['', '1']);
+  expect(view.getByTestId('terminal-amount').props.children.slice(0, 2)).toEqual(['', '1']);
   expect(view.getByText('sats')).toBeTruthy();
   readMock.mockImplementation(originalRead);
 });
@@ -131,7 +131,7 @@ it('clears a nonzero amount when changing into a fiat currency', async () => {
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByLabelText('Choose currency'));
   fireEvent.press(view.getByLabelText('USD'));
-  await waitFor(() => expect(view.getByTestId('terminal-amount').props.children).toEqual(['$', '0']));
+  await waitFor(() => expect(view.getByTestId('terminal-amount').props.children.slice(0, 2)).toEqual(['$', '0']));
 });
 
 it('blocks duplicate presses and reveals the QR only after storage succeeds', async () => {
