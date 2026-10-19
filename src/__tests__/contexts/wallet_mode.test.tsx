@@ -15,24 +15,27 @@ beforeEach(() => {
   (AsyncStorage.setItem as jest.Mock).mockResolvedValue(undefined);
 });
 
-it('hydrates mode and publishes a change only after storage succeeds', async () => {
+it('publishes a mode change immediately while persistence completes', async () => {
   let finish!: () => void;
   (AsyncStorage.setItem as jest.Mock).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
   const { result } = renderHook(() => useWalletMode(), { wrapper });
   await waitFor(() => expect(result.current.mode).toBe('wallet'));
   let change!: Promise<void>;
   act(() => { change = result.current.setMode('terminal'); });
-  expect(result.current.mode).toBe('wallet');
+  expect(result.current.mode).toBe('terminal');
   await waitFor(() => expect(finish).toBeDefined());
   await act(async () => { finish(); await change; });
   expect(AsyncStorage.setItem).toHaveBeenCalledWith(WALLET_MODE_KEY, 'terminal');
   expect(result.current.mode).toBe('terminal');
 });
 
-it('keeps the visible mode when persistence fails', async () => {
+it('rolls the visible mode back when persistence fails', async () => {
   (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('write failed'));
   const { result } = renderHook(() => useWalletMode(), { wrapper });
   await waitFor(() => expect(result.current.mode).toBe('wallet'));
-  await act(async () => { await expect(result.current.setMode('terminal')).rejects.toThrow('write failed'); });
+  let change!: Promise<void>;
+  act(() => { change = result.current.setMode('terminal'); });
+  expect(result.current.mode).toBe('terminal');
+  await act(async () => { await expect(change).rejects.toThrow('write failed'); });
   expect(result.current.mode).toBe('wallet');
 });
