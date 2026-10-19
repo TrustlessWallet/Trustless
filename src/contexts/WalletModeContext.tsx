@@ -8,6 +8,8 @@ export const SHOW_TERMINAL_KEY = '@showTerminal';
 type ModeContext = {
   mode: WalletMode;
   changing: boolean;
+  showTerminal: boolean;
+  setShowTerminal: (show: boolean) => Promise<void>;
   setMode: (mode: WalletMode) => Promise<void>;
 };
 
@@ -15,6 +17,10 @@ const Context = createContext<ModeContext | null>(null);
 
 export function WalletModeProvider({ children }: { children: React.ReactNode }) {
   const [mode, publish] = useState<WalletMode>('wallet');
+  const [showTerminal, publishShowTerminal] = useState(true);
+  const visibilityQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const visibilitySequence = useRef(0);
+  const persistedVisibility = useRef(true);
   const [loaded, setLoaded] = useState(false);
   const [changing, setChanging] = useState(false);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -26,8 +32,10 @@ export function WalletModeProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     mounted.current = true;
-    AsyncStorage.getItem(WALLET_MODE_KEY).then(value => {
+    Promise.all([AsyncStorage.getItem(WALLET_MODE_KEY), AsyncStorage.getItem(SHOW_TERMINAL_KEY)]).then(([value, visibility]) => {
       if (mounted.current) {
+        persistedVisibility.current = visibility !== 'false';
+        publishShowTerminal(visibility !== 'false');
         const restored = value === 'terminal' ? 'terminal' : 'wallet';
         modeRef.current = restored;
         persistedModeRef.current = restored;
@@ -67,8 +75,19 @@ export function WalletModeProvider({ children }: { children: React.ReactNode }) 
     });
   };
 
+  const setShowTerminal = (next: boolean): Promise<void> => {
+    const sequence = ++visibilitySequence.current;
+    publishShowTerminal(next);
+    const task = visibilityQueue.current.then(() => AsyncStorage.setItem(SHOW_TERMINAL_KEY, String(next)));
+    visibilityQueue.current = task.catch(() => undefined);
+    return task.then(() => { persistedVisibility.current = next; }).catch(error => {
+      if (mounted.current && visibilitySequence.current === sequence) publishShowTerminal(persistedVisibility.current);
+      throw error;
+    });
+  };
+
   if (!loaded) return null;
-  return <Context.Provider value={{ mode, changing, setMode }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ mode, changing, setMode, showTerminal, setShowTerminal }}>{children}</Context.Provider>;
 }
 
 export function useWalletMode(): ModeContext {

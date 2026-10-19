@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useWalletMode, WalletModeProvider, WALLET_MODE_KEY } from '../../contexts/WalletModeContext';
+import { useWalletMode, WalletModeProvider, WALLET_MODE_KEY, SHOW_TERMINAL_KEY } from '../../contexts/WalletModeContext';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
@@ -38,4 +38,35 @@ it('rolls the visible mode back when persistence fails', async () => {
   expect(result.current.mode).toBe('terminal');
   await act(async () => { await expect(change).rejects.toThrow('write failed'); });
   expect(result.current.mode).toBe('wallet');
+});
+
+
+it('hydrates hidden Terminal access before exposing consumers', async () => {
+  (AsyncStorage.getItem as jest.Mock).mockImplementation(async key => key === SHOW_TERMINAL_KEY ? 'false' : 'wallet');
+  const { result } = renderHook(() => useWalletMode(), { wrapper });
+  await waitFor(() => expect(result.current.showTerminal).toBe(false));
+});
+
+it('updates Terminal access across consumers before storage finishes', async () => {
+  let finish!: () => void;
+  (AsyncStorage.setItem as jest.Mock).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const { result } = renderHook(() => ({ settings: useWalletMode(), wallet: useWalletMode() }), { wrapper });
+  await waitFor(() => expect(result.current.wallet.showTerminal).toBe(true));
+  let change!: Promise<void>;
+  act(() => { change = result.current.settings.setShowTerminal(false); });
+  expect(result.current.wallet.showTerminal).toBe(false);
+  await waitFor(() => expect(finish).toBeDefined());
+  await act(async () => { finish(); await change; });
+  expect(AsyncStorage.setItem).toHaveBeenCalledWith(SHOW_TERMINAL_KEY, 'false');
+});
+
+it('restores Terminal visibility after a failed setting write', async () => {
+  (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('write failed'));
+  const { result } = renderHook(() => useWalletMode(), { wrapper });
+  await waitFor(() => expect(result.current.showTerminal).toBe(true));
+  let change!: Promise<void>;
+  act(() => { change = result.current.setShowTerminal(false); });
+  expect(result.current.showTerminal).toBe(false);
+  await act(async () => { await expect(change).rejects.toThrow('write failed'); });
+  expect(result.current.showTerminal).toBe(true);
 });

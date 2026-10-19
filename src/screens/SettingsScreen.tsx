@@ -4,7 +4,7 @@ import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { SHOW_TERMINAL_KEY, useWalletMode } from '../contexts/WalletModeContext';
+import { useWalletMode } from '../contexts/WalletModeContext';
 import { Theme } from '../constants/theme';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -59,7 +59,7 @@ const SettingsScreen = () => {
     lightningInitError,
   } = useWallet();
   const { theme, isDark, toggleTheme } = useTheme();
-  const { mode: appMode, changing: modeChanging, setMode: setAppMode } = useWalletMode();
+  const { showTerminal: show_terminal, setShowTerminal } = useWalletMode();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => get_styles(theme), [theme]);
   const navigation = useNavigation<navigation_prop>();
@@ -78,7 +78,6 @@ const SettingsScreen = () => {
   const [default_screen, set_default_screen] = useState<'Wallet'>('Wallet');
   const [default_wallet_mode, set_default_wallet_mode] = useState<'On-chain' | 'Lightning'>('On-chain');
   const [tap_to_pay_limit, set_tap_to_pay_limit] = useState('100000');
-  const [show_terminal, set_show_terminal] = useState(true);
 
   const tap_step_timeout_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tap_step_interval_ref = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -130,11 +129,6 @@ const SettingsScreen = () => {
 
       const saved_wallet_pref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
       set_hide_wallet_balance(saved_wallet_pref === 'true');
-
-      // Terminal access is opt-out. Keeping a missing preference enabled
-      // avoids hiding it for everyone who upgrades.
-      const saved_show_terminal = await AsyncStorage.getItem(SHOW_TERMINAL_KEY);
-      set_show_terminal(saved_show_terminal !== 'false');
 
       const saved_wallet_mode = await AsyncStorage.getItem(DEFAULT_WALLET_MODE_KEY);
       if (saved_wallet_mode === 'Lightning') {
@@ -316,13 +310,9 @@ const SettingsScreen = () => {
   };
 
   const toggle_show_terminal = async () => {
-    const next = !show_terminal;
-    set_show_terminal(next);
     try {
-      await AsyncStorage.setItem(SHOW_TERMINAL_KEY, String(next));
-      if (!next && appMode === 'terminal') await setAppMode('wallet');
+      await setShowTerminal(!show_terminal);
     } catch {
-      set_show_terminal(!next);
       Alert.alert('Could not save setting', 'Please retry.');
     }
   };
@@ -495,7 +485,7 @@ const SettingsScreen = () => {
           {activeWallet?.type !== 'watch-only' && <View style={styles.row_wrapper}>
             <View style={styles.row}>
               <Text style={styles.row_label}>Show terminal</Text>
-              <TouchableOpacity testID="toggle-show-terminal" disabled={modeChanging} onPress={() => { void toggle_show_terminal(); }}>
+              <TouchableOpacity testID="toggle-show-terminal" onPress={() => { void toggle_show_terminal(); }}>
                 <View style={styles.switcher}>
                   <Feather name="chevron-left" size={24} color={theme.colors.primary} />
                   <Text style={styles.switcher_text}>{show_terminal ? 'On' : 'Off'}</Text>
