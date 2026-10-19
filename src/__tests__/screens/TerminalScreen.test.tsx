@@ -226,7 +226,7 @@ it('allows verification of the next request after ending one with a check in fli
   await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
   await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(1));
   expect(verifyTerminalInvoice).toHaveBeenCalledWith('lnbc123abc', createdAt, undefined, false);
-  fireEvent.press(view.getByText('End request'));
+  fireEvent.press(view.getByLabelText('Close invoice'));
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
@@ -243,7 +243,7 @@ it('shows controls for a saved request while Lightning is disconnected without e
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: wallet, isLightningInitialized: false, lightningInitAttempted: true, lightningInitError: 'Connection unavailable', createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
   const view = render(<TerminalScreen />);
   await waitFor(() => expect(view.getByText('Checking saved request')).toBeTruthy());
-  expect(view.getByText('End request')).toBeTruthy();
+  expect(view.queryByText('End request')).toBeNull();
   expect(view.getByLabelText('Close invoice')).toBeTruthy();
   expect(view.getByText('Connection unavailable')).toBeTruthy();
   expect(view.queryByTestId('terminal-qr')).toBeNull();

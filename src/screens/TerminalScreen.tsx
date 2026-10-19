@@ -26,7 +26,7 @@ export default function TerminalScreen() {
   const { setMode, changing } = useWalletMode();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [stage, setStage] = useState<Stage>('loading');
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState<TerminalUnit>('sats');
@@ -61,7 +61,7 @@ export default function TerminalScreen() {
   const scope = `${network}:${activeWallet?.id || ''}`;
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
-  const styles = makeStyles(theme.colors.background, theme.colors.primary, theme.colors.inversePrimary, theme.colors.surface, theme.colors.muted, theme.colors.border, theme.colors.bitcoin);
+  const styles = makeStyles(theme.colors.background, theme.colors.primary, theme.colors.inversePrimary, theme.colors.surface, theme.colors.muted, theme.colors.border, theme.colors.bitcoin, screenHeight);
 
   useEffect(() => {
     void AsyncStorage.getItem(PREFERRED_UNIT_KEY).then(saved => {
@@ -320,7 +320,7 @@ export default function TerminalScreen() {
   const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${request?.amountSats || 0} sats` : '';
   const expiresIn = request ? Math.max(0, Math.ceil((request.expiresAt - now) / 1000)) : 0;
   const expiresLabel = `${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, '0')}`;
-  const qrSize = Math.max(180, Math.min(232, screenWidth - 84));
+  const qrSize = Math.max(220, Math.min(280, screenWidth - 48));
   const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest && stage !== 'loading';
 
   return <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -373,7 +373,7 @@ export default function TerminalScreen() {
               <Text style={styles.checkoutAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>{frozenAmount}</Text>
               {frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}
             </> : null}
-            <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : isExpired ? 'Request expired' : 'Waiting for payment'}</Text>
+            {!validated || stage === 'received' || isExpired ? <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : 'Request expired'}</Text> : null}
             {validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired ? <View style={styles.qrArea}>
               <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View>
               <Text style={styles.expiry}>{expiresLabel}</Text>
@@ -381,7 +381,7 @@ export default function TerminalScreen() {
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {!validated && !isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable. Retry when connected.') : 'Connecting to Lightning…'}</Text> : null}
             {stage !== 'received' && stage !== 'waiting' ? <TouchableOpacity style={styles.secondary} onPress={() => { if (validated) void verify(true); else retryValidation(v => v + 1); }}><Text style={styles.secondaryText}>{validated ? 'Check payment' : 'Retry validation'}</Text></TouchableOpacity> : null}
-            <TouchableOpacity style={stage === 'received' ? styles.primary : styles.secondary} onPress={stage === 'received' ? () => { void endRequest(); } : confirmEnd}><Text style={stage === 'received' ? styles.primaryText : styles.secondaryText}>{stage === 'received' ? 'New payment' : 'End request'}</Text></TouchableOpacity>
+            {stage === 'received' ? <TouchableOpacity style={styles.primary} onPress={() => { void endRequest(); }}><Text style={styles.primaryText}>New payment</Text></TouchableOpacity> : null}
           </View>
         </ScrollView>}
     </View>
@@ -396,7 +396,7 @@ export default function TerminalScreen() {
         <Animated.View style={[styles.currencyPopover, { opacity: pickerProgress, transform: [{ scale: pickerProgress.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) }] }]}>
           <GlassView width={204} height={140} borderRadius={24} shape="roundedRectangle" interactive={true} style={styles.glassSurface}>
             <View style={styles.currencyGrid}>{(['USD','EUR','CHF','sats','BTC'] as TerminalUnit[]).map(choice =>
-              <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={[styles.currencyOption, choice === unit && styles.currencyOptionSelected]} onPress={() => selectUnit(choice)}><Text style={[styles.currencyText, choice === unit && styles.currencyTextSelected]}>{choice}</Text></TouchableOpacity>)}</View>
+              <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={styles.currencyOption} onPress={() => selectUnit(choice)}><Text style={[styles.currencyText, choice === unit && styles.currencyTextSelected]}>{choice}</Text></TouchableOpacity>)}</View>
           </GlassView>
         </Animated.View>
       </View>
@@ -404,7 +404,15 @@ export default function TerminalScreen() {
   </View>;
 }
 
-function makeStyles(background: string, primary: string, inversePrimary: string, surface: string, muted: string, border: string, bitcoin: string) {
+function makeStyles(background: string, primary: string, inversePrimary: string, surface: string, muted: string, border: string, bitcoin: string, screenHeight: number) {
+  const compact = screenHeight < 740;
+  const short = screenHeight < 620;
+  const keyHeight = short ? 56 : compact ? 64 : 70;
+  const keyFontSize = short ? 26 : compact ? 28 : 30;
+  const amountMinHeight = short ? 100 : compact ? 130 : 150;
+  const keypadPadding = short ? 12 : compact ? 14 : 22;
+  const feedbackHeight = short ? 38 : compact ? 40 : 44;
+  const actionBottomPadding = short ? 30 : compact ? 40 : 48;
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: background },
     header: { height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -415,26 +423,26 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     glassLabel: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13, marginRight: 5 },
     content: { flex: 1 },
     entry: { flex: 1, paddingHorizontal: 24 },
-    amountArea: { flex: 1, minHeight: 150, alignItems: 'center', justifyContent: 'center' },
+    amountArea: { flex: 1, minHeight: amountMinHeight, alignItems: 'center', justifyContent: 'center' },
     amount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 62, textAlign: 'center', width: '100%' },
     priceLine: { minHeight: 42, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
     approx: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, textAlign: 'center' },
     refresh: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 12, marginTop: 5 },
-    padArea: { justifyContent: 'flex-end', paddingBottom: 14 },
+    padArea: { justifyContent: 'flex-end', paddingBottom: keypadPadding },
     keypad: { flexDirection: 'row', flexWrap: 'wrap' },
-    key: { width: '33.33%', height: 64, alignItems: 'center', justifyContent: 'center' },
-    keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 27 },
-    feedbackArea: { height: 44, alignItems: 'center', justifyContent: 'center' },
-    actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
+    key: { width: '33.33%', height: keyHeight, alignItems: 'center', justifyContent: 'center' },
+    keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: keyFontSize },
+    feedbackArea: { height: feedbackHeight, alignItems: 'center', justifyContent: 'center' },
+    actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: actionBottomPadding },
     primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
     disabled: { opacity: 0.55 },
     checkoutScroll: { flex: 1 },
-    checkoutScrollContent: { flexGrow: 1, paddingVertical: 20 },
-    checkout: { flex: 1, paddingHorizontal: 24, paddingBottom: 24, alignItems: 'center', justifyContent: 'center' },
+    checkoutScrollContent: { flexGrow: 1, paddingVertical: 12 },
+    checkout: { flex: 1, paddingHorizontal: 24, paddingBottom: 20, alignItems: 'center', justifyContent: 'center' },
     checkoutAmount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 40, textAlign: 'center', width: '100%' },
     checkoutTitle: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 14, textAlign: 'center', marginTop: 12 },
-    qrArea: { alignItems: 'center', marginTop: 20 },
+    qrArea: { alignItems: 'center', alignSelf: 'stretch', marginTop: 18 },
     qrCard: { padding: 16, backgroundColor: background, borderRadius: 8, shadowColor: primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.16, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: border },
     expiry: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, letterSpacing: 0.8, marginTop: 14 },
     primary: { backgroundColor: primary, borderRadius: 8, minHeight: 54, minWidth: 210, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, marginTop: 28 },
@@ -449,7 +457,6 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     currencyPopover: { width: 204, height: 140 },
     currencyGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 10, gap: 4 },
     currencyOption: { width: 58, height: 56, alignItems: 'center', justifyContent: 'center', borderRadius: 16 },
-    currencyOptionSelected: { backgroundColor: surface },
     currencyText: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     currencyTextSelected: { color: bitcoin },
   });
