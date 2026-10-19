@@ -6,6 +6,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useWallet } from '../../contexts/WalletContext';
 import SettingsScreen from '../../screens/SettingsScreen';
 import { WalletModeProvider } from '../../contexts/WalletModeContext';
+import { SHOW_TERMINAL_KEY } from '../../contexts/WalletModeContext';
 import { TX_BIOMETRIC_CONFIRM_KEY } from '../../services/authState';
 
 // This suite exercises the real authState module (real in-memory AsyncStorage,
@@ -140,5 +141,25 @@ describe('SettingsScreen - Biometrics toggle sync', () => {
         const { getByTestId: getByTestIdAgain } = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
         await waitFor(() => expect(getByTestIdAgain('toggle-tx-confirm')).toBeTruthy());
         expect(read_toggle_state(getByTestIdAgain, 'toggle-tx-confirm')).toBe('Off');
+    });
+
+    it('shows the Terminal entry by default and persists an explicit choice', async () => {
+        const { getByTestId } = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
+        await waitFor(() => expect(getByTestId('toggle-show-terminal')).toBeTruthy());
+        expect(read_toggle_state(getByTestId, 'toggle-show-terminal')).toBe('On');
+
+        fireEvent.press(getByTestId('toggle-show-terminal'));
+        await waitFor(() => expect(read_toggle_state(getByTestId, 'toggle-show-terminal')).toBe('Off'));
+        expect(await AsyncStorage.getItem(SHOW_TERMINAL_KEY)).toBe('false');
+    });
+
+    it('does not offer Terminal visibility controls for a watch-only wallet', async () => {
+        (useWallet as jest.Mock).mockReturnValue({
+            resetWallet: jest.fn(), triggerRefresh: jest.fn(), activeWallet: { id: 'watch', type: 'watch-only' },
+            isLightningInitialized: false, lightningInitAttempted: true, lightningApiKeyPresent: true, lightningInitError: null,
+        });
+        const { queryByTestId } = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
+        await waitFor(() => expect(queryByTestId('toggle-biometrics')).toBeTruthy());
+        expect(queryByTestId('toggle-show-terminal')).toBeNull();
     });
 });

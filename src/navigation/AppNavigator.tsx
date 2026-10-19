@@ -56,7 +56,8 @@ const AUTO_LOCK_TIME_KEY = '@autoLockTime';
 
 const MainRoot = () => {
   const { mode } = useWalletMode();
-  return mode === 'terminal' ? <TerminalScreen /> : <TabNavigator />;
+  const { activeWallet } = useWallet();
+  return mode === 'terminal' && activeWallet?.type !== 'watch-only' ? <TerminalScreen /> : <TabNavigator />;
 };
 
 const PrivacyOverlayScreen = () => {

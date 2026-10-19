@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type WalletMode = 'wallet' | 'terminal';
 export const WALLET_MODE_KEY = '@appWalletMode';
+export const SHOW_TERMINAL_KEY = '@showTerminal';
 
 type ModeContext = {
   mode: WalletMode;

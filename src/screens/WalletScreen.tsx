@@ -19,6 +19,7 @@ import { GlassView } from '../components/GlassView';
 import { resolveLnurlOrAddress } from '../services/lnurl';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { authenticate_transaction_action } from '../services/authState';
+import { SHOW_TERMINAL_KEY, useWalletMode } from '../contexts/WalletModeContext';
 
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -73,6 +74,7 @@ const WalletScreen = () => {
 
     const navigation = useNavigation<NavigationProp>();
     const insets = useSafeAreaInsets();
+    const { setMode: setAppMode, changing: terminalChanging } = useWalletMode();
 
     const {
         activeWallet,
@@ -93,6 +95,7 @@ const WalletScreen = () => {
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
     const [isSheetMounted, setIsSheetMounted] = useState(false);
     const [pullToRefreshReady, setPullToRefreshReady] = useState(false);
+    const [showTerminal, setShowTerminal] = useState(true);
 
     const isFocused = useIsFocused();
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -468,6 +471,13 @@ const WalletScreen = () => {
     }, []);
 
     useEffect(() => {
+        if (!isFocused) return;
+        AsyncStorage.getItem(SHOW_TERMINAL_KEY)
+            .then(value => setShowTerminal(value !== 'false'))
+            .catch(() => setShowTerminal(true));
+    }, [isFocused]);
+
+    useEffect(() => {
         if (activeWallet?.type === 'watch-only' && isLightningMode) {
             setIsLightningMode(false);
         }
@@ -598,6 +608,29 @@ const WalletScreen = () => {
         </GlassView>
     );
 
+    const openTerminal = useCallback(() => {
+        if (terminalChanging || activeWallet?.type === 'watch-only') return;
+        void setAppMode('terminal').catch(() => Alert.alert('Could not open terminal', 'Please retry.'));
+    }, [activeWallet?.type, setAppMode, terminalChanging]);
+
+    const terminalEntryElement = showTerminal && activeWallet?.type !== 'watch-only' ? (
+        <TouchableOpacity
+            testID="open-terminal"
+            accessibilityLabel="Open terminal"
+            activeOpacity={1}
+            style={styles.toggleTouchable}
+            onPress={openTerminal}
+            disabled={terminalChanging}
+        >
+            <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
+                    <View style={[styles.iconWrapper, styles.terminalWalletMark]}><Text style={styles.terminalMarkText}>W</Text></View>
+                    <View style={styles.iconWrapper}><Text style={[styles.terminalMarkText, styles.terminalMarkInactive]}>T</Text></View>
+                </View>
+            </GlassView>
+        </TouchableOpacity>
+    ) : <View style={styles.toggleTouchable} pointerEvents="none" />;
+
     if (walletLoading) {
         return <View style={styles.centeredContainer}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
     }
@@ -693,9 +726,7 @@ const WalletScreen = () => {
                                 </GlassView>
                             </TouchableOpacity>
 
-                            <View style={[styles.toggleTouchable, { opacity: 0 }]} pointerEvents="none">
-                                {activeWallet?.type !== 'watch-only' && toggleIconElement}
-                            </View>
+                            {terminalEntryElement}
                         </View>
                         <View style={styles.balanceRow}>
                             <View style={styles.balanceSideSpacer} />
@@ -994,6 +1025,18 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
     },
     iconWrapperActive: {
         backgroundColor: theme.colors.primary,
+    },
+    terminalWalletMark: {
+        backgroundColor: theme.colors.primary,
+    },
+    terminalMarkText: {
+        color: theme.colors.inversePrimary,
+        fontFamily: 'SpaceMono-Bold',
+        fontSize: 12,
+        lineHeight: 18,
+    },
+    terminalMarkInactive: {
+        color: theme.colors.muted,
     },
     walletName: {
         fontSize: 16,
