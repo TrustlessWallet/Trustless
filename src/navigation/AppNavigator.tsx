@@ -10,9 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import ExportPSBTScreen from '../screens/ExportPSBTScreen';
 import ImportPSBTScreen from '../screens/ImportPSBTScreen';
-import TabNavigator from './TabNavigator';
-import TerminalScreen from '../screens/TerminalScreen';
-import { useWalletMode } from '../contexts/WalletModeContext';
+import { MainRoot, TerminalRoute } from './TerminalNavigation';
 import QRScannerScreen from '../screens/QRScannerScreen';
 import BackupIntroScreen from '../screens/BackupIntroScreen';
 import ShowMnemonicScreen from '../screens/ShowMnemonicScreen';
@@ -53,12 +51,6 @@ import { GlassView } from '../components/GlassView';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 const AUTO_LOCK_TIME_KEY = '@autoLockTime';
-
-const MainRoot = () => {
-  const { mode } = useWalletMode();
-  const { activeWallet } = useWallet();
-  return mode === 'terminal' && activeWallet?.type !== 'watch-only' ? <TerminalScreen /> : <TabNavigator />;
-};
 
 const PrivacyOverlayScreen = () => {
   const { isDark } = useTheme();
@@ -409,6 +401,13 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           }}
           initialParams={{ screen: initial_tab }}
         />
+        <Stack.Screen name="Terminal" component={TerminalRoute} options={{
+          headerShown: false,
+          presentation: 'card',
+          animation: 'none',
+          gestureEnabled: false,
+          contentStyle: { backgroundColor: theme.colors.background },
+        }} />
         <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
 
         <Stack.Group screenOptions={{

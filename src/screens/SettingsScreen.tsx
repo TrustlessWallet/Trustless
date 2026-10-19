@@ -482,19 +482,6 @@ const SettingsScreen = () => {
         <View style={styles.section}>
           <Text style={styles.section_title}>App Settings</Text>
 
-          {activeWallet?.type !== 'watch-only' && <View style={styles.row_wrapper}>
-            <View style={styles.row}>
-              <Text style={styles.row_label}>Show terminal</Text>
-              <TouchableOpacity testID="toggle-show-terminal" onPress={() => { void toggle_show_terminal(); }}>
-                <View style={styles.switcher}>
-                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
-                  <Text style={styles.switcher_text}>{show_terminal ? 'On' : 'Off'}</Text>
-                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>}
-
           <View style={styles.row_wrapper}>
             <View style={styles.row}>
               <Text style={styles.row_label}>Theme</Text>
@@ -520,6 +507,19 @@ const SettingsScreen = () => {
               </TouchableOpacity>
             </View>
           </View>
+
+          {activeWallet?.type !== 'watch-only' && <View style={styles.row_wrapper}>
+            <View style={styles.row}>
+              <Text style={styles.row_label}>Show terminal</Text>
+              <TouchableOpacity testID="toggle-show-terminal" onPress={() => { void toggle_show_terminal(); }}>
+                <View style={styles.switcher}>
+                  <Feather name="chevron-left" size={24} color={theme.colors.primary} />
+                  <Text style={styles.switcher_text}>{show_terminal ? 'On' : 'Off'}</Text>
+                  <Feather name="chevron-right" size={24} color={theme.colors.primary} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>}
 
           <View style={styles.row_wrapper}>
             <View style={styles.row}>

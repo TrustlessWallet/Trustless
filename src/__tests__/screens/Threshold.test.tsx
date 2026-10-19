@@ -13,6 +13,8 @@ jest.mock('@react-navigation/native', () => ({
     useIsFocused: jest.fn(() => true),
 }));
 
+jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ showTerminal: true, setMode: jest.fn(), changing: false }) }));
+
 jest.mock('../../contexts/WalletContext', () => ({
     useWallet: jest.fn(),
 }));
@@ -29,6 +31,7 @@ jest.mock('../../hooks/useBalance', () => ({
 
 jest.mock('../../services/nfc', () => ({
     scanLightningInvoice: jest.fn(),
+    finish_nfc_scanning: jest.fn(),
     NfcCancelledError: class extends Error {},
     NfcUnsupportedError: class extends Error {},
 }));

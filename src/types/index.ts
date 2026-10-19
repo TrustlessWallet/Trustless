@@ -110,6 +110,7 @@ export type TabParamList = {
 
 export type RootStackParamList = {
   MainTabs: { screen?: string } | undefined;
+  Terminal: undefined;
   AuthCheck: undefined;
   AddAddress: undefined;
   BackupIntro: undefined;
