@@ -14,7 +14,7 @@ import { shareTerminalReceipt } from '../services/terminalReceipt';
 import TerminalRefundScreen from './TerminalRefundScreen';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
-type LoadState = { scope: string; sales: TerminalSale[]; loading: boolean; error: boolean };
+type LoadState = { scope: string; sales: TerminalSale[]; loading: boolean; refreshing: boolean; error: boolean };
 type Tab = 'today' | 'all';
 
 const sameLocalDay = (timestamp: number, day: Date) => {
@@ -87,7 +87,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const checkBusy = useRef(false);
   const checkEpoch = useRef(0);
   const mounted = useRef(true);
-  const [state, setState] = useState<LoadState>({ scope, sales: [], loading: true, error: false });
+  const [state, setState] = useState<LoadState>({ scope, sales: [], loading: true, refreshing: false, error: false });
   const loadGeneration = useRef(0);
   const currentScope = useRef(scope);
   currentScope.current = scope;
@@ -96,17 +96,17 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const selectedKey = useRef('');
   selectedKey.current = selected ? `${selected.scope}:${selected.id}` : '';
 
-  const refresh = useCallback(async (showLoading = true) => {
+  const refresh = useCallback(async (showLoading = true, userInitiated = false) => {
     const generation = ++loadGeneration.current;
     const capturedScope = scope;
-    if (showLoading) setState(previous => ({ scope: capturedScope, sales: previous.scope === capturedScope ? previous.sales : [], loading: true, error: false }));
+    if (showLoading) setState(previous => ({ scope: capturedScope, sales: previous.scope === capturedScope ? previous.sales : [], loading: true, refreshing: userInitiated, error: false }));
     try {
       const sales = await listTerminalSales(walletId, network);
       if (generation !== loadGeneration.current || capturedScope !== currentScope.current) return;
-      setState({ scope: capturedScope, sales, loading: false, error: false });
+      setState({ scope: capturedScope, sales, loading: false, refreshing: false, error: false });
     } catch {
       if (generation !== loadGeneration.current || capturedScope !== currentScope.current) return;
-      setState({ scope: capturedScope, sales: [], loading: false, error: true });
+      setState({ scope: capturedScope, sales: [], loading: false, refreshing: false, error: true });
     }
   }, [scope, walletId, network]);
 
@@ -281,7 +281,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       contentInsetAdjustmentBehavior="never"
       automaticallyAdjustContentInsets={false}
       contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 28 }]}
-      refreshControl={<RefreshControl refreshing={loading && state.scope === scope} onRefresh={() => { void refresh(); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={insets.top + 56} />}
+      refreshControl={<RefreshControl refreshing={state.scope === scope && state.refreshing} onRefresh={() => { void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={insets.top + 56} />}
       renderItem={({ item }) => {
         const status = statusFor(item, now);
         return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected({ scope, id: item.request.id }); }}>

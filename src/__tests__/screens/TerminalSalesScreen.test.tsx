@@ -1,5 +1,6 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { RefreshControl } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalSalesScreen from '../../screens/TerminalSalesScreen';
 import { useWallet } from '../../contexts/WalletContext';
@@ -97,4 +98,27 @@ it('keeps paid details open but blocks refund actions for inconsistent refund to
   await waitFor(() => expect(view.getByText('Refund records need attention. Refund and receipt are unavailable.')).toBeTruthy());
   expect(view.queryByLabelText('Refund sale')).toBeNull();
   expect(view.queryByLabelText('Share receipt')).toBeNull();
+});
+
+
+it('does not reveal pull-to-refresh while opening, but shows it for a user refresh', async () => {
+  const readMock = AsyncStorage.getItem as jest.Mock;
+  const originalRead = readMock.getMockImplementation()!;
+  let finishRead!: (value: string | null) => void;
+  const salesKey = '@terminalSales:v1:mainnet:wallet-a';
+  readMock.mockImplementation(key => key === salesKey
+    ? new Promise(resolve => { finishRead = resolve; }) : originalRead(key));
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  try {
+    await waitFor(() => expect(finishRead).toBeDefined());
+    expect(view.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+    await act(async () => { finishRead(null); });
+    await waitFor(() => expect(view.getByText('No activity today')).toBeTruthy());
+    fireEvent(view.UNSAFE_getByType(RefreshControl), 'refresh');
+    await waitFor(() => expect(view.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true));
+    await act(async () => { finishRead(null); });
+    await waitFor(() => expect(view.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false));
+  } finally {
+    readMock.mockImplementation(originalRead);
+  }
 });
