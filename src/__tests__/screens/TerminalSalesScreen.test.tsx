@@ -6,6 +6,7 @@ import TerminalSalesScreen from '../../screens/TerminalSalesScreen';
 import { useWallet } from '../../contexts/WalletContext';
 import { recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 import { TerminalRequest } from '../../services/terminal';
+import { exportTerminalSalesCsv } from '../../services/terminalSalesExport';
 
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
@@ -13,6 +14,7 @@ jest.mock('../../components/GlassView', () => ({ GlassView: ({ children }: { chi
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'refund-test-id' }));
+jest.mock('../../services/terminalSalesExport', () => ({ exportTerminalSalesCsv: jest.fn() }));
 
 const validateTerminalInvoice = jest.fn();
 const verifyTerminalInvoice = jest.fn();
@@ -26,10 +28,54 @@ beforeEach(async () => {
   await AsyncStorage.clear();
   validateTerminalInvoice.mockReset();
   verifyTerminalInvoice.mockReset();
+  (exportTerminalSalesCsv as jest.Mock).mockReset().mockResolvedValue(true);
   (useWallet as jest.Mock).mockReturnValue({
     activeWallet: { id: 'wallet-a' }, isLightningInitialized: true,
     validateTerminalInvoice, verifyTerminalInvoice,
   });
+});
+
+it('exports the selected period once per share and keeps the action off sale details', async () => {
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByText('No activity today')).toBeTruthy());
+  expect(exportTerminalSalesCsv).not.toHaveBeenCalled();
+  let finishShare!: (value: boolean) => void;
+  (exportTerminalSalesCsv as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finishShare = resolve; }));
+  const button = view.getByLabelText(/^Export (today’s|all) activity$/);
+  fireEvent.press(button);
+  fireEvent.press(button);
+  expect(exportTerminalSalesCsv).toHaveBeenCalledTimes(1);
+  expect(exportTerminalSalesCsv).toHaveBeenCalledWith(expect.objectContaining({ walletId: 'wallet-a', network: 'mainnet', period: 'today', day: expect.any(Date), isCurrent: expect.any(Function) }));
+  expect(view.getByLabelText(/^Export (today’s|all) activity$/).props.accessibilityState.busy).toBe(true);
+  await act(async () => { finishShare(true); });
+  fireEvent.press(view.getByLabelText('All sales'));
+  fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/));
+  expect(exportTerminalSalesCsv).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'all' }));
+  await recordTerminalSale(request('detail'));
+  await waitFor(() => expect(view.getByLabelText(/1 200 sats, Unpaid/)).toBeTruthy());
+  fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/));
+  expect(view.queryByLabelText(/^Export (today’s|all) activity$/)).toBeNull();
+});
+
+it('stops a pending export after leaving the list and shows genuine share errors only in the current view', async () => {
+  let finishShare!: (value: boolean) => void;
+  (exportTerminalSalesCsv as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finishShare = resolve; }));
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByText('No activity today')).toBeTruthy());
+  fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/));
+  const options = (exportTerminalSalesCsv as jest.Mock).mock.calls[0][0];
+  expect(options.isCurrent()).toBe(true);
+  await recordTerminalSale(request('detail'));
+  await waitFor(() => expect(view.getByLabelText(/1 200 sats, Unpaid/)).toBeTruthy());
+  fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/));
+  expect(options.isCurrent()).toBe(false);
+  await act(async () => { finishShare(false); });
+  fireEvent.press(view.getByLabelText('Back to sales'));
+  (exportTerminalSalesCsv as jest.Mock).mockRejectedValueOnce(new Error('Share failed'));
+  fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/));
+  await waitFor(() => expect(view.getByText('Couldn’t export sales. Try again.')).toBeTruthy());
+  view.rerender(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} visible={false} />);
+  expect(options.isCurrent()).toBe(false);
 });
 
 it('shows paid totals by original denomination and includes unpaid activity', async () => {

@@ -13,14 +13,15 @@ jest.mock('@react-navigation/native', () => ({
     useIsFocused: jest.fn(() => true),
 }));
 
-jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ showTerminal: true, setMode: jest.fn(), changing: false }) }));
+let mockTerminalChanging = false;
+jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ showTerminal: true, setMode: jest.fn(), changing: mockTerminalChanging }) }));
 
 jest.mock('../../contexts/WalletContext', () => ({
     useWallet: jest.fn(),
 }));
 
 jest.mock('../../contexts/ThemeContext', () => ({
-    useTheme: () => ({ theme: { colors: { background: '#000', primary: '#FFF', muted: '#888' } } })
+    useTheme: () => ({ theme: { colors: { background: '#000', primary: '#FFF', muted: '#888', bitcoin: '#F7931A' } } })
 }));
 
 jest.mock('../../hooks/useBalance', () => ({
@@ -64,6 +65,7 @@ const refresh = jest.fn<Promise<void>, []>(() => Promise.resolve());
 const navigate = jest.fn();
 beforeEach(() => {
     jest.clearAllMocks();
+    mockTerminalChanging = false;
     Platform.OS = 'ios';
     (useNavigation as jest.Mock).mockReturnValue({ navigate });
     (useWallet as jest.Mock).mockReturnValue({
@@ -149,4 +151,17 @@ it('finishes an in-flight refresh without showing its failure over Terminal', as
     expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
     alert.mockRestore();
     useIsFocused.mockReturnValue(true);
+});
+
+
+it('shows the Bitcoin-colored spinner while Terminal entry is busy', async () => {
+    mockTerminalChanging = true;
+    const screen = render(<WalletScreen />);
+    await act(async () => {});
+    expect(screen.getByTestId('open-terminal').props.accessibilityState.busy).toBe(true);
+    expect(screen.getByTestId('terminal-entry-spinner').props.color).toBe('#F7931A');
+    mockTerminalChanging = false;
+    screen.rerender(<WalletScreen />);
+    expect(screen.queryByTestId('terminal-entry-spinner')).toBeNull();
+    expect(screen.getByText('T')).toBeTruthy();
 });

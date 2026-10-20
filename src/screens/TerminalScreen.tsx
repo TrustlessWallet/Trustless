@@ -214,9 +214,19 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
     if (!request || !validated || !active || !isLightningInitialized || stage === 'received') return;
     void verify();
     const poll = setInterval(() => { void verify(); }, 6000);
-    const clock = setInterval(() => setNow(Date.now()), 1000);
-    return () => { clearInterval(poll); clearInterval(clock); };
+    return () => clearInterval(poll);
   }, [request?.id, validated, active, isLightningInitialized, stage === 'received', verify]);
+
+  useEffect(() => { if (active) setNow(Date.now()); }, [active, request?.id]);
+
+  useEffect(() => {
+    if (!request || !active || stage === 'received') return;
+    const remaining = request.expiresAt - Date.now();
+    if (remaining <= 0) return;
+    // Long-lived invoices can exceed the native timer's signed 32-bit range.
+    const expiry = setTimeout(() => setNow(Date.now()), Math.min(remaining, 2_147_483_647));
+    return () => clearTimeout(expiry);
+  }, [request?.id, request?.expiresAt, active, stage === 'received', now]);
 
   useEffect(() => {
     if (request && now >= request.expiresAt && stage === 'waiting') setStage('expired');

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Animated, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, Animated, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { formatFiatMinor, formatTerminalAmount, formatTerminalSats, TerminalNetw
 import { listTerminalSales, subscribeTerminalSales, terminalSaleDisplayStatus, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
 import { listTerminalRefunds, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
+import { exportTerminalSalesCsv } from '../services/terminalSalesExport';
 import TerminalRefundScreen from './TerminalRefundScreen';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
@@ -83,6 +84,9 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundState, setRefundState] = useState<{ scope: string; attempts: TerminalRefundAttempt[]; loading: boolean; error: boolean }>({ scope: '', attempts: [], loading: true, error: false });
   const [receiptError, setReceiptError] = useState('');
+  const [exportError, setExportError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const exportBusy = useRef(false);
   const refundGeneration = useRef(0);
   const checkBusy = useRef(false);
   const checkEpoch = useRef(0);
@@ -127,6 +131,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
+  useEffect(() => { setExportError(''); }, [scope, tab]);
   useEffect(() => { scrollY.setValue(0); }, [scope, selected?.id, refundOpen, scrollY]);
 
   const refreshRefunds = useCallback(async (showLoading = true) => {
@@ -208,6 +213,25 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     catch { if (mounted.current && visibleRef.current && capturedScope === currentScope.current && capturedSelection === selectedKey.current) setReceiptError('Couldn’t share the receipt. Please try again.'); }
   };
 
+  const exportSales = async () => {
+    if (exportBusy.current || !visibleRef.current || selectedKey.current) return;
+    const capturedScope = scope;
+    const period = tab;
+    const day = new Date();
+    const isCurrent = () => mounted.current && visibleRef.current && currentScope.current === capturedScope && !selectedKey.current;
+    exportBusy.current = true;
+    setExporting(true);
+    setExportError('');
+    try { await exportTerminalSalesCsv({ walletId, network, period, day, isCurrent }); }
+    catch (failure) {
+      if (isCurrent()) setExportError(failure instanceof Error && failure.message === 'Sharing unavailable on this device.'
+        ? failure.message : 'Couldn’t export sales. Try again.');
+    } finally {
+      exportBusy.current = false;
+      if (mounted.current) setExporting(false);
+    }
+  };
+
   const header = <>
     <View style={styles.heading}>
       <Text style={styles.title}>{detail ? 'Sale details' : tab === 'today' ? 'Today' : 'History'}</Text>
@@ -219,6 +243,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
           <Text style={[styles.tabText, tab === item && styles.activeTabText]}>{item === 'today' ? 'Today' : 'All'}</Text>
         </TouchableOpacity>)}
       </View>
+      {exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.summary}>
         <Text style={styles.summaryLabel}>PAID SALES</Text>
         <Text style={styles.paidCount}>{paidCount}</Text>
@@ -243,6 +268,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       <Pressable accessibilityRole="button" accessibilityLabel={detail ? 'Back to sales' : 'Back to terminal'} onPress={back} style={styles.backButton}>
         <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}><Feather name="arrow-left" size={20} color={theme.colors.primary} /></GlassView>
       </Pressable>
+      {!detail ? <Pressable accessibilityRole="button" accessibilityLabel={tab === 'today' ? 'Export today’s activity' : 'Export all activity'} accessibilityState={{ disabled: exporting || !visible, busy: exporting }} disabled={exporting || !visible} onPress={() => { void exportSales(); }} style={styles.exportButton}>
+        <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}>
+          {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
+        </GlassView>
+      </Pressable> : null}
     </View>
     {detail ? <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
       {header}
@@ -308,8 +338,10 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
     scrollFade: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1 },
-    topBar: { position: 'absolute', left: 0, right: 0, zIndex: 2, height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' },
+    topBar: { position: 'absolute', left: 0, right: 0, zIndex: 2, height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     backButton: { width: 40, height: 40 },
+    exportButton: { width: 40, height: 40 },
+    exportError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginHorizontal: 24, marginTop: 12 },
     glass: { overflow: 'visible' },
     heading: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 25 },
     title: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 42 },
