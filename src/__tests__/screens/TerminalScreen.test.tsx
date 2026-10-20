@@ -421,3 +421,29 @@ it('preloads local sales before Today opens and keeps them current while hidden'
   expect(view.getByText('Paid')).toBeTruthy();
   expect(view.queryByText('Loading sales…')).toBeNull();
 });
+
+
+it('expires an invoice without a one-second redraw interval and rechecks after returning', async () => {
+  jest.useFakeTimers();
+  const expiresAt = Date.now() + 2000;
+  await AsyncStorage.setItem('@terminalActiveRequest:mainnet:wallet-a', JSON.stringify({
+    id: 'expiry', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbcexpiryabc', amountSats: 1200,
+    createdAt: Date.now(), expiresAt,
+  }));
+  validateTerminalInvoice.mockResolvedValue(expiresAt);
+  const interval = jest.spyOn(global, 'setInterval');
+  const view = renderWithCurrencyMeasurement();
+  try {
+    await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+    expect(interval.mock.calls.some(call => call[1] === 1000)).toBe(false);
+    view.rerender(<NavigationContainer><TerminalScreen visible={false} /></NavigationContainer>);
+    await act(async () => { jest.advanceTimersByTime(2500); });
+    view.rerender(<NavigationContainer><TerminalScreen visible={true} /></NavigationContainer>);
+    await waitFor(() => expect(view.getByText('Request expired')).toBeTruthy());
+    expect(view.queryByTestId('terminal-qr')).toBeNull();
+  } finally {
+    view.unmount();
+    interval.mockRestore();
+    jest.useRealTimers();
+  }
+});

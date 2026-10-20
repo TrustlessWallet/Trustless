@@ -609,13 +609,14 @@ const WalletScreen = () => {
         <TouchableOpacity
             testID="open-terminal"
             accessibilityLabel="Open terminal"
+            accessibilityState={{ disabled: terminalChanging, busy: terminalChanging }}
             activeOpacity={1}
             style={[styles.toggleTouchable, styles.terminalTouchable]}
             onPress={openTerminal}
             disabled={terminalChanging}
         >
             <GlassView style={{ overflow: 'visible' }} width={36} height={36} shape="circle" interactive={true}>
-                <Text style={styles.terminalMarkText}>T</Text>
+                {terminalChanging ? <ActivityIndicator testID="terminal-entry-spinner" size={18} color={theme.colors.bitcoin} /> : <Text style={styles.terminalMarkText}>T</Text>}
             </GlassView>
         </TouchableOpacity>
     ) : <View style={styles.toggleTouchable} pointerEvents="none" />;

@@ -1,0 +1,103 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Sharing from 'expo-sharing';
+import { buildTerminalSalesCsv, exportTerminalSalesCsv } from '../../services/terminalSalesExport';
+import { TerminalSale } from '../../services/terminalSales';
+import { TerminalRefundAttempt } from '../../services/terminalRefunds';
+
+const mockFiles: { uri: string; contents: string; exists: boolean; deleted: boolean }[] = [];
+jest.mock('expo-file-system', () => ({
+  Paths: { cache: 'private-cache' },
+  File: class {
+    uri: string;
+    contents = '';
+    exists = false;
+    deleted = false;
+    constructor(_cache: string, name: string) { this.uri = `private-cache/${name}`; mockFiles.push(this); }
+    write(value: string) { this.contents = value; this.exists = true; }
+    delete() { this.exists = false; this.deleted = true; }
+  },
+}));
+jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(), shareAsync: jest.fn() }));
+
+const day = new Date(2026, 9, 20, 12);
+const today = day.getTime();
+const yesterday = today - 24 * 60 * 60 * 1000;
+const sale = (id: string, createdAt: number, receivedAt?: number): TerminalSale => ({
+  request: {
+    id, walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbcsensitiveinvoice', amountSats: 2500,
+    createdAt, expiresAt: createdAt + 60000,
+    fiat: { currency: 'USD', amountMinor: 250, rate: '100000', fetchedAt: createdAt },
+  },
+  status: receivedAt ? 'received' : 'unknown',
+  ...(receivedAt ? { receivedAt, paymentId: '+SUM(1,1)' } : {}),
+  updatedAt: receivedAt ?? createdAt,
+});
+const refund = (updatedAt: number): TerminalRefundAttempt => ({
+  id: '@refund', walletId: 'wallet-a', network: 'mainnet', saleId: '=sale', saleInvoice: 'lnbcsensitiveinvoice',
+  invoice: 'lnbcsensitiverefund', amountSats: 500, feeSats: 12, quoteExpiresAt: today + 60000,
+  createdAt: yesterday, updatedAt, status: 'complete', paymentId: '-payment',
+});
+
+beforeEach(async () => {
+  await AsyncStorage.clear();
+  mockFiles.length = 0;
+  (Sharing.isAvailableAsync as jest.Mock).mockReset().mockResolvedValue(true);
+  (Sharing.shareAsync as jest.Mock).mockReset().mockResolvedValue(undefined);
+});
+
+it('exports separate raw sale and refund rows for the selected local day, with safe textual references', () => {
+  const csv = buildTerminalSalesCsv([sale('=sale', yesterday, today), sale('old', yesterday)], [refund(today)], 'today', day);
+  const lines = csv.trim().split('\r\n');
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toContain('status_observed_at_utc,received_observed_at_utc,amount_sats,quoted_fee_sats');
+  expect(csv).toContain("sale,'=sale,'=sale,received,mainnet");
+  expect(csv).toContain("refund,'@refund,'=sale,complete,mainnet");
+  expect(csv).toContain('2500,,USD,USD,250');
+  expect(csv).toContain('500,12,sats');
+  expect(lines.find(line => line.startsWith("refund,'@refund"))).not.toContain('USD,250');
+  expect(csv).toContain("'+SUM(1,1)");
+  expect(csv).toContain("'-payment");
+  expect(csv).not.toContain('lnbcsensitive');
+  expect(buildTerminalSalesCsv([sale('old', yesterday)], [refund(yesterday)], 'today', day).trim().split('\r\n')).toHaveLength(1);
+  expect(buildTerminalSalesCsv([sale('old', yesterday)], [refund(yesterday)], 'all', day).trim().split('\r\n')).toHaveLength(3);
+});
+
+it('quotes commas, quotes, and line breaks while neutralizing formula-like references', () => {
+  const csv = buildTerminalSalesCsv([sale('=HYPERLINK("a,b")\nnext', today)], [], 'all', day);
+  expect(csv).toContain('"\'=HYPERLINK(""a,b"")\nnext"');
+});
+
+it('reads both journals before sharing, uses a unique private CSV file, and deletes it after sharing', async () => {
+  const request = sale('one', today).request;
+  await AsyncStorage.setItem('@terminalSales:v1:mainnet:wallet-a', JSON.stringify({ version: 1, sales: [{ request, status: 'unknown', updatedAt: today }] }));
+  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', JSON.stringify({ version: 1, attempts: [] }));
+  const options = { walletId: 'wallet-a', network: 'mainnet' as const, period: 'all' as const, day, isCurrent: () => true };
+  expect(await exportTerminalSalesCsv(options)).toBe(true);
+  expect(await exportTerminalSalesCsv(options)).toBe(true);
+  expect(mockFiles).toHaveLength(2);
+  expect(mockFiles[0].uri).not.toBe(mockFiles[1].uri);
+  expect(mockFiles.every(file => file.deleted && !file.exists && file.contents.includes('one'))).toBe(true);
+  expect(Sharing.shareAsync).toHaveBeenCalledWith(mockFiles[0].uri, expect.objectContaining({ mimeType: 'text/csv' }));
+  expect(await exportTerminalSalesCsv({ ...options, period: 'today' })).toBe(true);
+  expect(mockFiles[2].uri).toContain('terminal-today-2026-10-20-');
+});
+
+it('fails closed on unreadable refunds and never shares a stale scope', async () => {
+  const request = sale('one', today).request;
+  await AsyncStorage.setItem('@terminalSales:v1:mainnet:wallet-a', JSON.stringify({ version: 1, sales: [{ request, status: 'unknown', updatedAt: today }] }));
+  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', '{broken');
+  const options = { walletId: 'wallet-a', network: 'mainnet' as const, period: 'all' as const, day, isCurrent: () => true };
+  await expect(exportTerminalSalesCsv(options)).rejects.toThrow();
+  expect(mockFiles).toHaveLength(0);
+  expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', JSON.stringify({ version: 1, attempts: [] }));
+  expect(await exportTerminalSalesCsv({ ...options, isCurrent: () => false })).toBe(false);
+  expect(mockFiles).toHaveLength(0);
+  expect(Sharing.shareAsync).not.toHaveBeenCalled();
+});
+
+it('deletes a temporary CSV when sharing fails', async () => {
+  (Sharing.shareAsync as jest.Mock).mockRejectedValueOnce(new Error('cancelled'));
+  await expect(exportTerminalSalesCsv({ walletId: 'wallet-a', network: 'mainnet', period: 'all', day, isCurrent: () => true })).rejects.toThrow('cancelled');
+  expect(mockFiles[0].deleted).toBe(true);
+});

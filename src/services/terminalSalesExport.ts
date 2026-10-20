@@ -1,0 +1,75 @@
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { TerminalNetwork } from './terminal';
+import { listTerminalSales, TerminalSale } from './terminalSales';
+import { listTerminalRefunds, TerminalRefundAttempt } from './terminalRefunds';
+
+export type SalesExportPeriod = 'today' | 'all';
+type ExportOptions = {
+  walletId: string;
+  network: TerminalNetwork;
+  period: SalesExportPeriod;
+  day: Date;
+  isCurrent: () => boolean;
+};
+
+const columns = [
+  'record_type', 'record_id', 'sale_id', 'status', 'network',
+  'created_at_utc', 'status_observed_at_utc', 'received_observed_at_utc',
+  'amount_sats', 'quoted_fee_sats', 'input_unit', 'fiat_currency', 'fiat_amount_minor', 'payment_id',
+] as const;
+
+const localDay = (timestamp: number, day: Date) => {
+  const value = new Date(timestamp);
+  return value.getFullYear() === day.getFullYear() && value.getMonth() === day.getMonth() && value.getDate() === day.getDate();
+};
+const utc = (timestamp?: number) => timestamp === undefined ? '' : new Date(timestamp).toISOString();
+const safeText = (value: string) => /^[\s\uFEFF]*[=+\-@]/u.test(value) ? `'${value}` : value;
+const cell = (value: string | number) => {
+  const text = typeof value === 'string' ? safeText(value) : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: readonly TerminalRefundAttempt[], period: SalesExportPeriod, day: Date): string {
+  const records = [
+    ...sales.filter(sale => period === 'all' || localDay(sale.receivedAt ?? sale.request.createdAt, day)).map(sale => ({
+      time: sale.receivedAt ?? sale.request.createdAt,
+      fields: [
+        'sale', sale.request.id, sale.request.id, sale.status, sale.request.network,
+        utc(sale.request.createdAt), utc(sale.updatedAt), utc(sale.receivedAt),
+        sale.request.amountSats, '', sale.request.fiat?.currency ?? sale.request.inputUnit ?? 'sats',
+        sale.request.fiat?.currency ?? '', sale.request.fiat?.amountMinor ?? '', sale.paymentId ?? '',
+      ],
+    })),
+    ...refunds.filter(refund => period === 'all' || localDay(refund.updatedAt, day)).map(refund => ({
+      time: refund.updatedAt,
+      fields: [
+        'refund', refund.id, refund.saleId, refund.status, refund.network,
+        utc(refund.createdAt), utc(refund.updatedAt), '', refund.amountSats, refund.feeSats,
+        'sats', '', '', refund.paymentId ?? '',
+      ],
+    })),
+  ].sort((a, b) => b.time - a.time || String(a.fields[1]).localeCompare(String(b.fields[1])));
+  return [columns.join(','), ...records.map(record => record.fields.map(cell).join(','))].join('\r\n') + '\r\n';
+}
+
+export async function exportTerminalSalesCsv({ walletId, network, period, day, isCurrent }: ExportOptions): Promise<boolean> {
+  // Read both journals at export time. If either is unreadable, no partial ledger is shared.
+  const [sales, refunds] = await Promise.all([listTerminalSales(walletId, network), listTerminalRefunds(walletId, network)]);
+  if (!isCurrent()) return false;
+  if (!await Sharing.isAvailableAsync()) throw new Error('Sharing unavailable on this device.');
+  if (!isCurrent()) return false;
+  const csv = buildTerminalSalesCsv(sales, refunds, period, day);
+  const localDate = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  const stamp = `${period === 'today' ? `${localDate}-` : ''}${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const file = new File(Paths.cache, `trustless-terminal-${period}-${stamp}.csv`);
+  try {
+    if (!isCurrent()) return false;
+    file.write(csv);
+    if (!isCurrent()) return false;
+    await Sharing.shareAsync(file.uri, { mimeType: 'text/csv', dialogTitle: 'Export Terminal sales', UTI: 'public.comma-separated-values-text' });
+    return true;
+  } finally {
+    try { if (file.exists) file.delete(); } catch { /* Sharing has already finished; cache cleanup is best effort. */ }
+  }
+}
