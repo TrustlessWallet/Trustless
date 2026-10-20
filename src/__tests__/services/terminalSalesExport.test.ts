@@ -52,7 +52,7 @@ it('exports separate raw sale and refund rows for the selected local day, with s
   expect(lines[0]).toContain('status_observed_at_utc,received_observed_at_utc,amount_sats,quoted_fee_sats');
   expect(csv).toContain("sale,'=sale,'=sale,received,mainnet");
   expect(csv).toContain("refund,'@refund,'=sale,complete,mainnet");
-  expect(csv).toContain('2500,,USD,USD,250');
+  expect(csv).toContain('2500,,USD,USD,2.50,250');
   expect(csv).toContain('500,12,sats');
   expect(lines.find(line => line.startsWith("refund,'@refund"))).not.toContain('USD,250');
   expect(csv).toContain("'+SUM(1,1)");
@@ -100,4 +100,19 @@ it('deletes a temporary CSV when sharing fails', async () => {
   (Sharing.shareAsync as jest.Mock).mockRejectedValueOnce(new Error('cancelled'));
   await expect(exportTerminalSalesCsv({ walletId: 'wallet-a', network: 'mainnet', period: 'all', day, isCurrent: () => true })).rejects.toThrow('cancelled');
   expect(mockFiles[0].deleted).toBe(true);
+});
+
+
+it('exports the original charge in normal decimal fiat units without recalculating exchange rates', () => {
+  for (const [currency, amountMinor, expected] of [
+    ['USD', 1250, '12.50'], ['EUR', 1, '0.01'], ['CHF', 100000, '1000.00'],
+  ] as const) {
+    const original = sale(currency, today);
+    const csv = buildTerminalSalesCsv([{ ...original, request: { ...original.request, amountSats: amountMinor * 10, fiat: { ...original.request.fiat!, currency, amountMinor } } }], [], 'all', day);
+    expect(csv.split('\r\n')[0]).toContain('fiat_currency,fiat_amount,fiat_amount_minor');
+    expect(csv).toContain(`${currency},${expected},${amountMinor},`);
+  }
+  const original = sale('sats-only', today);
+  const csv = buildTerminalSalesCsv([{ ...original, request: { ...original.request, fiat: undefined } }], [refund(today)], 'all', day);
+  for (const row of csv.trim().split('\r\n').slice(1)) expect(row.split(',')).toHaveLength(15);
 });
