@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Pressable, Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { v4 as uuidv4 } from 'uuid';
@@ -138,9 +138,9 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
 
   return <View style={styles.root}>
     <View pointerEvents="box-none" style={[styles.topBar, { top: insets.top }]}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to sale details" onPress={onClose} style={styles.backButton}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back to sale details" onPress={onClose} style={styles.backButton}>
         <GlassView width={40} height={40} shape="circle" interactive><Feather name="arrow-left" size={20} color={theme.colors.primary} /></GlassView>
-      </TouchableOpacity>
+      </Pressable>
     </View>
     <ScrollView ref={scrollViewRef} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: insets.top + 86, paddingBottom }} showsVerticalScrollIndicator={false}>
       <View style={styles.heading}><Text style={styles.title}>Refund</Text><Text style={styles.subtitle}>Original sale · {sats(sale.request.amountSats)}</Text></View>

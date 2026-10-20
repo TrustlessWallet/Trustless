@@ -1,5 +1,6 @@
 import React from 'react';
 import { Alert, Modal } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
@@ -8,9 +9,10 @@ import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 import { listTerminalSales, updateTerminalSalePayment } from '../../services/terminalSales';
 
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
-jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: jest.fn(), changing: false }) }));
+const mockSetMode = jest.fn();
+jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: mockSetMode, changing: false }) }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
-jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn(() => Promise.resolve()), notificationAsync: jest.fn(() => Promise.resolve()), NotificationFeedbackType: { Success: 'success' } }));
@@ -23,6 +25,7 @@ const verifyTerminalInvoice = jest.fn();
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  mockSetMode.mockClear();
   clearTerminalRateCacheForTests();
   createTerminalInvoice.mockReset();
   validateTerminalInvoice.mockReset();
@@ -30,7 +33,7 @@ beforeEach(async () => {
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: wallet, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
 });
 
-const renderWithCurrencyMeasurement = () => render(<TerminalScreen />);
+const renderWithCurrencyMeasurement = () => render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
 
 const openCurrency = async (view: ReturnType<typeof render>) => {
   const row = view.getByLabelText('Currency');
@@ -42,6 +45,18 @@ const openCurrency = async (view: ReturnType<typeof render>) => {
 it('runs a pending terminal check immediately after the device clock is corrected backward', () => {
   expect(isTerminalPollDue(10_000, 5_000, 9_000)).toBe(true);
   expect(isTerminalPollDue(10_000, 5_000, 14_000)).toBe(false);
+});
+
+it('preserves the entered amount and wallet mode after visiting Settings', async () => {
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByText('1'));
+  fireEvent.press(view.getByText('2'));
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  await waitFor(() => expect(view.getByLabelText('Back to terminal')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Back to terminal'));
+  await waitFor(() => expect(view.getByTestId('terminal-amount').props.children).toBe('12'));
+  expect(mockSetMode).not.toHaveBeenCalled();
 });
 
 it('opens currency choices from Settings and dismisses them outside or with the system back action', async () => {
@@ -101,7 +116,7 @@ it('does not reinterpret entered sats when the saved denomination loads late', a
   let finish!: (unit: string) => void;
   readMock.mockImplementation(key => key === '@terminalPreferredUnit'
     ? new Promise(resolve => { finish = resolve; }) : originalRead(key));
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   await act(async () => { finish('BTC'); });
@@ -119,7 +134,7 @@ it('restores the frozen fiat amount without requesting a new exchange rate', asy
   }));
   validateTerminalInvoice.mockResolvedValue(expiresAt);
   (global as any).fetch = jest.fn();
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByTestId('terminal-checkout-number').props.children).toBe('100.00'));
   expect(view.getByText('100 000 sats')).toBeTruthy();
   expect(view.getByTestId('terminal-qr')).toBeTruthy();
@@ -134,7 +149,7 @@ it('keeps a validated QR visible while a payment check is temporarily unavailabl
   }));
   validateTerminalInvoice.mockResolvedValue(expiresAt);
   verifyTerminalInvoice.mockRejectedValueOnce(new Error('offline'));
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Cannot verify payment right now. The invoice may still be paid.')).toBeTruthy());
   expect(view.getByTestId('terminal-qr')).toBeTruthy();
 });
@@ -146,7 +161,7 @@ it('closes an active invoice back to amount entry without leaving Terminal', asy
     createdAt: Date.now(), expiresAt,
   }));
   validateTerminalInvoice.mockResolvedValue(expiresAt);
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Close invoice'));
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
@@ -154,10 +169,52 @@ it('closes an active invoice back to amount entry without leaving Terminal', asy
   expect((await listTerminalSales('wallet-a', 'mainnet'))).toHaveLength(1);
 });
 
+it.each([false, true])('keeps a new wallet request intact when ending the old wallet request settles (clear fails: %s)', async clearFails => {
+  const expiresAt = Date.now() + 60000;
+  const oldKey = '@terminalActiveRequest:mainnet:wallet-a';
+  const newKey = '@terminalActiveRequest:mainnet:wallet-b';
+  const oldRequest = { id: 'old', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbcold123', amountSats: 1200, createdAt: Date.now(), expiresAt };
+  const newRequest = { ...oldRequest, id: 'new', walletId: 'wallet-b', invoice: 'lnbcnew123', amountSats: 2300 };
+  await AsyncStorage.setItem(oldKey, JSON.stringify(oldRequest));
+  await AsyncStorage.setItem(newKey, JSON.stringify(newRequest));
+  validateTerminalInvoice.mockResolvedValue(expiresAt);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
+  await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+
+  const removeMock = AsyncStorage.removeItem as jest.Mock;
+  const originalRemove = removeMock.getMockImplementation()!;
+  let finishOldClear!: () => void;
+  let held = false;
+  removeMock.mockImplementation(key => {
+    if (key === oldKey && !held) {
+      held = true;
+      return new Promise<void>((resolve, reject) => {
+        finishOldClear = () => {
+          if (clearFails) reject(new Error('old wallet storage failed'));
+          else void originalRemove(key).then(resolve, reject);
+        };
+      });
+    }
+    return originalRemove(key);
+  });
+  try {
+    fireEvent.press(view.getByLabelText('Close invoice'));
+    await waitFor(() => expect(finishOldClear).toBeDefined());
+    (useWallet as jest.Mock).mockReturnValue({ activeWallet: { ...wallet, id: 'wallet-b' }, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
+    view.rerender(<NavigationContainer><TerminalScreen /></NavigationContainer>);
+    await act(async () => { finishOldClear(); });
+    await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+    expect(view.getByTestId('terminal-checkout-number').props.children).toBe('2 300');
+    expect(view.queryByText('Could not end the saved request. Please retry.')).toBeNull();
+    expect(await AsyncStorage.getItem(newKey)).not.toBeNull();
+    expect(await AsyncStorage.getItem(oldKey)).toBe(clearFails ? JSON.stringify(oldRequest) : null);
+  } finally { removeMock.mockImplementation(originalRemove); view.unmount(); }
+});
+
 it('preserves the active invoice while visiting Today and saves verified payment before closing', async () => {
   const expiresAt = Date.now() + 60000;
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt });
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('2'));
   fireEvent.press(view.getByTestId('terminal-request'));
@@ -171,7 +228,7 @@ it('preserves the active invoice while visiting Today and saves verified payment
   const [sale] = await listTerminalSales('wallet-a', 'mainnet');
   await updateTerminalSalePayment(sale.request, { status: 'received', paymentId: 'paid-one' });
   validateTerminalInvoice.mockResolvedValue(expiresAt);
-  const resumed = render(<TerminalScreen />);
+  const resumed = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   // A temporarily incomplete SDK query cannot turn a known paid sale unpaid.
   await waitFor(() => expect(resumed.getByText('Paid')).toBeTruthy());
   fireEvent.press(resumed.getByText('New payment'));
@@ -194,7 +251,7 @@ it('clears a nonzero amount when changing into a fiat currency', async () => {
 it('blocks duplicate presses and reveals the QR only after storage succeeds', async () => {
   let resolveInvoice!: (value: { invoice: string; expiresAt: number }) => void;
   createTerminalInvoice.mockImplementation(() => new Promise(resolve => { resolveInvoice = resolve; }));
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
@@ -208,7 +265,7 @@ it('blocks duplicate presses and reveals the QR only after storage succeeds', as
 it('does not show a QR if persisting the invoice fails', async () => {
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
   jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('storage full'));
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
@@ -220,12 +277,12 @@ it('does not show a QR if persisting the invoice fails', async () => {
 it('discards an invoice response after the active wallet changes', async () => {
   let resolveInvoice!: (value: { invoice: string; expiresAt: number }) => void;
   createTerminalInvoice.mockImplementation(() => new Promise(resolve => { resolveInvoice = resolve; }));
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: { ...wallet, id: 'wallet-b' }, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
-  view.rerender(<TerminalScreen />);
+  view.rerender(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   resolveInvoice({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
   await waitFor(() => expect(view.queryByTestId('terminal-qr')).toBeNull());
@@ -240,7 +297,7 @@ it('cannot overwrite an unread saved request after keypad input, and retries hyd
     return originalRead(key);
   });
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Retry loading')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   expect(view.getByText('Retry loading')).toBeTruthy();
@@ -257,7 +314,7 @@ it('hides a restored invoice until its amount, network, and expiry are validated
     createdAt: Date.now(), expiresAt,
   }));
   validateTerminalInvoice.mockRejectedValueOnce(new Error('mismatched invoice')).mockResolvedValueOnce(expiresAt);
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Cannot validate request')).toBeTruthy());
   expect(view.queryByTestId('terminal-qr')).toBeNull();
   expect(view.queryByText('1200 sats')).toBeNull();
@@ -279,7 +336,7 @@ it('allows verification of the next request after ending one with a check in fli
   verifyTerminalInvoice.mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve; })).mockResolvedValue({ status: 'unknown' });
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc456def', expiresAt });
   jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => { buttons?.[1]?.onPress?.(); });
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
   await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(1));
   expect(verifyTerminalInvoice).toHaveBeenCalledWith('lnbc123abc', createdAt, undefined, false);
@@ -298,7 +355,7 @@ it('shows controls for a saved request while Lightning is disconnected without e
     createdAt: Date.now(), expiresAt: Date.now() + 60000,
   }));
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: wallet, isLightningInitialized: false, lightningInitAttempted: true, lightningInitError: 'Connection unavailable', createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Checking saved request')).toBeTruthy());
   expect(view.queryByText('End request')).toBeNull();
   expect(view.getByLabelText('Close invoice')).toBeTruthy();
@@ -317,13 +374,13 @@ it('pauses invoice polling while another route covers Terminal', async () => {
     createdAt: Date.now(), expiresAt,
   }));
   validateTerminalInvoice.mockResolvedValue(expiresAt);
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   try {
     await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(1));
-    view.rerender(<TerminalScreen visible={false} />);
+    view.rerender(<NavigationContainer><TerminalScreen visible={false} /></NavigationContainer>);
     await act(async () => { jest.advanceTimersByTime(12000); });
     expect(verifyTerminalInvoice).toHaveBeenCalledTimes(1);
-    view.rerender(<TerminalScreen visible={true} />);
+    view.rerender(<NavigationContainer><TerminalScreen visible={true} /></NavigationContainer>);
     await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledTimes(2));
   } finally {
     view.unmount();
@@ -338,7 +395,7 @@ it('keeps saved-request hydration from creating a second invoice', async () => {
   let finish!: (value: null) => void;
   read.mockImplementation(key => key === '@terminalActiveRequest:mainnet:wallet-a'
     ? new Promise(resolve => { finish = resolve; }) : original(key));
-  const view = render(<TerminalScreen />);
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   try {
     await waitFor(() => expect(finish).toBeDefined());
     expect(view.getByText('Generate invoice')).toBeTruthy();

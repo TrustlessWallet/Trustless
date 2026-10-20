@@ -14,7 +14,8 @@ jest.mock('../../navigation/TabNavigator', () => () => {
   require('react').useEffect(() => { mockMount(); return mockUnmount; }, []);
   return null;
 });
-jest.mock('../../screens/TerminalScreen', () => () => null);
+const mockTerminalRender = jest.fn();
+jest.mock('../../screens/TerminalScreen', () => (props: { visible: boolean }) => { mockTerminalRender(props); return null; });
 const navigate = jest.fn();
 const goBack = jest.fn();
 const replace = jest.fn();
@@ -64,4 +65,5 @@ it('returns to existing tabs on exit and handles system Back consistently', asyn
   (useWalletMode as jest.Mock).mockReturnValue({ mode: 'wallet', setMode });
   view.rerender(<TerminalRoute />);
   expect(goBack).toHaveBeenCalledTimes(1);
+  expect(mockTerminalRender).toHaveBeenLastCalledWith({ visible: false });
 });

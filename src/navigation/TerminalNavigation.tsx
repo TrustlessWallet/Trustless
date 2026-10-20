@@ -41,5 +41,5 @@ export function TerminalRoute() {
     // Keep Android Back and restored navigation state consistent with mode.
     void setMode('wallet').catch(() => Alert.alert('Could not save wallet mode', 'Please retry.'));
   }), [navigation, setMode]);
-  return mode === 'terminal' && !unsupported ? <TerminalScreen visible={focused} /> : null;
+  return <TerminalScreen visible={focused && mode === 'terminal' && !unsupported} />;
 }
