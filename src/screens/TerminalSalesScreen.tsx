@@ -116,14 +116,14 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   }, []);
 
   useEffect(() => {
-    if (!visible) { ++loadGeneration.current; return; }
-    setNow(Date.now());
+    // Preloaded sales stay current through local storage notifications without
+    // starting payment checks or visible refresh indicators.
     void refresh();
     const unsubscribe = subscribeTerminalSales((changedWallet, changedNetwork) => {
       if (changedWallet === walletId && changedNetwork === network) void refresh(false);
     });
     return () => { ++loadGeneration.current; unsubscribe(); };
-  }, [visible, refresh]);
+  }, [refresh]);
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
@@ -142,16 +142,16 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   }, [scope, walletId, network]);
 
   useEffect(() => {
-    if (!visible) { ++refundGeneration.current; return; }
     void refreshRefunds();
     const unsubscribe = subscribeTerminalRefunds((changedWallet, changedNetwork) => {
       if (changedWallet === walletId && changedNetwork === network) void refreshRefunds(false);
     });
     return () => { ++refundGeneration.current; unsubscribe(); };
-  }, [visible, scope, walletId, network, refreshRefunds]);
+  }, [scope, walletId, network, refreshRefunds]);
 
   useEffect(() => {
     if (!visible) return;
+    setNow(Date.now());
     const clock = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(clock);
   }, [visible]);
@@ -292,7 +292,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       }}
       ListEmptyComponent={<View style={styles.empty}>
         {error ? <><Feather name="alert-circle" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>Sales unavailable</Text><Text style={styles.emptyBody}>Couldn’t load saved sales. Try again.</Text><TouchableOpacity accessibilityRole="button" onPress={() => { void refresh(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></>
-          : loading ? <Text style={styles.emptyBody}>Loading sales…</Text>
+          : loading ? null
             : <><Feather name="shopping-bag" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>{tab === 'today' ? 'No activity today' : 'No sales yet'}</Text><Text style={styles.emptyBody}>{tab === 'today' ? 'New payment requests will appear here.' : 'Payment requests from this wallet will appear here.'}</Text></>}
       </View>}
       showsVerticalScrollIndicator={false}
@@ -314,8 +314,8 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     heading: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 25 },
     title: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 42 },
     subheading: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, marginTop: 5 },
-    tabs: { flexDirection: 'row', marginHorizontal: 24, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 28 },
-    tab: { paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    tabs: { flexDirection: 'row', marginHorizontal: 24, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 12 },
+    tab: { minWidth: 88, minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
     activeTab: { borderBottomColor: colors.bitcoin },
     tabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
     activeTabText: { color: colors.primary },

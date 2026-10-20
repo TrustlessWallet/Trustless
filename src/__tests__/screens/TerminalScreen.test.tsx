@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
 import { useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
-import { listTerminalSales, updateTerminalSalePayment } from '../../services/terminalSales';
+import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 const mockSetMode = jest.fn();
@@ -403,4 +403,21 @@ it('keeps saved-request hydration from creating a second invoice', async () => {
     expect(createTerminalInvoice).not.toHaveBeenCalled();
     await act(async () => { finish(null); });
   } finally { view.unmount(); read.mockImplementation(original); }
+});
+
+
+it('preloads local sales before Today opens and keeps them current while hidden', async () => {
+  const saved = {
+    id: 'preloaded-sale', walletId: 'wallet-a', network: 'mainnet' as const,
+    invoice: 'lnbcprefetchedabc', amountSats: 2100,
+    createdAt: Date.now(), expiresAt: Date.now() + 60000,
+  };
+  await recordTerminalSale(saved);
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByText('Unpaid', { includeHiddenElements: true })).toBeTruthy());
+  await act(async () => { await updateTerminalSalePayment(saved, { status: 'received' }); });
+  await waitFor(() => expect(view.getByText('Paid', { includeHiddenElements: true })).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Sales history'));
+  expect(view.getByText('Paid')).toBeTruthy();
+  expect(view.queryByText('Loading sales…')).toBeNull();
 });
