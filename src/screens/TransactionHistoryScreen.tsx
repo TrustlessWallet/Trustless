@@ -34,7 +34,7 @@ const TransactionHistoryScreen = () => {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
-  const { activeWallet, lightningTransactions, triggerRefresh, hasMoreLightningTransactions, loadMoreLightningTransactions, lightningSyncing, lightningSyncError, lightningInitError } = useWallet();
+  const { activeWallet, lightningTransactions, triggerRefresh, hasMoreLightningTransactions, loadMoreLightningTransactions, lightningSyncError, lightningInitError } = useWallet();
   const [hideBalance, setHideBalance] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -198,8 +198,8 @@ const TransactionHistoryScreen = () => {
             ? <ActivityIndicator style={styles.loading} color={theme.colors.bitcoin} />
             : <Text style={styles.empty}>No transactions yet</Text>
         }
-        ListHeaderComponent={mode === 'lightning' && (lightningInitError || lightningSyncError || lightningSyncing)
-          ? <Text style={styles.empty}>{lightningInitError || lightningSyncError || 'Updating Lightning history…'}</Text> : null}
+        ListHeaderComponent={mode === 'lightning' && (lightningInitError || lightningSyncError)
+          ? <Text style={styles.empty}>{lightningInitError || lightningSyncError}</Text> : null}
         ListFooterComponent={mode === 'lightning' && hasMoreLightningTransactions
           ? <TouchableOpacity disabled={loadingMore} onPress={loadMore}>
               {loadingMore ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.empty}>Load older payments</Text>}
