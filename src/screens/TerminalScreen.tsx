@@ -450,7 +450,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
     </View>}
   </View>;
 
-  return <TerminalStack.Navigator key={scope} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
+  return <TerminalStack.Navigator key={scope} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
         checkoutNavigation.current = navigation;
