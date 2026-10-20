@@ -589,7 +589,7 @@ const WalletScreen = () => {
                     {isLightningLoading ? (
                         <ActivityIndicator
                             size={18}
-                            color={isLightningMode ? theme.colors.inversePrimary : theme.colors.primary}
+                            color={theme.colors.bitcoin}
                             style={{ transform: [{ scale: 0.8 }] }}
                         />
                     ) : (
@@ -621,7 +621,7 @@ const WalletScreen = () => {
     ) : <View style={styles.toggleTouchable} pointerEvents="none" />;
 
     if (walletLoading) {
-        return <View style={styles.centeredContainer}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
+        return <View style={styles.centeredContainer}><ActivityIndicator size="large" color={theme.colors.bitcoin} /></View>;
     }
 
     if (!activeWallet) {
@@ -835,7 +835,7 @@ const WalletScreen = () => {
                 }
                 ListEmptyComponent={
                     (!isLightningMode && loadingTxs) ?
-                        <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} /> :
+                        <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.bitcoin} /> :
                         <Text style={styles.noTxText}>No transactions yet</Text>
                 }
                 ListFooterComponent={
@@ -855,8 +855,8 @@ const WalletScreen = () => {
                     <RefreshControl
                         refreshing={isManualRefreshing}
                         onRefresh={onRefresh}
-                        tintColor={theme.colors.primary}
-                        colors={[theme.colors.primary]}
+                        tintColor={theme.colors.bitcoin}
+                        colors={[theme.colors.bitcoin]}
                     />
                 }
             />
