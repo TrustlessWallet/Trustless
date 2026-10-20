@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Platform, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
+import { useIsFocused } from '@react-navigation/native';
+import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +25,21 @@ const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
 const isFiat = (unit: TerminalUnit): unit is FiatCurrency => FIAT_UNITS.includes(unit as FiatCurrency);
 export const isTerminalPollDue = (lastAttempt: number, intervalMs: number, now = Date.now()) => now < lastAttempt || now - lastAttempt >= intervalMs;
 
+type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined };
+const TerminalStack = createNativeStackNavigator<TerminalStackParams>();
+type CheckoutNavigation = NativeStackNavigationProp<TerminalStackParams, 'Checkout'>;
+
+function CheckoutVisibility({ onChange, children }: { onChange: (focused: boolean) => void; children: React.ReactNode }) {
+  const focused = useIsFocused();
+  useEffect(() => { onChange(focused); }, [focused, onChange]);
+  return <>{children}</>;
+}
+
+function SalesRoute({ walletId, network, rootVisible, onClose }: { walletId: string; network: ReturnType<typeof terminalNetwork>; rootVisible: boolean; onClose: () => void }) {
+  const focused = useIsFocused();
+  return <TerminalSalesScreen walletId={walletId} network={network} visible={rootVisible && focused} onClose={onClose} />;
+}
+
 type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expired' | 'verificationUnavailable' | 'creationFailed' | 'walletChanged';
 
 export default function TerminalScreen({ visible = true }: { visible?: boolean } = {}) {
@@ -34,17 +51,19 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
   const [stage, setStage] = useState<Stage>('loading');
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState<TerminalUnit>('sats');
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [salesOpen, setSalesOpen] = useState(false);
+  const [checkoutFocused, setCheckoutFocused] = useState(true);
+  const checkoutNavigation = useRef<CheckoutNavigation | null>(null);
   const [rates, setRates] = useState<TerminalRates | null>(null);
   const [rateError, setRateError] = useState('');
   const [rateLoading, setRateLoading] = useState(false);
   const [request, setRequest] = useState<TerminalRequest | null>(null);
+  const requestRef = useRef(request);
+  requestRef.current = request;
   const [error, setError] = useState('');
   const [foreground, setForeground] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
-  const active = foreground && visible;
+  const active = foreground && visible && checkoutFocused;
   const visibleRef = useRef(visible);
-  visibleRef.current = visible;
+  visibleRef.current = visible && checkoutFocused;
   const [now, setNow] = useState(Date.now());
   const [loadRevision, reload] = useState(0);
   const [hydrationFailed, setHydrationFailed] = useState(false);
@@ -114,8 +133,6 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
     setValidated(false);
     setError('');
     setHydrationFailed(false);
-    setSalesOpen(false);
-    setSettingsOpen(false);
     setStage('loading');
     if (!activeWallet) { setStage('entry'); return; }
     loadTerminalRequest(activeWallet.id, network).then(async saved => {
@@ -255,21 +272,28 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
 
   const endRequest = async () => {
     if (!request || busy.current) return;
+    const closingRequest = request;
+    const capturedGeneration = generation.current;
+    const capturedScope = scope;
+    const stillClosing = () => mounted.current && generation.current === capturedGeneration &&
+      scopeRef.current === capturedScope && requestRef.current?.id === closingRequest.id;
     busy.current = true;
     try {
-      await recordTerminalSale(request);
-      await clearTerminalRequest(request);
+      await recordTerminalSale(closingRequest);
+      await clearTerminalRequest(closingRequest);
+      if (!stillClosing()) return;
       ++generation.current;
       checking.current = false;
       lastCheck.current = 0;
       lastUnfilteredCheck.current = Date.now();
       knownPaymentId.current = undefined;
+      busy.current = false;
       setRequest(null); setStage('entry'); setAmount(''); setUnit(preferredUnit.current); setError('');
       setValidated(false);
-    } catch { setError('Could not end the saved request. Please retry.'); }
-    finally { busy.current = false; }
+    } catch {
+      if (stillClosing()) setError('Could not end the saved request. Please retry.');
+    } finally { if (stillClosing()) busy.current = false; }
   };
-
 
 
   const exit = () => {
@@ -342,29 +366,23 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
   const invoiceMinHeight = Math.max(screenHeight - insets.top - 56, qrTop + qrSize + 34 + 180);
   const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest;
 
-  if (settingsOpen) return <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} onClose={() => setSettingsOpen(false)} />;
-
-  if (salesOpen && activeWallet) return <TerminalSalesScreen
-    key={scope} walletId={activeWallet.id} network={network}
-    visible={visible} onClose={() => setSalesOpen(false)} />;
-
-  return <View style={[styles.root, { paddingTop: insets.top }]}>
+  const checkout = <View style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
-      {!hasRequest ? <TouchableOpacity accessibilityLabel="Terminal settings" style={styles.glassControl} onPress={() => setSettingsOpen(true)}>
+      {!hasRequest ? <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
           <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
             {Platform.OS === 'ios' ? <SymbolView name="gearshape" size={21} tintColor={theme.colors.primary} /> : <Feather name="settings" size={21} color={theme.colors.primary} />}
           </GlassView>
-        </TouchableOpacity> : <View style={styles.glassControl} />}
-      <TouchableOpacity accessibilityLabel="Sales history" disabled={stage === 'creating'} onPress={() => setSalesOpen(true)}>
+        </Pressable> : <View style={styles.glassControl} />}
+      <Pressable accessibilityRole="button" accessibilityLabel="Sales history" disabled={stage === 'creating'} onPress={() => checkoutNavigation.current?.navigate('Sales')}>
         <GlassView width={80} height={40} shape="capsule" interactive={true} style={styles.glassSurface}>
           <Text style={styles.salesLabel}>Today</Text>
         </GlassView>
-      </TouchableOpacity>
-      <TouchableOpacity accessibilityLabel={hasRequest ? 'Close invoice' : 'Exit terminal'} style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || stage === 'creating'} onPress={close}>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel={hasRequest ? 'Close invoice' : 'Exit terminal'} style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || stage === 'creating'} onPress={close}>
         <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
           <Feather name="x" size={21} color={theme.colors.primary} />
         </GlassView>
-      </TouchableOpacity>
+      </Pressable>
     </View>
     <View style={styles.content}>
       {!activeWallet ? <Text style={styles.message}>Open a wallet to receive payments.</Text>
@@ -431,6 +449,21 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
       </TouchableOpacity>
     </View>}
   </View>;
+
+  return <TerminalStack.Navigator key={scope} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
+    <TerminalStack.Screen name="Checkout">
+      {({ navigation }) => {
+        checkoutNavigation.current = navigation;
+        return <CheckoutVisibility onChange={setCheckoutFocused}>{checkout}</CheckoutVisibility>;
+      }}
+    </TerminalStack.Screen>
+    <TerminalStack.Screen name="Settings">
+      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} onClose={() => navigation.goBack()} />}
+    </TerminalStack.Screen>
+    <TerminalStack.Screen name="Sales">
+      {({ navigation }) => activeWallet ? <SalesRoute walletId={activeWallet.id} network={network} rootVisible={visible} onClose={() => navigation.goBack()} /> : null}
+    </TerminalStack.Screen>
+  </TerminalStack.Navigator>;
 }
 
 function makeStyles(background: string, primary: string, inversePrimary: string, surface: string, muted: string, border: string, bitcoin: string, screenHeight: number, screenWidth: number) {
@@ -452,7 +485,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     content: { flex: 1 },
     entry: { flex: 1, paddingHorizontal: 24 },
     amountArea: { flex: 1, minHeight: amountMinHeight, alignItems: 'center', justifyContent: 'center' },
-    amountRow: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center' },
+    amountRow: { alignSelf: 'center', flexDirection: 'row', alignItems: 'baseline' },
     entryAmountRow: { minHeight: 70 },
     numberWidth: { flexShrink: 1, maxWidth: Math.max(134, screenWidth - 48 - 2 * 69) },
     symbolRail: { width: 69, justifyContent: 'center' },

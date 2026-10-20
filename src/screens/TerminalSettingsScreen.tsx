@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassView } from '../components/GlassView';
@@ -28,22 +29,31 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose }: 
       setCurrencyOpen(true);
     });
   };
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const fadeOpacity = scrollY.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' });
   const styles = makeStyles(theme.colors);
   return <View style={styles.root}>
+    <Animated.View pointerEvents="none" style={[styles.scrollFade, { height: insets.top + 48, opacity: fadeOpacity }]}>
+      <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
+    </Animated.View>
     <View pointerEvents="box-none" style={[styles.topBar, { top: insets.top }]}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to terminal" onPress={onClose} style={styles.backButton}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back to terminal" onPress={onClose} style={styles.backButton}>
         <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}>
           <Feather name="arrow-left" size={20} color={theme.colors.primary} />
         </GlassView>
-      </TouchableOpacity>
+      </Pressable>
     </View>
-    <ScrollView contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={{ paddingTop: insets.top + 86, paddingBottom: insets.bottom + 30 }}>
-      <View style={styles.heading}><Text style={styles.title}>Settings</Text></View>
-      <TouchableOpacity ref={rowRef} accessibilityRole="button" accessibilityLabel="Currency" accessibilityState={{ expanded: currencyOpen }} onPress={openCurrency} style={styles.row}>
-        <Text style={styles.rowLabel}>Currency</Text>
-        <View style={styles.rowEnd}><Text style={styles.currentUnit}>{unit}</Text><Feather name="chevron-right" size={18} color={theme.colors.muted} /></View>
-      </TouchableOpacity>
-    </ScrollView>
+    <Animated.ScrollView bounces={false} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: Math.max(128, insets.bottom + 30) }]}>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Terminal Settings</Text>
+        <View style={styles.rowWrapper}>
+          <TouchableOpacity ref={rowRef} accessibilityRole="button" accessibilityLabel="Currency" accessibilityState={{ expanded: currencyOpen }} onPress={openCurrency} style={styles.row}>
+            <Text style={styles.rowLabel}>Currency</Text>
+            <View style={styles.rowEnd}><Text style={styles.currentUnit}>{unit}</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Animated.ScrollView>
     <Modal visible={currencyOpen} transparent animationType="none" onRequestClose={() => setCurrencyOpen(false)}>
       <View style={styles.popoverBackdrop}>
         <Pressable accessibilityRole="button" accessibilityLabel="Dismiss currencies" style={styles.popoverOverlay} onPress={() => setCurrencyOpen(false)} />
@@ -63,15 +73,18 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose }: 
 function makeStyles(colors: { background: string; primary: string; surface: string; muted: string; border: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
+    scrollFade: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1 },
     topBar: { position: 'absolute', left: 0, right: 0, zIndex: 2, height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' },
     backButton: { width: 40, height: 40 },
     glass: { overflow: 'visible' },
-    heading: { paddingHorizontal: 24, paddingBottom: 30 },
-    title: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 36 },
-    row: { marginHorizontal: 24, minHeight: 68, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    rowLabel: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 15 },
+    content: { padding: 24, paddingVertical: 128, flexGrow: 1 },
+    section: { marginBottom: 32 },
+    sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.primary, marginBottom: 16 },
+    rowWrapper: { borderBottomWidth: 1, borderBottomColor: colors.border },
+    row: { paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    rowLabel: { color: colors.muted, fontSize: 16 },
     rowEnd: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-    currentUnit: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 14 },
+    currentUnit: { color: colors.primary, fontSize: 16 },
     popoverBackdrop: { flex: 1, backgroundColor: 'transparent' },
     popoverOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
     popoverPosition: { position: 'absolute' },
