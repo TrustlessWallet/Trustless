@@ -91,6 +91,12 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
   const styles = makeStyles(theme.colors.background, theme.colors.primary, theme.colors.inversePrimary, theme.colors.surface, theme.colors.muted, theme.colors.border, theme.colors.bitcoin, screenHeight, screenWidth);
 
   useEffect(() => {
+    if (visible && checkoutFocused && activeWallet && activeWallet.type !== 'watch-only') {
+      checkoutNavigation.current?.preload('Sales');
+    }
+  }, [visible, checkoutFocused, scope]);
+
+  useEffect(() => {
     void AsyncStorage.getItem(PREFERRED_UNIT_KEY).then(saved => {
       if (!userSelectedUnit.current && !userEditedAmount.current && (saved === 'sats' || saved === 'BTC' || isFiat(saved as TerminalUnit))) {
         preferredUnit.current = saved as TerminalUnit;

@@ -112,6 +112,7 @@ it('does not reveal pull-to-refresh while opening, but shows it for a user refre
   try {
     await waitFor(() => expect(finishRead).toBeDefined());
     expect(view.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+    expect(view.queryByText('Loading sales…')).toBeNull();
     await act(async () => { finishRead(null); });
     await waitFor(() => expect(view.getByText('No activity today')).toBeTruthy());
     fireEvent(view.UNSAFE_getByType(RefreshControl), 'refresh');
