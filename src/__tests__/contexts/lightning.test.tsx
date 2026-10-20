@@ -3,9 +3,10 @@ import { act, renderHook, waitFor, cleanup } from '@testing-library/react-native
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WalletProvider, useWallet } from '../../contexts/WalletContext';
 import * as sdkModule from '@breeztech/breez-sdk-spark-react-native';
+import * as refundJournal from '../../services/terminalRefunds';
 
 jest.mock('../../services/exitStorage', () => ({ assertNoActiveExit: jest.fn(async () => {}), loadExit: jest.fn(async () => null) }));
-jest.mock('uuid', () => ({ v4: () => 'test-request-id' }));
+jest.mock('uuid', () => ({ v4: () => '123e4567-e89b-42d3-a456-426614174000' }));
 jest.mock('react-native-keychain', () => ({
     getGenericPassword: jest.fn(async ({ service }) => ({ password: service.includes('activeWalletId') ? 'a' : 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' })),
     setGenericPassword: jest.fn(async () => true), resetGenericPassword: jest.fn(async () => true),
@@ -32,6 +33,9 @@ jest.mock('@breeztech/breez-sdk-spark-react-native', () => ({
     PaymentStatus: { Completed: 0, Pending: 1, Failed: 2 }, PaymentType: { Receive: 0, Send: 1 },
     InputType_Tags: { Bolt11Invoice: 'Bolt11Invoice', LightningAddress: 'LightningAddress', LnurlPay: 'LnurlPay' },
     SendPaymentMethod_Tags: { Bolt11Invoice: 'Bolt11Invoice', SparkAddress: 'SparkAddress', SparkInvoice: 'SparkInvoice' },
+    SendPaymentOptions: { Bolt11Invoice: { new: (value: any) => value } },
+    FeePolicy: { FeesExcluded: 0 }, BitcoinNetwork: { Bitcoin: 0, Testnet3: 1 },
+    PaymentDetails_Tags: { Lightning: 'Lightning' },
     PaymentRequest: { Input: { new: (value: any) => ({ tag: 'Input', inner: value }) } },
     SdkEvent_Tags: { Synced: 'Synced', PaymentPending: 'PaymentPending', PaymentSucceeded: 'PaymentSucceeded', PaymentFailed: 'PaymentFailed', LightningAddressChanged: 'LightningAddressChanged' },
     ReceivePaymentMethod: { Bolt11Invoice: { new: (value: any) => value }, BitcoinAddress: { new: (value: any) => value } },
@@ -81,7 +85,58 @@ beforeEach(() => {
     client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     (sdkModule.connect as jest.Mock).mockImplementation(async ({ storageDir }) => storageDir.endsWith('/a') ? a : b);
 });
-afterEach(async () => { cleanup(); client.clear(); jest.useRealTimers(); });
+afterEach(async () => { cleanup(); client.clear(); jest.restoreAllMocks(); jest.useRealTimers(); });
+
+const refundInvoice = 'lnbc123refund';
+function mockRefundPreparation() {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    a.parse.mockResolvedValue({ tag: 'Bolt11Invoice', inner: [{ network: 0, amountMsat: 123000n,
+        timestamp: now, expiry: 3600n, invoice: { bolt11: refundInvoice } }] });
+    a.prepareSendPayment.mockResolvedValue({ paymentMethod: { tag: 'Bolt11Invoice', inner: {
+        invoiceDetails: { invoice: { bolt11: refundInvoice } }, lightningFeeSats: 7n,
+    } }, amount: 123n, tokenIdentifier: undefined, conversionEstimate: undefined, feePolicy: 0 });
+}
+
+it('sends only the saved refund attempt with its ID as the SDK idempotency key', async () => {
+    const hook = await connected();
+    mockRefundPreparation();
+    const quote = await hook.result.current.prepareTerminalRefund(refundInvoice, 123);
+    const attempt: any = { id: '123e4567-e89b-42d3-a456-426614174001', walletId: 'a', network: 'mainnet',
+        saleId: 'sale', saleInvoice: 'lnbcsale', invoice: refundInvoice, amountSats: 123,
+        feeSats: 7, quoteExpiresAt: quote.expiresAt, status: 'unknown' };
+    jest.spyOn(refundJournal, 'listTerminalRefunds').mockResolvedValue([attempt]);
+    jest.spyOn(refundJournal, 'updateTerminalRefund').mockResolvedValue(attempt);
+    a.sendPayment.mockRejectedValueOnce(new Error('native timeout'));
+    const result = await hook.result.current.sendTerminalRefund(quote.quoteId, attempt.id);
+    expect(result).toEqual({ status: 'unknown' });
+    expect(a.sendPayment).toHaveBeenCalledWith({
+        prepareResponse: expect.objectContaining({ amount: 123n }),
+        options: { preferSpark: false, completionTimeoutSecs: 10 }, idempotencyKey: attempt.id,
+    });
+    await expect(hook.result.current.sendTerminalRefund(quote.quoteId, attempt.id)).rejects.toMatchObject({ mayHaveSent: false });
+    expect(a.sendPayment).toHaveBeenCalledTimes(1);
+});
+
+it('rejects an unmatched durable attempt before invoking the SDK', async () => {
+    const hook = await connected();
+    mockRefundPreparation();
+    const quote = await hook.result.current.prepareTerminalRefund(refundInvoice, 123);
+    jest.spyOn(refundJournal, 'listTerminalRefunds').mockResolvedValue([]);
+    await expect(hook.result.current.sendTerminalRefund(quote.quoteId, '123e4567-e89b-42d3-a456-426614174001'))
+        .rejects.toMatchObject({ mayHaveSent: false });
+    expect(a.sendPayment).not.toHaveBeenCalled();
+});
+
+it('invalidates a prepared refund when the active wallet changes', async () => {
+    const hook = await connected();
+    mockRefundPreparation();
+    const quote = await hook.result.current.prepareTerminalRefund(refundInvoice, 123);
+    await act(async () => { await hook.result.current.switchWallet('b'); });
+    await expect(hook.result.current.sendTerminalRefund(quote.quoteId, '123e4567-e89b-42d3-a456-426614174001'))
+        .rejects.toMatchObject({ mayHaveSent: false });
+    expect(a.sendPayment).not.toHaveBeenCalled();
+    expect(b.sendPayment).not.toHaveBeenCalled();
+});
 
 it('connects the active wallet and explicitly synchronizes its balance', async () => {
     const { result } = await connected();

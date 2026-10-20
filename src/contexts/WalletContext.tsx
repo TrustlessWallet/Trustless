@@ -38,6 +38,8 @@ import {
 import { InteractionManager } from 'react-native';
 import { matchTerminalPayment, normalizeInvoice } from '../services/terminal';
 import { reconcileTerminalSales, removeTerminalSales } from '../services/terminalSales';
+import { listTerminalRefunds, reconcileTerminalRefunds, removeTerminalRefunds, updateTerminalRefund } from '../services/terminalRefunds';
+import { checkedRefundInvoice, checkedRefundQuote, matchRefundPayment, preflightRefund, TerminalRefundQuote, TerminalRefundResult } from '../services/terminalRefundPayment';
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
 
 // Keep the call sites grouped around each SDK operation without retaining the
@@ -79,6 +81,19 @@ const reconcileSalesPayments = (walletId: string, payments: breezSdk.Payment[]) 
     });
     if (!matches.length) return Promise.resolve();
     return reconcileTerminalSales(walletId, IS_TESTNET ? 'testnet' : 'mainnet', matches);
+};
+
+const reconcileRefundPayments = async (walletId: string, payments: breezSdk.Payment[]) => {
+    const network = IS_TESTNET ? 'testnet' : 'mainnet';
+    const attempts = await listTerminalRefunds(walletId, network);
+    if (!attempts.length) return;
+    const matches = payments.flatMap(payment => attempts.flatMap(attempt => {
+        const result = matchRefundPayment(payment, attempt.invoice, attempt.amountSats);
+        return result && result.status !== 'unknown' && result.paymentId &&
+            (result.status !== 'failed' || attempt.paymentId === result.paymentId)
+            ? [{ invoice: attempt.invoice, status: result.status, paymentId: result.paymentId }] : [];
+    }));
+    if (matches.length) await reconcileTerminalRefunds(walletId, network, matches);
 };
 
 const toLightningTransaction = (p: any): LightningTransaction => ({
@@ -209,6 +224,9 @@ interface WalletContextType {
     createTerminalInvoice: (amountSats: number) => Promise<{ invoice: string; expiresAt: number }>;
     validateTerminalInvoice: (invoice: string, amountSats: number) => Promise<number>;
     verifyTerminalInvoice: (invoice: string, createdAt: number, knownPaymentId?: string, includeUnfilteredFallback?: boolean) => Promise<{ status: 'received' | 'pending' | 'unknown'; paymentId?: string }>;
+    prepareTerminalRefund: (invoice: string, amountSats: number) => Promise<TerminalRefundQuote>;
+    sendTerminalRefund: (quoteId: string, attemptId: string) => Promise<TerminalRefundResult>;
+    verifyTerminalRefund: (invoice: string, createdAt: number, knownPaymentId?: string) => Promise<TerminalRefundResult>;
     payLightningInvoice: (invoiceStr: string, amountSats?: number) => Promise<LightningTransaction>;
     estimateLightningFee: (invoiceStr: string, amountSats?: number) => Promise<number | null>;
     getLightningTopUpAddress: () => Promise<string>;
@@ -266,6 +284,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const switchingRef = useRef(false);
     const paymentInFlightRef = useRef(false);
     const preparedWithdrawalsRef = useRef(new WeakMap<object, LightningSdk>());
+    const preparedRefundsRef = useRef(new Map<string, { quote: TerminalRefundQuote; response: breezSdk.PrepareSendPaymentResponse; sdk: LightningSdk; walletId: string; version: number; used: boolean }>());
     const [isWalletSwitching, setIsWalletSwitching] = useState(false);
     const [lightningSyncing, setLightningSyncing] = useState(false);
     const [lightningSyncError, setLightningSyncError] = useState<string | null>(null);
@@ -278,6 +297,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
 
     const resetLightningState = () => {
+        preparedRefundsRef.current.clear();
         readyRef.current = false;
         flightsRef.current = new SingleFlight();
         initializationRef.current = null;
@@ -469,6 +489,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 // Terminal invoices remain sales without another polling loop.
                 const salesWalletId = sdkWalletIdRef.current;
                 if (salesWalletId) void reconcileSalesPayments(salesWalletId, result.payments).catch(() => {});
+                if (salesWalletId) void reconcileRefundPayments(salesWalletId, result.payments).catch(() => {});
             }), 'Reading Lightning history');
         };
         const readAddress = () => withDeadline(flights.run('address', async () => {
@@ -590,6 +611,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     if (!current() || sdkRef.current !== sdk) return;
                     if (event.inner?.payment) {
                         void reconcileSalesPayments(walletId, [event.inner.payment]).catch(() => {});
+                        void reconcileRefundPayments(walletId, [event.inner.payment]).catch(() => {});
                     }
                     if ([breezSdk.SdkEvent_Tags.Synced, breezSdk.SdkEvent_Tags.PaymentPending,
                         breezSdk.SdkEvent_Tags.PaymentSucceeded, breezSdk.SdkEvent_Tags.PaymentFailed].includes(event.tag)) {
@@ -805,6 +827,124 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (includeUnfilteredFallback) {
             const fallbackMatch = await findMatchingPayment(undefined);
             if (fallbackMatch) return fallbackMatch;
+        }
+        return { status: 'unknown' };
+    };
+
+    const prepareTerminalRefund = async (invoice: string, amountSats: number): Promise<TerminalRefundQuote> => {
+      try {
+        if (!Number.isSafeInteger(amountSats) || amountSats <= 0) preflightRefund('Enter a valid refund amount.');
+        const { sdk, version, assertCurrent } = requireLightningSession();
+        const walletId = activeWalletIdRef.current;
+        if (!walletId || activeWallet?.type === 'watch-only') preflightRefund('Open a signing wallet first.');
+        if (paymentInFlightRef.current || recoveryModeRef.current) preflightRefund('Another wallet operation is running.');
+        await assertNoActiveExit(walletId);
+        assertCurrent();
+        const cleanInvoice = invoice.replace(/^lightning:/i, '').trim();
+        const parsed = await withDeadline(sdk.parse(cleanInvoice), 'Checking refund invoice');
+        assertCurrent();
+        const invoiceExpiry = checkedRefundInvoice(parsed, cleanInvoice, amountSats,
+            IS_TESTNET ? breezSdk.BitcoinNetwork.Testnet3 : breezSdk.BitcoinNetwork.Bitcoin);
+        const response = await withDeadline(sdk.prepareSendPayment({
+            paymentRequest: breezSdk.PaymentRequest.Input.new({ input: cleanInvoice }),
+            amount: undefined, tokenIdentifier: undefined, conversionOptions: undefined,
+            feePolicy: breezSdk.FeePolicy.FeesExcluded,
+        }), 'Preparing refund');
+        assertCurrent();
+        const feeSats = checkedRefundQuote(response, cleanInvoice, amountSats);
+        const expiresAt = Math.min(invoiceExpiry, Date.now() + 120000);
+        if (expiresAt <= Date.now()) preflightRefund('Refund invoice has expired.');
+        const quote: TerminalRefundQuote = { quoteId: uuidv4(), invoice: cleanInvoice, amountSats, feeSats, expiresAt };
+        preparedRefundsRef.current.clear();
+        preparedRefundsRef.current.set(quote.quoteId, { quote, response, sdk, walletId, version, used: false });
+        return quote;
+      } catch (error) {
+        preflightRefund(lightningErrorMessage(error));
+      }
+    };
+
+    const sendTerminalRefund = async (quoteId: string, attemptId: string): Promise<TerminalRefundResult> => {
+        const prepared = preparedRefundsRef.current.get(quoteId);
+        if (!prepared || prepared.used || prepared.quote.expiresAt <= Date.now()) preflightRefund('Refund quote expired. Prepare it again.');
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attemptId)) preflightRefund('Invalid saved refund attempt.');
+        const { sdk, version, assertCurrent } = (() => {
+            try { return requireLightningSession(); }
+            catch (error) { preflightRefund(lightningErrorMessage(error)); }
+        })();
+        if (sdk !== prepared.sdk || version !== prepared.version || activeWalletIdRef.current !== prepared.walletId ||
+            activeWallet?.type === 'watch-only' || paymentInFlightRef.current || recoveryModeRef.current) {
+            preflightRefund('The refund wallet changed. Prepare it again.');
+        }
+        const attempts = await listTerminalRefunds(prepared.walletId, IS_TESTNET ? 'testnet' : 'mainnet')
+            .catch(error => preflightRefund(lightningErrorMessage(error)));
+        try { assertCurrent(); } catch (error) { preflightRefund(lightningErrorMessage(error)); }
+        const attempt = attempts.find(item => item.id === attemptId);
+        if (!attempt || attempt.status !== 'unknown' || attempt.paymentId ||
+            normalizeInvoice(attempt.invoice) !== normalizeInvoice(prepared.quote.invoice) ||
+            attempt.amountSats !== prepared.quote.amountSats || attempt.feeSats !== prepared.quote.feeSats ||
+            attempt.quoteExpiresAt !== prepared.quote.expiresAt || attempt.walletId !== prepared.walletId ||
+            attempt.network !== (IS_TESTNET ? 'testnet' : 'mainnet') ||
+            !attempt.saleId || !attempt.saleInvoice) preflightRefund('Saved refund attempt does not match the quote.');
+        await assertNoActiveExit(prepared.walletId).catch(error => preflightRefund(lightningErrorMessage(error)));
+        try { assertCurrent(); } catch (error) { preflightRefund(lightningErrorMessage(error)); }
+        if (prepared.used || prepared.quote.expiresAt <= Date.now() || paymentInFlightRef.current) preflightRefund('Refund quote expired or another payment started.');
+        let options: breezSdk.SendPaymentOptions;
+        try { options = breezSdk.SendPaymentOptions.Bolt11Invoice.new({ preferSpark: false, completionTimeoutSecs: 10 }); }
+        catch (error) { preflightRefund(lightningErrorMessage(error)); }
+        // Consume the in-memory SDK response before the native call. A retry
+        // needs explicit verification; it must never create a second send.
+        prepared.used = true;
+        paymentInFlightRef.current = true;
+        let result: TerminalRefundResult;
+        try {
+            const sent = await sdk.sendPayment({
+                prepareResponse: prepared.response,
+                options,
+                idempotencyKey: attempt.id,
+            });
+            result = matchRefundPayment(sent.payment, attempt.invoice, attempt.amountSats) || { status: 'unknown' };
+        } catch {
+            // A native error or timeout may occur after submission. Only an
+            // authoritative SDK Failed payment can release the reservation.
+            result = { status: 'unknown' };
+        } finally {
+            paymentInFlightRef.current = false;
+        }
+        await updateTerminalRefund(attempt, result);
+        if (sdkRef.current === sdk && result.status === 'complete') void refreshLightningState().catch(() => {});
+        return result;
+    };
+
+    const verifyTerminalRefund = async (invoice: string, createdAt: number, knownPaymentId?: string): Promise<TerminalRefundResult> => {
+        const { sdk, assertCurrent } = requireLightningSession();
+        const walletId = activeWalletIdRef.current;
+        const attempts = await listTerminalRefunds(walletId || '', IS_TESTNET ? 'testnet' : 'mainnet');
+        const attempt = attempts.find(item => normalizeInvoice(item.invoice) === normalizeInvoice(invoice));
+        if (!attempt) preflightRefund('Saved refund attempt was not found.');
+        assertCurrent();
+        if (knownPaymentId) {
+            const payment = await withDeadline(sdk.getPayment({ paymentId: knownPaymentId }), 'Checking refund payment').catch(() => null);
+            assertCurrent();
+            const result = matchRefundPayment(payment?.payment, invoice, attempt.amountSats);
+            if (result && (result.status !== 'failed' || attempt.paymentId === result.paymentId)) return result;
+        }
+        // Bounded, user-triggered lookup. An empty or mismatched result never
+        // proves failure and must leave the refund reserved.
+        for (let offset = 0; offset < 250; offset += 50) {
+            const page = await withDeadline(sdk.listPayments({
+                offset, limit: 50, sortAscending: false,
+                typeFilter: [breezSdk.PaymentType.Send], statusFilter: undefined,
+                assetFilter: new breezSdk.AssetFilter.Bitcoin(),
+                paymentDetailsFilter: [breezSdk.PaymentDetailsFilter.Lightning.new({ htlcStatus: undefined })],
+                fromTimestamp: BigInt(Math.max(0, Math.floor(createdAt / 1000) - 300)), toTimestamp: undefined,
+            }), 'Checking refund payments');
+            assertCurrent();
+            if (walletId !== activeWalletIdRef.current) preflightRefund('The active wallet changed.');
+            for (const payment of page.payments) {
+                const result = matchRefundPayment(payment, invoice, attempt.amountSats);
+                if (result && (result.status !== 'failed' || attempt.paymentId === result.paymentId)) return result;
+            }
+            if (page.payments.length < 50) break;
         }
         return { status: 'unknown' };
     };
@@ -1638,6 +1778,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const removeWallet = async (walletId: string) => {
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
         await assertNoActiveExit(walletId);
+        await removeTerminalRefunds(walletId, NETWORK_NAME);
         await removeTerminalSales(walletId, NETWORK_NAME);
         await dbDeleteWallet(walletId);
         await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
@@ -1682,6 +1823,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await disposeActiveLightningNode();
         const d = await dbGetWallets(NETWORK_NAME);
         for (const w of d) {
+            await removeTerminalRefunds(w.id, NETWORK_NAME);
             await removeTerminalSales(w.id, NETWORK_NAME);
             await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${w.id}` });
             await dbDeleteWallet(w.id);
@@ -1900,6 +2042,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         createTerminalInvoice,
         validateTerminalInvoice,
         verifyTerminalInvoice,
+        prepareTerminalRefund,
+        sendTerminalRefund,
+        verifyTerminalRefund,
         runLightningRecovery,
         payLightningInvoice,
         estimateLightningFee,

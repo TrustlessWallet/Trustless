@@ -347,7 +347,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
 
   if (salesOpen && activeWallet) return <TerminalSalesScreen
     key={scope} walletId={activeWallet.id} network={network}
-    visible={visible && foreground} onClose={() => setSalesOpen(false)} />;
+    visible={visible} onClose={() => setSalesOpen(false)} />;
 
   return <View style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
@@ -461,7 +461,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     glassSurface: { overflow: 'visible' },
     glassRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
     glassLabel: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13, marginRight: 5 },
-    salesLabel: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, textAlign: 'center' },
+    salesLabel: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 13, textAlign: 'center' },
     content: { flex: 1 },
     entry: { flex: 1, paddingHorizontal: 24 },
     amountArea: { flex: 1, minHeight: amountMinHeight, alignItems: 'center', justifyContent: 'center' },

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { is_tx_biometrics_enabled, TX_BIOMETRIC_CONFIRM_KEY } from '../../services/authState';
+import { authenticate_terminal_refund, get_biometric_prompt_shown, is_tx_biometrics_enabled, set_biometric_prompt_shown, TX_BIOMETRIC_CONFIRM_KEY } from '../../services/authState';
 
 jest.mock('expo-local-authentication', () => ({
   hasHardwareAsync: jest.fn(),
@@ -50,5 +50,35 @@ describe('is_tx_biometrics_enabled', () => {
     (LocalAuthentication.isEnrolledAsync as jest.Mock).mockResolvedValue(false);
     await AsyncStorage.setItem(BIOMETRICS_ENABLED_KEY, 'true');
     expect(await is_tx_biometrics_enabled()).toBe(false);
+  });
+});
+
+describe('authenticate_terminal_refund', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => { jest.runOnlyPendingTimers(); jest.useRealTimers(); });
+  it('does not clear the privacy guard of a subsequent authentication prompt', async () => {
+    (LocalAuthentication.authenticateAsync as jest.Mock).mockResolvedValueOnce({ success: false });
+    await authenticate_terminal_refund();
+    set_biometric_prompt_shown(true);
+    jest.advanceTimersByTime(1500);
+    expect(get_biometric_prompt_shown()).toBe(true);
+    set_biometric_prompt_shown(false);
+  });
+  it('prompts even when ordinary transaction biometrics are disabled', async () => {
+    (LocalAuthentication.authenticateAsync as jest.Mock).mockResolvedValueOnce({ success: true });
+    expect(await authenticate_terminal_refund()).toBe(true);
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledWith({
+      promptMessage: 'Authorize refund', cancelLabel: 'Cancel', fallbackLabel: 'Use Passcode', disableDeviceFallback: false,
+    });
+  });
+
+  it('rejects cancellation and local authentication errors', async () => {
+    (LocalAuthentication.authenticateAsync as jest.Mock).mockResolvedValueOnce({ success: false });
+    expect(await authenticate_terminal_refund()).toBe(false);
+    (LocalAuthentication.authenticateAsync as jest.Mock).mockRejectedValueOnce(new Error('unavailable'));
+    expect(await authenticate_terminal_refund()).toBe(false);
+    expect(get_biometric_prompt_shown()).toBe(true);
+    jest.advanceTimersByTime(1500);
+    expect(get_biometric_prompt_shown()).toBe(false);
   });
 });

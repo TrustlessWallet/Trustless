@@ -14,6 +14,7 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn(() => Promise.resolve()), notificationAsync: jest.fn(() => Promise.resolve()), NotificationFeedbackType: { Success: 'success' } }));
+jest.mock('uuid', () => ({ v4: () => 'refund-test-id' }));
 
 const wallet = { id: 'wallet-a', name: 'Shop', type: 'standard' };
 const createTerminalInvoice = jest.fn();

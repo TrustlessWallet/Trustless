@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 let is_biometric_prompt_shown = false;
 let is_backup_flow_active = false;
+let biometric_prompt_generation = 0;
 
 export const TX_BIOMETRIC_CONFIRM_KEY = '@require_biometric_tx_confirm';
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
@@ -37,6 +38,7 @@ export const authenticate_session = async (): Promise<boolean> => {
 };
 
 export const set_biometric_prompt_shown = (value: boolean) => {
+  ++biometric_prompt_generation;
   is_biometric_prompt_shown = value;
 };
 
@@ -90,5 +92,30 @@ export const authenticate_transaction_action = async (
   } catch (error) {
     console.error('Transaction biometric auth failed:', error);
     return false;
+  }
+};
+
+// A refund always needs fresh local authorization, independently of the
+// optional biometric preferences used for ordinary transactions.
+export const authenticate_terminal_refund = async (): Promise<boolean> => {
+  set_biometric_prompt_shown(true);
+  const generation = biometric_prompt_generation;
+  try {
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage: 'Authorize refund',
+      cancelLabel: 'Cancel',
+      fallbackLabel: 'Use Passcode',
+      disableDeviceFallback: false,
+    });
+    return result.success === true;
+  } catch {
+    return false;
+  } finally {
+    // The system prompt may return before the app's active event. Keep the
+    // privacy guard through that transition, but clear it even if the OS
+    // never sent an inactive/active pair (for example, unavailable auth).
+    setTimeout(() => {
+      if (generation === biometric_prompt_generation) set_biometric_prompt_shown(false);
+    }, 1500);
   }
 };

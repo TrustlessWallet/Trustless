@@ -8,6 +8,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useWallet } from '../contexts/WalletContext';
 import { formatFiatMinor, formatTerminalAmount, formatTerminalSats, TerminalNetwork, TerminalRequest } from '../services/terminal';
 import { listTerminalSales, subscribeTerminalSales, terminalSaleDisplayStatus, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
+import { listTerminalRefunds, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
+import { shareTerminalReceipt } from '../services/terminalReceipt';
+import TerminalRefundScreen from './TerminalRefundScreen';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
 type LoadState = { scope: string; sales: TerminalSale[]; loading: boolean; error: boolean };
@@ -21,6 +24,10 @@ const sameLocalDay = (timestamp: number, day: Date) => {
 const formatTime = (timestamp: number) => new Date(timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 const formatDate = (timestamp: number) => new Date(timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const formatLongDate = (timestamp: number) => new Date(timestamp).toLocaleString(undefined, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const formatBigSats = (value: bigint) => `${value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} sats`;
+const safeRefundRemaining = (sale: TerminalSale, attempts: TerminalRefundAttempt[]): number | null => {
+  try { return remainingTerminalRefundSats(sale, attempts); } catch { return null; }
+};
 
 const saleTime = (sale: TerminalSale) => sale.receivedAt ?? sale.request.createdAt;
 const isPaid = (sale: TerminalSale) => sale.status === 'received';
@@ -69,6 +76,10 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const [now, setNow] = useState(Date.now());
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState('');
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundState, setRefundState] = useState<{ scope: string; attempts: TerminalRefundAttempt[]; loading: boolean; error: boolean }>({ scope: '', attempts: [], loading: true, error: false });
+  const [receiptError, setReceiptError] = useState('');
+  const refundGeneration = useRef(0);
   const checkBusy = useRef(false);
   const checkEpoch = useRef(0);
   const mounted = useRef(true);
@@ -111,6 +122,28 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   }, [visible, refresh]);
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
+  useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
+
+  const refreshRefunds = useCallback(async (showLoading = true) => {
+    const generation = ++refundGeneration.current;
+    const capturedScope = scope;
+    if (showLoading) setRefundState({ scope: capturedScope, attempts: [], loading: true, error: false });
+    try {
+      const attempts = await listTerminalRefunds(walletId, network);
+      if (generation === refundGeneration.current && capturedScope === currentScope.current) setRefundState({ scope: capturedScope, attempts, loading: false, error: false });
+    } catch {
+      if (generation === refundGeneration.current && capturedScope === currentScope.current) setRefundState({ scope: capturedScope, attempts: [], loading: false, error: true });
+    }
+  }, [scope, walletId, network]);
+
+  useEffect(() => {
+    if (!visible) { ++refundGeneration.current; return; }
+    void refreshRefunds();
+    const unsubscribe = subscribeTerminalRefunds((changedWallet, changedNetwork) => {
+      if (changedWallet === walletId && changedNetwork === network) void refreshRefunds(false);
+    });
+    return () => { ++refundGeneration.current; unsubscribe(); };
+  }, [visible, scope, walletId, network, refreshRefunds]);
 
   useEffect(() => {
     if (!visible) return;
@@ -127,6 +160,14 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const paidCount = shown.filter(isPaid).length;
   const totals = totalsFor(shown);
   const detail = selected?.scope === scope ? sales.find(sale => sale.request.id === selected.id) : undefined;
+  const refundsLoaded = refundState.scope === scope && !refundState.loading && !refundState.error;
+  const refunds = refundsLoaded && detail ? refundState.attempts.filter(attempt => attempt.saleId === detail.request.id) : [];
+  const refundRemaining = refundsLoaded && detail && isPaid(detail) ? safeRefundRemaining(detail, refunds) : null;
+  const refundsReady = refundsLoaded && refundRemaining !== null;
+  const completedRefund = refunds.reduce((total, attempt) => attempt.status === 'complete' ? total + BigInt(attempt.amountSats) : total, 0n);
+  const reservedRefund = refunds.reduce((total, attempt) => attempt.status === 'unknown' || attempt.status === 'pending' ? total + BigInt(attempt.amountSats) : total, 0n);
+  const refundedSats = refundsLoaded ? refundState.attempts.reduce((total, attempt) =>
+    attempt.status === 'complete' && (tab === 'all' || sameLocalDay(attempt.updatedAt, day)) ? total + BigInt(attempt.amountSats) : total, 0n) : 0n;
   const back = () => { ++checkEpoch.current; checkBusy.current = false; if (detail) setSelected(null); else onClose(); };
   const checkPayment = async () => {
     if (!detail || checkBusy.current) return;
@@ -153,6 +194,14 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       if (stillCurrent()) { checkBusy.current = false; setChecking(false); }
     }
   };
+  const shareReceipt = async () => {
+    if (!detail || !isPaid(detail) || !refundsReady) return;
+    const capturedScope = scope;
+    const capturedSelection = `${scope}:${detail.request.id}`;
+    setReceiptError('');
+    try { await shareTerminalReceipt(detail, refunds); }
+    catch { if (mounted.current && visibleRef.current && capturedScope === currentScope.current && capturedSelection === selectedKey.current) setReceiptError('Couldn’t share the receipt. Please try again.'); }
+  };
 
   const header = <>
     <View style={styles.heading}>
@@ -170,20 +219,24 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         <Text style={styles.paidCount}>{paidCount}</Text>
         <View style={styles.summaryRule} />
         {totals.length ? totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.amount}</Text></View>) : <Text style={styles.noTotals}>No paid sales {tab === 'today' ? 'today' : 'yet'}</Text>}
+        {refundsLoaded ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View>
+          : refundState.scope === scope && refundState.error ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry refund totals" onPress={() => { void refreshRefunds(); }}><Text style={styles.summaryNote}>Refund totals unavailable · Retry</Text></TouchableOpacity>
+            : <Text style={styles.summaryNote}>Loading refund totals…</Text>}
         {tab === 'today' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
       </View> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{tab === 'today' ? 'TODAY’S ACTIVITY' : 'ALL ACTIVITY'}</Text><Text style={styles.sectionCount}>{shown.length}</Text></View> : null}
     </> : null}
   </>;
 
-  return <View style={[styles.root, { paddingTop: insets.top }]}>
-    <View style={styles.topBar}>
+  if (refundOpen && detail && isPaid(detail) && refundsReady) return <TerminalRefundScreen sale={detail} attempts={refundState.attempts} onClose={() => setRefundOpen(false)} visible={visible} />;
+
+  return <View style={styles.root}>
+    <View pointerEvents="box-none" style={[styles.topBar, { top: insets.top }]}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={detail ? 'Back to sales' : 'Back to terminal'} onPress={back} style={styles.backButton}>
         <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}><Feather name="arrow-left" size={20} color={theme.colors.primary} /></GlassView>
       </TouchableOpacity>
-      <View style={styles.backButton} />
     </View>
-    {detail ? <ScrollView contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
+    {detail ? <ScrollView contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
       {header}
       <View style={styles.detailCard}>
         <View style={styles.detailStatus}><View style={[styles.statusDot, isPaid(detail) && styles.paidDot]} /><Text style={[styles.statusText, isPaid(detail) && styles.paidText]}>{statusFor(detail, now).label}</Text></View>
@@ -197,6 +250,16 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {detail.paymentId ? <DetailField label="PAYMENT ID" value={detail.paymentId} styles={styles} selectable /> : null}
         <DetailField label="INVOICE" value={detail.request.invoice} styles={styles} selectable />
       </View>
+      {isPaid(detail) ? <View style={styles.checkArea}>
+        {refundState.scope === scope && refundState.error ? <><Text style={styles.checkError}>Refund records unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry refund records" onPress={() => { void refreshRefunds(); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Retry</Text></TouchableOpacity></> : null}
+        {refundsLoaded && refundRemaining === null ? <Text style={styles.checkError}>Refund records need attention. Refund and receipt are unavailable.</Text> : null}
+        {refundsReady ? <>
+          {refunds.length ? <View style={styles.refundSummary}><Text style={styles.fieldLabel}>REFUNDS</Text>{refunds.map(attempt => <Text key={attempt.id} style={styles.refundSummaryLine}>{formatTerminalSats(attempt.amountSats)} sats · {attempt.status === 'complete' ? 'Sent' : attempt.status === 'failed' ? 'Failed' : attempt.status === 'pending' ? 'Pending' : 'Outcome uncertain'}</Text>)}<Text style={styles.refundRemaining}>Refunded: {formatBigSats(completedRefund)}</Text>{reservedRefund > 0n ? <Text style={styles.refundRemaining}>Reserved: {formatBigSats(reservedRefund)}</Text> : null}<Text style={styles.refundRemaining}>Remaining: {formatTerminalSats(refundRemaining)} sats</Text></View> : null}
+          {receiptError ? <Text style={styles.checkError}>{receiptError}</Text> : null}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share receipt" onPress={() => { void shareReceipt(); }} style={styles.checkButton}><Text style={styles.checkText}>Share receipt</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Refund sale" onPress={() => setRefundOpen(true)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Refund</Text></TouchableOpacity>
+        </> : refundState.scope !== scope || refundState.loading ? <Text style={styles.checkError}>Loading refund records…</Text> : null}
+      </View> : null}
       {!isPaid(detail) ? <View style={styles.checkArea}>
         {checkError ? <Text style={styles.checkError}>{checkError}</Text> : null}
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check payment" disabled={checking} style={[styles.checkButton, checking && styles.checkDisabled]} onPress={() => { void checkPayment(); }}><Text style={styles.checkText}>{checking ? 'Checking…' : 'Check payment'}</Text></TouchableOpacity>
@@ -205,8 +268,10 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       data={error ? [] : shown}
       keyExtractor={item => item.request.id}
       ListHeaderComponent={header}
-      contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 28 }]}
-      refreshControl={<RefreshControl refreshing={loading && state.scope === scope} onRefresh={() => { void refresh(); }} tintColor={theme.colors.bitcoin} />}
+      contentInsetAdjustmentBehavior="never"
+      automaticallyAdjustContentInsets={false}
+      contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 28 }]}
+      refreshControl={<RefreshControl refreshing={loading && state.scope === scope} onRefresh={() => { void refresh(); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={insets.top + 56} />}
       renderItem={({ item }) => {
         const status = statusFor(item, now);
         return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected({ scope, id: item.request.id }); }}>
@@ -232,7 +297,7 @@ function DetailField({ label, value, styles, selectable = false }: { label: stri
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; border: string; muted: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
-    topBar: { height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    topBar: { position: 'absolute', left: 0, right: 0, zIndex: 2, height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' },
     backButton: { width: 40, height: 40 },
     glass: { overflow: 'visible' },
     heading: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 25 },
@@ -250,6 +315,7 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     totalRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingVertical: 4, gap: 12 },
     totalLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 11 },
     totalAmount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 16, flexShrink: 1, textAlign: 'right' },
+    refundedRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, marginTop: 12, paddingTop: 12, gap: 12 },
     noTotals: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12 },
     summaryNote: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 10, marginTop: 12 },
     sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 24, marginTop: 35, marginBottom: 9 },
@@ -287,5 +353,10 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     checkButton: { backgroundColor: colors.primary, borderRadius: 8, minHeight: 52, width: '100%', alignItems: 'center', justifyContent: 'center' },
     checkDisabled: { opacity: 0.6 },
     checkText: { color: colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
+    secondaryButton: { borderColor: colors.border, borderWidth: 1, borderRadius: 8, minHeight: 48, width: '100%', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+    secondaryText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
+    refundSummary: { alignSelf: 'stretch', marginBottom: 22 },
+    refundSummaryLine: { color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginTop: 9 },
+    refundRemaining: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginTop: 12 },
   });
 }

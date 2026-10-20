@@ -11,6 +11,7 @@ jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { co
 jest.mock('../../components/GlassView', () => ({ GlassView: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
+jest.mock('uuid', () => ({ v4: () => 'refund-test-id' }));
 
 const validateTerminalInvoice = jest.fn();
 const verifyTerminalInvoice = jest.fn();
@@ -68,6 +69,8 @@ it('checks one selected sale only on request and records a verified payment', as
   await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledWith(sale.invoice, sale.createdAt, undefined, true));
   await waitFor(() => expect(view.getByText('Paid')).toBeTruthy());
   expect(view.getByText('VERIFIED')).toBeTruthy();
+  await waitFor(() => expect(view.getByLabelText('Share receipt')).toBeTruthy());
+  expect(view.getByLabelText('Refund sale')).toBeTruthy();
 });
 
 it('shows a retry state when saved sales cannot be read', async () => {
@@ -76,4 +79,22 @@ it('shows a retry state when saved sales cannot be read', async () => {
   await waitFor(() => expect(view.getByText('Sales unavailable')).toBeTruthy());
   expect(view.getByText('Retry')).toBeTruthy();
   expect(view.queryByText('No paid sales today')).toBeNull();
+});
+
+it('keeps paid details open but blocks refund actions for inconsistent refund totals', async () => {
+  const sale = request('overrefund');
+  await recordTerminalSale(sale);
+  await updateTerminalSalePayment(sale, { status: 'received' });
+  const attempt = (id: string, invoice: string) => ({
+    id, walletId: 'wallet-a', network: 'mainnet', saleId: sale.id, saleInvoice: sale.invoice,
+    invoice, amountSats: 1000, feeSats: 0, quoteExpiresAt: now + 60_000,
+    createdAt: now, status: 'complete', updatedAt: now,
+  });
+  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', JSON.stringify({ version: 1, attempts: [attempt('one', 'lnbcfirstrefund'), attempt('two', 'lnbcsecondrefund')] }));
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
+  fireEvent.press(view.getByLabelText(/1 200 sats, Paid/));
+  await waitFor(() => expect(view.getByText('Refund records need attention. Refund and receipt are unavailable.')).toBeTruthy());
+  expect(view.queryByLabelText('Refund sale')).toBeNull();
+  expect(view.queryByLabelText('Share receipt')).toBeNull();
 });
