@@ -115,7 +115,7 @@ const CoinControlScreen = () => {
   };
 
   if (loading) {
-    return <View style={styles.centered}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
+    return <View style={styles.centered}><ActivityIndicator size="large" color={theme.colors.bitcoin} /></View>;
   }
 
   return (

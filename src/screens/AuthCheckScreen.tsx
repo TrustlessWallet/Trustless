@@ -73,7 +73,7 @@ const AuthCheckScreen = () => {
                 disabled={is_authenticating}
             >
                 {is_authenticating ? (
-                    <ActivityIndicator color={theme.colors.inversePrimary} />
+                    <ActivityIndicator color={theme.colors.bitcoin} />
                 ) : (
                     <View style={styles.button_content_row}>
                         <Feather name="unlock" size={18} color={theme.colors.inversePrimary} />

@@ -39,7 +39,7 @@ const QRScannerScreen = () => {
   if (!permission) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator color={theme.colors.primary} />
+        <ActivityIndicator color={theme.colors.bitcoin} />
       </View>
     );
   }

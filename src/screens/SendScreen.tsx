@@ -787,7 +787,7 @@ const SendScreen = () => {
                         style={[styles.sendButton, (loading || !is_onchain_form_valid) && styles.buttonDisabled]}
                         disabled={loading || !is_onchain_form_valid}
                     >
-                        {loading ? <ActivityIndicator color={theme.colors.inversePrimary} /> : (
+                        {loading ? <ActivityIndicator color={theme.colors.bitcoin} /> : (
                             <View style={styles.buttonContentRowCentered}>
                                 <Feather name={isWatchOnly ? "upload" : "arrow-up-circle"} size={18} color={theme.colors.inversePrimary} />
                                 <Text style={styles.sendButtonText}>
@@ -855,7 +855,7 @@ const SendScreen = () => {
                         style={[styles.sendButton, { marginTop: 8 }, (loading || !lightningInvoice.trim() || !lnAmount) && styles.buttonDisabled]}
                         disabled={loading || !lightningInvoice.trim() || !lnAmount}
                     >
-                        {loading ? <ActivityIndicator color={theme.colors.inversePrimary} /> : (
+                        {loading ? <ActivityIndicator color={theme.colors.bitcoin} /> : (
                             <View style={styles.buttonContentRowCentered}>
                                 <Feather name="zap" size={18} color={theme.colors.inversePrimary} />
                                 <Text style={styles.sendButtonText}>Pay invoice</Text>

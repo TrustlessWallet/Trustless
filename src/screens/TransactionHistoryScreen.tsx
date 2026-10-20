@@ -195,17 +195,17 @@ const TransactionHistoryScreen = () => {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
         ListEmptyComponent={
           mode === 'onchain' && isLoadingOnchainTransactions
-            ? <ActivityIndicator style={styles.loading} color={theme.colors.primary} />
+            ? <ActivityIndicator style={styles.loading} color={theme.colors.bitcoin} />
             : <Text style={styles.empty}>No transactions yet</Text>
         }
         ListHeaderComponent={mode === 'lightning' && (lightningInitError || lightningSyncError || lightningSyncing)
           ? <Text style={styles.empty}>{lightningInitError || lightningSyncError || 'Updating Lightning history…'}</Text> : null}
         ListFooterComponent={mode === 'lightning' && hasMoreLightningTransactions
           ? <TouchableOpacity disabled={loadingMore} onPress={loadMore}>
-              {loadingMore ? <ActivityIndicator /> : <Text style={styles.empty}>Load older payments</Text>}
+              {loadingMore ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.empty}>Load older payments</Text>}
             </TouchableOpacity> : null}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} colors={[theme.colors.primary]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} />}
       />
     </SafeAreaView>
   );

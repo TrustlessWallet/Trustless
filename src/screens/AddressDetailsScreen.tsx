@@ -190,7 +190,7 @@ const AddressDetailsScreen = () => {
   if (loading) {
     return (
       <View style={styles.centeredContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <ActivityIndicator size="large" color={theme.colors.bitcoin} />
       </View>
     );
   }

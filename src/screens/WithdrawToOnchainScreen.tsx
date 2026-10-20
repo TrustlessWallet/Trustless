@@ -442,7 +442,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
 
                         {reviewStatus === 'reviewing' && (
                             <View style={styles.confirmButton}>
-                                <ActivityIndicator color={theme.colors.inversePrimary} />
+                                <ActivityIndicator color={theme.colors.bitcoin} />
                             </View>
                         )}
 
@@ -453,7 +453,7 @@ export const WithdrawToOnchainScreen: React.FC = () => {
                                 disabled={executing}
                             >
                                 {executing ? (
-                                    <ActivityIndicator color={theme.colors.inversePrimary} />
+                                    <ActivityIndicator color={theme.colors.bitcoin} />
                                 ) : (
                                     <View style={styles.buttonContentRowCentered}>
                                         <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />

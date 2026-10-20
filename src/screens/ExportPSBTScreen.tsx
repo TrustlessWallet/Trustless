@@ -98,7 +98,7 @@ const ExportPSBTScreen = () => {
                     </View>
                 ) : (
                     <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color={theme.colors.primary} />
+                        <ActivityIndicator size="large" color={theme.colors.bitcoin} />
                         <Text style={styles.loadingText}>Building transaction...</Text>
                     </View>
                 )}

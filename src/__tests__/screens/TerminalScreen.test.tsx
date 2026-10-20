@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, Modal } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
@@ -30,18 +30,43 @@ beforeEach(async () => {
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: wallet, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
 });
 
+const renderWithCurrencyMeasurement = () => render(<TerminalScreen />);
+
+const openCurrency = async (view: ReturnType<typeof render>) => {
+  const row = view.getByLabelText('Currency');
+  row.parent!.instance.measureInWindow.mockImplementation((callback: (x: number, y: number, width: number, height: number) => void) => callback(24, 180, 272, 68));
+  fireEvent.press(row);
+  await waitFor(() => expect(view.getByLabelText('USD')).toBeTruthy());
+};
+
 it('runs a pending terminal check immediately after the device clock is corrected backward', () => {
   expect(isTerminalPollDue(10_000, 5_000, 9_000)).toBe(true);
   expect(isTerminalPollDue(10_000, 5_000, 14_000)).toBe(false);
 });
 
+it('opens currency choices from Settings and dismisses them outside or with the system back action', async () => {
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  expect(view.queryByLabelText('USD')).toBeNull();
+  await openCurrency(view);
+  expect(view.getByLabelText('USD')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Dismiss currencies'));
+  expect(view.queryByLabelText('USD')).toBeNull();
+  await openCurrency(view);
+  fireEvent(view.UNSAFE_getByType(Modal), 'onRequestClose');
+  expect(view.queryByLabelText('USD')).toBeNull();
+});
+
 it('charges a fiat amount using a fresh quote and keeps the frozen amount beside the invoice', async () => {
   (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000.12345678' } } }) });
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
-  const view = render(<TerminalScreen />);
+  const view = renderWithCurrencyMeasurement();
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Choose currency'));
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  await openCurrency(view);
   fireEvent.press(view.getByLabelText('USD'));
+  fireEvent.press(view.getByLabelText('Back to terminal'));
   await waitFor(() => expect(view.queryByText('Price unavailable')).toBeNull());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByText('0'));
@@ -49,19 +74,21 @@ it('charges a fiat amount using a fresh quote and keeps the frozen amount beside
   await waitFor(() => expect(view.getByText('≈ 100 000 sats')).toBeTruthy());
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(createTerminalInvoice).toHaveBeenCalledWith(100000));
-  await waitFor(() => expect(view.getByText(/\$\s*100\.00/)).toBeTruthy());
+  await waitFor(() => expect(view.getByTestId('terminal-checkout-number').props.children).toBe('100.00'));
   expect(view.getByText('100 000 sats')).toBeTruthy();
-  expect(view.queryByLabelText('Choose currency')).toBeNull();
+  expect(view.queryByLabelText('Terminal settings')).toBeNull();
   const raw = await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a');
   expect(JSON.parse(raw || '{}').fiat).toEqual({ currency: 'USD', amountMinor: 10000, rate: '100000', fetchedAt: expect.any(Number) });
 });
 
 it('requires an available rate before charging in fiat', async () => {
   (global as any).fetch = jest.fn().mockRejectedValue(new Error('offline'));
-  const view = render(<TerminalScreen />);
+  const view = renderWithCurrencyMeasurement();
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Choose currency'));
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  await openCurrency(view);
   fireEvent.press(view.getByLabelText('EUR'));
+  fireEvent.press(view.getByLabelText('Back to terminal'));
   await waitFor(() => expect(view.getByText('Refresh price')).toBeTruthy());
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(view.getByText('Price expired. Refresh price before charging.')).toBeTruthy();
@@ -78,7 +105,7 @@ it('does not reinterpret entered sats when the saved denomination loads late', a
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   await act(async () => { finish('BTC'); });
-  expect(view.getByTestId('terminal-amount').props.children[1]).toBe('1');
+  expect(view.getByTestId('terminal-amount').props.children).toBe('1');
   expect(view.getAllByText('sats').length).toBeGreaterThan(0);
   readMock.mockImplementation(originalRead);
 });
@@ -93,7 +120,7 @@ it('restores the frozen fiat amount without requesting a new exchange rate', asy
   validateTerminalInvoice.mockResolvedValue(expiresAt);
   (global as any).fetch = jest.fn();
   const view = render(<TerminalScreen />);
-  await waitFor(() => expect(view.getByText(/\$\s*100\.00/)).toBeTruthy());
+  await waitFor(() => expect(view.getByTestId('terminal-checkout-number').props.children).toBe('100.00'));
   expect(view.getByText('100 000 sats')).toBeTruthy();
   expect(view.getByTestId('terminal-qr')).toBeTruthy();
   expect((global as any).fetch).not.toHaveBeenCalled();
@@ -154,12 +181,14 @@ it('preserves the active invoice while visiting Today and saves verified payment
 
 it('clears a nonzero amount when changing into a fiat currency', async () => {
   (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
-  const view = render(<TerminalScreen />);
+  const view = renderWithCurrencyMeasurement();
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
-  fireEvent.press(view.getByLabelText('Choose currency'));
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  await openCurrency(view);
   fireEvent.press(view.getByLabelText('USD'));
-  await waitFor(() => expect(view.getByTestId('terminal-amount').props.children[1]).toBe('0'));
+  fireEvent.press(view.getByLabelText('Back to terminal'));
+  await waitFor(() => expect(view.getByTestId('terminal-amount').props.children).toBe('0'));
 });
 
 it('blocks duplicate presses and reveals the QR only after storage succeeds', async () => {

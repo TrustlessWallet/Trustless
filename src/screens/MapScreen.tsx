@@ -306,7 +306,7 @@ export default function MapScreen() {
                     <View style={styles.pillContent}>
                       <View style={styles.pillIconSlot}>
                         {isProcessing ? (
-                          <ActivityIndicator size="small" color={contentColor} />
+                          <ActivityIndicator size="small" color={theme.colors.bitcoin} />
                         ) : (
                           <MaterialIcons name={group.icon as any} size={16} color={contentColor} />
                         )}
@@ -334,7 +334,7 @@ export default function MapScreen() {
                 interactive={false}
               >
                 <View style={styles.loadingContent}>
-                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                  <ActivityIndicator size="large" color={theme.colors.bitcoin} />
                   <Text style={styles.loadingText}>Loading merchants...</Text>
                 </View>
               </GlassView>

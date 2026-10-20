@@ -292,7 +292,7 @@ const TransactionConfirmScreen = () => {
                 disabled={loading || isSubmitting}
             >
                 {loading || isSubmitting ? (
-                    <ActivityIndicator color={theme.colors.inversePrimary} />
+                    <ActivityIndicator color={theme.colors.bitcoin} />
                 ) : (
                     <View style={styles.buttonContentRowCentered}>
                         <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />
