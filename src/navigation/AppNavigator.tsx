@@ -404,7 +404,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         <Stack.Screen name="Terminal" component={TerminalRoute} options={{
           headerShown: false,
           presentation: 'card',
-          animation: 'fade',
+          animation: 'none',
           gestureEnabled: false,
           contentStyle: { backgroundColor: theme.colors.background },
         }} />
