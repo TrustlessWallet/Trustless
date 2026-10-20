@@ -630,7 +630,7 @@ const SettingsScreen = () => {
                 <View style={styles.status_row}>
                   {connection_status === 'testing' && (
                     <View style={styles.testing_container}>
-                      <ActivityIndicator size="small" color={theme.colors.primary} />
+                      <ActivityIndicator size="small" color={theme.colors.bitcoin} />
                       <Text style={styles.status_text}>Testing...</Text>
                     </View>
                   )}

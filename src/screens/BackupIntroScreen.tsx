@@ -45,7 +45,7 @@ const BackupIntroScreen = () => {
                     <Text style={styles.optionButtonSubText}>Maximum security</Text>
                 </TouchableOpacity>
             </View>
-            {loading && <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.primary} />}
+            {loading && <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.bitcoin} />}
         </View>
     );
 };

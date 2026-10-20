@@ -95,7 +95,7 @@ const VerifyMnemonicScreen = () => {
                 ))}
                 <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleVerify} disabled={loading}>
                     {loading ? (
-                         <ActivityIndicator color={theme.colors.inversePrimary} />
+                         <ActivityIndicator color={theme.colors.bitcoin} />
                     ) : (
                         <View style={styles.buttonContentRowCentered}>
                             <Feather name="check-circle" size={18} color={theme.colors.inversePrimary} />

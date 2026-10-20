@@ -178,7 +178,7 @@ export function UnilateralExitScreen() {
         return () => { clearInterval(interval); subscription.remove(); };
     }, [focused, usable, activeWallet?.id]);
 
-    const button = (label: string, action: () => void, enabled = true, loading = false, section?: string) => <TouchableOpacity onLayout={section ? event => { actions.current[section] = event.nativeEvent.layout.y + event.nativeEvent.layout.height; } : undefined} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: busy || !enabled, busy: loading }} disabled={busy || !enabled} style={[styles.button, (busy || !enabled) && !loading && { opacity: 0.4 }]} onPress={action}><Text style={[styles.label, loading && { opacity: 0 }]}>{label}</Text>{loading && <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}><ActivityIndicator color={theme.colors.inversePrimary} /></View>}</TouchableOpacity>;
+    const button = (label: string, action: () => void, enabled = true, loading = false, section?: string) => <TouchableOpacity onLayout={section ? event => { actions.current[section] = event.nativeEvent.layout.y + event.nativeEvent.layout.height; } : undefined} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: busy || !enabled, busy: loading }} disabled={busy || !enabled} style={[styles.button, (busy || !enabled) && !loading && { opacity: 0.4 }]} onPress={action}><Text style={[styles.label, loading && { opacity: 0 }]}>{label}</Text>{loading && <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}><ActivityIndicator color={theme.colors.bitcoin} /></View>}</TouchableOpacity>;
     const sectionHeading = (icon: React.ComponentProps<typeof Feather>['name'], title: string) => <View style={styles.sectionHeading}><Feather name={icon} size={20} color={theme.colors.primary} /><Text style={[styles.title, { flex: 1 }]}>{title}</Text></View>;
     const amountRow = (label: string, value: bigint) => <View style={styles.amountRow}><Text style={styles.amountLabel}>{label}</Text><Text style={styles.amountValue}>{value.toLocaleString()} sats</Text></View>;
     const changeConfig = (next: Broadcaster) => { setConfig(next); setConnection(''); };
@@ -259,7 +259,7 @@ export function UnilateralExitScreen() {
         {!record && button('Normal withdrawal', () => navigation.navigate('WithdrawToOnchain'), usable)}
         {IS_TESTNET && <Text style={styles.body}>This recovery flow supports mainnet only. The app’s Bitcoin testnet setting is not Spark regtest.</Text>}
         {!isLightningInitialized && <Text style={styles.body}>Waiting for the Lightning wallet to connect. A successful network sync is not required to resume saved recovery data.</Text>}
-        {busy && !quoteLoading && <ActivityIndicator color={theme.colors.primary} />}
+        {busy && !quoteLoading && <ActivityIndicator color={theme.colors.bitcoin} />}
         {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
         <View style={styles.card} testID="broadcaster-section" onLayout={event => { sections.current.broadcaster = event.nativeEvent.layout.y; }}>
             {sectionHeading('server', 'Package broadcaster')}

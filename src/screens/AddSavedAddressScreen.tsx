@@ -130,7 +130,7 @@ const AddSavedAddressScreen = () => {
         disabled={loading}
       >
         {loading ? (
-          <ActivityIndicator color={theme.colors.inversePrimary} />
+          <ActivityIndicator color={theme.colors.bitcoin} />
         ) : (
           <View style={styles.buttonContentRow}>
             <Feather name="plus-circle" size={18} color={theme.colors.inversePrimary} />

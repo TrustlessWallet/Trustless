@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Animated, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassView } from '../components/GlassView';
@@ -70,6 +71,9 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const { activeWallet, isLightningInitialized, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const fadeOpacity = scrollY.interpolate({ inputRange: [100, 140], outputRange: [0, 1], extrapolate: 'clamp' });
+  const onScroll = Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true });
   const scope = `${network}:${walletId}`;
   const [tab, setTab] = useState<Tab>('today');
   const [selected, setSelected] = useState<{ scope: string; id: string } | null>(null);
@@ -123,6 +127,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
+  useEffect(() => { scrollY.setValue(0); }, [scope, selected?.id, refundOpen, scrollY]);
 
   const refreshRefunds = useCallback(async (showLoading = true) => {
     const generation = ++refundGeneration.current;
@@ -231,12 +236,15 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   if (refundOpen && detail && isPaid(detail) && refundsReady) return <TerminalRefundScreen sale={detail} attempts={refundState.attempts} onClose={() => setRefundOpen(false)} visible={visible} />;
 
   return <View style={styles.root}>
+    <Animated.View testID="sales-scroll-fade" pointerEvents="none" style={[styles.scrollFade, { height: insets.top + 48, opacity: fadeOpacity }]}>
+      <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
+    </Animated.View>
     <View pointerEvents="box-none" style={[styles.topBar, { top: insets.top }]}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={detail ? 'Back to sales' : 'Back to terminal'} onPress={back} style={styles.backButton}>
         <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}><Feather name="arrow-left" size={20} color={theme.colors.primary} /></GlassView>
       </TouchableOpacity>
     </View>
-    {detail ? <ScrollView contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
+    {detail ? <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
       {header}
       <View style={styles.detailCard}>
         <View style={styles.detailStatus}><View style={[styles.statusDot, isPaid(detail) && styles.paidDot]} /><Text style={[styles.statusText, isPaid(detail) && styles.paidText]}>{statusFor(detail, now).label}</Text></View>
@@ -264,7 +272,9 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {checkError ? <Text style={styles.checkError}>{checkError}</Text> : null}
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check payment" disabled={checking} style={[styles.checkButton, checking && styles.checkDisabled]} onPress={() => { void checkPayment(); }}><Text style={styles.checkText}>{checking ? 'Checking…' : 'Check payment'}</Text></TouchableOpacity>
       </View> : null}
-    </ScrollView> : <FlatList
+    </Animated.ScrollView> : <Animated.FlatList
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       data={error ? [] : shown}
       keyExtractor={item => item.request.id}
       ListHeaderComponent={header}
@@ -297,6 +307,7 @@ function DetailField({ label, value, styles, selectable = false }: { label: stri
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; border: string; muted: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
+    scrollFade: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1 },
     topBar: { position: 'absolute', left: 0, right: 0, zIndex: 2, height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' },
     backButton: { width: 40, height: 40 },
     glass: { overflow: 'visible' },

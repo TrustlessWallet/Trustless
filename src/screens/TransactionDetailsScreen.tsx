@@ -133,7 +133,7 @@ const TransactionDetailsScreen = () => {
   };
 
   if (isLoading && !tx) {
-    return <View style={styles.centered}><ActivityIndicator color={theme.colors.primary} /></View>;
+    return <View style={styles.centered}><ActivityIndicator color={theme.colors.bitcoin} /></View>;
   }
 
   if (!tx) {

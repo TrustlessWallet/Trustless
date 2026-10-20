@@ -249,7 +249,7 @@ const BalanceDetailScreen = () => {
         ListEmptyComponent={
           <View style={styles.centered}>
             {isLoadingUtxos ? (
-              <ActivityIndicator size="large" color={theme.colors.primary} />
+              <ActivityIndicator size="large" color={theme.colors.bitcoin} />
             ) : (
               <Text style={styles.emptyText}>
                 No spendable coins (UTXOs) found.

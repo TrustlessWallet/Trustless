@@ -154,7 +154,7 @@ const ImportWatchOnlyScreen = () => {
                     disabled={!xpub || loading}
                 >
                     {loading ? (
-                        <ActivityIndicator color={theme.colors.inversePrimary} />
+                        <ActivityIndicator color={theme.colors.bitcoin} />
                     ) : (
                         <View style={styles.buttonContent}>
                             <Feather name="eye" size={18} color={theme.colors.inversePrimary} />

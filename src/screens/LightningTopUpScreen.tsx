@@ -284,7 +284,7 @@ export const LightningTopUpScreen: React.FC = () => {
     if (loadingData || !feeOptions) {
         return (
             <SafeAreaView style={styles.centered} edges={['bottom', 'left', 'right']}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <ActivityIndicator size="large" color={theme.colors.bitcoin} />
                 <Text style={styles.loadingText}>Synchronizing with Lightning Node...</Text>
             </SafeAreaView>
         );
@@ -435,7 +435,7 @@ export const LightningTopUpScreen: React.FC = () => {
 
                         {reviewStatus === 'reviewing' && (
                             <View style={styles.confirmButton}>
-                                <ActivityIndicator color={theme.colors.inversePrimary} />
+                                <ActivityIndicator color={theme.colors.bitcoin} />
                             </View>
                         )}
 
@@ -446,7 +446,7 @@ export const LightningTopUpScreen: React.FC = () => {
                                 disabled={executing}
                             >
                                 {executing ? (
-                                    <ActivityIndicator color={theme.colors.inversePrimary} />
+                                    <ActivityIndicator color={theme.colors.bitcoin} />
                                 ) : (
                                     <View style={styles.buttonContentRowCentered}>
                                         <Feather name="arrow-up-circle" size={18} color={theme.colors.inversePrimary} />

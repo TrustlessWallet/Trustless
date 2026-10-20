@@ -136,7 +136,7 @@ const RecoverWalletScreen = () => {
                         disabled={loading || is_input_empty}
                     >
                         {loading ? (
-                            <ActivityIndicator color={theme.colors.inversePrimary} />
+                            <ActivityIndicator color={theme.colors.bitcoin} />
                         ) : (
                             <View style={styles.button_content_row_centered}>
                                 <Feather name="key" size={18} color={theme.colors.inversePrimary} />

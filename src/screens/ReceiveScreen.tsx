@@ -356,7 +356,7 @@ const ReceiveScreen = () => {
   if (loading_info) {
     return (
       <View style={styles.centeredContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <ActivityIndicator size="large" color={theme.colors.bitcoin} />
       </View>
     );
   }
@@ -461,7 +461,7 @@ const ReceiveScreen = () => {
                 disabled={isRegisteringAddress || !isAddressValid}
               >
                 {isRegisteringAddress ? (
-                  <ActivityIndicator color={theme.colors.inversePrimary} />
+                  <ActivityIndicator color={theme.colors.bitcoin} />
                 ) : (
                   <Text style={styles.modalButtonTextPrimary}>
                     {lightningAddress ? 'Update address' : 'Claim address'}
@@ -577,7 +577,7 @@ const ReceiveScreen = () => {
 
             <View style={styles.listHeaderContainer}>
               <Text style={styles.listHeader}>Used addresses</Text>
-              {wallet_loading && <ActivityIndicator color={theme.colors.primary} />}
+              {wallet_loading && <ActivityIndicator color={theme.colors.bitcoin} />}
             </View>
 
             {used_addresses.length === 0 ? (
@@ -647,7 +647,7 @@ const ReceiveScreen = () => {
                       )}
                       {isGeneratingLightning ? (
                         <View style={{ height: QR_SIZE, width: QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
-                          <ActivityIndicator size="large" color={theme.colors.primary} />
+                          <ActivityIndicator size="large" color={theme.colors.bitcoin} />
                           <Text style={{ color: theme.colors.muted, marginTop: 12 }}>Generating...</Text>
                         </View>
                       ) : currentLnString ? memoizedLightningQR : null}

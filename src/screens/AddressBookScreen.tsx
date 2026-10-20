@@ -148,7 +148,7 @@ const AddressBookScreen = () => {
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <SafeAreaView style={styles.container}>
         {loadingSavedAddresses ? (
-          <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 20 }} />
+          <ActivityIndicator color={theme.colors.bitcoin} style={{ marginTop: 20 }} />
         ) : (
           <FlatList
             data={savedAddresses}

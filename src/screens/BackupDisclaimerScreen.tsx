@@ -129,7 +129,7 @@ const BackupDisclaimerScreen = () => {
                     disabled={is_loading_phrase || is_loading_qr}
                 >
                     {is_loading_phrase ? (
-                        <ActivityIndicator color={theme.colors.inversePrimary} />
+                        <ActivityIndicator color={theme.colors.bitcoin} />
                     ) : (
                         <View style={styles.button_content_row_centered}>
                             <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
@@ -144,7 +144,7 @@ const BackupDisclaimerScreen = () => {
                     disabled={is_loading_phrase || is_loading_qr}
                 >
                     {is_loading_qr ? (
-                        <ActivityIndicator color={theme.colors.primary} />
+                        <ActivityIndicator color={theme.colors.bitcoin} />
                     ) : (
                         <View style={styles.button_content_row_centered}>
                             <Feather name="grid" size={18} color={theme.colors.primary} />

@@ -57,7 +57,7 @@ const WalletSwitcherScreen = () => {
                     <Text style={styles.wallet_name}>{item.name}</Text>
                 </View>
                 {is_switching ? (
-                    <ActivityIndicator style={styles.loader} color={theme.colors.primary} />
+                    <ActivityIndicator style={styles.loader} color={theme.colors.bitcoin} />
                 ) : (
                     <View style={styles.actions_container}>
                         {is_watch_only && (
