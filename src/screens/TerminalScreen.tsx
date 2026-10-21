@@ -42,9 +42,9 @@ function SalesRoute({ walletId, network, rootVisible, onClose }: { walletId: str
 
 type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expired' | 'verificationUnavailable' | 'creationFailed' | 'walletChanged';
 
-export default function TerminalScreen({ visible = true }: { visible?: boolean } = {}) {
+export default function TerminalScreen({ visible = true, onExit }: { visible?: boolean; onExit?: () => void } = {}) {
   const { activeWallet, isLightningInitialized, lightningInitAttempted, lightningInitError, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
-  const { setMode, changing } = useWalletMode();
+  const { setMode, changing, cashierState, cashierBusy } = useWalletMode();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -314,7 +314,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
 
   const exit = () => {
     if (busy.current) return;
-    const leave = () => { void setMode('wallet').catch(() => Alert.alert('Could not exit', 'Wallet mode could not be saved. Please retry.')); };
+    const leave = onExit ?? (() => { void setMode('wallet').catch(() => Alert.alert('Could not exit', 'Wallet mode could not be saved. Please retry.')); });
     if (request && stage !== 'received') Alert.alert('Exit terminal?', 'This invoice can still be paid. Your request will be here when you return.', [
       { text: 'Stay', style: 'cancel' }, { text: 'Exit terminal', onPress: leave },
     ]);
@@ -384,7 +384,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
 
   const checkout = <View style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
-      {!hasRequest ? <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
+      {!hasRequest || cashierState === 'locked' ? <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
           <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
             {Platform.OS === 'ios' ? <SymbolView name="gearshape" size={21} tintColor={theme.colors.primary} /> : <Feather name="settings" size={21} color={theme.colors.primary} />}
           </GlassView>
@@ -394,7 +394,7 @@ export default function TerminalScreen({ visible = true }: { visible?: boolean }
           <Text style={styles.salesLabel}>Today</Text>
         </GlassView>
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={hasRequest ? 'Close invoice' : 'Exit terminal'} style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || stage === 'creating'} onPress={close}>
+      <Pressable accessibilityRole="button" accessibilityLabel={hasRequest ? 'Close invoice' : 'Exit terminal'} style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || cashierBusy || stage === 'creating'} onPress={close}>
         <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
           <Feather name="x" size={21} color={theme.colors.primary} />
         </GlassView>
