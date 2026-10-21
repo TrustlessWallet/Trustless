@@ -44,6 +44,11 @@ function snapshot(request: TerminalRequest): TerminalRequest {
     expiresAt: request.expiresAt,
     ...(request.fiat ? { fiat: { ...request.fiat } } : {}),
     ...(request.inputUnit ? { inputUnit: request.inputUnit } : {}),
+    ...(request.basket ? { basket: {
+      unit: request.basket.unit,
+      total: request.basket.total,
+      lines: request.basket.lines.map(line => ({ itemId: line.itemId, name: line.name, unitPrice: line.unitPrice, quantity: line.quantity, total: line.total })),
+    } } : {}),
   };
 }
 

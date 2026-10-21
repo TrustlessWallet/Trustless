@@ -47,3 +47,10 @@ it('only shares receipts for verified paid sales', async () => {
   await shareTerminalReceipt(sale);
   expect(Share.share).toHaveBeenCalledWith({ message: formatTerminalReceipt(sale) });
 });
+
+it('prints frozen item names, quantities and original unit prices', () => {
+  const withItems: TerminalSale = { ...sale, request: { ...sale.request, basket: { unit: 'CHF', total: 100, lines: [{ itemId: 'tea', name: 'Tea', unitPrice: 50, quantity: 2, total: 100 }] } } };
+  const receipt = formatTerminalReceipt(withItems);
+  expect(receipt).toContain('Tea × 2 @ CHF 0.50 = CHF 1.00');
+  expect(receipt).toContain('Items total: CHF 1.00');
+});

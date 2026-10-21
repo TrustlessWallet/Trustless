@@ -10,8 +10,8 @@ import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from
 
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 const mockSetMode = jest.fn();
-jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: mockSetMode, changing: false }) }));
-jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
+jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: mockSetMode, changing: false, cashierState: 'off', cashierBusy: false }) }));
+jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' }, LAYOUT: { radius: 8, inputHeight: 48 } } }) }));
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
@@ -59,6 +59,24 @@ it('preserves the entered amount and wallet mode after visiting Settings', async
   expect(mockSetMode).not.toHaveBeenCalled();
 });
 
+it('lets the owner save an item from Terminal Settings and use it at checkout', async () => {
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  fireEvent.press(view.getByLabelText('Manage items'));
+  await waitFor(() => expect(view.getByLabelText('Add item')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Add item'));
+  fireEvent.changeText(view.getByLabelText('Item name'), 'Tea');
+  fireEvent.changeText(view.getByLabelText('Item price'), '250');
+  fireEvent.press(view.getByLabelText('Save item'));
+  await waitFor(() => expect(view.getByText('Tea')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Back to terminal settings'));
+  fireEvent.press(view.getByLabelText('Back to terminal'));
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items'));
+  expect(view.getByLabelText('Add Tea')).toBeTruthy();
+});
+
 it('opens currency choices from Settings and dismisses them outside or with the system back action', async () => {
   const view = renderWithCurrencyMeasurement();
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
@@ -94,6 +112,64 @@ it('charges a fiat amount using a fresh quote and keeps the frozen amount beside
   expect(view.queryByLabelText('Terminal settings')).toBeNull();
   const raw = await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a');
   expect(JSON.parse(raw || '{}').fiat).toEqual({ currency: 'USD', amountMinor: 10000, rate: '100000', fetchedAt: expect.any(Number) });
+});
+
+it('quotes rapid basket quantity changes from one fiat grand total and freezes selected items', async () => {
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'coffee', name: 'Coffee', unit: 'USD', unitPrice: 1 }] }));
+  (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '60000', EUR: '90000', CHF: '80000' } } }) });
+  createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  await openCurrency(view);
+  fireEvent.press(view.getByLabelText('USD'));
+  fireEvent.press(view.getByLabelText('Back to terminal'));
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items'));
+  fireEvent.press(view.getByLabelText('Add Coffee'));
+  fireEvent.press(view.getByLabelText('Add one Coffee'));
+  fireEvent.press(view.getByLabelText('Add one Coffee'));
+  fireEvent.press(view.getByTestId('terminal-request'));
+  fireEvent.press(view.getByTestId('terminal-request'));
+  await waitFor(() => expect(createTerminalInvoice).toHaveBeenCalledWith(50));
+  expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
+  const raw = await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a');
+  expect(JSON.parse(raw || '{}').basket).toEqual({ unit: 'USD', total: 3, lines: [{ itemId: 'coffee', name: 'Coffee', unitPrice: 1, quantity: 3, total: 3 }] });
+});
+
+it('does not let a delayed preferred currency reinterpret an active basket', async () => {
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 250 }] }));
+  const getItem = AsyncStorage.getItem as jest.Mock;
+  const priorGetItem = getItem.getMockImplementation()!;
+  let finishPreference!: (value: string) => void;
+  getItem.mockImplementation((key: string) => key === '@terminalPreferredUnit' ? new Promise(resolve => { finishPreference = resolve; }) : priorGetItem(key));
+  try {
+    const view = renderWithCurrencyMeasurement();
+    await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('Items'));
+    fireEvent.press(view.getByLabelText('Add Tea'));
+    expect(view.getByTestId('terminal-amount').props.children).toBe('250');
+    await act(async () => { finishPreference('USD'); });
+    expect(view.getByTestId('terminal-amount').props.children).toBe('250');
+    expect(view.getByText('250 sats')).toBeTruthy();
+  } finally { getItem.mockImplementation(priorGetItem); }
+});
+
+it('requires an item in Items mode and clears the basket only through Manual amount', async () => {
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 250 }] }));
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByText('5'));
+  fireEvent.press(view.getByLabelText('Items'));
+  expect(view.getByTestId('terminal-amount').props.children).toBe('0');
+  fireEvent.press(view.getByTestId('terminal-request'));
+  expect(createTerminalInvoice).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Add Tea'));
+  fireEvent.press(view.getByLabelText('Remove Tea'));
+  fireEvent.press(view.getByTestId('terminal-request'));
+  expect(createTerminalInvoice).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Return to manual amount'));
+  expect(view.getByTestId('terminal-amount').props.children).toBe('0');
 });
 
 it('requires an available rate before charging in fiat', async () => {

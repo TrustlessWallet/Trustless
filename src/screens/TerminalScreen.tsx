@@ -14,18 +14,20 @@ import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { NETWORK_NAME } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalSats, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
+import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalBasket, TerminalBasketLine, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
 import { FiatCurrency, getTerminalRates, TerminalRates } from '../services/terminalRates';
 import { recordTerminalSale, updateTerminalSalePayment } from '../services/terminalSales';
 import TerminalSalesScreen from './TerminalSalesScreen';
 import TerminalSettingsScreen from './TerminalSettingsScreen';
+import TerminalItemsScreen from './TerminalItemsScreen';
+import { listTerminalItems, TerminalItem } from '../services/terminalItems';
 
 const PREFERRED_UNIT_KEY = '@terminalPreferredUnit';
 const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
 const isFiat = (unit: TerminalUnit): unit is FiatCurrency => FIAT_UNITS.includes(unit as FiatCurrency);
 export const isTerminalPollDue = (lastAttempt: number, intervalMs: number, now = Date.now()) => now < lastAttempt || now - lastAttempt >= intervalMs;
 
-type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined };
+type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined; Items: undefined };
 const TerminalStack = createNativeStackNavigator<TerminalStackParams>();
 type CheckoutNavigation = NativeStackNavigationProp<TerminalStackParams, 'Checkout'>;
 
@@ -50,6 +52,11 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [stage, setStage] = useState<Stage>('loading');
   const [amount, setAmount] = useState('');
+  const [basketLines, setBasketLines] = useState<TerminalBasketLine[]>([]);
+  const [itemsMode, setItemsMode] = useState(false);
+  const [catalog, setCatalog] = useState<TerminalItem[]>([]);
+  const [catalogError, setCatalogError] = useState(false);
+  const [catalogRevision, reloadCatalog] = useState(0);
   const [unit, setUnit] = useState<TerminalUnit>('sats');
   const [checkoutFocused, setCheckoutFocused] = useState(true);
   const checkoutNavigation = useRef<CheckoutNavigation | null>(null);
@@ -88,6 +95,8 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const scope = `${network}:${activeWallet?.id || ''}`;
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
+  const basketRef = useRef(basketLines);
+  basketRef.current = basketLines;
   const styles = makeStyles(theme.colors.background, theme.colors.primary, theme.colors.inversePrimary, theme.colors.surface, theme.colors.muted, theme.colors.border, theme.colors.bitcoin, screenHeight, screenWidth);
 
   useEffect(() => {
@@ -97,10 +106,23 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   }, [visible, checkoutFocused, scope]);
 
   useEffect(() => {
+    basketRef.current = []; setBasketLines([]); setItemsMode(false); setCatalog([]); setCatalogError(false);
+  }, [scope]);
+
+  useEffect(() => {
+    if (!visible || !checkoutFocused || !activeWallet || activeWallet.type === 'watch-only') return;
+    let current = true;
+    void listTerminalItems(activeWallet.id, network).then(items => {
+      if (current && scopeRef.current === scope) { setCatalog(items); setCatalogError(false); }
+    }).catch(() => { if (current && scopeRef.current === scope) { setCatalog([]); setCatalogError(true); } });
+    return () => { current = false; };
+  }, [scope, visible, checkoutFocused, catalogRevision]);
+
+  useEffect(() => {
     void AsyncStorage.getItem(PREFERRED_UNIT_KEY).then(saved => {
-      if (!userSelectedUnit.current && !userEditedAmount.current && (saved === 'sats' || saved === 'BTC' || isFiat(saved as TerminalUnit))) {
+      if (!userSelectedUnit.current && !userEditedAmount.current && !basketRef.current.length && (saved === 'sats' || saved === 'BTC' || isFiat(saved as TerminalUnit))) {
         preferredUnit.current = saved as TerminalUnit;
-        if (mounted.current && !userSelectedUnit.current && !userEditedAmount.current && !hasRequestRef.current) {
+        if (mounted.current && !userSelectedUnit.current && !userEditedAmount.current && !basketRef.current.length && !hasRequestRef.current) {
           setUnit(saved as TerminalUnit);
         }
       }
@@ -234,6 +256,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
 
   const requestPayment = async () => {
     if (busy.current || stage === 'loading' || request || hydrationFailed || !activeWallet || activeWallet.type === 'watch-only') return;
+    if (itemsMode && !basketRef.current.length) { setError('Add an item or return to manual amount.'); return; }
     if (!isLightningInitialized) {
       setError(lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…');
       return;
@@ -247,7 +270,11 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     const capturedScope = scope;
     const walletId = activeWallet.id;
     const requestUnit = unit;
-    const requestAmount = amount;
+    const lines = basketRef.current.map(line => ({ ...line }));
+    const basketTotal = lines.reduce((sum, line) => sum + BigInt(line.total), 0n);
+    if (basketTotal > BigInt(Number.MAX_SAFE_INTEGER)) { setError('Basket total is too large.'); return; }
+    const basket: TerminalBasket | undefined = lines.length ? { unit: requestUnit, lines, total: Number(basketTotal) } : undefined;
+    const requestAmount = basket ? (isFiat(requestUnit) ? formatFiatMinor(basket.total) : formatTerminalAmount(basket.total, requestUnit)) : amount;
     const network = terminalNetwork(NETWORK_NAME);
     setStage('creating'); setError('');
     let sats: number;
@@ -268,12 +295,13 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         walletId, network, invoice: created.invoice, amountSats: sats,
         createdAt: Date.now(), expiresAt: created.expiresAt, fiat: fiatQuote,
-        inputUnit: isFiat(requestUnit) ? undefined : requestUnit,
+        inputUnit: isFiat(requestUnit) ? undefined : requestUnit, basket,
       };
       await recordTerminalSale(next);
       await saveTerminalRequest(next);
       if (!mounted.current || captured !== generation.current || capturedScope !== scopeRef.current) return;
       setRequest(next);
+      basketRef.current = []; setBasketLines([]); setItemsMode(false);
       lastCheck.current = 0;
       lastUnfilteredCheck.current = Date.now();
       setValidated(true);
@@ -305,6 +333,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       knownPaymentId.current = undefined;
       busy.current = false;
       setRequest(null); setStage('entry'); setAmount(''); setUnit(preferredUnit.current); setError('');
+      basketRef.current = []; setBasketLines([]); setItemsMode(false);
       setValidated(false);
     } catch {
       if (stillClosing()) setError('Could not end the saved request. Please retry.');
@@ -327,7 +356,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const selectUnit = (next: TerminalUnit) => {
-    if (busy.current || request || next === unit) return;
+    if (busy.current || request || basketRef.current.length || next === unit) return;
     const apply = () => {
       if (!isFiat(unit) && !isFiat(next)) {
         try { setAmount(formatTerminalAmount(parseTerminalAmount(amount, unit), next)); }
@@ -342,7 +371,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const key = (digit: string) => {
-    if (busy.current || stage === 'loading') return;
+    if (busy.current || stage === 'loading' || itemsMode) return;
     Haptics.selectionAsync().catch(() => undefined);
     userEditedAmount.current = true;
     setError('');
@@ -356,11 +385,31 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     });
   };
 
+  const updateBasket = (item: TerminalItem, delta: number) => {
+    if (busy.current || request || item.unit !== unit) return;
+    const current = basketRef.current;
+    const index = current.findIndex(line => line.itemId === item.id);
+    if (index < 0 && (delta < 1 || current.length >= 20)) { setError('Basket limit reached.'); return; }
+    const existing = current[index];
+    const quantity = (existing?.quantity ?? 0) + delta;
+    if (quantity > 99) { setError('Maximum quantity is 99.'); return; }
+    const next = index < 0 ? [...current, { itemId: item.id, name: item.name, unitPrice: item.unitPrice, quantity: 1, total: item.unitPrice }]
+      : quantity < 1 ? current.filter((_, i) => i !== index)
+        : current.map((line, i) => i === index ? { ...line, quantity, total: Number(BigInt(line.unitPrice) * BigInt(quantity)) } : line);
+    const sum = next.reduce((total, line) => total + BigInt(line.total), 0n);
+    if (sum > BigInt(Number.MAX_SAFE_INTEGER) || next.some(line => !Number.isSafeInteger(line.total))) { setError('Basket total is too large.'); return; }
+    userEditedAmount.current = true;
+    basketRef.current = next; setBasketLines(next); setError('');
+  };
+  const clearBasket = () => { if (busy.current) return; basketRef.current = []; setBasketLines([]); setItemsMode(false); setAmount(''); setError(''); };
+
   const hasRequest = !!request;
+  const basketTotal = basketLines.reduce((total, line) => total + line.total, 0);
+  const entryAmount = itemsMode ? (basketLines.length ? (isFiat(unit) ? formatFiatMinor(basketTotal) : formatTerminalAmount(basketTotal, unit)) : '') : amount;
   const isExpired = hasRequest && validated && (stage === 'expired' || now >= request.expiresAt);
   let approxSats: number | null = null;
-  if (isFiat(unit) && rates && amount) {
-    try { approxSats = satsFromFiat(parseFiatMinor(amount), rates.rates[unit]); } catch { /* incomplete keypad amount */ }
+  if (isFiat(unit) && rates && entryAmount) {
+    try { approxSats = satsFromFiat(parseFiatMinor(entryAmount), rates.rates[unit]); } catch { /* incomplete keypad amount */ }
   }
   const amountPrefix = unit === 'USD' ? '$' : unit === 'EUR' ? '€' : unit === 'CHF' ? 'CHF' : '';
   const frozenPrefix = request?.fiat
@@ -381,6 +430,13 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const qrTop = Math.max(110, screenHeight / 2 - insets.top - 56 - (qrSize + 34) / 2);
   const invoiceMinHeight = Math.max(screenHeight - insets.top - 56, qrTop + qrSize + 34 + 180);
   const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest;
+  const selectedItemRow = (line: TerminalBasketLine) => <View key={line.itemId} style={styles.basketRow}>
+    <View style={styles.basketInfo}><Text style={styles.basketName} numberOfLines={1}>{line.name}</Text><Text style={styles.basketPrice}>{formatTerminalBasketAmount(line.total, unit)}</Text></View>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove ${line.name}`} disabled={stage === 'creating'} style={styles.qtyButton} onPress={() => { if (busy.current) return; const next = basketRef.current.filter(entry => entry.itemId !== line.itemId); basketRef.current = next; setBasketLines(next); setError(''); }}><Feather name="x" size={16} color={theme.colors.muted} /></TouchableOpacity>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove one ${line.name}`} disabled={stage === 'creating'} style={styles.qtyButton} onPress={() => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)}><Text style={styles.qtyText}>−</Text></TouchableOpacity>
+    <Text style={styles.qtyText}>{line.quantity}</Text>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${line.name}`} disabled={stage === 'creating'} style={styles.qtyButton} onPress={() => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, 1)}><Text style={styles.qtyText}>+</Text></TouchableOpacity>
+  </View>;
 
   const checkout = <View style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
@@ -411,7 +467,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
             <View style={styles.amountArea}>
               <View style={[styles.amountRow, styles.entryAmountRow]}>
                 <View style={[styles.symbolRail, styles.prefixRail]}>{amountPrefix ? <Text style={styles.unitLabel}>{amountPrefix}</Text> : null}</View>
-                <Text testID="terminal-amount" style={[styles.amount, styles.numberWidth]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.18}>{amount || '0'}</Text>
+                <Text testID="terminal-amount" style={[styles.amount, styles.numberWidth]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.18}>{entryAmount || '0'}</Text>
                 <View style={[styles.symbolRail, styles.suffixRail]}>{unit === 'sats' || unit === 'BTC' ? <Text style={[styles.unitLabel, unit === 'BTC' && styles.orangeSymbol]}>{unit === 'BTC' ? '₿' : 'sats'}</Text> : null}</View>
               </View>
               <View style={styles.priceLine}>
@@ -420,13 +476,22 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
               </View>
             </View>
             <View style={styles.padArea}>
-              <View style={styles.keypad}>{['1','2','3','4','5','6','7','8','9',unit === 'sats' ? '' : '.', '0','back'].map((digit, i) =>
+              {itemsMode ? <View style={styles.itemsPanel}><ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                {catalog.filter(item => item.unit === unit).map(item => {
+                  const selected = basketLines.find(line => line.itemId === item.id);
+                  return selected ? selectedItemRow(selected) : <View key={item.id} style={styles.catalogRow}><Text style={styles.catalogName} numberOfLines={1}>{item.name}</Text><Text style={styles.basketPrice}>{formatTerminalBasketAmount(item.unitPrice, unit)}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add ${item.name}`} disabled={stage === 'creating'} style={styles.qtyButton} onPress={() => updateBasket(item, 1)}><Feather name="plus" size={18} color={theme.colors.primary} /></TouchableOpacity></View>;
+                })}
+                {basketLines.filter(line => !catalog.some(item => item.id === line.itemId && item.unit === unit)).map(selectedItemRow)}
+              </ScrollView><TouchableOpacity accessibilityRole="button" accessibilityLabel="Return to manual amount" disabled={stage === 'creating'} style={styles.manualButton} onPress={clearBasket}><Text style={styles.manualText}>Manual amount</Text></TouchableOpacity></View>
+              : <View style={styles.keypad}>{['1','2','3','4','5','6','7','8','9',unit === 'sats' ? '' : '.', '0','back'].map((digit, i) =>
                 <TouchableOpacity key={i} disabled={!digit} style={styles.key} activeOpacity={0.55} onPress={() => key(digit)}>
                   <Text style={styles.keyText}>{digit === 'back' ? '⌫' : digit}</Text>
-                </TouchableOpacity>)}</View>
+                </TouchableOpacity>)}</View>}
               <View style={styles.feedbackArea}>
                 {error ? <Text numberOfLines={2} style={styles.error}>{error}</Text> : null}
                 {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
+                {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={styles.error}>Items unavailable · Retry</Text></TouchableOpacity> : null}
+                {!error && isLightningInitialized && !catalogError && !itemsMode && catalog.some(item => item.unit === unit) ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Items" onPress={() => setItemsMode(true)}><Text style={styles.itemsLink}>Items</Text></TouchableOpacity> : null}
               </View>
             </View>
           </View>
@@ -474,10 +539,13 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       }}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Settings">
-      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} onClose={() => navigation.goBack()} />}
+      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} currencyLocked={basketLines.length > 0} onClearBasket={clearBasket} onOpenItems={() => navigation.navigate('Items')} onClose={() => navigation.goBack()} />}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Sales">
       {({ navigation }) => activeWallet ? <SalesRoute walletId={activeWallet.id} network={network} rootVisible={visible} onClose={() => navigation.goBack()} /> : null}
+    </TerminalStack.Screen>
+    <TerminalStack.Screen name="Items">
+      {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
   </TerminalStack.Navigator>;
 }
@@ -513,6 +581,13 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     refresh: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 12, marginTop: 5 },
     padArea: { justifyContent: 'flex-end', paddingBottom: keypadPadding },
     keypad: { flexDirection: 'row', flexWrap: 'wrap' },
+    itemsPanel: { height: keyHeight * 4 },
+    basketRow: { height: 52, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: border },
+    basketInfo: { flex: 1 }, basketName: { color: primary, fontSize: 14 }, basketPrice: { color: muted, fontSize: 12 },
+    qtyButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }, qtyText: { color: primary, fontSize: 17 },
+    catalogRow: { height: 52, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: border }, catalogName: { color: primary, fontSize: 14, flex: 1 },
+    manualButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center' }, manualText: { color: muted, fontSize: 13 },
+    itemsLink: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     key: { width: '33.33%', height: keyHeight, alignItems: 'center', justifyContent: 'center' },
     keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: keyFontSize },
     feedbackArea: { height: feedbackHeight, alignItems: 'center', justifyContent: 'center' },

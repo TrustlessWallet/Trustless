@@ -4,6 +4,9 @@ import { FiatCurrency, isRateString } from './terminalRates';
 export type TerminalUnit = 'sats' | 'BTC' | FiatCurrency;
 export type TerminalNetwork = 'mainnet' | 'testnet';
 export type TerminalFiatQuote = Readonly<{ currency: FiatCurrency; amountMinor: number; rate: string; fetchedAt: number }>;
+export type TerminalBasketLine = Readonly<{ itemId: string; name: string; unitPrice: number; quantity: number; total: number }>;
+export type TerminalBasket = Readonly<{ unit: TerminalUnit; lines: readonly TerminalBasketLine[]; total: number }>;
+export const isTerminalItemName = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= 60 && value === value.trim() && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
 export type TerminalRequest = Readonly<{
   id: string;
   walletId: string;
@@ -14,6 +17,7 @@ export type TerminalRequest = Readonly<{
   expiresAt: number;
   fiat?: TerminalFiatQuote;
   inputUnit?: 'sats' | 'BTC';
+  basket?: TerminalBasket;
 }>;
 
 export const TERMINAL_REQUEST_KEY = '@terminalActiveRequest';
@@ -68,6 +72,12 @@ export function formatFiatMinor(minor: number): string {
   return `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, '0')}`;
 }
 
+export function formatTerminalBasketAmount(value: number, unit: TerminalUnit): string {
+  if (unit === 'sats') return `${formatTerminalSats(value)} sats`;
+  if (unit === 'BTC') return `${formatTerminalAmount(value, 'BTC')} BTC`;
+  return `${unit} ${formatFiatMinor(value)}`;
+}
+
 export function satsFromFiat(amountMinor: number, rate: string): number {
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || !isRateString(rate)) throw new Error('Invalid fiat quote.');
   const fractionLength = rate.includes('.') ? rate.length - rate.indexOf('.') - 1 : 0;
@@ -105,7 +115,28 @@ export function isTerminalRequest(value: unknown): value is TerminalRequest {
     typeof fiat.amountMinor === 'number' && Number.isSafeInteger(fiat.amountMinor) && fiat.amountMinor > 0 &&
     isRateString(fiat.rate) && typeof fiat.fetchedAt === 'number' && Number.isSafeInteger(fiat.fetchedAt) && fiat.fetchedAt > 0 &&
     (() => { try { return satsFromFiat(fiat.amountMinor as number, fiat.rate as string) === r.amountSats; } catch { return false; } })());
-  return !!validFiat && (r.inputUnit === undefined || r.inputUnit === 'sats' || r.inputUnit === 'BTC') &&
+  const basket = r.basket as Record<string, unknown> | undefined;
+  const basketUnit = fiat ? fiat.currency : r.inputUnit ?? 'sats';
+  const basketAmount = fiat ? fiat.amountMinor : r.amountSats;
+  const validBasket = basket === undefined || (() => {
+    if (!basket || typeof basket !== 'object' || basket.unit !== basketUnit || !Array.isArray(basket.lines) || basket.lines.length < 1 || basket.lines.length > 20 ||
+      typeof basket.total !== 'number' || !Number.isSafeInteger(basket.total) || basket.total <= 0 || basket.total !== basketAmount) return false;
+    let sum = 0n;
+    const ids = new Set<string>();
+    for (const value of basket.lines as unknown[]) {
+      if (!value || typeof value !== 'object') return false;
+      const line = value as Record<string, unknown>;
+      if (typeof line.itemId !== 'string' || !line.itemId || line.itemId.length > 128 || line.itemId !== line.itemId.trim() || ids.has(line.itemId) ||
+        !isTerminalItemName(line.name) ||
+        typeof line.unitPrice !== 'number' || !Number.isSafeInteger(line.unitPrice) || line.unitPrice <= 0 ||
+        typeof line.quantity !== 'number' || !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 99 ||
+        typeof line.total !== 'number' || !Number.isSafeInteger(line.total) || BigInt(line.unitPrice) * BigInt(line.quantity) !== BigInt(line.total)) return false;
+      ids.add(line.itemId);
+      sum += BigInt(line.total);
+    }
+    return sum === BigInt(basket.total);
+  })();
+  return !!validFiat && validBasket && (r.inputUnit === undefined || r.inputUnit === 'sats' || r.inputUnit === 'BTC') &&
     !(fiat && r.inputUnit !== undefined) && typeof r.id === 'string' && !!r.id && typeof r.walletId === 'string' && !!r.walletId &&
     (r.network === 'mainnet' || r.network === 'testnet') &&
     typeof r.invoice === 'string' && /^ln(bc|tb)[a-z0-9]+$/i.test(r.invoice) &&

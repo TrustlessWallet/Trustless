@@ -42,6 +42,17 @@ it('converts exact fiat minor units at the frozen decimal rate, rounding up sats
   expect(isTerminalRequest({ ...quoted, amountSats: 333 })).toBe(false);
 });
 
+it('accepts frozen basket sums in the original denomination and rejects changed money or names', () => {
+  const basket = { unit: 'USD' as const, total: 3, lines: [{ itemId: 'coffee', name: 'Coffee', unitPrice: 1, quantity: 3, total: 3 }] };
+  const quoted = { ...request, amountSats: 50, fiat: { currency: 'USD' as const, amountMinor: 3, rate: '60000', fetchedAt: 1234 }, basket };
+  expect(isTerminalRequest(quoted)).toBe(true);
+  expect(isTerminalRequest(request)).toBe(true);
+  expect(isTerminalRequest({ ...quoted, basket: { ...basket, total: 4 } })).toBe(false);
+  expect(isTerminalRequest({ ...quoted, basket: { ...basket, lines: [{ ...basket.lines[0], total: 2 }] } })).toBe(false);
+  expect(isTerminalRequest({ ...quoted, basket: { ...basket, lines: [{ ...basket.lines[0], name: 'Coffee\u2029Free' }] } })).toBe(false);
+  expect(isTerminalRequest({ ...quoted, amountSats: 51 })).toBe(false);
+});
+
 it('recognizes only the exact completed receive invoice, irrespective of SDK payment ID', () => {
   const payment = { id: 'sdk-id-not-payment-hash', paymentType: 1, status: 0, details: { tag: 'Lightning', inner: { invoice: 'LNBC123ABC' } } };
   expect(matchTerminalPayment(payment, request.invoice, 1, 0, 'Lightning')).toEqual({ status: 'received', paymentId: payment.id });

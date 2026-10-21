@@ -49,6 +49,13 @@ it('keeps the first request snapshot and refuses an identity collision', async (
   expect((AsyncStorage.setItem as jest.Mock).mock.calls).toHaveLength(1);
 });
 
+it('deep-copies the original item basket into a sale snapshot', async () => {
+  const mutable = { ...request, basket: { unit: 'CHF' as const, total: 100, lines: [{ itemId: 'tea', name: 'Tea', unitPrice: 50, quantity: 2, total: 100 }] } };
+  await recordTerminalSale(mutable);
+  mutable.basket.lines[0].name = 'Changed';
+  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.basket?.lines[0].name).toBe('Tea');
+});
+
 it('persists first receipt observation and never downgrades a received sale', async () => {
   const observed = await updateTerminalSalePayment(request, { status: 'received', paymentId: 'sdk-1' }, 4000);
   expect(observed.receivedAt).toBe(4000);
