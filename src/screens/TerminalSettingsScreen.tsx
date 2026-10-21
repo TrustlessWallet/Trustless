@@ -10,10 +10,10 @@ import { TerminalUnit } from '../services/terminal';
 import { useWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 
-type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void };
+type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; currencyLocked?: boolean; onClearBasket?: () => void };
 const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 
-export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose }: Props) {
+export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, currencyLocked = false, onClearBasket }: Props) {
   const { theme } = useTheme();
   const { activeWallet } = useWallet();
   const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
@@ -31,6 +31,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose }: 
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ top: insets.top + 8, left: 24 });
   const openCurrency = () => {
+    if (currencyLocked) return;
     rowRef.current?.measureInWindow((x, y, width, height) => {
       const below = y + height + 8;
       const top = below + 140 <= screenHeight - insets.bottom - 8 ? below : y - 148;
@@ -59,11 +60,17 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose }: 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Terminal Settings</Text>
         <View style={styles.rowWrapper}>
-          <TouchableOpacity ref={rowRef} accessibilityRole="button" accessibilityLabel="Currency" accessibilityState={{ expanded: currencyOpen }} onPress={openCurrency} style={styles.row}>
+          <TouchableOpacity ref={rowRef} accessibilityRole="button" accessibilityLabel="Currency" accessibilityState={{ expanded: currencyOpen, disabled: currencyLocked }} disabled={currencyLocked} onPress={openCurrency} style={styles.row}>
             <Text style={styles.rowLabel}>Currency</Text>
             <View style={styles.rowEnd}><Text style={styles.currentUnit}>{unit}</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
           </TouchableOpacity>
         </View>
+        {currencyLocked ? <View style={styles.lockedCurrency}><Text style={styles.settingError}>Clear the basket to change currency.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear basket" onPress={onClearBasket}><Text style={[styles.settingError, { color: theme.colors.bitcoin }]}>Clear basket</Text></TouchableOpacity></View> : null}
+        {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' && onOpenItems ? <View style={styles.rowWrapper}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Manage items" onPress={onOpenItems} style={styles.row}>
+            <Text style={styles.rowLabel}>Items</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View> : null}
         {activeWallet && activeWallet.type !== 'watch-only' ? <View style={styles.rowWrapper}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cashier mode" accessibilityState={{ disabled: cashierBusy }} disabled={cashierBusy} onPress={() => { void cashierPress(); }} style={styles.row}>
             <Text style={styles.rowLabel}>Cashier mode</Text>
@@ -104,6 +111,7 @@ function makeStyles(colors: { background: string; primary: string; surface: stri
     rowLabel: { color: colors.muted, fontSize: 16 },
     rowEnd: { flexDirection: 'row', alignItems: 'center', gap: 9 },
     settingError: { color: colors.muted, fontSize: 12, marginTop: 12 },
+    lockedCurrency: { marginBottom: 12 },
     currentUnit: { color: colors.primary, fontSize: 16 },
     popoverBackdrop: { flex: 1, backgroundColor: 'transparent' },
     popoverOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },

@@ -1,5 +1,5 @@
 import { Share } from 'react-native';
-import { formatFiatMinor, formatTerminalSats } from './terminal';
+import { formatFiatMinor, formatTerminalBasketAmount, formatTerminalSats } from './terminal';
 import { TerminalSale } from './terminalSales';
 import { TerminalRefundAttempt } from './terminalRefunds';
 
@@ -14,6 +14,11 @@ export function formatTerminalReceipt(sale: TerminalSale, refunds: readonly Term
   ];
   if (request.fiat) {
     lines.push(`Original price: ${request.fiat.currency} ${formatFiatMinor(request.fiat.amountMinor)}`);
+  }
+  if (request.basket) {
+    lines.push('Items:');
+    for (const line of request.basket.lines) lines.push(`${line.name} × ${line.quantity} @ ${formatTerminalBasketAmount(line.unitPrice, request.basket.unit)} = ${formatTerminalBasketAmount(line.total, request.basket.unit)}`);
+    lines.push(`Items total: ${formatTerminalBasketAmount(request.basket.total, request.basket.unit)}`);
   }
   lines.push(`Payment first verified locally: ${new Date(sale.receivedAt).toLocaleString()}`);
   if (sale.paymentId) lines.push(`Payment reference: ${sale.paymentId}`);

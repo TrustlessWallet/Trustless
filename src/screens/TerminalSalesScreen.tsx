@@ -7,7 +7,7 @@ import { GlassView } from '../components/GlassView';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWallet } from '../contexts/WalletContext';
-import { formatFiatMinor, formatTerminalAmount, formatTerminalSats, TerminalNetwork, TerminalRequest } from '../services/terminal';
+import { formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, TerminalNetwork, TerminalRequest } from '../services/terminal';
 import { listTerminalSales, subscribeTerminalSales, terminalSaleDisplayStatus, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
 import { listTerminalRefunds, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
@@ -281,6 +281,14 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         <Text style={styles.detailAmount} adjustsFontSizeToFit numberOfLines={1}>{displayAmount(detail.request)}</Text>
         {detail.request.fiat || detail.request.inputUnit === 'BTC' ? <Text style={styles.detailSats}>{formatTerminalSats(detail.request.amountSats)} sats</Text> : null}
       </View>
+      {detail.request.basket ? <View style={styles.itemsDetail}>
+        <Text style={styles.fieldLabel}>ITEMS</Text>
+        {detail.request.basket.lines.map(line => <View key={line.itemId} style={styles.itemsDetailRow}>
+          <Text style={styles.itemsDetailName}>{line.name} × {line.quantity}</Text>
+          <Text style={styles.itemsDetailPrice}>{formatTerminalBasketAmount(line.total, detail.request.basket!.unit)}</Text>
+        </View>)}
+        <Text style={styles.itemsDetailPrice}>Total {formatTerminalBasketAmount(detail.request.basket.total, detail.request.basket.unit)}</Text>
+      </View> : null}
       <View style={styles.detailsList}>
         <DetailField label="CREATED" value={formatLongDate(detail.request.createdAt)} styles={styles} />
         {detail.receivedAt ? <DetailField label="VERIFIED" value={formatLongDate(detail.receivedAt)} styles={styles} /> : null}
@@ -387,6 +395,10 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     statusText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
     detailAmount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 31, marginTop: 22 },
     detailSats: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginTop: 8 },
+    itemsDetail: { marginHorizontal: 24, marginTop: 24, padding: 18, borderRadius: 12, backgroundColor: colors.surface },
+    itemsDetailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 12 },
+    itemsDetailName: { color: colors.primary, fontSize: 13, flex: 1 },
+    itemsDetailPrice: { color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginTop: 12 },
     detailsList: { marginHorizontal: 24, marginTop: 24 },
     detailField: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     fieldLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.2 },
