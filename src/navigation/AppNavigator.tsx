@@ -3,6 +3,7 @@ import { NavigationContainer, useNavigationContainerRef, DefaultTheme } from '@r
 import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import { RootStackParamList, TabParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
+import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { View, TouchableOpacity, AppState, Text, Image, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -10,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import ExportPSBTScreen from '../screens/ExportPSBTScreen';
 import ImportPSBTScreen from '../screens/ImportPSBTScreen';
-import { MainRoot, TerminalRoute } from './TerminalNavigation';
+import { CashierTerminalRoot, MainRoot, TerminalRoute } from './TerminalNavigation';
 import QRScannerScreen from '../screens/QRScannerScreen';
 import BackupIntroScreen from '../screens/BackupIntroScreen';
 import ShowMnemonicScreen from '../screens/ShowMnemonicScreen';
@@ -73,6 +74,16 @@ const PrivacyOverlayScreen = () => {
 
 const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const { wallets, loading: wallet_loading } = useWallet();
+  const { cashierState, cashierUnlockRevision } = useWalletMode();
+  const cashierRestricted = cashierState !== 'off';
+  const cashierRestrictedRef = useRef(cashierRestricted);
+  cashierRestrictedRef.current = cashierRestricted;
+  const previousUnlockRevision = useRef(cashierUnlockRevision);
+  const authenticatedCashierUnlock = cashierUnlockRevision > previousUnlockRevision.current && !cashierRestricted;
+  const unlockedRoot = useRef(false);
+  if (cashierRestricted) unlockedRoot.current = false;
+  else if (authenticatedCashierUnlock) unlockedRoot.current = true;
+  useEffect(() => { previousUnlockRevision.current = cashierUnlockRevision; }, [cashierUnlockRevision]);
   const { theme, isDark } = useTheme();
   const navigation_ref = useNavigationContainerRef<RootStackParamList>();
   const [is_loading, set_is_loading] = useState(true);
@@ -144,13 +155,13 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     };
   }, []);
   useEffect(() => {
-    if (!wallet_loading && wallets.length > 0 && app_state.current === 'active') {
+    if (!cashierRestricted && !authenticatedCashierUnlock && !wallet_loading && wallets.length > 0 && app_state.current === 'active') {
       const check_pending_auth = async () => {
         const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
         const is_enrolled = await LocalAuthentication.isEnrolledAsync();
         const auto_lock_time = await AsyncStorage.getItem(AUTO_LOCK_TIME_KEY);
 
-        if (is_biometrics_enabled === 'true' && is_enrolled && auto_lock_time !== null && auto_lock_time !== 'Off') {
+        if (!cashierRestrictedRef.current && is_biometrics_enabled === 'true' && is_enrolled && auto_lock_time !== null && auto_lock_time !== 'Off') {
           const lock_time_minutes = parseInt(auto_lock_time, 10);
           if (lock_time_minutes === 0) {
             await check_auth_needed();
@@ -169,10 +180,11 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
       check_pending_auth();
     }
-  }, [wallet_loading, wallets.length]);
+  }, [wallet_loading, wallets.length, cashierRestricted]);
 
   const check_auth_needed = async () => {
     try {
+      if (cashierRestrictedRef.current) return;
       if (wallet_loading) return;
       if (wallets.length === 0) return;
 
@@ -197,7 +209,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           }
         }
 
-        if (should_auth && navigation_ref.isReady()) {
+        if (should_auth && !cashierRestrictedRef.current && navigation_ref.isReady()) {
           navigation_ref.navigate('AuthCheck' as never);
         }
       }
@@ -376,11 +388,25 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
   }
 
+  if (cashierRestricted) return <NavigationContainer
+    key="cashier-restricted"
+    ref={navigation_ref}
+    theme={navigation_theme}
+    onReady={() => { set_is_nav_ready(true); set_current_route_name(navigation_ref.getCurrentRoute()?.name); onBootReady?.(); }}
+    onStateChange={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
+  >
+    <Stack.Navigator initialRouteName="Terminal" screenOptions={screen_options}>
+      <Stack.Screen name="Terminal" component={CashierTerminalRoot} options={{ headerShown: false, gestureEnabled: false, animation: 'none' }} />
+      <Stack.Screen name={"PrivacyOverlay" as any} component={PrivacyOverlayScreen} options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
+    </Stack.Navigator>
+  </NavigationContainer>;
+
   return (
     <NavigationContainer
+      key="normal-wallet"
       ref={navigation_ref}
       theme={navigation_theme}
-      initialState={initial_nav_state || undefined}
+      initialState={unlockedRoot.current ? undefined : initial_nav_state || undefined}
       onReady={() => {
         set_is_nav_ready(true);
         set_current_route_name(navigation_ref.getCurrentRoute()?.name);
@@ -389,7 +415,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       onStateChange={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
     >
       <Stack.Navigator
-        initialRouteName={initial_route}
+        initialRouteName={unlockedRoot.current ? 'MainTabs' : initial_route}
         screenOptions={screen_options}
       >
         <Stack.Screen

@@ -119,3 +119,24 @@ export const authenticate_terminal_refund = async (): Promise<boolean> => {
     }, 1500);
   }
 };
+
+// Cashier access is an owner action, independent of optional biometric settings.
+export const authenticate_terminal_cashier = async (promptMessage: string): Promise<boolean> => {
+  set_biometric_prompt_shown(true);
+  const generation = biometric_prompt_generation;
+  try {
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage,
+      cancelLabel: 'Cancel',
+      fallbackLabel: 'Use Passcode',
+      disableDeviceFallback: false,
+    });
+    if (result.success) return true;
+    if (result.error === 'user_cancel' || result.error === 'app_cancel' || result.error === 'system_cancel') return false;
+    throw new Error(`Cashier authentication failed (${result.error}).`);
+  } finally {
+    setTimeout(() => {
+      if (generation === biometric_prompt_generation) set_biometric_prompt_shown(false);
+    }, 1500);
+  }
+};

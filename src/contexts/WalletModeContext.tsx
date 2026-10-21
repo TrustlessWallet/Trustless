@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useWallet } from './WalletContext';
+import { NETWORK_NAME } from '../constants/network';
+import { terminalNetwork } from '../services/terminal';
+import { authenticate_terminal_cashier } from '../services/authState';
+import { CashierLockRecord, clearCashierLock, readCashierBoot, writeCashierLock, writeWalletMode } from '../services/cashierLock';
 
 export type WalletMode = 'wallet' | 'terminal';
 export const WALLET_MODE_KEY = '@appWalletMode';
@@ -11,12 +16,29 @@ type ModeContext = {
   showTerminal: boolean;
   setShowTerminal: (show: boolean) => Promise<void>;
   setMode: (mode: WalletMode) => Promise<void>;
+  cashierState: 'off' | 'locked' | 'recovery';
+  cashierBusy: boolean;
+  cashierUnlockRevision: number;
+  enableCashier: () => Promise<boolean>;
+  unlockCashier: () => Promise<boolean>;
+  retryCashierLoad: () => Promise<void>;
 };
 
 const Context = createContext<ModeContext | null>(null);
 
 export function WalletModeProvider({ children }: { children: React.ReactNode }) {
+  const { activeWallet } = useWallet();
+  const network = terminalNetwork(NETWORK_NAME);
+  const walletScope = `${network}:${activeWallet?.id ?? ''}:${activeWallet?.type ?? ''}`;
+  const walletScopeRef = useRef(walletScope);
+  walletScopeRef.current = walletScope;
   const [mode, publish] = useState<WalletMode>('wallet');
+  const [cashierLock, publishCashierLock] = useState<CashierLockRecord | null | undefined>(undefined);
+  const cashierLockRef = useRef<CashierLockRecord | null | undefined>(undefined);
+  const [cashierBusy, setCashierBusy] = useState(false);
+  const [cashierUnlockRevision, setCashierUnlockRevision] = useState(0);
+  const cashierMutation = useRef(false);
+  const cashierEpoch = useRef(0);
   const [showTerminal, publishShowTerminal] = useState(true);
   const visibilityQueue = useRef<Promise<unknown>>(Promise.resolve());
   const visibilitySequence = useRef(0);
@@ -32,20 +54,102 @@ export function WalletModeProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     mounted.current = true;
-    Promise.all([AsyncStorage.getItem(WALLET_MODE_KEY), AsyncStorage.getItem(SHOW_TERMINAL_KEY)]).then(([value, visibility]) => {
+    Promise.all([readCashierBoot(WALLET_MODE_KEY), AsyncStorage.getItem(SHOW_TERMINAL_KEY)]).then(([boot, visibility]) => {
       if (mounted.current) {
         persistedVisibility.current = visibility !== 'false';
         publishShowTerminal(visibility !== 'false');
-        const restored = value === 'terminal' ? 'terminal' : 'wallet';
+        cashierLockRef.current = boot.lock;
+        publishCashierLock(boot.lock);
+        const restored = boot.mode === 'terminal' ? 'terminal' : 'wallet';
         modeRef.current = restored;
         persistedModeRef.current = restored;
         publish(restored);
       }
-    }).catch(() => {}).finally(() => { if (mounted.current) setLoaded(true); });
-    return () => { mounted.current = false; };
+    }).catch(() => {
+      // No wallet route is safe when the lock record cannot be read.
+      if (mounted.current) { cashierLockRef.current = undefined; publishCashierLock(undefined); }
+    }).finally(() => { if (mounted.current) setLoaded(true); });
+    return () => { mounted.current = false; ++cashierEpoch.current; };
   }, []);
 
+  const cashierState = cashierLock === undefined ? 'recovery'
+    : cashierLock === null ? 'off'
+      : activeWallet?.id === cashierLock.walletId && activeWallet.type !== 'watch-only' && network === cashierLock.network ? 'locked' : 'recovery';
+
+  const retryCashierLoad = async (): Promise<void> => {
+    if (cashierMutation.current) return;
+    try {
+      const boot = await readCashierBoot(WALLET_MODE_KEY);
+      if (!mounted.current) return;
+      cashierLockRef.current = boot.lock;
+      publishCashierLock(boot.lock);
+      const restored = boot.mode === 'terminal' ? 'terminal' : 'wallet';
+      modeRef.current = restored;
+      persistedModeRef.current = restored;
+      publish(restored);
+    } catch (error) {
+      if (mounted.current) { cashierLockRef.current = undefined; publishCashierLock(undefined); }
+      throw error;
+    }
+  };
+
+  const enableCashier = async (): Promise<boolean> => {
+    if (cashierMutation.current || cashierLockRef.current !== null || !activeWallet || activeWallet.type === 'watch-only' || modeRef.current !== 'terminal') return false;
+    cashierMutation.current = true;
+    if (mounted.current) setCashierBusy(true);
+    const capturedScope = walletScope;
+    const epoch = cashierEpoch.current;
+    try {
+      if (!await authenticate_terminal_cashier('Enable cashier mode')) return false;
+      await queue.current;
+      if (!mounted.current || epoch !== cashierEpoch.current || capturedScope !== walletScopeRef.current || modeRef.current !== 'terminal') return false;
+      const lock: CashierLockRecord = { version: 1, walletId: activeWallet.id, network };
+      // A scope change while this write is pending still leaves the restricted
+      // surface visible once the durable lock has committed.
+      try { await writeCashierLock(lock); }
+      catch (error) {
+        // A rejected storage write may still have reached disk. Restrict until
+        // a successful read proves whether a lock exists.
+        cashierLockRef.current = undefined;
+        if (mounted.current) publishCashierLock(undefined);
+        throw error;
+      }
+      cashierLockRef.current = lock;
+      if (mounted.current) publishCashierLock(lock);
+      return true;
+    } finally {
+      cashierMutation.current = false;
+      if (mounted.current) setCashierBusy(false);
+    }
+  };
+
+  const unlockCashier = async (): Promise<boolean> => {
+    if (cashierMutation.current || cashierLockRef.current === null) return false;
+    cashierMutation.current = true;
+    if (mounted.current) setCashierBusy(true);
+    const capturedScope = walletScope;
+    const epoch = cashierEpoch.current;
+    try {
+      if (!await authenticate_terminal_cashier('Unlock cashier mode')) return false;
+      if (!mounted.current || epoch !== cashierEpoch.current || capturedScope !== walletScopeRef.current) return false;
+      // Authentication is scoped until the durable unlock begins. After that,
+      // it authorizes this owner-device exit even if the active wallet changes
+      // while storage completes; the lock is being removed for the whole app.
+      await clearCashierLock(WALLET_MODE_KEY);
+      cashierLockRef.current = null;
+      modeRef.current = 'wallet';
+      persistedModeRef.current = 'wallet';
+      void AsyncStorage.setItem('@lastActiveTime', Date.now().toString()).catch(() => undefined);
+      if (mounted.current) { setCashierUnlockRevision(value => value + 1); publishCashierLock(null); publish('wallet'); }
+      return true;
+    } finally {
+      cashierMutation.current = false;
+      if (mounted.current) setCashierBusy(false);
+    }
+  };
+
   const setMode = (next: WalletMode): Promise<void> => {
+    if (cashierLockRef.current !== null || cashierMutation.current) return Promise.reject(new Error('Cashier mode requires owner unlock.'));
     if (next === modeRef.current) return Promise.resolve();
     modeRef.current = next;
     const sequence = ++requestSequence.current;
@@ -55,7 +159,7 @@ export function WalletModeProvider({ children }: { children: React.ReactNode }) 
     pendingWrites.current += 1;
     setChanging(true);
     const task = queue.current.then(async () => {
-      await AsyncStorage.setItem(WALLET_MODE_KEY, next);
+      await writeWalletMode(WALLET_MODE_KEY, next);
     });
     queue.current = task.catch(() => undefined);
     return task.then(() => {
@@ -87,7 +191,7 @@ export function WalletModeProvider({ children }: { children: React.ReactNode }) 
   };
 
   if (!loaded) return null;
-  return <Context.Provider value={{ mode, changing, setMode, showTerminal, setShowTerminal }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ mode, changing, setMode, showTerminal, setShowTerminal, cashierState, cashierBusy, cashierUnlockRevision, enableCashier, unlockCashier, retryCashierLoad }}>{children}</Context.Provider>;
 }
 
 export function useWalletMode(): ModeContext {

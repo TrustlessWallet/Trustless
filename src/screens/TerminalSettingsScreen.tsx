@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Animated, Modal, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,12 +7,24 @@ import { GlassView } from '../components/GlassView';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { TerminalUnit } from '../services/terminal';
+import { useWallet } from '../contexts/WalletContext';
+import { useWalletMode } from '../contexts/WalletModeContext';
 
 type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void };
 const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 
 export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose }: Props) {
   const { theme } = useTheme();
+  const { activeWallet } = useWallet();
+  const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
+  const [cashierError, setCashierError] = useState('');
+  const cashierPress = async () => {
+    setCashierError('');
+    try {
+      if (cashierState === 'off') await enableCashier();
+      else await unlockCashier();
+    } catch { setCashierError('Couldn’t save cashier mode. Please retry.'); }
+  };
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const rowRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
@@ -52,6 +64,13 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose }: 
             <View style={styles.rowEnd}><Text style={styles.currentUnit}>{unit}</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
           </TouchableOpacity>
         </View>
+        {activeWallet && activeWallet.type !== 'watch-only' ? <View style={styles.rowWrapper}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cashier mode" accessibilityState={{ disabled: cashierBusy }} disabled={cashierBusy} onPress={() => { void cashierPress(); }} style={styles.row}>
+            <Text style={styles.rowLabel}>Cashier mode</Text>
+            <View style={styles.rowEnd}>{cashierBusy ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.currentUnit}>{cashierState === 'off' ? 'Off' : 'On'}</Text>}<Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
+          </TouchableOpacity>
+        </View> : null}
+        {cashierError ? <Text style={styles.settingError}>{cashierError}</Text> : null}
       </View>
     </Animated.ScrollView>
     <Modal visible={currencyOpen} transparent animationType="none" onRequestClose={() => setCurrencyOpen(false)}>
@@ -84,6 +103,7 @@ function makeStyles(colors: { background: string; primary: string; surface: stri
     row: { paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     rowLabel: { color: colors.muted, fontSize: 16 },
     rowEnd: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+    settingError: { color: colors.muted, fontSize: 12, marginTop: 12 },
     currentUnit: { color: colors.primary, fontSize: 16 },
     popoverBackdrop: { flex: 1, backgroundColor: 'transparent' },
     popoverOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
