@@ -4,6 +4,8 @@ import TerminalSettingsScreen from '../../screens/TerminalSettingsScreen';
 import { useWallet } from '../../contexts/WalletContext';
 import { useWalletMode } from '../../contexts/WalletModeContext';
 
+jest.mock('@react-navigation/native', () => ({ ...jest.requireActual('@react-navigation/native'), useIsFocused: () => true }));
+
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: jest.fn() }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));

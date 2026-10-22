@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert, Modal } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
@@ -206,7 +206,7 @@ it('does not let a delayed preferred currency reinterpret an active basket', asy
   } finally { getItem.mockImplementation(priorGetItem); }
 });
 
-it('requires an item in Items mode and clears the basket only through Manual amount', async () => {
+it('keeps manual entry on dismissal and returns to zero after removing the last item', async () => {
   await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 250 }] }));
   const view = renderWithCurrencyMeasurement();
   await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
@@ -222,7 +222,8 @@ it('requires an item in Items mode and clears the basket only through Manual amo
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(createTerminalInvoice).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Items'));
-  fireEvent.press(view.getByLabelText('Return to manual amount'));
+  expect(view.queryByLabelText('Return to manual amount')).toBeNull();
+  fireEvent.press(view.getByLabelText('Close item picker'));
   expect(view.getByTestId('terminal-amount').props.children).toBe('0');
 });
 
@@ -609,4 +610,66 @@ it('expires an invoice without a one-second redraw interval and rechecks after r
     interval.mockRestore();
     jest.useRealTimers();
   }
+});
+
+
+it.each([false, true])('allows a committed native dismissal without replay and retains recovery on clear failure (%s)', async clearFails => {
+  const activeKey = '@terminalActiveRequest:mainnet:wallet-a';
+  const expiresAt = Date.now() + 60000;
+  await AsyncStorage.setItem(activeKey, JSON.stringify({ id: 'native-close', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc', amountSats: 1200, createdAt: Date.now(), expiresAt }));
+  validateTerminalInvoice.mockResolvedValue(expiresAt);
+  const removeMock = AsyncStorage.removeItem as jest.Mock;
+  const originalRemove = removeMock.getMockImplementation()!;
+  let finish!: () => void;
+  let removals = 0;
+  removeMock.mockImplementation((key: string) => key === activeKey ? new Promise<void>((resolve, reject) => {
+    removals++;
+    finish = () => clearFails ? reject(new Error('storage failed')) : void originalRemove(key).then(resolve, reject);
+  }) : originalRemove(key));
+  const navigation = createNavigationContainerRef<any>();
+  const view = render(<NavigationContainer ref={navigation}><TerminalScreen /></NavigationContainer>);
+  try {
+    await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+    // Native-stack dispatches this removal after a successful gesture has dismissed the sheet.
+    await act(async () => { navigation.goBack(); });
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(navigation.getCurrentRoute()?.name).toBe('Checkout');
+    expect(view.queryByTestId('terminal-qr')).toBeNull();
+    expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(true);
+    expect(removals).toBe(1);
+    expect(createTerminalInvoice).not.toHaveBeenCalled();
+    await act(async () => { finish(); });
+    if (clearFails) {
+      await waitFor(() => expect(view.getByText('Resume invoice')).toBeTruthy());
+      fireEvent.press(view.getByTestId('terminal-request'));
+      await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+      expect(await AsyncStorage.getItem(activeKey)).not.toBeNull();
+      expect(createTerminalInvoice).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+      expect(await AsyncStorage.getItem(activeKey)).toBeNull();
+    }
+  } finally { removeMock.mockImplementation(originalRemove); view.unmount(); }
+});
+
+
+it('starts a fresh amount when changing basket currency without reinterpreting item prices', async () => {
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'coffee', name: 'Coffee', unit: 'USD', unitPrice: 350 }] }));
+  (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items'));
+  fireEvent.press(view.getByLabelText('Add Coffee'));
+  expect(view.queryByText(/Basket in/)).toBeNull();
+  fireEvent.press(view.getByLabelText('Close item picker'));
+  expect(view.getByTestId('terminal-amount').props.children).toBe('3.50');
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  expect(view.queryByLabelText('Clear basket')).toBeNull();
+  await openCurrency(view);
+  fireEvent.press(view.getByLabelText('EUR'));
+  fireEvent.press(view.getByLabelText('Close terminal settings'));
+  expect(view.getByTestId('terminal-amount').props.children).toBe('0');
+  fireEvent.press(view.getByLabelText('Items'));
+  expect(view.getByText('USD 3.50')).toBeTruthy();
+  expect(view.getByLabelText('Add Coffee').props.accessibilityState.disabled).toBe(false);
 });

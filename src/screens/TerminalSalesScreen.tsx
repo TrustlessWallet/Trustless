@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Animated, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useIsFocused } from '@react-navigation/native';
+import TerminalSheetHeader, { TerminalSheetInteractionContext } from './TerminalSheetHeader';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassView } from '../components/GlassView';
@@ -68,7 +70,9 @@ function statusFor(sale: TerminalSale, now: number): { label: string; tone: 'pai
 }
 
 export default function TerminalSalesScreen({ walletId, network, onClose, visible = true }: Props) {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
+  const focused = useIsFocused();
+  const headerEnabled = useContext(TerminalSheetInteractionContext) && focused;
   const { activeWallet, isLightningInitialized, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
@@ -234,7 +238,6 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   const header = <>
     <View style={styles.heading}>
-      <Text style={styles.title}>{detail ? 'Sale details' : tab === 'today' ? 'Today' : 'History'}</Text>
       <Text style={styles.subheading}>{detail ? formatLongDate(saleTime(detail)) : tab === 'today' ? formatDate(now) : 'All sales for this wallet'}</Text>
     </View>
     <View style={styles.tabs}>
@@ -264,16 +267,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     <Animated.View testID="sales-scroll-fade" pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}>
       <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
     </Animated.View>
-    <View pointerEvents="box-none" style={[styles.topBar, { backgroundColor: isDark ? theme.colors.surface : theme.colors.background }]}>
-      {!detail ? <Pressable accessibilityRole="button" accessibilityLabel={tab === 'today' ? 'Export today’s activity' : 'Export all activity'} accessibilityState={{ disabled: exporting || !visible, busy: exporting }} disabled={exporting || !visible} onPress={() => { void exportSales(); }} style={styles.exportButton}>
-        <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}>
-          {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
-        </GlassView>
-      </Pressable> : <View style={styles.exportButton} />}
-      <Pressable accessibilityRole="button" accessibilityLabel="Close sales" onPress={close} style={styles.backButton}>
-        <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}><Feather name="x" size={20} color={theme.colors.primary} /></GlassView>
-      </Pressable>
-    </View>
+    <TerminalSheetHeader title={detail ? 'Sale details' : tab === 'today' ? 'Today' : 'History'} closeLabel="Close sales" onClose={close} leading={!detail ? <Pressable accessibilityRole="button" accessibilityLabel={tab === 'today' ? 'Export today’s activity' : 'Export all activity'} accessibilityState={{ disabled: exporting || !visible || !headerEnabled, busy: exporting }} disabled={exporting || !visible || !headerEnabled} onPress={() => { void exportSales(); }} style={styles.exportButton}>
+      <GlassView width={40} height={40} shape="circle" interactive={headerEnabled} style={styles.glass}>
+        {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
+      </GlassView>
+    </Pressable> : undefined} />
     {detail ? <Animated.ScrollView style={styles.scroll} onScroll={onScroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
       {header}
       <View style={styles.detailCard}>
