@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation, usePreventRemove } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +20,7 @@ import { recordTerminalSale, updateTerminalSalePayment } from '../services/termi
 import TerminalSalesScreen from './TerminalSalesScreen';
 import TerminalSettingsScreen from './TerminalSettingsScreen';
 import TerminalItemsScreen from './TerminalItemsScreen';
+import TerminalQuickItemsScreen from './TerminalQuickItemsScreen';
 import { listTerminalItems, TerminalItem } from '../services/terminalItems';
 
 const PREFERRED_UNIT_KEY = '@terminalPreferredUnit';
@@ -27,9 +28,47 @@ const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
 const isFiat = (unit: TerminalUnit): unit is FiatCurrency => FIAT_UNITS.includes(unit as FiatCurrency);
 export const isTerminalPollDue = (lastAttempt: number, intervalMs: number, now = Date.now()) => now < lastAttempt || now - lastAttempt >= intervalMs;
 
-type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined; Items: undefined };
+type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined; Items: undefined; QuickItems: undefined; Invoice: undefined };
 const TerminalStack = createNativeStackNavigator<TerminalStackParams>();
 type CheckoutNavigation = NativeStackNavigationProp<TerminalStackParams, 'Checkout'>;
+type InvoiceNavigation = NativeStackNavigationProp<TerminalStackParams, 'Invoice'>;
+
+function InvoiceRoute({ request, scope, onClose, onCanReplay, onCloseError, onFocusChange, children }: {
+  request: TerminalRequest | null;
+  scope: string;
+  onClose: () => Promise<boolean>;
+  onCanReplay: () => boolean;
+  onCloseError: () => void;
+  onFocusChange: (focused: boolean) => void;
+  children: (height: number, width: number, dismiss: () => void) => React.ReactNode;
+}) {
+  const navigation = useNavigation<InvoiceNavigation>();
+  const focused = useIsFocused();
+  const [size, setSize] = useState({ height: 0, width: 0 });
+  const [allowRemove, setAllowRemove] = useState(false);
+  const closing = useRef(false);
+  const mounted = useRef(true);
+  const identity = useRef({ scope, id: request?.id });
+  const pendingAction = useRef<any>(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; pendingAction.current = null; }; }, []);
+  useEffect(() => { onFocusChange(focused); return () => onFocusChange(false); }, [focused, onFocusChange]);
+  usePreventRemove(!!request && !allowRemove, ({ data }) => {
+    if (closing.current) return;
+    closing.current = true;
+    void onClose().then(cleared => {
+      if (cleared && mounted.current && identity.current.scope === scope && identity.current.id === request?.id) {
+        pendingAction.current = data.action; setAllowRemove(true);
+      }
+    }).catch(() => { if (mounted.current) onCloseError(); }).finally(() => { closing.current = false; });
+  });
+  useEffect(() => {
+    if (!allowRemove || request || !pendingAction.current || !mounted.current || !onCanReplay()) return;
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    navigation.dispatch(action);
+  }, [allowRemove, request, navigation, onCanReplay]);
+  return <View style={{ flex: 1 }} onLayout={event => setSize(event.nativeEvent.layout)}>{children(size.height, size.width, () => navigation.goBack())}</View>;
+}
 
 function CheckoutVisibility({ onChange, children }: { onChange: (focused: boolean) => void; children: React.ReactNode }) {
   const focused = useIsFocused();
@@ -46,20 +85,22 @@ type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expire
 
 export default function TerminalScreen({ visible = true, onExit }: { visible?: boolean; onExit?: () => void } = {}) {
   const { activeWallet, isLightningInitialized, lightningInitAttempted, lightningInitError, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
-  const { setMode, changing, cashierState, cashierBusy } = useWalletMode();
-  const { theme } = useTheme();
+  const { setMode, changing, cashierState, cashierBusy, consumeCashierTerminalDraft } = useWalletMode();
+  const { theme, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [stage, setStage] = useState<Stage>('loading');
   const [amount, setAmount] = useState('');
   const [basketLines, setBasketLines] = useState<TerminalBasketLine[]>([]);
-  const [itemsMode, setItemsMode] = useState(false);
   const [catalog, setCatalog] = useState<TerminalItem[]>([]);
   const [catalogError, setCatalogError] = useState(false);
   const [catalogRevision, reloadCatalog] = useState(0);
   const [unit, setUnit] = useState<TerminalUnit>('sats');
   const [checkoutFocused, setCheckoutFocused] = useState(true);
+  const [invoiceFocused, setInvoiceFocused] = useState(false);
+  const [invoiceAmountLayout, setInvoiceAmountLayout] = useState({ id: '', height: 0 });
   const checkoutNavigation = useRef<CheckoutNavigation | null>(null);
+  const presentedRequestId = useRef<string | null>(null);
   const [rates, setRates] = useState<TerminalRates | null>(null);
   const [rateError, setRateError] = useState('');
   const [rateLoading, setRateLoading] = useState(false);
@@ -68,9 +109,9 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   requestRef.current = request;
   const [error, setError] = useState('');
   const [foreground, setForeground] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
-  const active = foreground && visible && checkoutFocused;
+  const active = foreground && visible && (checkoutFocused || invoiceFocused);
   const visibleRef = useRef(visible);
-  visibleRef.current = visible && checkoutFocused;
+  visibleRef.current = visible && (checkoutFocused || invoiceFocused);
   const [now, setNow] = useState(Date.now());
   const [loadRevision, reload] = useState(0);
   const [hydrationFailed, setHydrationFailed] = useState(false);
@@ -97,6 +138,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   scopeRef.current = scope;
   const basketRef = useRef(basketLines);
   basketRef.current = basketLines;
+  const basketUnitRef = useRef<TerminalUnit | null>(null);
   const styles = makeStyles(theme.colors.background, theme.colors.primary, theme.colors.inversePrimary, theme.colors.surface, theme.colors.muted, theme.colors.border, theme.colors.bitcoin, screenHeight, screenWidth);
 
   useEffect(() => {
@@ -106,8 +148,17 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   }, [visible, checkoutFocused, scope]);
 
   useEffect(() => {
-    basketRef.current = []; setBasketLines([]); setItemsMode(false); setCatalog([]); setCatalogError(false);
+    basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setCatalog([]); setCatalogError(false);
+    presentedRequestId.current = null;
   }, [scope]);
+
+  useEffect(() => {
+    if (!request) { presentedRequestId.current = null; return; }
+    if (visible && checkoutFocused && presentedRequestId.current !== request.id) {
+      presentedRequestId.current = request.id;
+      checkoutNavigation.current?.navigate('Invoice');
+    }
+  }, [request?.id, visible, checkoutFocused]);
 
   useEffect(() => {
     if (!visible || !checkoutFocused || !activeWallet || activeWallet.type === 'watch-only') return;
@@ -169,11 +220,21 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       if (saved) await recordTerminalSale(saved);
       if (!mounted.current || current !== generation.current || capturedScope !== scopeRef.current) return;
       if (saved) {
+        consumeCashierTerminalDraft(activeWallet.id, network);
         setRequest(saved);
         setAmount(formatTerminalAmount(saved.amountSats, 'sats'));
         setUnit(preferredUnit.current);
         setStage('loading');
-      } else setStage('entry');
+      } else {
+        const draft = consumeCashierTerminalDraft(activeWallet.id, network);
+        if (draft) {
+          const lines = draft.basketLines.map(line => ({ ...line }));
+          userSelectedUnit.current = true; userEditedAmount.current = true; preferredUnit.current = draft.unit;
+          basketRef.current = lines; basketUnitRef.current = lines.length ? draft.unit : null;
+          setBasketLines(lines); setUnit(draft.unit); setAmount(draft.manualAmount);
+        }
+        setStage('entry');
+      }
     }).catch(() => {
       if (mounted.current && current === generation.current) {
         setHydrationFailed(true);
@@ -256,23 +317,22 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
 
   const requestPayment = async () => {
     if (busy.current || stage === 'loading' || request || hydrationFailed || !activeWallet || activeWallet.type === 'watch-only') return;
-    if (itemsMode && !basketRef.current.length) { setError('Add an item or return to manual amount.'); return; }
     if (!isLightningInitialized) {
       setError(lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…');
       return;
     }
-    if (isFiat(unit) && (!rates || Date.now() < rates.fetchedAt || Date.now() - rates.fetchedAt >= 60_000 || rateError)) {
+    const requestUnit = basketUnitRef.current ?? unit;
+    if (isFiat(requestUnit) && (!rates || Date.now() < rates.fetchedAt || Date.now() - rates.fetchedAt >= 60_000 || rateError)) {
       setError('Price expired. Refresh price before charging.');
       return;
     }
+    const lines = basketRef.current.map(line => ({ ...line }));
+    const basketTotal = lines.reduce((sum, line) => sum + BigInt(line.total), 0n);
+    if (basketTotal > BigInt(Number.MAX_SAFE_INTEGER)) { setError('Basket total is too large.'); return; }
     busy.current = true;
     const captured = ++generation.current;
     const capturedScope = scope;
     const walletId = activeWallet.id;
-    const requestUnit = unit;
-    const lines = basketRef.current.map(line => ({ ...line }));
-    const basketTotal = lines.reduce((sum, line) => sum + BigInt(line.total), 0n);
-    if (basketTotal > BigInt(Number.MAX_SAFE_INTEGER)) { setError('Basket total is too large.'); return; }
     const basket: TerminalBasket | undefined = lines.length ? { unit: requestUnit, lines, total: Number(basketTotal) } : undefined;
     const requestAmount = basket ? (isFiat(requestUnit) ? formatFiatMinor(basket.total) : formatTerminalAmount(basket.total, requestUnit)) : amount;
     const network = terminalNetwork(NETWORK_NAME);
@@ -301,7 +361,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       await saveTerminalRequest(next);
       if (!mounted.current || captured !== generation.current || capturedScope !== scopeRef.current) return;
       setRequest(next);
-      basketRef.current = []; setBasketLines([]); setItemsMode(false);
+      basketRef.current = []; basketUnitRef.current = null; setBasketLines([]);
       lastCheck.current = 0;
       lastUnfilteredCheck.current = Date.now();
       setValidated(true);
@@ -314,8 +374,8 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     } finally { if (captured === generation.current) busy.current = false; }
   };
 
-  const endRequest = async () => {
-    if (!request || busy.current) return;
+  const endRequest = async (): Promise<boolean> => {
+    if (!request || busy.current) return false;
     const closingRequest = request;
     const capturedGeneration = generation.current;
     const capturedScope = scope;
@@ -325,7 +385,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     try {
       await recordTerminalSale(closingRequest);
       await clearTerminalRequest(closingRequest);
-      if (!stillClosing()) return;
+      if (!stillClosing()) return false;
       ++generation.current;
       checking.current = false;
       lastCheck.current = 0;
@@ -333,10 +393,12 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       knownPaymentId.current = undefined;
       busy.current = false;
       setRequest(null); setStage('entry'); setAmount(''); setUnit(preferredUnit.current); setError('');
-      basketRef.current = []; setBasketLines([]); setItemsMode(false);
+      basketRef.current = []; basketUnitRef.current = null; setBasketLines([]);
       setValidated(false);
+      return true;
     } catch {
       if (stillClosing()) setError('Could not end the saved request. Please retry.');
+      return false;
     } finally { if (stillClosing()) busy.current = false; }
   };
 
@@ -351,8 +413,12 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const close = () => {
-    if (request) { void endRequest(); return; }
+    if (request) return;
     exit();
+  };
+  const getTerminalDraft = () => {
+    if (!mounted.current || busy.current || requestRef.current || stage === 'creating' || !activeWallet || scopeRef.current !== scope) return null;
+    return { walletId: activeWallet.id, network, unit: basketUnitRef.current ?? unit, manualAmount: amount, basketLines: basketRef.current.map(line => ({ ...line })) };
   };
 
   const selectUnit = (next: TerminalUnit) => {
@@ -371,7 +437,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const key = (digit: string) => {
-    if (busy.current || stage === 'loading' || itemsMode) return;
+    if (busy.current || stage === 'loading' || basketRef.current.length) return;
     Haptics.selectionAsync().catch(() => undefined);
     userEditedAmount.current = true;
     setError('');
@@ -386,8 +452,10 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const updateBasket = (item: TerminalItem, delta: number) => {
-    if (busy.current || request || item.unit !== unit) return;
+    if (busy.current || request) return;
     const current = basketRef.current;
+    const basketUnit = basketUnitRef.current;
+    if (current.length && item.unit !== basketUnit) { setError('Clear the basket to choose another currency.'); return; }
     const index = current.findIndex(line => line.itemId === item.id);
     if (index < 0 && (delta < 1 || current.length >= 20)) { setError('Basket limit reached.'); return; }
     const existing = current[index];
@@ -399,13 +467,21 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     const sum = next.reduce((total, line) => total + BigInt(line.total), 0n);
     if (sum > BigInt(Number.MAX_SAFE_INTEGER) || next.some(line => !Number.isSafeInteger(line.total))) { setError('Basket total is too large.'); return; }
     userEditedAmount.current = true;
+    if (!current.length && next.length) { basketUnitRef.current = item.unit; userSelectedUnit.current = true; preferredUnit.current = item.unit; setUnit(item.unit); setAmount(''); }
+    if (!next.length) basketUnitRef.current = null;
     basketRef.current = next; setBasketLines(next); setError('');
   };
-  const clearBasket = () => { if (busy.current) return; basketRef.current = []; setBasketLines([]); setItemsMode(false); setAmount(''); setError(''); };
+  const clearBasket = () => { if (busy.current) return; basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setAmount(''); setError(''); };
+  const removeBasketLine = (line: TerminalBasketLine) => {
+    if (busy.current) return;
+    const next = basketRef.current.filter(entry => entry.itemId !== line.itemId);
+    basketRef.current = next; if (!next.length) basketUnitRef.current = null;
+    setBasketLines(next); setError('');
+  };
 
   const hasRequest = !!request;
   const basketTotal = basketLines.reduce((total, line) => total + line.total, 0);
-  const entryAmount = itemsMode ? (basketLines.length ? (isFiat(unit) ? formatFiatMinor(basketTotal) : formatTerminalAmount(basketTotal, unit)) : '') : amount;
+  const entryAmount = basketLines.length ? (isFiat(unit) ? formatFiatMinor(basketTotal) : formatTerminalAmount(basketTotal, unit)) : amount;
   const isExpired = hasRequest && validated && (stage === 'expired' || now >= request.expiresAt);
   let approxSats: number | null = null;
   if (isFiat(unit) && rates && entryAmount) {
@@ -420,24 +496,34 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     : request?.inputUnit === 'BTC' ? formatTerminalAmount(request.amountSats, 'BTC')
       : formatTerminalSats(request?.amountSats || 0);
   const frozenSuffix = request?.fiat ? '' : request?.inputUnit === 'BTC' ? '₿' : 'sats';
-  const checkoutAmount = <View style={styles.amountRow}>
+  const checkoutAmount = (width: number) => <View style={styles.amountRow}>
     <View style={[styles.symbolRail, styles.prefixRail]}>{frozenPrefix ? <Text style={styles.unitLabel}>{frozenPrefix}</Text> : null}</View>
-    <Text testID="terminal-checkout-number" style={[styles.checkoutAmount, styles.numberWidth]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.2}>{frozenAmount}</Text>
+    <Text testID="terminal-checkout-number" style={[styles.checkoutAmount, { flexShrink: 1, maxWidth: Math.max(90, (width || screenWidth) - 48 - 2 * 69) }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.2}>{frozenAmount}</Text>
     <View style={[styles.symbolRail, styles.suffixRail]}>{frozenSuffix ? <Text style={[styles.unitLabel, frozenSuffix === '₿' && styles.orangeSymbol]}>{frozenSuffix}</Text> : null}</View>
   </View>;
   const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${formatTerminalSats(request?.amountSats || 0)} sats` : '';
-  const qrSize = Math.max(160, Math.min(280, screenWidth - 82, screenHeight - 360));
-  const qrTop = Math.max(110, screenHeight / 2 - insets.top - 56 - (qrSize + 34) / 2);
-  const invoiceMinHeight = Math.max(screenHeight - insets.top - 56, qrTop + qrSize + 34 + 180);
-  const entry = !!activeWallet && activeWallet.type !== 'watch-only' && !hasRequest;
-  const selectedItemRow = (line: TerminalBasketLine) => <View key={line.itemId} style={styles.basketRow}>
-    <View style={styles.basketInfo}><Text style={styles.basketName} numberOfLines={1}>{line.name}</Text><Text style={styles.basketPrice}>{formatTerminalBasketAmount(line.total, unit)}</Text></View>
-    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove ${line.name}`} disabled={stage === 'creating'} style={styles.qtyButton} onPress={() => { if (busy.current) return; const next = basketRef.current.filter(entry => entry.itemId !== line.itemId); basketRef.current = next; setBasketLines(next); setError(''); }}><Feather name="x" size={16} color={theme.colors.muted} /></TouchableOpacity>
-    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove one ${line.name}`} disabled={stage === 'creating'} style={styles.qtyButton} onPress={() => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)}><Text style={styles.qtyText}>−</Text></TouchableOpacity>
-    <Text style={styles.qtyText}>{line.quantity}</Text>
-    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${line.name}`} disabled={stage === 'creating'} style={styles.qtyButton} onPress={() => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, 1)}><Text style={styles.qtyText}>+</Text></TouchableOpacity>
-  </View>;
-
+  const entry = !!activeWallet && activeWallet.type !== 'watch-only';
+  const renderInvoice = (sheetHeight: number, sheetWidth: number, dismiss: () => void) => {
+    const qrSize = Math.max(140, Math.min(280, (sheetWidth || screenWidth) - 82, (sheetHeight || screenHeight * 0.9) - 330));
+    const showQr = !!request && validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired;
+    const amountHeight = invoiceAmountLayout.id === request?.id ? invoiceAmountLayout.height : 0;
+    // Center the QR itself in the measured sheet, reserving room for its amount above.
+    const qrTop = Math.max(20, sheetHeight / 2 - 56 - amountHeight - 24 - (qrSize + 34) / 2);
+    return <View style={styles.root}>
+      <View style={[styles.header, { backgroundColor: isDark ? theme.colors.surface : theme.colors.background }]}><View style={styles.glassControl} /><View style={styles.glassControl} /><Pressable accessibilityRole="button" accessibilityLabel="Close invoice" style={[styles.glassControl, styles.glassControlEnd]} onPress={dismiss}><GlassView width={40} height={40} shape="circle" interactive style={styles.glassSurface}><Feather name="x" size={21} color={theme.colors.primary} /></GlassView></Pressable></View>
+      <ScrollView style={styles.checkoutScroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.checkoutScrollContent, showQr && { paddingTop: qrTop }]} bounces={false} showsVerticalScrollIndicator={false}>
+        <View style={[styles.checkout, !showQr && { flexGrow: 1 }, showQr && { opacity: amountHeight > 0 ? 1 : 0 }]}>
+          {stage === 'received' ? <Feather name="check-circle" size={70} color={theme.colors.bitcoin} /> : null}
+          {validated ? <View key={request?.id} style={{ alignItems: 'center' }} onLayout={event => { if (request?.id && requestRef.current?.id === request.id) setInvoiceAmountLayout({ id: request.id, height: event.nativeEvent.layout.height }); }}>{checkoutAmount(sheetWidth)}{frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}</View> : null}
+          {showQr ? <View testID="terminal-qr" style={[styles.qrCard, { marginTop: 24 }]}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View> : null}
+          {!validated || stage === 'received' || isExpired ? <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : 'Request expired'}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {!validated && !isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable. Retry when connected.') : 'Connecting to Lightning…'}</Text> : null}
+          {stage === 'verificationUnavailable' || isExpired ? <TouchableOpacity style={styles.secondary} onPress={() => { if (validated) void verify(true); else retryValidation(value => value + 1); }}><Text style={styles.secondaryText}>{validated ? 'Check payment' : 'Retry validation'}</Text></TouchableOpacity> : null}
+        </View>
+      </ScrollView>
+    </View>;
+  };
   const checkout = <View style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
       {!hasRequest || cashierState === 'locked' ? <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
@@ -450,7 +536,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
           <Text style={styles.salesLabel}>Today</Text>
         </GlassView>
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={hasRequest ? 'Close invoice' : 'Exit terminal'} style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || cashierBusy || stage === 'creating'} onPress={close}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Exit terminal" style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || cashierBusy || stage === 'creating' || hasRequest} onPress={close}>
         <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
           <Feather name="x" size={21} color={theme.colors.primary} />
         </GlassView>
@@ -463,7 +549,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
             <Text style={styles.message}>This watch-only wallet cannot create Lightning payment requests.</Text>
             <TouchableOpacity style={styles.secondary} onPress={exit}><Text style={styles.secondaryText}>Exit terminal</Text></TouchableOpacity>
           </View>
-        : !hasRequest ? <View style={styles.entry}>
+        : <View style={styles.entry}>
             <View style={styles.amountArea}>
               <View style={[styles.amountRow, styles.entryAmountRow]}>
                 <View style={[styles.symbolRail, styles.prefixRail]}>{amountPrefix ? <Text style={styles.unitLabel}>{amountPrefix}</Text> : null}</View>
@@ -476,61 +562,28 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
               </View>
             </View>
             <View style={styles.padArea}>
-              {itemsMode ? <View style={styles.itemsPanel}><ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                {catalog.filter(item => item.unit === unit).map(item => {
-                  const selected = basketLines.find(line => line.itemId === item.id);
-                  return selected ? selectedItemRow(selected) : <View key={item.id} style={styles.catalogRow}><Text style={styles.catalogName} numberOfLines={1}>{item.name}</Text><Text style={styles.basketPrice}>{formatTerminalBasketAmount(item.unitPrice, unit)}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add ${item.name}`} disabled={stage === 'creating'} style={styles.qtyButton} onPress={() => updateBasket(item, 1)}><Feather name="plus" size={18} color={theme.colors.primary} /></TouchableOpacity></View>;
-                })}
-                {basketLines.filter(line => !catalog.some(item => item.id === line.itemId && item.unit === unit)).map(selectedItemRow)}
-              </ScrollView><TouchableOpacity accessibilityRole="button" accessibilityLabel="Return to manual amount" disabled={stage === 'creating'} style={styles.manualButton} onPress={clearBasket}><Text style={styles.manualText}>Manual amount</Text></TouchableOpacity></View>
-              : <View style={styles.keypad}>{['1','2','3','4','5','6','7','8','9',unit === 'sats' ? '' : '.', '0','back'].map((digit, i) =>
+              <View style={styles.keypad}>{['1','2','3','4','5','6','7','8','9',unit === 'sats' ? '' : '.', '0','back'].map((digit, i) =>
                 <TouchableOpacity key={i} disabled={!digit} style={styles.key} activeOpacity={0.55} onPress={() => key(digit)}>
                   <Text style={styles.keyText}>{digit === 'back' ? '⌫' : digit}</Text>
-                </TouchableOpacity>)}</View>}
+                </TouchableOpacity>)}</View>
               <View style={styles.feedbackArea}>
-                {error ? <Text numberOfLines={2} style={styles.error}>{error}</Text> : null}
-                {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
-                {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={styles.error}>Items unavailable · Retry</Text></TouchableOpacity> : null}
-                {!error && isLightningInitialized && !catalogError && !itemsMode && catalog.some(item => item.unit === unit) ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Items" onPress={() => setItemsMode(true)}><Text style={styles.itemsLink}>Items</Text></TouchableOpacity> : null}
+                {error ? <Text numberOfLines={2} style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>{error}</Text> : null}
+                {!error && !isLightningInitialized ? <Text numberOfLines={2} style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
+                {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>Items unavailable · Retry</Text></TouchableOpacity> : null}
+                {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
               </View>
             </View>
           </View>
-        : validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired ? <ScrollView style={styles.invoiceCanvas} contentContainerStyle={{ minHeight: invoiceMinHeight }} bounces={false} showsVerticalScrollIndicator={false}>
-            <View style={[styles.invoiceAnchor, { top: qrTop }]}>
-              <View style={styles.invoiceAmount}>
-                {checkoutAmount}
-                {frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}
-              </View>
-              <View testID="terminal-qr" style={styles.qrCard}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View>
-              <View style={styles.invoiceFooter}>
-                {error ? <Text numberOfLines={3} style={styles.error}>{error}</Text> : null}
-                {stage === 'verificationUnavailable' ? <TouchableOpacity style={styles.secondary} onPress={() => { void verify(true); }}><Text style={styles.secondaryText}>Check payment</Text></TouchableOpacity> : null}
-              </View>
-            </View>
-          </ScrollView>
-        : <ScrollView style={styles.checkoutScroll} contentContainerStyle={styles.checkoutScrollContent} bounces={false} showsVerticalScrollIndicator={false}>
-          <View style={styles.checkout}>
-            {stage === 'received' ? <Feather name="check-circle" size={70} color={theme.colors.bitcoin} /> : null}
-            {validated ? <>
-              {checkoutAmount}
-              {frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}
-            </> : null}
-            {!validated || stage === 'received' || isExpired ? <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : 'Request expired'}</Text> : null}
-
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            {!validated && !isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable. Retry when connected.') : 'Connecting to Lightning…'}</Text> : null}
-            {stage !== 'received' && stage !== 'waiting' ? <TouchableOpacity style={styles.secondary} onPress={() => { if (validated) void verify(true); else retryValidation(v => v + 1); }}><Text style={styles.secondaryText}>{validated ? 'Check payment' : 'Retry validation'}</Text></TouchableOpacity> : null}
-            {stage === 'received' ? <TouchableOpacity style={styles.primary} onPress={() => { void endRequest(); }}><Text style={styles.primaryText}>New payment</Text></TouchableOpacity> : null}
-          </View>
-        </ScrollView>}
+        }
     </View>
     {entry && <View style={styles.actionBar}>
-      <TouchableOpacity testID="terminal-request" disabled={stage === 'loading' || stage === 'creating'} style={[styles.primaryAction, stage === 'creating' && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
+      <TouchableOpacity testID="terminal-request" disabled={stage === 'loading' || stage === 'creating' || hasRequest} style={[styles.primaryAction, (stage === 'creating' || hasRequest) && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
         <Text style={styles.primaryActionText}>{hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>
       </TouchableOpacity>
     </View>}
   </View>;
 
+  const sheetOptions = Platform.OS === 'android' ? { presentation: 'formSheet' as const, sheetAllowedDetents: [0.95], sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const } : { presentation: 'modal' as const, animation: 'slide_from_bottom' as const };
   return <TerminalStack.Navigator key={scope} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
@@ -538,14 +591,20 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
         return <CheckoutVisibility onChange={setCheckoutFocused}>{checkout}</CheckoutVisibility>;
       }}
     </TerminalStack.Screen>
-    <TerminalStack.Screen name="Settings">
-      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} currencyLocked={basketLines.length > 0} onClearBasket={clearBasket} onOpenItems={() => navigation.navigate('Items')} onClose={() => navigation.goBack()} />}
+    <TerminalStack.Screen name="Settings" options={sheetOptions}>
+      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} currencyLocked={basketLines.length > 0} onClearBasket={clearBasket} getTerminalDraft={getTerminalDraft} onOpenItems={() => navigation.navigate('Items')} onClose={() => navigation.goBack()} />}
     </TerminalStack.Screen>
-    <TerminalStack.Screen name="Sales">
+    <TerminalStack.Screen name="Sales" options={sheetOptions}>
       {({ navigation }) => activeWallet ? <SalesRoute walletId={activeWallet.id} network={network} rootVisible={visible} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
-    <TerminalStack.Screen name="Items">
+    <TerminalStack.Screen name="Items" options={sheetOptions}>
       {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onClose={() => navigation.goBack()} /> : null}
+    </TerminalStack.Screen>
+    <TerminalStack.Screen name="QuickItems" options={sheetOptions}>
+      {({ navigation }) => <TerminalQuickItemsScreen catalog={catalog} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onRemove={removeBasketLine} onManual={() => { clearBasket(); navigation.goBack(); }} onClose={() => navigation.goBack()} />}
+    </TerminalStack.Screen>
+    <TerminalStack.Screen name="Invoice" options={sheetOptions}>
+      {() => <InvoiceRoute request={request} scope={scope} onClose={endRequest} onCanReplay={() => mounted.current && scopeRef.current === scope && requestRef.current === null} onCloseError={() => setError('Could not end the saved request. Please retry.')} onFocusChange={setInvoiceFocused}>{renderInvoice}</InvoiceRoute>}
     </TerminalStack.Screen>
   </TerminalStack.Navigator>;
 }
@@ -561,7 +620,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
   const actionBottomPadding = short ? 30 : compact ? 40 : 48;
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: background },
-    header: { height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    header: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     glassControl: { width: 92, height: 44, justifyContent: 'center' },
     glassControlEnd: { alignItems: 'flex-end' },
     glassSurface: { overflow: 'visible' },
@@ -581,27 +640,18 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     refresh: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 12, marginTop: 5 },
     padArea: { justifyContent: 'flex-end', paddingBottom: keypadPadding },
     keypad: { flexDirection: 'row', flexWrap: 'wrap' },
-    itemsPanel: { height: keyHeight * 4 },
-    basketRow: { height: 52, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: border },
-    basketInfo: { flex: 1 }, basketName: { color: primary, fontSize: 14 }, basketPrice: { color: muted, fontSize: 12 },
-    qtyButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }, qtyText: { color: primary, fontSize: 17 },
-    catalogRow: { height: 52, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: border }, catalogName: { color: primary, fontSize: 14, flex: 1 },
-    manualButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center' }, manualText: { color: muted, fontSize: 13 },
-    itemsLink: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     key: { width: '33.33%', height: keyHeight, alignItems: 'center', justifyContent: 'center' },
     keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: keyFontSize },
     feedbackArea: { height: feedbackHeight, alignItems: 'center', justifyContent: 'center' },
+    feedbackText: { maxWidth: screenWidth - 48 - 88, marginRight: 88 },
+    itemsCapsule: { position: 'absolute', right: 0, top: (feedbackHeight - 36) / 2, width: 80, height: 36 },
     actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: actionBottomPadding },
     primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
     disabled: { opacity: 0.55 },
-    invoiceCanvas: { flex: 1 },
-    invoiceAnchor: { position: 'absolute', left: 24, right: 24, alignItems: 'center' },
-    invoiceAmount: { position: 'absolute', bottom: '100%', width: '100%', paddingBottom: 24 },
-    invoiceFooter: { position: 'absolute', top: '100%', alignItems: 'center', width: '100%', gap: 12 },
-    checkoutScroll: { flex: 1 },
-    checkoutScrollContent: { flexGrow: 1, paddingVertical: 12 },
-    checkout: { flex: 1, paddingHorizontal: 24, paddingBottom: 20, alignItems: 'center', justifyContent: 'center' },
+    checkoutScroll: { flex: 1, minHeight: 0 },
+    checkoutScrollContent: { flexGrow: 1, paddingTop: 20, paddingBottom: 36 },
+    checkout: { paddingHorizontal: 24, paddingBottom: 20, alignItems: 'center', justifyContent: 'center' },
     checkoutAmount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 40, textAlign: 'center' },
     checkoutTitle: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 14, textAlign: 'center', marginTop: 12 },
     qrCard: { padding: 16, backgroundColor: background, borderRadius: 8, shadowColor: primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.16, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: border },

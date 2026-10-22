@@ -97,6 +97,33 @@ it('requires fresh owner authentication to enable and unlock cashier mode regard
   expect(writes.findIndex(call => call[0] === WALLET_MODE_KEY && call[1] === 'wallet')).toBeGreaterThan(writes.findIndex(call => call[0] === CASHIER_LOCK_KEY));
 });
 
+it('durably targets Terminal on Settings unlock and hands its scoped draft to the new root once', async () => {
+  const { result } = renderHook(() => useWalletMode(), { wrapper });
+  await waitFor(() => expect(result.current.cashierState).toBe('off'));
+  await act(async () => { await result.current.setMode('terminal'); await result.current.enableCashier(); });
+  const draft = { walletId: 'wallet-a', network: 'mainnet' as const, unit: 'USD' as const, manualAmount: '', basketLines: [{ itemId: 'tea', name: 'Tea', unitPrice: 250, quantity: 2, total: 500 }] };
+  await act(async () => { expect(await result.current.unlockCashier('terminal', () => draft)).toBe(true); });
+  expect(result.current.mode).toBe('terminal');
+  expect(result.current.cashierUnlockDestination).toBe('terminal');
+  expect(AsyncStorage.setItem).toHaveBeenCalledWith(WALLET_MODE_KEY, 'terminal');
+  expect(result.current.consumeCashierTerminalDraft('wallet-a', 'mainnet')).toEqual(draft);
+  expect(result.current.consumeCashierTerminalDraft('wallet-a', 'mainnet')).toBeNull();
+});
+
+it('discards a handoff for a different wallet and keeps the lock if destination persistence fails', async () => {
+  const { result } = renderHook(() => useWalletMode(), { wrapper });
+  await waitFor(() => expect(result.current.cashierState).toBe('off'));
+  await act(async () => { await result.current.setMode('terminal'); await result.current.enableCashier(); });
+  const draft = { walletId: 'wallet-a', network: 'mainnet' as const, unit: 'sats' as const, manualAmount: '25', basketLines: [] };
+  (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('mode write failed'));
+  await act(async () => { await expect(result.current.unlockCashier('terminal', () => draft)).rejects.toThrow('mode write failed'); });
+  expect(result.current.cashierState).toBe('locked');
+  expect(result.current.consumeCashierTerminalDraft('wallet-a', 'mainnet')).toBeNull();
+  await act(async () => { expect(await result.current.unlockCashier('terminal', () => draft)).toBe(true); });
+  expect(result.current.consumeCashierTerminalDraft('wallet-b', 'mainnet')).toBeNull();
+  expect(result.current.consumeCashierTerminalDraft('wallet-a', 'mainnet')).toBeNull();
+});
+
 it('keeps cashier mode off when owner auth is cancelled and serializes duplicate taps', async () => {
   let finishAuth!: (value: boolean) => void;
   (authenticate_terminal_cashier as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finishAuth = resolve; }));

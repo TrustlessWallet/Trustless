@@ -113,6 +113,16 @@ it('registers only Terminal and privacy while locked, then resets to the normal 
   expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
 });
 
+it('starts directly in Terminal after an authenticated Settings unlock targeting Terminal', async () => {
+  const view = render(<AppNavigator />);
+  await waitFor(() => expect(mockRoutes).toEqual(['Terminal', 'PrivacyOverlay']));
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 1, cashierUnlockDestination: 'terminal' });
+  await act(async () => { view.rerender(<AppNavigator />); });
+  expect(mockNavigators.at(-1)?.initialRouteName).toBe('Terminal');
+  expect(mockContainers.at(-1)?.initialState).toBeUndefined();
+  expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
+});
+
 it('preserves ordinary app authentication after an unauthenticated recovery retry finds no lock', async () => {
   await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
   await AsyncStorage.setItem('@biometricsEnabled', 'true');
