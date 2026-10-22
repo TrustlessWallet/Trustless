@@ -70,7 +70,7 @@ it('stops a pending export after leaving the list and shows genuine share errors
   fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/));
   expect(options.isCurrent()).toBe(false);
   await act(async () => { finishShare(false); });
-  fireEvent.press(view.getByLabelText('Back to sales'));
+  fireEvent.press(view.getByLabelText('Today sales'));
   (exportTerminalSalesCsv as jest.Mock).mockRejectedValueOnce(new Error('Share failed'));
   fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/));
   await waitFor(() => expect(view.getByText('Couldn’t export sales. Try again.')).toBeTruthy());

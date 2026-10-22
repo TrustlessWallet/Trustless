@@ -74,15 +74,16 @@ const PrivacyOverlayScreen = () => {
 
 const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const { wallets, loading: wallet_loading } = useWallet();
-  const { cashierState, cashierUnlockRevision } = useWalletMode();
+  const { cashierState, cashierUnlockRevision, cashierUnlockDestination } = useWalletMode();
   const cashierRestricted = cashierState !== 'off';
   const cashierRestrictedRef = useRef(cashierRestricted);
   cashierRestrictedRef.current = cashierRestricted;
   const previousUnlockRevision = useRef(cashierUnlockRevision);
   const authenticatedCashierUnlock = cashierUnlockRevision > previousUnlockRevision.current && !cashierRestricted;
   const unlockedRoot = useRef(false);
-  if (cashierRestricted) unlockedRoot.current = false;
-  else if (authenticatedCashierUnlock) unlockedRoot.current = true;
+  const unlockedDestination = useRef<'wallet' | 'terminal' | null>(null);
+  if (cashierRestricted) { unlockedRoot.current = false; unlockedDestination.current = null; }
+  else if (authenticatedCashierUnlock) { unlockedRoot.current = true; unlockedDestination.current = cashierUnlockDestination; }
   useEffect(() => { previousUnlockRevision.current = cashierUnlockRevision; }, [cashierUnlockRevision]);
   const { theme, isDark } = useTheme();
   const navigation_ref = useNavigationContainerRef<RootStackParamList>();
@@ -415,7 +416,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       onStateChange={() => set_current_route_name(navigation_ref.getCurrentRoute()?.name)}
     >
       <Stack.Navigator
-        initialRouteName={unlockedRoot.current ? 'MainTabs' : initial_route}
+        initialRouteName={unlockedRoot.current ? (unlockedDestination.current === 'terminal' ? 'Terminal' : 'MainTabs') : initial_route}
         screenOptions={screen_options}
       >
         <Stack.Screen

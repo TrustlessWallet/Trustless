@@ -10,7 +10,7 @@ import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from
 
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 const mockSetMode = jest.fn();
-jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: mockSetMode, changing: false, cashierState: 'off', cashierBusy: false }) }));
+jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: mockSetMode, changing: false, cashierState: 'off', cashierBusy: false, consumeCashierTerminalDraft: () => null }) }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' }, LAYOUT: { radius: 8, inputHeight: 48 } } }) }));
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
@@ -34,6 +34,12 @@ beforeEach(async () => {
 });
 
 const renderWithCurrencyMeasurement = () => render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
+const visibleScreen = (node: any): boolean => {
+  for (let parent = node; parent; parent = parent.parent) {
+    if (parent.type === 'RNSScreen' || parent.type === 'RNSModalScreen') return parent.props['aria-hidden'] === false;
+  }
+  return false;
+};
 
 const openCurrency = async (view: ReturnType<typeof render>) => {
   const row = view.getByLabelText('Currency');
@@ -53,8 +59,8 @@ it('preserves the entered amount and wallet mode after visiting Settings', async
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByText('2'));
   fireEvent.press(view.getByLabelText('Terminal settings'));
-  await waitFor(() => expect(view.getByLabelText('Back to terminal')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Back to terminal'));
+  await waitFor(() => expect(view.getByLabelText('Close terminal settings')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Close terminal settings'));
   await waitFor(() => expect(view.getByTestId('terminal-amount').props.children).toBe('12'));
   expect(mockSetMode).not.toHaveBeenCalled();
 });
@@ -70,11 +76,33 @@ it('lets the owner save an item from Terminal Settings and use it at checkout', 
   fireEvent.changeText(view.getByLabelText('Item price'), '250');
   fireEvent.press(view.getByLabelText('Save item'));
   await waitFor(() => expect(view.getByText('Tea')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Back to terminal settings'));
-  fireEvent.press(view.getByLabelText('Back to terminal'));
+  fireEvent.press(view.getByLabelText('Close items'));
+  fireEvent.press(view.getByLabelText('Close terminal settings'));
   await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Items'));
   expect(view.getByLabelText('Add Tea')).toBeTruthy();
+});
+
+it('accepts a single decimal comma for item price and rejects mixed or excess precision', async () => {
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  fireEvent.press(view.getByLabelText('Manage items'));
+  await waitFor(() => expect(view.getByLabelText('Add item')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Add item'));
+  fireEvent.changeText(view.getByLabelText('Item name'), 'Tea');
+  fireEvent.press(view.getByLabelText('Price in USD'));
+  fireEvent.changeText(view.getByLabelText('Item price'), '1,2.3');
+  fireEvent.press(view.getByLabelText('Save item'));
+  expect(view.getByLabelText('Item price')).toBeTruthy();
+  fireEvent.changeText(view.getByLabelText('Item price'), '1,234');
+  fireEvent.press(view.getByLabelText('Save item'));
+  expect(view.getByLabelText('Item price')).toBeTruthy();
+  fireEvent.changeText(view.getByLabelText('Item price'), ' 1,25 ');
+  fireEvent.press(view.getByLabelText('Save item'));
+  await waitFor(() => expect(view.getByText('Tea')).toBeTruthy());
+  const catalog = JSON.parse((await AsyncStorage.getItem('@terminalItems:v1:mainnet:wallet-a')) || '{}');
+  expect(catalog.items[0].unitPrice).toBe(125);
 });
 
 it('opens currency choices from Settings and dismisses them outside or with the system back action', async () => {
@@ -99,12 +127,14 @@ it('charges a fiat amount using a fresh quote and keeps the frozen amount beside
   fireEvent.press(view.getByLabelText('Terminal settings'));
   await openCurrency(view);
   fireEvent.press(view.getByLabelText('USD'));
-  fireEvent.press(view.getByLabelText('Back to terminal'));
+  fireEvent.press(view.getByLabelText('Close terminal settings'));
+  await waitFor(() => expect(visibleScreen(view.getByTestId('terminal-request'))).toBe(true));
   await waitFor(() => expect(view.queryByText('Price unavailable')).toBeNull());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByText('0'));
   fireEvent.press(view.getByText('0'));
   await waitFor(() => expect(view.getByText('≈ 100 000 sats')).toBeTruthy());
+  await waitFor(() => expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(false));
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(createTerminalInvoice).toHaveBeenCalledWith(100000));
   await waitFor(() => expect(view.getByTestId('terminal-checkout-number').props.children).toBe('100.00'));
@@ -123,18 +153,38 @@ it('quotes rapid basket quantity changes from one fiat grand total and freezes s
   fireEvent.press(view.getByLabelText('Terminal settings'));
   await openCurrency(view);
   fireEvent.press(view.getByLabelText('USD'));
-  fireEvent.press(view.getByLabelText('Back to terminal'));
+  fireEvent.press(view.getByLabelText('Close terminal settings'));
   await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Items'));
   fireEvent.press(view.getByLabelText('Add Coffee'));
   fireEvent.press(view.getByLabelText('Add one Coffee'));
   fireEvent.press(view.getByLabelText('Add one Coffee'));
+  fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.getByTestId('terminal-request')).toBeTruthy());
   fireEvent.press(view.getByTestId('terminal-request'));
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(createTerminalInvoice).toHaveBeenCalledWith(50));
   expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
   const raw = await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a');
   expect(JSON.parse(raw || '{}').basket).toEqual({ unit: 'USD', total: 3, lines: [{ itemId: 'coffee', name: 'Coffee', unitPrice: 1, quantity: 3, total: 3 }] });
+});
+
+it('keeps the first item currency when two different currencies are tapped rapidly', async () => {
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [
+    { id: 'eur', name: 'Euro item', unit: 'EUR', unitPrice: 125 },
+    { id: 'usd', name: 'Dollar item', unit: 'USD', unitPrice: 200 },
+  ] }));
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items'));
+  act(() => {
+    fireEvent.press(view.getByLabelText('Add Euro item'));
+    fireEvent.press(view.getByLabelText('Add Dollar item'));
+  });
+  expect(view.getByLabelText('Add Dollar item').props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(view.getByLabelText('Close item picker'));
+  expect(view.getByTestId('terminal-amount').props.children).toBe('1.25');
+  expect(view.getByText('€')).toBeTruthy();
 });
 
 it('does not let a delayed preferred currency reinterpret an active basket', async () => {
@@ -148,10 +198,11 @@ it('does not let a delayed preferred currency reinterpret an active basket', asy
     await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
     fireEvent.press(view.getByLabelText('Items'));
     fireEvent.press(view.getByLabelText('Add Tea'));
+    fireEvent.press(view.getByLabelText('Close item picker'));
     expect(view.getByTestId('terminal-amount').props.children).toBe('250');
     await act(async () => { finishPreference('USD'); });
     expect(view.getByTestId('terminal-amount').props.children).toBe('250');
-    expect(view.getByText('250 sats')).toBeTruthy();
+    expect(view.getByText('sats')).toBeTruthy();
   } finally { getItem.mockImplementation(priorGetItem); }
 });
 
@@ -161,13 +212,16 @@ it('requires an item in Items mode and clears the basket only through Manual amo
   await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
   fireEvent.press(view.getByText('5'));
   fireEvent.press(view.getByLabelText('Items'));
-  expect(view.getByTestId('terminal-amount').props.children).toBe('0');
-  fireEvent.press(view.getByTestId('terminal-request'));
+  fireEvent.press(view.getByLabelText('Close item picker'));
+  expect(view.getByTestId('terminal-amount').props.children).toBe('5');
   expect(createTerminalInvoice).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Items'));
   fireEvent.press(view.getByLabelText('Add Tea'));
   fireEvent.press(view.getByLabelText('Remove Tea'));
+  fireEvent.press(view.getByLabelText('Close item picker'));
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(createTerminalInvoice).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Items'));
   fireEvent.press(view.getByLabelText('Return to manual amount'));
   expect(view.getByTestId('terminal-amount').props.children).toBe('0');
 });
@@ -179,7 +233,7 @@ it('requires an available rate before charging in fiat', async () => {
   fireEvent.press(view.getByLabelText('Terminal settings'));
   await openCurrency(view);
   fireEvent.press(view.getByLabelText('EUR'));
-  fireEvent.press(view.getByLabelText('Back to terminal'));
+  fireEvent.press(view.getByLabelText('Close terminal settings'));
   await waitFor(() => expect(view.getByText('Refresh price')).toBeTruthy());
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(view.getByText('Price expired. Refresh price before charging.')).toBeTruthy();
@@ -245,6 +299,42 @@ it('closes an active invoice back to amount entry without leaving Terminal', asy
   expect((await listTerminalSales('wallet-a', 'mainnet'))).toHaveLength(1);
 });
 
+it.each([false, true])('holds the invoice sheet until durable close settles (clear fails: %s)', async clearFails => {
+  const expiresAt = Date.now() + 60000;
+  const activeKey = '@terminalActiveRequest:mainnet:wallet-a';
+  await AsyncStorage.setItem(activeKey, JSON.stringify({
+    id: 'saved', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc', amountSats: 1200,
+    createdAt: Date.now(), expiresAt,
+  }));
+  validateTerminalInvoice.mockResolvedValue(expiresAt);
+  const removeMock = AsyncStorage.removeItem as jest.Mock;
+  const originalRemove = removeMock.getMockImplementation()!;
+  let finish!: () => void;
+  let removals = 0;
+  removeMock.mockImplementation((key: string) => key === activeKey ? new Promise<void>((resolve, reject) => {
+    removals += 1;
+    finish = () => clearFails ? reject(new Error('storage failed')) : void originalRemove(key).then(resolve, reject);
+  }) : originalRemove(key));
+  const view = renderWithCurrencyMeasurement();
+  try {
+    await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('Close invoice'));
+    fireEvent.press(view.getByLabelText('Close invoice'));
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(removals).toBe(1);
+    expect(view.getByTestId('terminal-qr')).toBeTruthy();
+    await act(async () => { finish(); });
+    if (clearFails) {
+      await waitFor(() => expect(view.getByText('Could not end the saved request. Please retry.')).toBeTruthy());
+      expect(view.getByTestId('terminal-qr')).toBeTruthy();
+      expect(await AsyncStorage.getItem(activeKey)).not.toBeNull();
+    } else {
+      await waitFor(() => expect(view.queryByTestId('terminal-qr')).toBeNull());
+      expect(await AsyncStorage.getItem(activeKey)).toBeNull();
+    }
+  } finally { removeMock.mockImplementation(originalRemove); view.unmount(); }
+});
+
 it.each([false, true])('keeps a new wallet request intact when ending the old wallet request settles (clear fails: %s)', async clearFails => {
   const expiresAt = Date.now() + 60000;
   const oldKey = '@terminalActiveRequest:mainnet:wallet-a';
@@ -287,7 +377,7 @@ it.each([false, true])('keeps a new wallet request intact when ending the old wa
   } finally { removeMock.mockImplementation(originalRemove); view.unmount(); }
 });
 
-it('preserves the active invoice while visiting Today and saves verified payment before closing', async () => {
+it('restores a paid invoice and keeps its sale after guarded sheet closing', async () => {
   const expiresAt = Date.now() + 60000;
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt });
   const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
@@ -295,10 +385,7 @@ it('preserves the active invoice while visiting Today and saves verified payment
   fireEvent.press(view.getByText('2'));
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Sales history'));
-  await waitFor(() => expect(view.getByLabelText('Back to terminal')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Back to terminal'));
-  expect(view.getByTestId('terminal-qr')).toBeTruthy();
+  expect(view.getByLabelText('Close invoice')).toBeTruthy();
   expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
   view.unmount();
   const [sale] = await listTerminalSales('wallet-a', 'mainnet');
@@ -307,7 +394,7 @@ it('preserves the active invoice while visiting Today and saves verified payment
   const resumed = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   // A temporarily incomplete SDK query cannot turn a known paid sale unpaid.
   await waitFor(() => expect(resumed.getByText('Paid')).toBeTruthy());
-  fireEvent.press(resumed.getByText('New payment'));
+  fireEvent.press(resumed.getByLabelText('Close invoice'));
   await waitFor(() => expect(resumed.getByText('Generate invoice')).toBeTruthy());
   expect((await listTerminalSales('wallet-a', 'mainnet'))[0].status).toBe('received');
 });
@@ -320,7 +407,7 @@ it('clears a nonzero amount when changing into a fiat currency', async () => {
   fireEvent.press(view.getByLabelText('Terminal settings'));
   await openCurrency(view);
   fireEvent.press(view.getByLabelText('USD'));
-  fireEvent.press(view.getByLabelText('Back to terminal'));
+  fireEvent.press(view.getByLabelText('Close terminal settings'));
   await waitFor(() => expect(view.getByTestId('terminal-amount').props.children).toBe('0'));
 });
 

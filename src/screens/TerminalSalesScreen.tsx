@@ -68,7 +68,7 @@ function statusFor(sale: TerminalSale, now: number): { label: string; tone: 'pai
 }
 
 export default function TerminalSalesScreen({ walletId, network, onClose, visible = true }: Props) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { activeWallet, isLightningInitialized, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
@@ -178,7 +178,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const reservedRefund = refunds.reduce((total, attempt) => attempt.status === 'unknown' || attempt.status === 'pending' ? total + BigInt(attempt.amountSats) : total, 0n);
   const refundedSats = refundsLoaded ? refundState.attempts.reduce((total, attempt) =>
     attempt.status === 'complete' && (tab === 'all' || sameLocalDay(attempt.updatedAt, day)) ? total + BigInt(attempt.amountSats) : total, 0n) : 0n;
-  const back = () => { ++checkEpoch.current; checkBusy.current = false; if (detail) setSelected(null); else onClose(); };
+  const close = () => { ++checkEpoch.current; checkBusy.current = false; onClose(); };
   const checkPayment = async () => {
     if (!detail || checkBusy.current) return;
     if (!isLightningInitialized || activeWallet?.id !== walletId) { setCheckError('Open this wallet and connect to Lightning to check payment.'); return; }
@@ -237,12 +237,12 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       <Text style={styles.title}>{detail ? 'Sale details' : tab === 'today' ? 'Today' : 'History'}</Text>
       <Text style={styles.subheading}>{detail ? formatLongDate(saleTime(detail)) : tab === 'today' ? formatDate(now) : 'All sales for this wallet'}</Text>
     </View>
-    {!detail ? <>
-      <View style={styles.tabs}>
-        {(['today', 'all'] as const).map(item => <TouchableOpacity key={item} accessibilityRole="tab" accessibilityState={{ selected: tab === item }} accessibilityLabel={item === 'today' ? 'Today sales' : 'All sales'} onPress={() => setTab(item)} style={[styles.tab, tab === item && styles.activeTab]}>
-          <Text style={[styles.tabText, tab === item && styles.activeTabText]}>{item === 'today' ? 'Today' : 'All'}</Text>
+    <View style={styles.tabs}>
+        {(['today', 'all'] as const).map(item => <TouchableOpacity key={item} accessibilityRole="tab" accessibilityState={{ selected: tab === item && !detail }} accessibilityLabel={item === 'today' ? 'Today sales' : 'All sales'} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected(null); setTab(item); }} style={[styles.tab, tab === item && !detail && styles.activeTab]}>
+          <Text style={[styles.tabText, tab === item && !detail && styles.activeTabText]}>{item === 'today' ? 'Today' : 'All'}</Text>
         </TouchableOpacity>)}
-      </View>
+    </View>
+    {!detail ? <>
       {exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.summary}>
         <Text style={styles.summaryLabel}>PAID SALES</Text>
@@ -261,20 +261,20 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   if (refundOpen && detail && isPaid(detail) && refundsReady) return <TerminalRefundScreen sale={detail} attempts={refundState.attempts} onClose={() => setRefundOpen(false)} visible={visible} />;
 
   return <View style={styles.root}>
-    <Animated.View testID="sales-scroll-fade" pointerEvents="none" style={[styles.scrollFade, { height: insets.top + 48, opacity: fadeOpacity }]}>
+    <Animated.View testID="sales-scroll-fade" pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}>
       <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
     </Animated.View>
-    <View pointerEvents="box-none" style={[styles.topBar, { top: insets.top }]}>
-      <Pressable accessibilityRole="button" accessibilityLabel={detail ? 'Back to sales' : 'Back to terminal'} onPress={back} style={styles.backButton}>
-        <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}><Feather name="arrow-left" size={20} color={theme.colors.primary} /></GlassView>
-      </Pressable>
+    <View pointerEvents="box-none" style={[styles.topBar, { backgroundColor: isDark ? theme.colors.surface : theme.colors.background }]}>
       {!detail ? <Pressable accessibilityRole="button" accessibilityLabel={tab === 'today' ? 'Export today’s activity' : 'Export all activity'} accessibilityState={{ disabled: exporting || !visible, busy: exporting }} disabled={exporting || !visible} onPress={() => { void exportSales(); }} style={styles.exportButton}>
         <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}>
           {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
         </GlassView>
-      </Pressable> : null}
+      </Pressable> : <View style={styles.exportButton} />}
+      <Pressable accessibilityRole="button" accessibilityLabel="Close sales" onPress={close} style={styles.backButton}>
+        <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}><Feather name="x" size={20} color={theme.colors.primary} /></GlassView>
+      </Pressable>
     </View>
-    {detail ? <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
+    {detail ? <Animated.ScrollView style={styles.scroll} onScroll={onScroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
       {header}
       <View style={styles.detailCard}>
         <View style={styles.detailStatus}><View style={[styles.statusDot, isPaid(detail) && styles.paidDot]} /><Text style={[styles.statusText, isPaid(detail) && styles.paidText]}>{statusFor(detail, now).label}</Text></View>
@@ -311,6 +311,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check payment" disabled={checking} style={[styles.checkButton, checking && styles.checkDisabled]} onPress={() => { void checkPayment(); }}><Text style={styles.checkText}>{checking ? 'Checking…' : 'Check payment'}</Text></TouchableOpacity>
       </View> : null}
     </Animated.ScrollView> : <Animated.FlatList
+      style={styles.scroll}
       onScroll={onScroll}
       scrollEventThrottle={16}
       data={error ? [] : shown}
@@ -318,8 +319,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       ListHeaderComponent={header}
       contentInsetAdjustmentBehavior="never"
       automaticallyAdjustContentInsets={false}
-      contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 28 }]}
-      refreshControl={<RefreshControl refreshing={state.scope === scope && state.refreshing} onRefresh={() => { void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={insets.top + 56} />}
+      contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 28 }]}
+      refreshControl={<RefreshControl refreshing={state.scope === scope && state.refreshing} onRefresh={() => { void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={56} />}
       renderItem={({ item }) => {
         const status = statusFor(item, now);
         return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected({ scope, id: item.request.id }); }}>
@@ -345,8 +346,9 @@ function DetailField({ label, value, styles, selectable = false }: { label: stri
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; border: string; muted: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
-    scrollFade: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1 },
-    topBar: { position: 'absolute', left: 0, right: 0, zIndex: 2, height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    scrollFade: { position: 'absolute', top: 56, left: 0, right: 0, height: 48, zIndex: 1 },
+    topBar: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    scroll: { flex: 1, minHeight: 0 },
     backButton: { width: 40, height: 40 },
     exportButton: { width: 40, height: 40 },
     exportError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginHorizontal: 24, marginTop: 12 },
@@ -372,7 +374,7 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 24, marginTop: 35, marginBottom: 9 },
     sectionTitle: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
     sectionCount: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 11 },
-    listContent: { flexGrow: 1 },
+    listContent: { paddingTop: 20 },
     saleRow: { minHeight: 82, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border },
     rowIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginRight: 15 },
     paidRowIcon: { backgroundColor: colors.bitcoin + '20' },
@@ -387,7 +389,7 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     emptyBody: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, lineHeight: 19, marginTop: 8, textAlign: 'center' },
     retry: { marginTop: 20, paddingHorizontal: 24, minHeight: 42, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.border },
     retryText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
-    detailContent: { paddingBottom: 28 },
+    detailContent: { paddingTop: 20, paddingBottom: 28 },
     detailCard: { marginHorizontal: 24, padding: 24, backgroundColor: colors.surface, borderRadius: 18 },
     detailStatus: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted },

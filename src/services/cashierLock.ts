@@ -25,9 +25,9 @@ export const readCashierBoot = (modeKey: string): Promise<{ mode: string | null;
 export const writeCashierLock = (lock: CashierLockRecord): Promise<void> => serialize(() =>
   AsyncStorage.setItem(CASHIER_LOCK_KEY, JSON.stringify(lock)));
 
-export const clearCashierLock = (modeKey: string): Promise<void> => serialize(async () => {
+export const clearCashierLock = (modeKey: string, destination: 'wallet' | 'terminal' = 'wallet'): Promise<void> => serialize(async () => {
   // If the second write fails, the durable lock still gates every route.
-  await AsyncStorage.setItem(modeKey, 'wallet');
+  await AsyncStorage.setItem(modeKey, destination);
   await AsyncStorage.removeItem(CASHIER_LOCK_KEY);
 });
 

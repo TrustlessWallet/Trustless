@@ -8,13 +8,13 @@ import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { TerminalUnit } from '../services/terminal';
 import { useWallet } from '../contexts/WalletContext';
-import { useWalletMode } from '../contexts/WalletModeContext';
+import { CashierTerminalDraft, useWalletMode } from '../contexts/WalletModeContext';
 
-type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; currencyLocked?: boolean; onClearBasket?: () => void };
+type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; currencyLocked?: boolean; onClearBasket?: () => void; getTerminalDraft?: () => CashierTerminalDraft | null };
 const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 
-export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, currencyLocked = false, onClearBasket }: Props) {
-  const { theme } = useTheme();
+export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, currencyLocked = false, onClearBasket, getTerminalDraft }: Props) {
+  const { theme, isDark } = useTheme();
   const { activeWallet } = useWallet();
   const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
   const [cashierError, setCashierError] = useState('');
@@ -22,7 +22,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
     setCashierError('');
     try {
       if (cashierState === 'off') await enableCashier();
-      else await unlockCashier();
+      else await unlockCashier('terminal', getTerminalDraft);
     } catch { setCashierError('Couldn’t save cashier mode. Please retry.'); }
   };
   const insets = useSafeAreaInsets();
@@ -46,17 +46,17 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
   const fadeOpacity = scrollY.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' });
   const styles = makeStyles(theme.colors);
   return <View style={styles.root}>
-    <Animated.View pointerEvents="none" style={[styles.scrollFade, { height: insets.top + 48, opacity: fadeOpacity }]}>
+    <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}>
       <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
     </Animated.View>
-    <View pointerEvents="box-none" style={[styles.topBar, { top: insets.top }]}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Back to terminal" onPress={onClose} style={styles.backButton}>
+    <View pointerEvents="box-none" style={[styles.topBar, { backgroundColor: isDark ? theme.colors.surface : theme.colors.background }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Close terminal settings" onPress={onClose} style={styles.backButton}>
         <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}>
-          <Feather name="arrow-left" size={20} color={theme.colors.primary} />
+          <Feather name="x" size={20} color={theme.colors.primary} />
         </GlassView>
       </Pressable>
     </View>
-    <Animated.ScrollView bounces={false} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: Math.max(128, insets.bottom + 30) }]}>
+    <Animated.ScrollView style={styles.scroll} bounces={false} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: Math.max(24, insets.bottom + 24) }]}>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Terminal Settings</Text>
         <View style={styles.rowWrapper}>
@@ -99,11 +99,12 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
 function makeStyles(colors: { background: string; primary: string; surface: string; muted: string; border: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
-    scrollFade: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1 },
-    topBar: { position: 'absolute', left: 0, right: 0, zIndex: 2, height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' },
+    scrollFade: { position: 'absolute', top: 56, left: 0, right: 0, height: 48, zIndex: 1 },
+    topBar: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
     backButton: { width: 40, height: 40 },
     glass: { overflow: 'visible' },
-    content: { padding: 24, paddingVertical: 128, flexGrow: 1 },
+    scroll: { flex: 1, minHeight: 0 },
+    content: { paddingHorizontal: 24, paddingTop: 20 },
     section: { marginBottom: 32 },
     sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.primary, marginBottom: 16 },
     rowWrapper: { borderBottomWidth: 1, borderBottomColor: colors.border },
