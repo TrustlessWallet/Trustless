@@ -8,6 +8,8 @@ import { recordTerminalSale, updateTerminalSalePayment } from '../../services/te
 import { listTerminalRefunds } from '../../services/terminalRefunds';
 import { TerminalRequest } from '../../services/terminal';
 
+jest.mock('@react-navigation/native', () => ({ ...jest.requireActual('@react-navigation/native'), useIsFocused: () => true }));
+
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' }, LAYOUT: { radius: 8, inputHeight: 56 } } }) }));
 jest.mock('../../components/GlassView', () => ({ GlassView: ({ children }: { children: React.ReactNode }) => children }));

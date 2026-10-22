@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
-import { useIsFocused, useNavigation, usePreventRemove } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +20,8 @@ import { recordTerminalSale, updateTerminalSalePayment } from '../services/termi
 import TerminalSalesScreen from './TerminalSalesScreen';
 import TerminalSettingsScreen from './TerminalSettingsScreen';
 import TerminalItemsScreen from './TerminalItemsScreen';
+import TerminalItemEditorScreen from './TerminalItemEditorScreen';
+import TerminalSheetHeader, { TerminalSheetInteractionContext } from './TerminalSheetHeader';
 import TerminalQuickItemsScreen from './TerminalQuickItemsScreen';
 import { listTerminalItems, TerminalItem } from '../services/terminalItems';
 
@@ -28,7 +30,7 @@ const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
 const isFiat = (unit: TerminalUnit): unit is FiatCurrency => FIAT_UNITS.includes(unit as FiatCurrency);
 export const isTerminalPollDue = (lastAttempt: number, intervalMs: number, now = Date.now()) => now < lastAttempt || now - lastAttempt >= intervalMs;
 
-type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined; Items: undefined; QuickItems: undefined; Invoice: undefined };
+type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined; Items: undefined; QuickItems: undefined; ItemEditor: { item?: TerminalItem } | undefined; Invoice: undefined };
 const TerminalStack = createNativeStackNavigator<TerminalStackParams>();
 type CheckoutNavigation = NativeStackNavigationProp<TerminalStackParams, 'Checkout'>;
 type InvoiceNavigation = NativeStackNavigationProp<TerminalStackParams, 'Invoice'>;
@@ -45,29 +47,39 @@ function InvoiceRoute({ request, scope, onClose, onCanReplay, onCloseError, onFo
   const navigation = useNavigation<InvoiceNavigation>();
   const focused = useIsFocused();
   const [size, setSize] = useState({ height: 0, width: 0 });
-  const [allowRemove, setAllowRemove] = useState(false);
-  const closing = useRef(false);
   const mounted = useRef(true);
-  const identity = useRef({ scope, id: request?.id });
-  const pendingAction = useRef<any>(null);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; pendingAction.current = null; }; }, []);
+  const closeFlight = useRef<Promise<boolean> | null>(null);
+  const cleared = useRef(false);
+  const dismissStarted = useRef(false);
+  const removed = useRef(false);
+  const callbacks = useRef({ onClose, onCanReplay, onCloseError });
+  callbacks.current = { onClose, onCanReplay, onCloseError };
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { onFocusChange(focused); return () => onFocusChange(false); }, [focused, onFocusChange]);
-  usePreventRemove(!!request && !allowRemove, ({ data }) => {
-    if (closing.current) return;
-    closing.current = true;
-    void onClose().then(cleared => {
-      if (cleared && mounted.current && identity.current.scope === scope && identity.current.id === request?.id) {
-        pendingAction.current = data.action; setAllowRemove(true);
-      }
-    }).catch(() => { if (mounted.current) onCloseError(); }).finally(() => { closing.current = false; });
-  });
-  useEffect(() => {
-    if (!allowRemove || request || !pendingAction.current || !mounted.current || !onCanReplay()) return;
-    const action = pendingAction.current;
-    pendingAction.current = null;
-    navigation.dispatch(action);
-  }, [allowRemove, request, navigation, onCanReplay]);
-  return <View style={{ flex: 1 }} onLayout={event => setSize(event.nativeEvent.layout)}>{children(size.height, size.width, () => navigation.goBack())}</View>;
+  const finishRequest = useCallback(() => {
+    if (cleared.current) return Promise.resolve(true);
+    if (!closeFlight.current) {
+      const { onClose: close, onCloseError: reportError } = callbacks.current;
+      closeFlight.current = Promise.resolve().then(close).then(result => {
+        if (result) cleared.current = true;
+        return result;
+      }).catch(() => { reportError(); return false; }).finally(() => { closeFlight.current = null; });
+    }
+    return closeFlight.current;
+  }, []);
+  // A committed native swipe has already finished its dismissal animation.
+  // Observe removal without cancelling it; a cancelled gesture never removes the route.
+  useEffect(() => navigation.addListener('beforeRemove', () => { removed.current = true; void finishRequest(); }), [navigation, finishRequest]);
+  const dismiss = () => {
+    if (dismissStarted.current || removed.current) return;
+    dismissStarted.current = true;
+    const canDismiss = callbacks.current.onCanReplay;
+    void finishRequest().then(success => {
+      if (!success) { dismissStarted.current = false; return; }
+      if (mounted.current && !removed.current && navigation.isFocused() && canDismiss()) navigation.goBack();
+    });
+  };
+  return <View style={{ flex: 1 }} onLayout={event => setSize(event.nativeEvent.layout)}>{children(size.height, size.width, dismiss)}</View>;
 }
 
 function CheckoutVisibility({ onChange, children }: { onChange: (focused: boolean) => void; children: React.ReactNode }) {
@@ -86,7 +98,7 @@ type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expire
 export default function TerminalScreen({ visible = true, onExit }: { visible?: boolean; onExit?: () => void } = {}) {
   const { activeWallet, isLightningInitialized, lightningInitAttempted, lightningInitError, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const { setMode, changing, cashierState, cashierBusy, consumeCashierTerminalDraft } = useWalletMode();
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [stage, setStage] = useState<Stage>('loading');
@@ -98,6 +110,8 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const [unit, setUnit] = useState<TerminalUnit>('sats');
   const [checkoutFocused, setCheckoutFocused] = useState(true);
   const [invoiceFocused, setInvoiceFocused] = useState(false);
+  const [endingRequest, setEndingRequest] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
   const [invoiceAmountLayout, setInvoiceAmountLayout] = useState({ id: '', height: 0 });
   const checkoutNavigation = useRef<CheckoutNavigation | null>(null);
   const presentedRequestId = useRef<string | null>(null);
@@ -148,6 +162,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   }, [visible, checkoutFocused, scope]);
 
   useEffect(() => {
+    setEndingRequest(false); setTransitioning(false);
     basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setCatalog([]); setCatalogError(false);
     presentedRequestId.current = null;
   }, [scope]);
@@ -375,13 +390,13 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const endRequest = async (): Promise<boolean> => {
-    if (!request || busy.current) return false;
+    if (!request || busy.current || scopeRef.current !== scope || requestRef.current?.id !== request.id) return false;
     const closingRequest = request;
     const capturedGeneration = generation.current;
     const capturedScope = scope;
     const stillClosing = () => mounted.current && generation.current === capturedGeneration &&
       scopeRef.current === capturedScope && requestRef.current?.id === closingRequest.id;
-    busy.current = true;
+    busy.current = true; setEndingRequest(true);
     try {
       await recordTerminalSale(closingRequest);
       await clearTerminalRequest(closingRequest);
@@ -392,6 +407,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       lastUnfilteredCheck.current = Date.now();
       knownPaymentId.current = undefined;
       busy.current = false;
+      requestRef.current = null;
       setRequest(null); setStage('entry'); setAmount(''); setUnit(preferredUnit.current); setError('');
       basketRef.current = []; basketUnitRef.current = null; setBasketLines([]);
       setValidated(false);
@@ -399,7 +415,10 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     } catch {
       if (stillClosing()) setError('Could not end the saved request. Please retry.');
       return false;
-    } finally { if (stillClosing()) busy.current = false; }
+    } finally {
+      if (stillClosing()) busy.current = false;
+      if (mounted.current && scopeRef.current === capturedScope) setEndingRequest(false);
+    }
   };
 
 
@@ -422,9 +441,11 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const selectUnit = (next: TerminalUnit) => {
-    if (busy.current || request || basketRef.current.length || next === unit) return;
+    if (busy.current || request || next === unit) return;
     const apply = () => {
-      if (!isFiat(unit) && !isFiat(next)) {
+      const hadBasket = basketRef.current.length > 0;
+      if (hadBasket) { basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setAmount(''); }
+      if (!hadBasket && !isFiat(unit) && !isFiat(next)) {
         try { setAmount(formatTerminalAmount(parseTerminalAmount(amount, unit), next)); }
         catch { setAmount(''); }
       } else setAmount('');
@@ -471,7 +492,6 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     if (!next.length) basketUnitRef.current = null;
     basketRef.current = next; setBasketLines(next); setError('');
   };
-  const clearBasket = () => { if (busy.current) return; basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setAmount(''); setError(''); };
   const removeBasketLine = (line: TerminalBasketLine) => {
     if (busy.current) return;
     const next = basketRef.current.filter(entry => entry.itemId !== line.itemId);
@@ -510,7 +530,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     // Center the QR itself in the measured sheet, reserving room for its amount above.
     const qrTop = Math.max(20, sheetHeight / 2 - 56 - amountHeight - 24 - (qrSize + 34) / 2);
     return <View style={styles.root}>
-      <View style={[styles.header, { backgroundColor: isDark ? theme.colors.surface : theme.colors.background }]}><View style={styles.glassControl} /><View style={styles.glassControl} /><Pressable accessibilityRole="button" accessibilityLabel="Close invoice" style={[styles.glassControl, styles.glassControlEnd]} onPress={dismiss}><GlassView width={40} height={40} shape="circle" interactive style={styles.glassSurface}><Feather name="x" size={21} color={theme.colors.primary} /></GlassView></Pressable></View>
+      <TerminalSheetHeader title="Invoice" closeLabel="Close invoice" disabled={endingRequest} onClose={dismiss} />
       <ScrollView style={styles.checkoutScroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.checkoutScrollContent, showQr && { paddingTop: qrTop }]} bounces={false} showsVerticalScrollIndicator={false}>
         <View style={[styles.checkout, !showQr && { flexGrow: 1 }, showQr && { opacity: amountHeight > 0 ? 1 : 0 }]}>
           {stage === 'received' ? <Feather name="check-circle" size={70} color={theme.colors.bitcoin} /> : null}
@@ -524,20 +544,20 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       </ScrollView>
     </View>;
   };
-  const checkout = <View style={[styles.root, { paddingTop: insets.top }]}>
+  const checkout = <View pointerEvents={checkoutFocused && !transitioning ? 'auto' : 'none'} style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
       {!hasRequest || cashierState === 'locked' ? <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
-          <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
+          <GlassView width={40} height={40} shape="circle" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}>
             {Platform.OS === 'ios' ? <SymbolView name="gearshape" size={21} tintColor={theme.colors.primary} /> : <Feather name="settings" size={21} color={theme.colors.primary} />}
           </GlassView>
         </Pressable> : <View style={styles.glassControl} />}
       <Pressable accessibilityRole="button" accessibilityLabel="Sales history" disabled={stage === 'creating'} onPress={() => checkoutNavigation.current?.navigate('Sales')}>
-        <GlassView width={80} height={40} shape="capsule" interactive={true} style={styles.glassSurface}>
+        <GlassView width={80} height={40} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}>
           <Text style={styles.salesLabel}>Today</Text>
         </GlassView>
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Exit terminal" style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || cashierBusy || stage === 'creating' || hasRequest} onPress={close}>
-        <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
+        <GlassView width={40} height={40} shape="circle" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}>
           <Feather name="x" size={21} color={theme.colors.primary} />
         </GlassView>
       </Pressable>
@@ -570,21 +590,21 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
                 {error ? <Text numberOfLines={2} style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>{error}</Text> : null}
                 {!error && !isLightningInitialized ? <Text numberOfLines={2} style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
                 {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>Items unavailable · Retry</Text></TouchableOpacity> : null}
-                {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
+                {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
               </View>
             </View>
           </View>
         }
     </View>
     {entry && <View style={styles.actionBar}>
-      <TouchableOpacity testID="terminal-request" disabled={stage === 'loading' || stage === 'creating' || hasRequest} style={[styles.primaryAction, (stage === 'creating' || hasRequest) && styles.disabled]} onPress={() => { if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
-        <Text style={styles.primaryActionText}>{hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>
+      <TouchableOpacity testID="terminal-request" disabled={(stage === 'loading' && !hasRequest) || stage === 'creating' || endingRequest} style={[styles.primaryAction, (stage === 'creating' || hasRequest) && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
+        {endingRequest ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>{hasRequest ? 'Resume invoice' : hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>}
       </TouchableOpacity>
     </View>}
   </View>;
 
   const sheetOptions = Platform.OS === 'android' ? { presentation: 'formSheet' as const, sheetAllowedDetents: [0.95], sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const } : { presentation: 'modal' as const, animation: 'slide_from_bottom' as const };
-  return <TerminalStack.Navigator key={scope} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
+  return <TerminalSheetInteractionContext.Provider value={!transitioning}><TerminalStack.Navigator key={scope} screenListeners={{ transitionStart: () => setTransitioning(true), transitionEnd: () => setTransitioning(false) }} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
         checkoutNavigation.current = navigation;
@@ -592,21 +612,24 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       }}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Settings" options={sheetOptions}>
-      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} currencyLocked={basketLines.length > 0} onClearBasket={clearBasket} getTerminalDraft={getTerminalDraft} onOpenItems={() => navigation.navigate('Items')} onClose={() => navigation.goBack()} />}
+      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} getTerminalDraft={getTerminalDraft} onOpenItems={() => navigation.navigate('Items')} onClose={() => navigation.goBack()} />}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Sales" options={sheetOptions}>
       {({ navigation }) => activeWallet ? <SalesRoute walletId={activeWallet.id} network={network} rootVisible={visible} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Items" options={sheetOptions}>
-      {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onClose={() => navigation.goBack()} /> : null}
+      {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onEdit={item => navigation.navigate('ItemEditor', { item })} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="QuickItems" options={sheetOptions}>
-      {({ navigation }) => <TerminalQuickItemsScreen catalog={catalog} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onRemove={removeBasketLine} onManual={() => { clearBasket(); navigation.goBack(); }} onClose={() => navigation.goBack()} />}
+      {({ navigation }) => <TerminalQuickItemsScreen catalog={catalog} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onRemove={removeBasketLine} onClose={() => navigation.goBack()} />}
+    </TerminalStack.Screen>
+    <TerminalStack.Screen name="ItemEditor" options={sheetOptions}>
+      {({ navigation, route }) => activeWallet ? <TerminalItemEditorScreen walletId={activeWallet.id} network={network} preferredUnit={unit} initialItem={route.params?.item} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Invoice" options={sheetOptions}>
-      {() => <InvoiceRoute request={request} scope={scope} onClose={endRequest} onCanReplay={() => mounted.current && scopeRef.current === scope && requestRef.current === null} onCloseError={() => setError('Could not end the saved request. Please retry.')} onFocusChange={setInvoiceFocused}>{renderInvoice}</InvoiceRoute>}
+      {() => <InvoiceRoute request={request} scope={scope} onClose={endRequest} onCanReplay={() => mounted.current && scopeRef.current === scope && requestRef.current === null} onCloseError={() => { if (mounted.current && scopeRef.current === scope) setError('Could not end the saved request. Please retry.'); }} onFocusChange={setInvoiceFocused}>{renderInvoice}</InvoiceRoute>}
     </TerminalStack.Screen>
-  </TerminalStack.Navigator>;
+  </TerminalStack.Navigator></TerminalSheetInteractionContext.Provider>;
 }
 
 function makeStyles(background: string, primary: string, inversePrimary: string, surface: string, muted: string, border: string, bitcoin: string, screenHeight: number, screenWidth: number) {

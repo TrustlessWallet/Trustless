@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { v4 as uuidv4 } from 'uuid';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GlassView } from '../components/GlassView';
+import TerminalSheetHeader from './TerminalSheetHeader';
 import { StyledInput } from '../components/StyledInput';
 import { Text } from '../components/StyledText';
 import { useWallet } from '../contexts/WalletContext';
@@ -137,13 +137,9 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
   };
 
   return <View style={styles.root}>
-    <View pointerEvents="box-none" style={[styles.topBar, { top: insets.top }]}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Back to sale details" onPress={onClose} style={styles.backButton}>
-        <GlassView width={40} height={40} shape="circle" interactive><Feather name="arrow-left" size={20} color={theme.colors.primary} /></GlassView>
-      </Pressable>
-    </View>
-    <ScrollView ref={scrollViewRef} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: insets.top + 86, paddingBottom }} showsVerticalScrollIndicator={false}>
-      <View style={styles.heading}><Text style={styles.title}>Refund</Text><Text style={styles.subtitle}>Original sale · {sats(sale.request.amountSats)}</Text></View>
+    <TerminalSheetHeader title="Refund" closeLabel="Close refund" onClose={onClose} />
+    <ScrollView style={{ flex: 1 }} ref={scrollViewRef} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: 20, paddingBottom }} showsVerticalScrollIndicator={false}>
+      <View style={styles.heading}><Text style={styles.subtitle}>Original sale · {sats(sale.request.amountSats)}</Text></View>
       <View style={styles.balance}><Text style={styles.balanceLabel}>AVAILABLE TO REFUND</Text><Text style={styles.balanceAmount}>{sats(remaining)}</Text></View>
       {outcome ? <Text style={styles.outcome}>{outcome}</Text> : null}
       {saleAttempts.length ? <View style={styles.attempts}>

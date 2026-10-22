@@ -1,11 +1,11 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { GlassView } from '../components/GlassView';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatTerminalBasketAmount, TerminalBasketLine, TerminalUnit } from '../services/terminal';
 import { TerminalItem } from '../services/terminalItems';
+import TerminalSheetHeader from './TerminalSheetHeader';
 
 type Props = {
   catalog: TerminalItem[];
@@ -15,22 +15,15 @@ type Props = {
   onAdd: (item: TerminalItem) => void;
   onRemoveOne: (line: TerminalBasketLine) => void;
   onRemove: (line: TerminalBasketLine) => void;
-  onManual: () => void;
   onClose: () => void;
 };
 
-export default function TerminalQuickItemsScreen({ catalog, lines, unit, busy, onAdd, onRemoveOne, onRemove, onManual, onClose }: Props) {
-  const { theme, isDark } = useTheme();
+export default function TerminalQuickItemsScreen({ catalog, lines, unit, busy, onAdd, onRemoveOne, onRemove, onClose }: Props) {
+  const { theme } = useTheme();
   const basketUnit = lines.length ? unit : null;
   return <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
-    <View style={[styles.header, { backgroundColor: isDark ? theme.colors.surface : theme.colors.background }]}>
-      <Text style={[styles.title, { color: theme.colors.primary }]}>Items</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close item picker" onPress={onClose}>
-        <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}><Feather name="x" size={20} color={theme.colors.primary} /></GlassView>
-      </Pressable>
-    </View>
+    <TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={onClose} />
     <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={styles.list}>
-      {basketUnit ? <Text style={[styles.hint, { color: theme.colors.muted }]}>Basket in {basketUnit}. Clear it to choose another currency.</Text> : null}
       {catalog.map(item => {
         const selected = lines.find(line => line.itemId === item.id);
         const unavailable = !!basketUnit && item.unit !== basketUnit;
@@ -55,15 +48,12 @@ export default function TerminalQuickItemsScreen({ catalog, lines, unit, busy, o
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${line.name}`} disabled={busy} style={styles.control} onPress={() => onAdd({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice })}><Text style={[styles.symbol, { color: theme.colors.primary }]}>+</Text></TouchableOpacity>
       </View>)}
     </ScrollView>
-    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Return to manual amount" disabled={busy} onPress={onManual} style={[styles.manual, { borderTopColor: theme.colors.border }]}><Text style={[styles.manualText, { color: theme.colors.primary }]}>Manual amount</Text></TouchableOpacity>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 }, header: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { fontSize: 16, fontWeight: '600' }, glass: { overflow: 'visible' }, hint: { fontSize: 12, paddingBottom: 8 },
+  root: { flex: 1 },
   scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }, row: { height: 64, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   info: { flex: 1 }, name: { fontSize: 14 }, price: { fontSize: 11, marginTop: 5 }, control: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   symbol: { fontSize: 19 }, quantity: { fontSize: 15, minWidth: 20, textAlign: 'center' },
-  manual: { minHeight: 56, borderTopWidth: 1, alignItems: 'center', justifyContent: 'center' }, manualText: { fontFamily: 'SpaceMono-Bold', fontSize: 13 },
 });

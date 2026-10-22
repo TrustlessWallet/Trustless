@@ -9,12 +9,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import { TerminalUnit } from '../services/terminal';
 import { useWallet } from '../contexts/WalletContext';
 import { CashierTerminalDraft, useWalletMode } from '../contexts/WalletModeContext';
+import TerminalSheetHeader from './TerminalSheetHeader';
 
-type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; currencyLocked?: boolean; onClearBasket?: () => void; getTerminalDraft?: () => CashierTerminalDraft | null };
+type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; getTerminalDraft?: () => CashierTerminalDraft | null };
 const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 
-export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, currencyLocked = false, onClearBasket, getTerminalDraft }: Props) {
-  const { theme, isDark } = useTheme();
+export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, getTerminalDraft }: Props) {
+  const { theme } = useTheme();
   const { activeWallet } = useWallet();
   const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
   const [cashierError, setCashierError] = useState('');
@@ -31,7 +32,6 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ top: insets.top + 8, left: 24 });
   const openCurrency = () => {
-    if (currencyLocked) return;
     rowRef.current?.measureInWindow((x, y, width, height) => {
       const below = y + height + 8;
       const top = below + 140 <= screenHeight - insets.bottom - 8 ? below : y - 148;
@@ -49,23 +49,15 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}>
       <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
     </Animated.View>
-    <View pointerEvents="box-none" style={[styles.topBar, { backgroundColor: isDark ? theme.colors.surface : theme.colors.background }]}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close terminal settings" onPress={onClose} style={styles.backButton}>
-        <GlassView width={40} height={40} shape="circle" interactive style={styles.glass}>
-          <Feather name="x" size={20} color={theme.colors.primary} />
-        </GlassView>
-      </Pressable>
-    </View>
+    <TerminalSheetHeader title="Settings" closeLabel="Close terminal settings" onClose={onClose} />
     <Animated.ScrollView style={styles.scroll} bounces={false} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: Math.max(24, insets.bottom + 24) }]}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Terminal Settings</Text>
         <View style={styles.rowWrapper}>
-          <TouchableOpacity ref={rowRef} accessibilityRole="button" accessibilityLabel="Currency" accessibilityState={{ expanded: currencyOpen, disabled: currencyLocked }} disabled={currencyLocked} onPress={openCurrency} style={styles.row}>
+          <TouchableOpacity ref={rowRef} accessibilityRole="button" accessibilityLabel="Currency" accessibilityState={{ expanded: currencyOpen }} onPress={openCurrency} style={styles.row}>
             <Text style={styles.rowLabel}>Currency</Text>
             <View style={styles.rowEnd}><Text style={styles.currentUnit}>{unit}</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
           </TouchableOpacity>
         </View>
-        {currencyLocked ? <View style={styles.lockedCurrency}><Text style={styles.settingError}>Clear the basket to change currency.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear basket" onPress={onClearBasket}><Text style={[styles.settingError, { color: theme.colors.bitcoin }]}>Clear basket</Text></TouchableOpacity></View> : null}
         {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' && onOpenItems ? <View style={styles.rowWrapper}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Manage items" onPress={onOpenItems} style={styles.row}>
             <Text style={styles.rowLabel}>Items</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} />
@@ -100,19 +92,15 @@ function makeStyles(colors: { background: string; primary: string; surface: stri
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
     scrollFade: { position: 'absolute', top: 56, left: 0, right: 0, height: 48, zIndex: 1 },
-    topBar: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
-    backButton: { width: 40, height: 40 },
     glass: { overflow: 'visible' },
     scroll: { flex: 1, minHeight: 0 },
     content: { paddingHorizontal: 24, paddingTop: 20 },
     section: { marginBottom: 32 },
-    sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.primary, marginBottom: 16 },
     rowWrapper: { borderBottomWidth: 1, borderBottomColor: colors.border },
     row: { paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     rowLabel: { color: colors.muted, fontSize: 16 },
     rowEnd: { flexDirection: 'row', alignItems: 'center', gap: 9 },
     settingError: { color: colors.muted, fontSize: 12, marginTop: 12 },
-    lockedCurrency: { marginBottom: 12 },
     currentUnit: { color: colors.primary, fontSize: 16 },
     popoverBackdrop: { flex: 1, backgroundColor: 'transparent' },
     popoverOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
