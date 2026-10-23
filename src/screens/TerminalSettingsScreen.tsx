@@ -10,6 +10,7 @@ import { TerminalUnit } from '../services/terminal';
 import { useWallet } from '../contexts/WalletContext';
 import { CashierTerminalDraft, useWalletMode } from '../contexts/WalletModeContext';
 import TerminalSheetHeader from './TerminalSheetHeader';
+import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 
 type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; getTerminalDraft?: () => CashierTerminalDraft | null };
 const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
@@ -91,7 +92,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
 function makeStyles(colors: { background: string; primary: string; surface: string; muted: string; border: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
-    scrollFade: { position: 'absolute', top: 56, left: 0, right: 0, height: 48, zIndex: 1 },
+    scrollFade: { position: 'absolute', top: SHEET_HEADER_HEIGHT, left: 0, right: 0, height: 48, zIndex: 1 },
     glass: { overflow: 'visible' },
     scroll: { flex: 1, minHeight: 0 },
     content: { paddingHorizontal: 24, paddingTop: 20 },

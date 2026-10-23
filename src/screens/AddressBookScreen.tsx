@@ -151,7 +151,9 @@ const AddressBookScreen = () => {
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <SafeAreaView style={styles.container}>
         {loadingSavedAddresses ? (
-          <ActivityIndicator color={theme.colors.bitcoin} style={{ marginTop: 20 }} />
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color={theme.colors.bitcoin} style={{ marginTop: 20 }} />
+          </View>
         ) : (
           <FlatList
             data={savedAddresses}
@@ -186,7 +188,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   list: {
     flex: 1,
-    maxHeight: 500,
+  },
+  loadingContainer: {
+    flex: 1,
   },
   listContent: { 
     padding: 16,
@@ -233,14 +237,13 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   itemNameInput: {
     fontFamily: 'SpaceMono-Bold',
     fontSize: 16,
-    fontWeight: '600',
     color: theme.colors.primary,
     paddingBottom: 0,
   },
   itemAddress: { 
     fontSize: 14, 
     color: theme.colors.muted, 
-    fontFamily: 'monospace', 
+    fontFamily: 'SpaceMono-Regular',
     marginTop: 4
   },
   actionsContainer: {

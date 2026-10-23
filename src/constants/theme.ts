@@ -15,6 +15,10 @@ export const LAYOUT = {
   spacing: 16,
   inputHeight: 56,
 };
+export const SHEET_HEADER_HEIGHT = 58;
+export const SHEET_HEADER_SIDE_WIDTH = 48;
+export const SHEET_HEADER_HORIZONTAL_PADDING = 16;
+export const SHEET_HEADER_BUTTON_TOUCH_SIZE = 44;
 export const LIGHT_THEME = {
   dark: false,
   colors: {

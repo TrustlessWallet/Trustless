@@ -5,7 +5,7 @@ import { RootStackParamList, TabParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { View, TouchableOpacity, AppState, Text, Image, Platform } from 'react-native';
+import { View, AppState, Image, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -46,7 +46,8 @@ import { UnilateralExitScreen } from '../screens/UnilateralExitScreen';
 import { WithdrawToOnchainScreen } from '../screens/WithdrawToOnchainScreen';
 import { get_is_nfc_scanning, finish_nfc_scanning } from '../services/nfc';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
-import { GlassView } from '../components/GlassView';
+import SheetHeader from '../components/SheetHeader';
+import GlassIconButton from '../components/GlassIconButton';
 
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -326,55 +327,14 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           ? options.title
           : route.name;
 
-      return (
-        <View style={{
-          height: 58,
-          backgroundColor: isDark ? theme.colors.surface : theme.colors.background,
-          borderBottomWidth: 1,
-          borderBottomColor: theme.colors.border,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: 16,
-        }}>
-          <View style={{ width: 48, height: 24 }} />
-
-          <Text
-            allowFontScaling={false}
-            style={{
-              flex: 1,
-              textAlign: 'center',
-              fontFamily: 'SpaceMono-Bold',
-              fontSize: 17,
-              color: theme.colors.primary
-            }} numberOfLines={1}>
-            {typeof title === 'string' ? title : ''}
-          </Text>
-
-          {options.headerRight ? (
-            <View style={{ width: 48, alignItems: 'flex-end' }}>
-              {options.headerRight({})}
-            </View>
-          ) : (
-            <View style={{ width: 48 }} />
-          )}
-        </View>
-      );
+      return <SheetHeader title={typeof title === 'string' ? title : ''} trailing={options.headerRight?.({})} />;
     },
   };
 
   const CloseButton = ({ onPress }: { onPress: () => void }) => (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Close" style={{ width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
-      <GlassView
-        width={32}
-        height={32}
-        shape="circle"
-        interactive={true}
-        style={{ overflow: 'visible' }}
-      >
+    <GlassIconButton onPress={onPress} accessibilityLabel="Close" visualSize={32} align="flex-end" touchable>
         <Feather name="x" size={20} color={theme.colors.primary} />
-      </GlassView>
-    </TouchableOpacity>
+    </GlassIconButton>
   );
 
   const android_sheet_options: Partial<NativeStackNavigationOptions> = is_android ? {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, StyleSheet } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useWallet } from '../../contexts/WalletContext';
@@ -35,4 +35,24 @@ it('keeps edit and delete actions separate from address selection with 44-point 
   expect(goBack).not.toHaveBeenCalled();
   expect(dispatch).not.toHaveBeenCalled();
   alert.mockRestore();
+});
+
+it('keeps the add action at the bottom while loading and lets the address list fill the available space', () => {
+  const navigate = jest.fn();
+  (useNavigation as jest.Mock).mockReturnValue({ navigate });
+  (useRoute as jest.Mock).mockReturnValue({ params: {} });
+  (useWallet as jest.Mock).mockReturnValue({ savedAddresses: [], loadingSavedAddresses: true });
+
+  const view = render(<AddressBookScreen />);
+  const loadingContainer = view.UNSAFE_getByType(ActivityIndicator).parent;
+  expect(StyleSheet.flatten(loadingContainer?.props.style)).toMatchObject({ flex: 1 });
+  fireEvent.press(view.getByText('Add new address'));
+  expect(navigate).toHaveBeenCalledWith('AddSavedAddress');
+
+  (useWallet as jest.Mock).mockReturnValue({ savedAddresses: [], loadingSavedAddresses: false });
+  view.rerender(<AddressBookScreen />);
+  const listStyle = StyleSheet.flatten(view.UNSAFE_getByType(FlatList).props.style);
+  expect(listStyle).toMatchObject({ flex: 1 });
+  expect(listStyle).not.toHaveProperty('maxHeight');
+  expect(view.getByText('Add new address')).toBeTruthy();
 });

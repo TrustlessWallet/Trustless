@@ -25,3 +25,11 @@ it('enables only the focused settled sheet header', () => {
   expect(view.UNSAFE_getByType(GlassView).props.interactive).toBe(true);
   expect(StyleSheet.flatten(view.getByLabelText('Close items').props.style)).toMatchObject({ width: 44, height: 44 });
 });
+it('keeps a busy sheet close action inert', () => {
+  mockFocused = true;
+  const close = jest.fn();
+  const view = render(<TerminalSheetHeader title="Items" closeLabel="Close items" onClose={close} disabled />);
+  fireEvent.press(view.getByLabelText('Close items'));
+  expect(close).not.toHaveBeenCalled();
+  expect(view.UNSAFE_getByType(GlassView).props.interactive).toBe(false);
+});

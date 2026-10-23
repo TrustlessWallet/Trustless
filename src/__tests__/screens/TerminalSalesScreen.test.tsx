@@ -7,6 +7,7 @@ import { useWallet } from '../../contexts/WalletContext';
 import { recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 import { TerminalRequest } from '../../services/terminal';
 import { exportTerminalSalesCsv } from '../../services/terminalSalesExport';
+import { GlassView } from '../../components/GlassView';
 
 jest.mock('@react-navigation/native', () => ({ ...jest.requireActual('@react-navigation/native'), useIsFocused: () => true }));
 
@@ -49,6 +50,7 @@ it('exports the selected period once per share and keeps the action off sale det
   expect(exportTerminalSalesCsv).toHaveBeenCalledTimes(1);
   expect(exportTerminalSalesCsv).toHaveBeenCalledWith(expect.objectContaining({ walletId: 'wallet-a', network: 'mainnet', period: 'today', day: expect.any(Date), isCurrent: expect.any(Function) }));
   expect(view.getByLabelText(/^Export (today’s|all) activity$/).props.accessibilityState.busy).toBe(true);
+  expect(view.UNSAFE_getAllByType(GlassView)[0].props.interactive).toBe(false);
   await act(async () => { finishShare(true); });
   fireEvent.press(view.getByLabelText('All sales'));
   await act(async () => { fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/)); });
