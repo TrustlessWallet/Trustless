@@ -67,6 +67,32 @@ it('quotes commas, quotes, and line breaks while neutralizing formula-like refer
   expect(csv).toContain('"\'=HYPERLINK(""a,b"")\nnext"');
 });
 
+it('filters week and month by observed sale and refund times, excluding future records', () => {
+  const at = (month: number, date: number, hour = 12) => new Date(2026, month, date, hour).getTime();
+  const sales = [
+    sale('late-received', at(8, 30), at(9, 15)),
+    sale('month-only', at(9, 2)),
+    sale('before-month', at(8, 30)),
+    sale('future-received', at(9, 19), at(9, 21)),
+  ];
+  const refunds = [refund(at(9, 16)), { ...refund(at(9, 3)), id: 'month-refund' }, { ...refund(at(9, 21)), id: 'future-refund' }];
+  const weekCsv = buildTerminalSalesCsv(sales, refunds, 'week', day);
+  expect(weekCsv).toContain('late-received');
+  expect(weekCsv).toContain("'@refund");
+  expect(weekCsv).not.toContain('month-only');
+  expect(weekCsv).not.toContain('month-refund');
+  expect(weekCsv).not.toContain('before-month');
+  expect(weekCsv).not.toContain('future-received');
+  expect(weekCsv).not.toContain('future-refund');
+  const monthCsv = buildTerminalSalesCsv(sales, refunds, 'month', day);
+  expect(monthCsv).toContain('late-received');
+  expect(monthCsv).toContain('month-only');
+  expect(monthCsv).toContain('month-refund');
+  expect(monthCsv).not.toContain('before-month');
+  expect(monthCsv).not.toContain('future-received');
+  expect(monthCsv).not.toContain('future-refund');
+});
+
 it('reads both journals before sharing, uses a unique private CSV file, and deletes it after sharing', async () => {
   const request = sale('one', today).request;
   await AsyncStorage.setItem('@terminalSales:v1:mainnet:wallet-a', JSON.stringify({ version: 1, sales: [{ request, status: 'unknown', updatedAt: today }] }));
@@ -80,6 +106,10 @@ it('reads both journals before sharing, uses a unique private CSV file, and dele
   expect(Sharing.shareAsync).toHaveBeenCalledWith(mockFiles[0].uri, expect.objectContaining({ mimeType: 'text/csv' }));
   expect(await exportTerminalSalesCsv({ ...options, period: 'today' })).toBe(true);
   expect(mockFiles[2].uri).toContain('terminal-today-2026-10-20-');
+  expect(await exportTerminalSalesCsv({ ...options, period: 'week' })).toBe(true);
+  expect(mockFiles[3].uri).toContain('terminal-week-2026-10-20-');
+  expect(await exportTerminalSalesCsv({ ...options, period: 'month' })).toBe(true);
+  expect(mockFiles[4].uri).toContain('terminal-month-2026-10-20-');
 });
 
 it('fails closed on unreadable refunds and never shares a stale scope', async () => {

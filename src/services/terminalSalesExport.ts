@@ -3,8 +3,9 @@ import * as Sharing from 'expo-sharing';
 import { formatFiatMinor, TerminalNetwork } from './terminal';
 import { listTerminalSales, TerminalSale } from './terminalSales';
 import { listTerminalRefunds, TerminalRefundAttempt } from './terminalRefunds';
+import { isInTerminalSalesPeriod, SalesPeriod, terminalSalesPeriodBounds } from './terminalSalesPeriod';
 
-export type SalesExportPeriod = 'today' | 'all';
+export type SalesExportPeriod = SalesPeriod;
 type ExportOptions = {
   walletId: string;
   network: TerminalNetwork;
@@ -19,10 +20,6 @@ const columns = [
   'amount_sats', 'quoted_fee_sats', 'input_unit', 'fiat_currency', 'fiat_amount', 'fiat_amount_minor', 'payment_id',
 ] as const;
 
-const localDay = (timestamp: number, day: Date) => {
-  const value = new Date(timestamp);
-  return value.getFullYear() === day.getFullYear() && value.getMonth() === day.getMonth() && value.getDate() === day.getDate();
-};
 const utc = (timestamp?: number) => timestamp === undefined ? '' : new Date(timestamp).toISOString();
 const safeText = (value: string) => /^[\s\uFEFF]*[=+\-@]/u.test(value) ? `'${value}` : value;
 const cell = (value: string | number) => {
@@ -31,8 +28,9 @@ const cell = (value: string | number) => {
 };
 
 export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: readonly TerminalRefundAttempt[], period: SalesExportPeriod, day: Date): string {
+  terminalSalesPeriodBounds(period, day);
   const records = [
-    ...sales.filter(sale => period === 'all' || localDay(sale.receivedAt ?? sale.request.createdAt, day)).map(sale => ({
+    ...sales.filter(sale => isInTerminalSalesPeriod(sale.receivedAt ?? sale.request.createdAt, period, day)).map(sale => ({
       time: sale.receivedAt ?? sale.request.createdAt,
       fields: [
         'sale', sale.request.id, sale.request.id, sale.status, sale.request.network,
@@ -41,7 +39,7 @@ export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: r
         sale.request.fiat?.currency ?? '', sale.request.fiat ? formatFiatMinor(sale.request.fiat.amountMinor) : '', sale.request.fiat?.amountMinor ?? '', sale.paymentId ?? '',
       ],
     })),
-    ...refunds.filter(refund => period === 'all' || localDay(refund.updatedAt, day)).map(refund => ({
+    ...refunds.filter(refund => isInTerminalSalesPeriod(refund.updatedAt, period, day)).map(refund => ({
       time: refund.updatedAt,
       fields: [
         'refund', refund.id, refund.saleId, refund.status, refund.network,
@@ -61,7 +59,7 @@ export async function exportTerminalSalesCsv({ walletId, network, period, day, i
   if (!isCurrent()) return false;
   const csv = buildTerminalSalesCsv(sales, refunds, period, day);
   const localDate = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-  const stamp = `${period === 'today' ? `${localDate}-` : ''}${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const stamp = `${period === 'all' ? '' : `${localDate}-`}${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const file = new File(Paths.cache, `trustless-terminal-${period}-${stamp}.csv`);
   try {
     if (!isCurrent()) return false;
