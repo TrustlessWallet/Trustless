@@ -364,7 +364,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   };
 
   const CloseButton = ({ onPress }: { onPress: () => void }) => (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Close" style={{ width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
       <GlassView
         width={32}
         height={32}

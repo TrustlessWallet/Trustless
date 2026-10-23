@@ -24,7 +24,7 @@ export default function TerminalSheetHeader({ title, onClose, closeLabel, leadin
     <View style={styles.side}>{leading}</View>
     <Text pointerEvents="none" style={[styles.title, { color: theme.colors.primary }]} numberOfLines={1}>{title}</Text>
     <View style={styles.side}>
-      <Pressable accessibilityRole="button" accessibilityLabel={closeLabel} disabled={!enabled} onPress={onClose} style={styles.close}>
+      <Pressable accessibilityRole="button" accessibilityLabel={closeLabel} accessibilityState={{ disabled: !enabled }} disabled={!enabled} onPress={onClose} style={styles.close}>
         <GlassView width={40} height={40} shape="circle" interactive={enabled} style={styles.glass}>
           <Feather name="x" size={20} color={theme.colors.primary} />
         </GlassView>
@@ -35,8 +35,8 @@ export default function TerminalSheetHeader({ title, onClose, closeLabel, leadin
 
 const styles = StyleSheet.create({
   header: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  side: { width: 40, height: 40 },
+  side: { width: 44, height: 44, justifyContent: 'center' },
   title: { position: 'absolute', left: 70, right: 70, textAlign: 'center', fontSize: 16, fontFamily: 'SpaceMono-Bold', fontWeight: '700' },
-  close: { width: 40, height: 40 },
+  close: { width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'center' },
   glass: { overflow: 'visible' },
 });

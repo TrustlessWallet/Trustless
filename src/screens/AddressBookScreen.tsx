@@ -109,6 +109,7 @@ const AddressBookScreen = () => {
         style={styles.itemContainer} 
         onPress={() => handleSelect(item.address)}
         activeOpacity={0.7}
+        accessible={false}
       >
         <View style={styles.itemInfo}>
           {isEditing ? (
@@ -125,18 +126,20 @@ const AddressBookScreen = () => {
             />
           ) : (
             <View style={styles.nameContainer}>
-              <TouchableOpacity onPress={() => handleStartEditing(item)}>
+              <TouchableOpacity onPress={() => handleStartEditing(item)} accessible={false}>
                 <Text style={styles.itemName}>{item.name || 'Unnamed'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.editButton} onPress={() => handleStartEditing(item)}>
+              <TouchableOpacity style={styles.editButton} onPress={() => handleStartEditing(item)} accessibilityRole="button" accessibilityLabel={`Edit ${item.name || 'Unnamed'} address name`}>
                 <Feather name="edit" style={styles.editIcon} />
               </TouchableOpacity>
             </View>
           )}
-          <Text style={styles.itemAddress}>{formatBitcoinAddressShort(item.address)}</Text>
+          <TouchableOpacity onPress={() => handleSelect(item.address)} accessibilityRole="button" accessibilityLabel={`Select ${item.name || 'Unnamed'} address`}>
+            <Text style={styles.itemAddress}>{formatBitcoinAddressShort(item.address)}</Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.actionsContainer}>
-            <TouchableOpacity style={styles.actionButton} onPress={() => handleDelete(item)}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => handleDelete(item)} accessibilityRole="button" accessibilityLabel={`Delete ${item.name || 'Unnamed'} address`}>
             <Feather name="trash-2" size={18} color={theme.colors.primary} />
             </TouchableOpacity>
         </View>
@@ -191,7 +194,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     gap: 8,
   },
   itemContainer: { 
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
     borderWidth: 1,
@@ -210,14 +213,18 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
+    height: 44,
   },
   itemName: { 
     fontSize: 16, 
     color: theme.colors.primary 
   },
   editButton: {
-    padding: 4,
-    marginLeft: 4,
+    width: 44,
+    height: 44,
+    marginLeft: -6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   editIcon: {
     fontSize: 16,
@@ -234,14 +241,18 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 14, 
     color: theme.colors.muted, 
     fontFamily: 'monospace', 
-    marginTop: 2 
+    marginTop: 4
   },
   actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   actionButton: {
-    padding: 8,
+    width: 44,
+    height: 44,
+    paddingLeft: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   footer: {
     padding: 24,
