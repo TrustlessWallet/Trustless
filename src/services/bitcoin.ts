@@ -396,7 +396,6 @@ export const fetchAddressTransactions = async (
         const histories = await electrumBatchGetHistory(hashes) as any[];
         const tx_ids = new Set<string>();
         const height_map = new Map<string, number>();
-        const unique_heights = new Set<number>();
 
         histories.forEach((h: any) => {
             if (!h.result) return;
@@ -404,30 +403,9 @@ export const fetchAddressTransactions = async (
                 tx_ids.add(item.tx_hash);
                 if (item.height > 0) {
                     height_map.set(item.tx_hash, item.height);
-                    unique_heights.add(item.height);
                 }
             });
         });
-
-        const time_map = new Map<number, number>();
-        const height_arr = Array.from(unique_heights);
-
-        if (height_arr.length > 0) {
-            const client = await getElectrumClient();
-            const chunks = chunkArray(height_arr, 10);
-            for (const chunk of chunks) {
-                await Promise.all(chunk.map(async (h) => {
-                    try {
-                        const r = await client.request('blockchain.block.header', [h]) as string;
-                        if (r && typeof r === 'string' && r.length >= 160) {
-                            const time_hex = r.substring(136, 144);
-                            const timestamp = Buffer.from(time_hex, 'hex').readUInt32LE(0);
-                            time_map.set(h, timestamp);
-                        }
-                    } catch (e) { }
-                }));
-            }
-        }
 
         let ordered_tx_ids = Array.from(tx_ids);
 
@@ -483,6 +461,32 @@ export const fetchAddressTransactions = async (
         const unique_ids = ordered_tx_ids;
 
         if (unique_ids.length === 0) return [];
+
+        // Fetch timestamps only for transactions on this page. History is still
+        // needed to order the page, but older blocks need no header requests.
+        const time_map = new Map<number, number>();
+        const heights_on_page = new Set<number>();
+        unique_ids.forEach(txid => {
+            const height = height_map.get(txid);
+            if (height && height > 0) heights_on_page.add(height);
+        });
+
+        if (heights_on_page.size > 0) {
+            const client = await getElectrumClient();
+            const chunks = chunkArray(Array.from(heights_on_page), 10);
+            for (const chunk of chunks) {
+                await Promise.all(chunk.map(async (h) => {
+                    try {
+                        const r = await client.request('blockchain.block.header', [h]) as string;
+                        if (r && typeof r === 'string' && r.length >= 160) {
+                            const time_hex = r.substring(136, 144);
+                            const timestamp = Buffer.from(time_hex, 'hex').readUInt32LE(0);
+                            time_map.set(h, timestamp);
+                        }
+                    } catch (e) { }
+                }));
+            }
+        }
 
         const batches = chunkArray(unique_ids, 10);
         
