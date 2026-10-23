@@ -13,16 +13,17 @@ import { listTerminalSales, subscribeTerminalSales, terminalSaleDisplayStatus, u
 import { listTerminalRefunds, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
 import { exportTerminalSalesCsv } from '../services/terminalSalesExport';
+import { isInTerminalSalesPeriod, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 import TerminalRefundScreen from './TerminalRefundScreen';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
 type LoadState = { scope: string; sales: TerminalSale[]; loading: boolean; refreshing: boolean; error: boolean };
-type Tab = 'today' | 'all';
-
-const sameLocalDay = (timestamp: number, day: Date) => {
-  const value = new Date(timestamp);
-  return value.getFullYear() === day.getFullYear() && value.getMonth() === day.getMonth() && value.getDate() === day.getDate();
-};
+const periods: { value: SalesPeriod; title: string; label: string; exportLabel: string }[] = [
+  { value: 'today', title: 'Today', label: 'Today sales', exportLabel: 'Export today’s activity' },
+  { value: 'week', title: '7 days', label: 'Last 7 days sales', exportLabel: 'Export last 7 days activity' },
+  { value: 'month', title: 'Month', label: 'This month sales', exportLabel: 'Export this month’s activity' },
+  { value: 'all', title: 'All', label: 'All sales', exportLabel: 'Export all activity' },
+];
 
 const formatTime = (timestamp: number) => new Date(timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 const formatDate = (timestamp: number) => new Date(timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -76,7 +77,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const scope = `${network}:${walletId}`;
-  const [tab, setTab] = useState<Tab>('today');
+  const [periodState, setPeriodState] = useState<{ scope: string; value: SalesPeriod }>({ scope, value: 'today' });
+  const period = periodState.scope === scope ? periodState.value : 'today';
   const [selected, setSelected] = useState<{ scope: string; id: string } | null>(null);
   const [now, setNow] = useState(Date.now());
   const [checking, setChecking] = useState(false);
@@ -99,6 +101,12 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   visibleRef.current = visible;
   const selectedKey = useRef('');
   selectedKey.current = selected ? `${selected.scope}:${selected.id}` : '';
+  const exportIdentity = `${scope}:${period}:${visible}:${selectedKey.current}`;
+  const exportRevision = useRef({ identity: exportIdentity, value: 0 });
+  if (exportRevision.current.identity !== exportIdentity) {
+    exportRevision.current = { identity: exportIdentity, value: exportRevision.current.value + 1 };
+    exportBusy.current = false;
+  }
 
   const refresh = useCallback(async (showLoading = true, userInitiated = false) => {
     const generation = ++loadGeneration.current;
@@ -131,7 +139,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
-  useEffect(() => { setExportError(''); }, [scope, tab]);
+  useEffect(() => { setSelected(null); setPeriodState({ scope, value: 'today' }); }, [scope]);
+  useEffect(() => { setExportError(''); setExporting(false); }, [exportIdentity]);
 
   const refreshRefunds = useCallback(async (showLoading = true) => {
     const generation = ++refundGeneration.current;
@@ -164,7 +173,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const loading = state.scope !== scope || state.loading;
   const error = state.scope === scope && state.error;
   const day = new Date(now);
-  const shown = sales.filter(sale => tab === 'all' || sameLocalDay(saleTime(sale), day))
+  const shown = sales.filter(sale => isInTerminalSalesPeriod(saleTime(sale), period, day))
     .sort((a, b) => saleTime(b) - saleTime(a));
   const paidCount = shown.filter(isPaid).length;
   const totals = totalsFor(shown);
@@ -176,7 +185,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const completedRefund = refunds.reduce((total, attempt) => attempt.status === 'complete' ? total + BigInt(attempt.amountSats) : total, 0n);
   const reservedRefund = refunds.reduce((total, attempt) => attempt.status === 'unknown' || attempt.status === 'pending' ? total + BigInt(attempt.amountSats) : total, 0n);
   const refundedSats = refundsLoaded ? refundState.attempts.reduce((total, attempt) =>
-    attempt.status === 'complete' && (tab === 'all' || sameLocalDay(attempt.updatedAt, day)) ? total + BigInt(attempt.amountSats) : total, 0n) : 0n;
+    attempt.status === 'complete' && isInTerminalSalesPeriod(attempt.updatedAt, period, day) ? total + BigInt(attempt.amountSats) : total, 0n) : 0n;
   const close = () => { ++checkEpoch.current; checkBusy.current = false; onClose(); };
   const checkPayment = async () => {
     if (!detail || checkBusy.current) return;
@@ -215,29 +224,39 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const exportSales = async () => {
     if (exportBusy.current || !visibleRef.current || selectedKey.current) return;
     const capturedScope = scope;
-    const period = tab;
-    const day = new Date();
-    const isCurrent = () => mounted.current && visibleRef.current && currentScope.current === capturedScope && !selectedKey.current;
+    const capturedPeriod = period;
+    const capturedDay = new Date(now);
+    const capturedRevision = exportRevision.current.value;
+    const isCurrent = () => mounted.current && visibleRef.current && currentScope.current === capturedScope && !selectedKey.current && exportRevision.current.value === capturedRevision;
     exportBusy.current = true;
     setExporting(true);
     setExportError('');
-    try { await exportTerminalSalesCsv({ walletId, network, period, day, isCurrent }); }
+    try { await exportTerminalSalesCsv({ walletId, network, period: capturedPeriod, day: capturedDay, isCurrent }); }
     catch (failure) {
       if (isCurrent()) setExportError(failure instanceof Error && failure.message === 'Sharing unavailable on this device.'
         ? failure.message : 'Couldn’t export sales. Try again.');
     } finally {
-      exportBusy.current = false;
-      if (mounted.current) setExporting(false);
+      if (exportRevision.current.value === capturedRevision) {
+        exportBusy.current = false;
+        if (mounted.current) setExporting(false);
+      }
     }
   };
 
+  const bounds = terminalSalesPeriodBounds(period, day);
+  const dateCaption = period === 'all' ? 'All sales for this wallet'
+    : period === 'today' ? formatDate(now)
+      : `${formatDate(bounds!.start)} – ${formatDate(bounds!.end - 1)}`;
+  const sectionTitle = period === 'today' ? 'TODAY’S ACTIVITY' : period === 'week' ? 'LAST 7 DAYS’ ACTIVITY' : period === 'month' ? 'THIS MONTH’S ACTIVITY' : 'ALL ACTIVITY';
+  const screenTitle = period === 'today' ? 'Today' : period === 'all' ? 'History' : 'Sales';
+
   const header = <>
     <View style={styles.heading}>
-      <Text style={styles.subheading}>{detail ? formatLongDate(saleTime(detail)) : tab === 'today' ? formatDate(now) : 'All sales for this wallet'}</Text>
+      <Text style={styles.subheading}>{detail ? formatLongDate(saleTime(detail)) : dateCaption}</Text>
     </View>
     <View style={styles.tabs}>
-        {(['today', 'all'] as const).map(item => <TouchableOpacity key={item} accessibilityRole="tab" accessibilityState={{ selected: tab === item && !detail }} accessibilityLabel={item === 'today' ? 'Today sales' : 'All sales'} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected(null); setTab(item); }} style={[styles.tab, tab === item && !detail && styles.activeTab]}>
-          <Text style={[styles.tabText, tab === item && !detail && styles.activeTabText]}>{item === 'today' ? 'Today' : 'All'}</Text>
+        {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole="tab" accessibilityState={{ selected: period === item.value && !detail }} accessibilityLabel={item.label} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected(null); setPeriodState({ scope, value: item.value }); }} style={[styles.tab, period === item.value && !detail && styles.activeTab]}>
+          <Text style={[styles.tabText, period === item.value && !detail && styles.activeTabText]}>{item.title}</Text>
         </TouchableOpacity>)}
     </View>
     {!detail ? <>
@@ -246,13 +265,13 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         <Text style={styles.summaryLabel}>PAID SALES</Text>
         <Text style={styles.paidCount}>{paidCount}</Text>
         <View style={styles.summaryRule} />
-        {totals.length ? totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.amount}</Text></View>) : <Text style={styles.noTotals}>No paid sales {tab === 'today' ? 'today' : 'yet'}</Text>}
+        {totals.length ? totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.amount}</Text></View>) : <Text style={styles.noTotals}>No paid sales {period === 'today' ? 'today' : period === 'all' ? 'yet' : 'in this period'}</Text>}
         {refundsLoaded ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View>
           : refundState.scope === scope && refundState.error ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry refund totals" onPress={() => { void refreshRefunds(); }}><Text style={styles.summaryNote}>Refund totals unavailable · Retry</Text></TouchableOpacity>
             : <Text style={styles.summaryNote}>Loading refund totals…</Text>}
-        {tab === 'today' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
+        {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
       </View> : null}
-      {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{tab === 'today' ? 'TODAY’S ACTIVITY' : 'ALL ACTIVITY'}</Text><Text style={styles.sectionCount}>{shown.length}</Text></View> : null}
+      {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text><Text style={styles.sectionCount}>{shown.length}</Text></View> : null}
     </> : null}
   </>;
 
@@ -260,7 +279,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   return <View style={styles.root}>
 
-    <TerminalSheetHeader title={detail ? 'Sale details' : tab === 'today' ? 'Today' : 'History'} closeLabel="Close sales" onClose={close} leading={!detail ? <Pressable accessibilityRole="button" accessibilityLabel={tab === 'today' ? 'Export today’s activity' : 'Export all activity'} accessibilityState={{ disabled: exporting || !visible || !headerEnabled, busy: exporting }} disabled={exporting || !visible || !headerEnabled} onPress={() => { void exportSales(); }} style={styles.exportButton}>
+    <TerminalSheetHeader title={detail ? 'Sale details' : screenTitle} closeLabel="Close sales" onClose={close} leading={!detail ? <Pressable accessibilityRole="button" accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} accessibilityState={{ disabled: exporting || !visible || !headerEnabled, busy: exporting }} disabled={exporting || !visible || !headerEnabled} onPress={() => { void exportSales(); }} style={styles.exportButton}>
       <GlassView width={40} height={40} shape="circle" interactive={headerEnabled} style={styles.glass}>
         {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
       </GlassView>
@@ -316,14 +335,14 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         const status = statusFor(item, now);
         return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected({ scope, id: item.request.id }); }}>
           <View style={[styles.rowIcon, status.tone === 'paid' && styles.paidRowIcon]}><Feather name={status.tone === 'paid' ? 'check' : 'clock'} size={18} color={status.tone === 'paid' ? theme.colors.bitcoin : theme.colors.muted} /></View>
-          <View style={styles.rowMiddle}><Text style={styles.rowAmount} numberOfLines={1}>{displayAmount(item.request)}</Text><Text style={styles.rowMeta}>{tab === 'today' ? formatTime(saleTime(item)) : `${formatDate(saleTime(item))} · ${formatTime(saleTime(item))}`}</Text></View>
+          <View style={styles.rowMiddle}><Text style={styles.rowAmount} numberOfLines={1}>{displayAmount(item.request)}</Text><Text style={styles.rowMeta}>{period === 'today' ? formatTime(saleTime(item)) : `${formatDate(saleTime(item))} · ${formatTime(saleTime(item))}`}</Text></View>
           <View style={styles.rowEnd}><Text style={[styles.rowStatus, status.tone === 'paid' && styles.paidText]}>{status.label}</Text><Feather name="chevron-right" size={17} color={theme.colors.muted} /></View>
         </TouchableOpacity>;
       }}
       ListEmptyComponent={<View style={styles.empty}>
         {error ? <><Feather name="alert-circle" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>Sales unavailable</Text><Text style={styles.emptyBody}>Couldn’t load saved sales. Try again.</Text><TouchableOpacity accessibilityRole="button" onPress={() => { void refresh(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></>
           : loading ? null
-            : <><Feather name="shopping-bag" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>{tab === 'today' ? 'No activity today' : 'No sales yet'}</Text><Text style={styles.emptyBody}>{tab === 'today' ? 'New payment requests will appear here.' : 'Payment requests from this wallet will appear here.'}</Text></>}
+            : <><Feather name="shopping-bag" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>{period === 'today' ? 'No sales today' : period === 'all' ? 'No sales yet' : 'No sales in this period'}</Text><Text style={styles.emptyBody}>{period === 'today' ? 'New payment requests will appear here.' : period === 'all' ? 'Payment requests from this wallet will appear here.' : 'Payment requests in this period will appear here.'}</Text></>}
       </View>}
       showsVerticalScrollIndicator={false}
     />}
@@ -346,10 +365,10 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     heading: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 25 },
     title: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 42 },
     subheading: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, marginTop: 5 },
-    tabs: { flexDirection: 'row', marginHorizontal: 24, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 12 },
-    tab: { minWidth: 88, minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    tabs: { flexDirection: 'row', marginHorizontal: 24, borderBottomWidth: 1, borderBottomColor: colors.border },
+    tab: { flex: 1, minWidth: 0, minHeight: 44, paddingHorizontal: 2, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
     activeTab: { borderBottomColor: colors.bitcoin },
-    tabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
+    tabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     activeTabText: { color: colors.primary },
     summary: { marginHorizontal: 24, marginTop: 26, padding: 22, borderRadius: 18, backgroundColor: colors.surface },
     summaryLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
