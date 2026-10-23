@@ -11,6 +11,7 @@ import { useWalletMode } from '../contexts/WalletModeContext';
 import { formatTerminalBasketAmount, TerminalNetwork, TerminalUnit } from '../services/terminal';
 import { deleteTerminalItem, listTerminalItems, TerminalItem } from '../services/terminalItems';
 import TerminalSheetHeader from './TerminalSheetHeader';
+import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 
 type Props = { walletId: string; network: TerminalNetwork; preferredUnit: TerminalUnit; onClose: () => void; onEdit: (item?: TerminalItem) => void };
 
@@ -84,7 +85,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  scrollFade: { position: 'absolute', top: 56, left: 0, right: 0, height: 48, zIndex: 1 },
+  scrollFade: { position: 'absolute', top: SHEET_HEADER_HEIGHT, left: 0, right: 0, height: 48, zIndex: 1 },
   scroll: { flex: 1, minHeight: 0 }, content: { paddingHorizontal: 24, paddingTop: 20 },
   message: { fontSize: 12, marginTop: 12 }, link: { fontSize: 13, marginTop: 12 },
   itemRow: { minHeight: 65, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },

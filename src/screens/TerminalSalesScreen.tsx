@@ -1,10 +1,11 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, FlatList, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import TerminalSheetHeader, { TerminalSheetInteractionContext } from './TerminalSheetHeader';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GlassView } from '../components/GlassView';
+import GlassIconButton from '../components/GlassIconButton';
+import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWallet } from '../contexts/WalletContext';
@@ -281,11 +282,9 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   return <View style={styles.root}>
 
-    <TerminalSheetHeader title={detail ? 'Sale details' : 'Sales'} closeLabel="Close sales" onClose={close} leading={!detail ? <Pressable accessibilityRole="button" accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} accessibilityState={{ disabled: exporting || !visible || !headerEnabled, busy: exporting }} disabled={exporting || !visible || !headerEnabled} onPress={() => { void exportSales(); }} style={styles.exportButton}>
-      <GlassView width={40} height={40} shape="circle" interactive={headerEnabled} style={styles.glass}>
+    <TerminalSheetHeader title={detail ? 'Sale details' : 'Sales'} closeLabel="Close sales" onClose={close} leading={!detail ? <GlassIconButton accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} disabled={exporting || !visible || !headerEnabled} busy={exporting} onPress={() => { void exportSales(); }} visualSize={40} align="flex-start">
         {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
-      </GlassView>
-    </Pressable> : undefined} />
+    </GlassIconButton> : undefined} />
     {detail ? <ScrollView style={styles.scroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
       {header}
       <View style={styles.detailCard}>
@@ -332,7 +331,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       contentInsetAdjustmentBehavior="never"
       automaticallyAdjustContentInsets={false}
       contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 28 }]}
-      refreshControl={<RefreshControl refreshing={state.scope === scope && state.refreshing} onRefresh={() => { void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={56} />}
+      refreshControl={<RefreshControl refreshing={state.scope === scope && state.refreshing} onRefresh={() => { void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={SHEET_HEADER_HEIGHT} />}
       renderItem={({ item }) => {
         const status = statusFor(item, now);
         return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected({ scope, id: item.request.id }); }}>
@@ -358,12 +357,8 @@ function DetailField({ label, value, styles, selectable = false }: { label: stri
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; border: string; muted: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
-    topBar: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     scroll: { flex: 1, minHeight: 0 },
-    backButton: { width: 40, height: 40 },
-    exportButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'flex-start' },
     exportError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginHorizontal: 24, marginTop: 12 },
-    glass: { overflow: 'visible' },
     heading: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 25 },
     title: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 42 },
     subheading: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, marginTop: 5 },

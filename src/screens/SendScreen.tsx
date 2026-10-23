@@ -940,7 +940,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 16,
         fontSize: 16,
-        fontFamily: 'monospace',
+        fontFamily: 'SpaceMono-Regular',
         color: theme.colors.primary,
         textAlignVertical: 'top'
     },
