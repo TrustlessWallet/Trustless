@@ -606,13 +606,13 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     </View>
     {entry && <View style={styles.actionBar}>
       <TouchableOpacity testID="terminal-request" disabled={requestDisabled} style={[styles.primaryAction, requestDisabled && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
-        {endingRequest ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>{hasRequest ? 'Resume invoice' : hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>}
+        {endingRequest || stage === 'creating' ? <ActivityIndicator accessibilityLabel={endingRequest ? 'Closing invoice' : 'Generating invoice'} color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>{hasRequest ? 'Resume invoice' : hydrationFailed ? 'Retry loading' : 'Generate invoice'}</Text>}
       </TouchableOpacity>
     </View>}
   </View>;
 
   const sheetOptions = Platform.OS === 'android' ? { presentation: 'formSheet' as const, sheetAllowedDetents: [0.95], sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const } : { presentation: 'modal' as const, animation: 'slide_from_bottom' as const };
-  return <TerminalSheetInteractionContext.Provider value={!transitioning}><TerminalStack.Navigator key={scope} screenListeners={{ transitionStart: () => setTransitioning(true), transitionEnd: () => setTransitioning(false) }} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
+  return <TerminalSheetInteractionContext.Provider value={!transitioning}><TerminalStack.Navigator key={scope} screenListeners={{ transitionStart: () => setTransitioning(true), transitionEnd: () => setTransitioning(false), gestureCancel: () => setTransitioning(false) }} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
         checkoutNavigation.current = navigation;

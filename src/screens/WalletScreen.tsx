@@ -472,8 +472,9 @@ const WalletScreen = () => {
         manualRefreshRef.current = false;
         setIsManualRefreshing(false);
         refreshDrag.current = { armed: false, dragging: false, distance: 0, releasedAt: 0 };
+        scrollY.setValue(0);
         return () => { ++refreshEpoch.current; };
-    }, [activeWallet?.id, isLightningMode]);
+    }, [activeWallet?.id, isLightningMode, scrollY]);
 
     const onRefresh = useCallback(async () => {
         // Ignore refresh events caused by inset/layout changes or a tiny pull.
@@ -674,6 +675,7 @@ const WalletScreen = () => {
             </Animated.View>
 
             <Animated.FlatList
+                key={`${activeWallet.id}:${isLightningMode ? 'lightning' : 'onchain'}`}
                 testID="wallet-transactions"
                 contentInsetAdjustmentBehavior="never"
                 automaticallyAdjustContentInsets={false}
