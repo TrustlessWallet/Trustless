@@ -4,6 +4,7 @@ import { Text } from 'react-native';
 import useSWR from 'swr';
 import * as Location from 'expo-location';
 import { useIsFocused } from '@react-navigation/native';
+import Supercluster from 'supercluster';
 import MapScreen from '../../screens/MapScreen';
 
 // --- Mocks ---
@@ -106,6 +107,9 @@ jest.mock('../../components/Map/MerchantBottomSheet', () => {
 // --- Tests ---
 
 describe('MapScreen Component', () => {
+  const restaurant = { id: 'restaurant', lat: 40.01, lon: -74.01, tags: { amenity: 'restaurant' } };
+  const shop = { id: 'shop', lat: 39.99, lon: -73.99, tags: { shop: 'clothes' } };
+
   beforeEach(() => {
     jest.clearAllMocks();
     (useIsFocused as jest.Mock).mockReturnValue(true);
@@ -224,5 +228,122 @@ describe('MapScreen Component', () => {
     await waitFor(() => {
       expect(getByTestId('merchant-bottom-sheet')).toBeTruthy();
     });
+  });
+
+  it('reuses warm filter indexes and shows their markers immediately', async () => {
+    const elements = [restaurant, shop];
+    (useSWR as jest.Mock).mockReturnValue({ data: elements, error: undefined, isLoading: false });
+    const load = jest.spyOn(Supercluster.prototype, 'load');
+    const { getByTestId, queryByTestId, getByRole } = render(<MapScreen />);
+
+    await waitFor(() => expect(getByTestId('custom-marker-restaurant')).toBeTruthy());
+    fireEvent.press(getByRole('button', { name: 'Food & Drink' }));
+    await waitFor(() => {
+      expect(getByTestId('custom-marker-restaurant')).toBeTruthy();
+      expect(queryByTestId('custom-marker-shop')).toBeNull();
+    });
+    expect(load).toHaveBeenCalledTimes(2);
+
+    fireEvent.press(getByRole('button', { name: 'Food & Drink' }));
+    expect(getByTestId('custom-marker-shop')).toBeTruthy();
+    fireEvent.press(getByRole('button', { name: 'Food & Drink' }));
+    expect(queryByTestId('custom-marker-shop')).toBeNull();
+    expect(load).toHaveBeenCalledTimes(2);
+    load.mockRestore();
+  });
+
+  it('applies only the latest filter during rapid taps', async () => {
+    const elements = [restaurant, shop];
+    (useSWR as jest.Mock).mockReturnValue({ data: elements, error: undefined, isLoading: false });
+    const { getByTestId, queryByTestId, getByRole } = render(<MapScreen />);
+    await waitFor(() => expect(getByTestId('custom-marker-restaurant')).toBeTruthy());
+
+    fireEvent.press(getByRole('button', { name: 'Food & Drink' }));
+    fireEvent.press(getByRole('button', { name: 'Shopping' }));
+    await waitFor(() => {
+      expect(getByTestId('custom-marker-shop')).toBeTruthy();
+      expect(queryByTestId('custom-marker-restaurant')).toBeNull();
+      expect(getByRole('button', { name: 'Shopping' }).props.accessibilityState.selected).toBe(true);
+    });
+  });
+
+  it('clears old markers for empty and replacement datasets', async () => {
+    const first = [restaurant];
+    const second = [shop];
+    (useSWR as jest.Mock).mockReturnValue({ data: first, error: undefined, isLoading: false });
+    const screen = render(<MapScreen />);
+    await waitFor(() => expect(screen.getByTestId('custom-marker-restaurant')).toBeTruthy());
+
+    (useSWR as jest.Mock).mockReturnValue({ data: [], error: undefined, isLoading: false });
+    screen.rerender(<MapScreen />);
+    expect(screen.queryByTestId('custom-marker-restaurant')).toBeNull();
+
+    (useSWR as jest.Mock).mockReturnValue({ data: second, error: undefined, isLoading: false });
+    screen.rerender(<MapScreen />);
+    expect(screen.queryByTestId('custom-marker-restaurant')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('custom-marker-shop')).toBeTruthy());
+
+    (useSWR as jest.Mock).mockReturnValue({ data: first, error: undefined, isLoading: false });
+    screen.rerender(<MapScreen />);
+    expect(screen.queryByTestId('custom-marker-shop')).toBeNull();
+    expect(screen.getByTestId('custom-marker-restaurant')).toBeTruthy();
+  });
+
+  it.each(['denied', 'failed permission', 'failed position'])('keeps the map usable when location is %s', async failure => {
+    if (failure === 'denied') {
+      (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'denied' });
+    } else if (failure === 'failed permission') {
+      (Location.requestForegroundPermissionsAsync as jest.Mock).mockRejectedValue(new Error('permission unavailable'));
+    } else {
+      (Location.getCurrentPositionAsync as jest.Mock).mockRejectedValue(new Error('position unavailable'));
+    }
+    (useSWR as jest.Mock).mockReturnValue({
+      data: [{ id: 'origin', lat: 0, lon: 0, tags: { amenity: 'restaurant' } }],
+      error: undefined,
+      isLoading: false,
+    });
+    const { getByTestId } = render(<MapScreen />);
+    await waitFor(() => expect(getByTestId('custom-marker-origin')).toBeTruthy());
+    expect(getByTestId('map-view')).toBeTruthy();
+    if (failure !== 'failed position') {
+      expect(Location.getCurrentPositionAsync).not.toHaveBeenCalled();
+    }
+  });
+
+  it('retries location after focus changes during a pending request', async () => {
+    let resolveFirst!: (value: { status: string }) => void;
+    (Location.requestForegroundPermissionsAsync as jest.Mock)
+      .mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce({ status: 'granted' });
+    (useSWR as jest.Mock).mockReturnValue({ data: [], error: undefined, isLoading: false });
+    const screen = render(<MapScreen />);
+    expect(Location.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+
+    (useIsFocused as jest.Mock).mockReturnValue(false);
+    screen.rerender(<MapScreen />);
+    resolveFirst({ status: 'granted' });
+    (useIsFocused as jest.Mock).mockReturnValue(true);
+    screen.rerender(<MapScreen />);
+
+    await waitFor(() => {
+      expect(Location.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(2);
+      expect(Location.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it.each(['granted', 'denied'])('does not repeat a settled %s location request on refocus', async status => {
+    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status });
+    (useSWR as jest.Mock).mockReturnValue({
+      data: status === 'granted' ? [restaurant] : [{ id: 'origin', lat: 0, lon: 0 }],
+      error: undefined, isLoading: false,
+    });
+    const screen = render(<MapScreen />);
+    await waitFor(() => expect(screen.getByTestId(status === 'granted' ? 'custom-marker-restaurant' : 'custom-marker-origin')).toBeTruthy());
+
+    (useIsFocused as jest.Mock).mockReturnValue(false);
+    screen.rerender(<MapScreen />);
+    (useIsFocused as jest.Mock).mockReturnValue(true);
+    screen.rerender(<MapScreen />);
+    expect(Location.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
   });
 });

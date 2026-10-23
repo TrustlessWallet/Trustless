@@ -3,7 +3,7 @@ import { StyleSheet, View, TouchableOpacity, ActivityIndicator, Platform, Scroll
 import MapView, { Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import useSWR from 'swr';
-import Supercluster from 'supercluster';
+import type Supercluster from 'supercluster';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,21 +11,13 @@ import BottomSheet from '@gorhom/bottom-sheet';
 
 import { useTheme } from '../contexts/ThemeContext';
 import { Text } from '../components/StyledText';
-import CustomMarker, { getCategoryIcon } from '../components/Map/CustomMarker';
+import CustomMarker from '../components/Map/CustomMarker';
 import ClusterMarker from '../components/Map/ClusterMarker';
 import MerchantBottomSheet from '../components/Map/MerchantBottomSheet';
 import { BTC_MAP_API_URL, btcMapFetcher, BtcMapElement } from '../services/btcmap';
+import { FILTER_GROUPS, getMapIndex, peekMapIndex } from '../services/mapIndex';
 import { GlassView } from '../components/GlassView';
 import { useIsFocused } from '@react-navigation/native';
-
-const FILTER_GROUPS = [
-  { id: 'food', label: 'Food & Drink', icon: 'restaurant', icons: ['restaurant', 'local-cafe', 'local-bar', 'fastfood', 'bakery-dining', 'icecream'] },
-  { id: 'shopping', label: 'Shopping', icon: 'local-grocery-store', icons: ['local-grocery-store', 'checkroom', 'devices', 'menu-book', 'card-giftcard', 'chair', 'visibility', 'hardware', 'toys', 'pets', 'watch', 'videogame-asset', 'music-note', 'storefront'] },
-  { id: 'services', label: 'Services', icon: 'account-balance', icons: ['account-balance', 'local-pharmacy', 'local-hospital', 'content-cut', 'spa', 'real-estate-agent', 'gavel', 'design-services', 'business', 'school', 'plumbing', 'bolt', 'construction'] },
-  { id: 'Hotels', label: 'Hotels', icon: 'hotel', icons: ['hotel', 'apartment'] },
-  { id: 'transport', label: 'Transport', icon: 'directions-car', icons: ['pedal-bike', 'two-wheeler', 'directions-car', 'directions-boat', 'local-gas-station', 'local-parking'] },
-  { id: 'entertainment', label: 'Entertainment', icon: 'attractions', icons: ['flight', 'movie', 'casino', 'museum', 'fitness-center', 'pool', 'park', 'attractions'] }
-] as const;
 
 const getBounds = (region: Region): [number, number, number, number] => [
   region.longitude - region.longitudeDelta / 2,
@@ -41,13 +33,17 @@ export default function MapScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const mapRef = useRef<MapView>(null);
-  const clusterRef = useRef<Supercluster | null>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
   const sheetState = useRef<'open' | 'closing' | 'closed'>('closed');
 
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [selectedMerchant, setSelectedMerchant] = useState<BtcMapElement | null>(null);
-  const [clusters, setClusters] = useState<any[]>([]);
+  const [clusterResult, setClusterResult] = useState<{
+    elements: readonly BtcMapElement[];
+    filterId: string | null;
+    index: Supercluster;
+    clusters: any[];
+  } | null>(null);
   const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
   const [region, setRegion] = useState<Region>({
     latitude: 0,
@@ -57,7 +53,7 @@ export default function MapScreen() {
   });
   const regionRef = useRef<Region>(region);
 
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [processingFilter, setProcessingFilter] = useState<string | null>(null);
 
   const { data: elements, error, isLoading } = useSWR<BtcMapElement[]>(
@@ -67,62 +63,59 @@ export default function MapScreen() {
   );
 
   useEffect(() => {
-    if (!elements || elements.length === 0) return;
-
-    const timer = setTimeout(() => {
-      const points = elements.reduce<any[]>((acc, el) => {
-        const lat = el.osm_json?.lat ?? el.osm_json?.center?.lat ?? el.lat;
-        const lon = el.osm_json?.lon ?? el.osm_json?.center?.lon ?? el.lon;
-
-        if (isNaN(Number(lon)) || isNaN(Number(lat))) return acc;
-
-        const mergedTags = { ...(el.osm_json?.tags || {}), ...(el.tags || {}) };
-
-        if (activeFilters.length > 0) {
-          const iconName = getCategoryIcon(mergedTags);
-          const matchesFilter = activeFilters.some(filterId => {
-            const group = FILTER_GROUPS.find(g => g.id === filterId);
-            return (group?.icons as readonly string[])?.includes(iconName);
-          });
-          if (!matchesFilter) return acc;
-        }
-
-        const cleanElement = { ...el, lat: Number(lat), lon: Number(lon), tags: mergedTags };
-
-        acc.push({
-          type: 'Feature' as const,
-          properties: { cluster: false, element: cleanElement },
-          geometry: { type: 'Point' as const, coordinates: [Number(lon), Number(lat)] },
-        });
-
-        return acc;
-      }, []);
-
-      const supercluster = new Supercluster({ radius: 70, maxZoom: 16 });
-      supercluster.load(points);
-      clusterRef.current = supercluster;
-
-      updateClusters(regionRef.current);
-
+    if (!elements?.length) {
+      setClusterResult(null);
       setProcessingFilter(null);
-    }, 50);
+      return;
+    }
 
+    const applyIndex = (index: Supercluster) => {
+      const currentRegion = regionRef.current;
+      let nextClusters: any[] = [];
+      try {
+        nextClusters = index.getClusters(getBounds(currentRegion), getZoomLevel(currentRegion));
+      } catch (e) { }
+      setClusterResult({ elements, filterId: activeFilter, index, clusters: nextClusters });
+      setProcessingFilter(null);
+    };
+
+    const cached = peekMapIndex(elements, activeFilter);
+    if (cached) {
+      applyIndex(getMapIndex(elements, activeFilter));
+      return;
+    }
+
+    const timer = setTimeout(() => applyIndex(getMapIndex(elements, activeFilter)), 50);
     return () => clearTimeout(timer);
-  }, [elements, activeFilters]);
+  }, [elements, activeFilter]);
 
   const isFocused = useIsFocused();
   const hasRequestedLocation = useRef(false);
 
   useEffect(() => {
-    if (isFocused && !hasRequestedLocation.current) {
+    let cancelled = false;
+    let settled = false;
+    const started = isFocused && !hasRequestedLocation.current;
+    if (started) {
       hasRequestedLocation.current = true;
       (async () => {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        let currentLocation = await Location.getCurrentPositionAsync({});
-        setLocation(currentLocation);
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (cancelled || status !== 'granted') return;
+          const currentLocation = await Location.getCurrentPositionAsync({});
+          if (!cancelled) setLocation(currentLocation);
+        } catch (e) {
+          // Location is optional; keep the map usable if permission or lookup fails.
+          if (!cancelled) hasRequestedLocation.current = false;
+        } finally {
+          settled = true;
+        }
       })();
     }
+    return () => {
+      cancelled = true;
+      if (started && !settled) hasRequestedLocation.current = false;
+    };
   }, [isFocused]);
 
   useEffect(() => {
@@ -141,12 +134,16 @@ export default function MapScreen() {
   }, [isLoading, location]);
 
   const updateClusters = (newRegion: Region) => {
-    if (!clusterRef.current) return;
     const bbox = getBounds(newRegion);
     const zoom = getZoomLevel(newRegion);
-    try {
-      setClusters(clusterRef.current.getClusters(bbox, zoom));
-    } catch (e) { }
+    setClusterResult(previous => {
+      if (!previous) return previous;
+      try {
+        return { ...previous, clusters: previous.index.getClusters(bbox, zoom) };
+      } catch (e) {
+        return previous;
+      }
+    });
   };
 
   const handleRegionChangeComplete = (newRegion: Region) => {
@@ -194,9 +191,8 @@ export default function MapScreen() {
     }, 500);
   };
 
-  const handleClusterPress = (clusterId: number, lat: number, lon: number) => {
-    if (!clusterRef.current) return;
-    const expansionZoom = clusterRef.current.getClusterExpansionZoom(clusterId);
+  const handleClusterPress = (lat: number, lon: number) => {
+    if (!clusterResult || clusterResult.elements !== elements || clusterResult.filterId !== activeFilter) return;
     mapRef.current?.animateToRegion({
       latitude: lat,
       longitude: lon,
@@ -206,11 +202,9 @@ export default function MapScreen() {
   };
 
   const toggleFilter = (filterId: string) => {
-    setProcessingFilter(filterId);
-
-    setTimeout(() => {
-      setActiveFilters(prev => (prev[0] === filterId ? [] : [filterId]));
-    }, 20);
+    const nextFilter = activeFilter === filterId ? null : filterId;
+    setProcessingFilter(elements?.length && !peekMapIndex(elements, nextFilter) ? filterId : null);
+    setActiveFilter(nextFilter);
   };
 
   const mapStyle = useMemo(() => {
@@ -249,7 +243,8 @@ export default function MapScreen() {
           onPress={handleMapInteraction}
           onPanDrag={handleMapInteraction}
         >
-          {clusters.map((cluster) => {
+          {(clusterResult?.elements === elements && clusterResult?.filterId === activeFilter
+            ? clusterResult.clusters : []).map((cluster) => {
             const [lon, lat] = cluster.geometry.coordinates;
             const { cluster: isCluster, element, cluster_id, point_count } = cluster.properties;
 
@@ -259,7 +254,7 @@ export default function MapScreen() {
                   key={`cluster-${cluster_id}`}
                   coordinate={{ latitude: lat, longitude: lon }}
                   pointCount={point_count}
-                  onPress={() => handleClusterPress(cluster_id, lat, lon)}
+                  onPress={() => handleClusterPress(lat, lon)}
                   theme={theme}
                 />
               );
@@ -283,7 +278,7 @@ export default function MapScreen() {
             contentContainerStyle={styles.filterScrollContent}
           >
             {FILTER_GROUPS.map(group => {
-              const isActive = activeFilters[0] === group.id;
+              const isActive = activeFilter === group.id;
               const isProcessing = processingFilter === group.id;
               const contentColor = isActive ? theme.colors.bitcoin : theme.colors.primary;
 
@@ -292,7 +287,9 @@ export default function MapScreen() {
                   key={group.id}
                   onPress={() => toggleFilter(group.id)}
                   style={styles.pillTouchContainer}
-                  disabled={isProcessing}
+                  accessibilityRole="button"
+                  accessibilityLabel={group.label}
+                  accessibilityState={{ selected: isActive, busy: isProcessing }}
                 >
                   <GlassView
                     width={140}
