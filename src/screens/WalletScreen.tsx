@@ -578,7 +578,7 @@ const WalletScreen = () => {
     const displayTransactions = isLightningMode
         ? [...lightningTransactions].sort((a, b) => b.paymentTime - a.paymentTime)
         : (onchainTransactions || []);
-    const recentTransactions = displayTransactions.slice(0, 10);
+    const recentTransactions = displayTransactions.slice(0, 3);
 
     const toggleIconElement = (
         <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
@@ -860,6 +860,7 @@ const WalletScreen = () => {
                         onRefresh={onRefresh}
                         tintColor={theme.colors.bitcoin}
                         colors={[theme.colors.bitcoin]}
+                        progressViewOffset={insets.top + 16}
                     />
                 }
             />
@@ -1000,7 +1001,7 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
         fontWeight: '600'
     },
     topSection: {
-        minHeight: screenHeight * 0.55,
+        minHeight: screenHeight * 0.65,
         paddingTop: 56,
         justifyContent: 'center',
         alignItems: 'center',

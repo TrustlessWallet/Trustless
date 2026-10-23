@@ -14,6 +14,8 @@ jest.mock('@react-navigation/native', () => ({
 }));
 
 let mockTerminalChanging = false;
+let mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
+let mockTransactions: any[] = [];
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ showTerminal: true, setMode: jest.fn(), changing: mockTerminalChanging }) }));
 
 jest.mock('../../contexts/WalletContext', () => ({
@@ -25,7 +27,7 @@ jest.mock('../../contexts/ThemeContext', () => ({
 }));
 
 jest.mock('../../hooks/useBalance', () => ({
-    useWalletTransactions: () => ({ data: [], isLoading: false, refetch: jest.fn() }),
+    useWalletTransactions: () => ({ data: mockTransactions, isLoading: false, refetch: jest.fn() }),
     useWalletUTXOs: () => ({ data: [], refetch: jest.fn() }),
     useTipHeight: jest.fn(),
 }));
@@ -52,13 +54,13 @@ jest.mock('@expo/vector-icons', () => ({ Feather: () => null, MaterialIcons: () 
 jest.mock('../../components/GlassView', () => ({ GlassView: ({ children }: any) => <>{children}</> }));
 jest.mock('react-native-safe-area-context', () => ({
     SafeAreaView: ({ children }: any) => <>{children}</>,
-    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
+    useSafeAreaInsets: () => mockInsets
 }));
 
 
 
 import { act } from '@testing-library/react-native';
-import { Alert, Platform, RefreshControl } from 'react-native';
+import { Alert, Dimensions, Platform, RefreshControl, StyleSheet } from 'react-native';
 const originalPlatform = Platform.OS;
 afterEach(() => { Platform.OS = originalPlatform; });
 const refresh = jest.fn<Promise<void>, []>(() => Promise.resolve());
@@ -66,6 +68,8 @@ const navigate = jest.fn();
 beforeEach(() => {
     jest.clearAllMocks();
     mockTerminalChanging = false;
+    mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
+    mockTransactions = [];
     Platform.OS = 'ios';
     (useNavigation as jest.Mock).mockReturnValue({ navigate });
     (useWallet as jest.Mock).mockReturnValue({
@@ -115,9 +119,19 @@ it('does not carry a pull gesture over a Terminal round trip', async () => {
 });
 
 it('starts a fresh list and shows a new pull spinner after switching wallets', async () => {
+    mockInsets = { top: 47, bottom: 34, left: 0, right: 0 };
     const screen = render(<WalletScreen />);
     await act(async () => {});
     const oldList = screen.getByTestId('wallet-transactions');
+    const expectViewport = (list: any) => {
+        expect(list.props.contentInsetAdjustmentBehavior).toBe('never');
+        expect(list.props.automaticallyAdjustContentInsets).toBe(false);
+        expect(StyleSheet.flatten(list.props.contentContainerStyle)).toMatchObject({ paddingTop: 47, paddingBottom: 144 });
+        expect(StyleSheet.flatten(list.props.ListHeaderComponent.props.style).minHeight)
+            .toBe(Dimensions.get('window').height * 0.65);
+        expect(screen.UNSAFE_getByType(RefreshControl).props.progressViewOffset).toBe(63);
+    };
+    expectViewport(oldList);
     fireEvent(oldList, 'scrollBeginDrag');
     scroll(screen, -70);
 
@@ -127,6 +141,7 @@ it('starts a fresh list and shows a new pull spinner after switching wallets', a
     });
     screen.rerender(<WalletScreen />);
     expect(screen.getByTestId('wallet-transactions')).not.toBe(oldList);
+    expectViewport(screen.getByTestId('wallet-transactions'));
     await act(async () => { await screen.UNSAFE_getByType(RefreshControl).props.onRefresh(); });
     expect(refresh).not.toHaveBeenCalled();
 
@@ -140,6 +155,23 @@ it('starts a fresh list and shows a new pull spinner after switching wallets', a
     expect(refresh).toHaveBeenCalledWith('onchain');
     await act(async () => { finish(); await task; });
     expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+});
+
+it('shows three recent transactions and keeps the full-history link', async () => {
+    mockTransactions = Array.from({ length: 5 }, (_, index) => ({
+        txid: `tx-${index}`,
+        type: 'receive',
+        vin: [],
+        vout: [],
+        amount: 1000,
+        status: { confirmed: true, block_time: 1 },
+    }));
+    const screen = render(<WalletScreen />);
+    await act(async () => {});
+    expect(screen.getByTestId('wallet-transactions').props.data.map((tx: any) => tx.txid))
+        .toEqual(['tx-0', 'tx-1', 'tx-2']);
+    fireEvent.press(screen.getByText('See full transaction history'));
+    expect(navigate).toHaveBeenCalledWith('TransactionHistory', { mode: 'onchain' });
 });
 
 it('accepts native Android refresh at zero list offset', async () => {

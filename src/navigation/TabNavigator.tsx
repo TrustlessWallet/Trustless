@@ -47,6 +47,9 @@ const TabNavigator = () => {
           component={WalletScreen}
           options={{
             title: '',
+            // Wallet owns safe-area padding and refresh placement. Native tabs
+            // otherwise override its scroll view from never to automatic.
+            overrideScrollViewContentInsetAdjustmentBehavior: false,
             tabBarIcon: ({ focused }) => ({
               type: 'sfSymbol',
               name: focused ? 'bitcoinsign.circle.fill' : 'bitcoinsign.circle',
