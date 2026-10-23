@@ -331,7 +331,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   }, [now, request, stage]);
 
   const requestPayment = async () => {
-    if (busy.current || stage === 'loading' || request || hydrationFailed || !activeWallet || activeWallet.type === 'watch-only') return;
+    if (!hasValidAmount || busy.current || stage === 'loading' || request || hydrationFailed || !activeWallet || activeWallet.type === 'watch-only') return;
     if (!isLightningInitialized) {
       setError(lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…');
       return;
@@ -507,6 +507,16 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   if (isFiat(unit) && rates && entryAmount) {
     try { approxSats = satsFromFiat(parseFiatMinor(entryAmount), rates.rates[unit]); } catch { /* incomplete keypad amount */ }
   }
+  let hasValidAmount = false;
+  try {
+    hasValidAmount = (isFiat(unit) ? parseFiatMinor(entryAmount) : parseTerminalAmount(entryAmount, unit)) > 0;
+  } catch { /* Empty, zero and incomplete keypad values keep Generate inactive. */ }
+  const requestDisabled = (stage === 'loading' && !hasRequest) || stage === 'creating' || endingRequest || (!hasRequest && !hydrationFailed && !hasValidAmount);
+  const settingsButton = <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" disabled={stage === 'creating' || endingRequest} style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
+    <GlassView width={40} height={40} shape="circle" interactive={checkoutFocused && !transitioning && stage !== 'creating' && !endingRequest} style={styles.glassSurface}>
+      {Platform.OS === 'ios' ? <SymbolView name="gearshape" size={21} tintColor={theme.colors.primary} /> : <Feather name="settings" size={21} color={theme.colors.primary} />}
+    </GlassView>
+  </Pressable>;
   const amountPrefix = unit === 'USD' ? '$' : unit === 'EUR' ? '€' : unit === 'CHF' ? 'CHF' : '';
   const frozenPrefix = request?.fiat
     ? request.fiat.currency === 'USD' ? '$' : request.fiat.currency === 'EUR' ? '€' : 'CHF'
@@ -546,11 +556,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
   const checkout = <View pointerEvents={checkoutFocused && !transitioning ? 'auto' : 'none'} style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
-      {!hasRequest || cashierState === 'locked' ? <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
-          <GlassView width={40} height={40} shape="circle" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}>
-            {Platform.OS === 'ios' ? <SymbolView name="gearshape" size={21} tintColor={theme.colors.primary} /> : <Feather name="settings" size={21} color={theme.colors.primary} />}
-          </GlassView>
-        </Pressable> : <View style={styles.glassControl} />}
+      {settingsButton}
       <Pressable accessibilityRole="button" accessibilityLabel="Sales history" disabled={stage === 'creating'} onPress={() => checkoutNavigation.current?.navigate('Sales')}>
         <GlassView width={80} height={40} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}>
           <Text style={styles.salesLabel}>Today</Text>
@@ -587,9 +593,11 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
                   <Text style={styles.keyText}>{digit === 'back' ? '⌫' : digit}</Text>
                 </TouchableOpacity>)}</View>
               <View style={styles.feedbackArea}>
-                {error ? <Text numberOfLines={2} style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>{error}</Text> : null}
-                {!error && !isLightningInitialized ? <Text numberOfLines={2} style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
-                {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={[styles.error, !!(catalog.length || basketLines.length) && styles.feedbackText]}>Items unavailable · Retry</Text></TouchableOpacity> : null}
+                {error ? <Text numberOfLines={2} style={styles.error}>{error}</Text> : null}
+                {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
+                {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={styles.error}>Items unavailable · Retry</Text></TouchableOpacity> : null}
+              </View>
+              <View style={styles.itemsRow}>
                 {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
               </View>
             </View>
@@ -597,7 +605,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
         }
     </View>
     {entry && <View style={styles.actionBar}>
-      <TouchableOpacity testID="terminal-request" disabled={(stage === 'loading' && !hasRequest) || stage === 'creating' || endingRequest} style={[styles.primaryAction, (stage === 'creating' || hasRequest) && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
+      <TouchableOpacity testID="terminal-request" disabled={requestDisabled} style={[styles.primaryAction, requestDisabled && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
         {endingRequest ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>{hasRequest ? 'Resume invoice' : hydrationFailed ? 'Retry loading' : stage === 'creating' ? 'Creating invoice…' : 'Generate invoice'}</Text>}
       </TouchableOpacity>
     </View>}
@@ -666,8 +674,8 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     key: { width: '33.33%', height: keyHeight, alignItems: 'center', justifyContent: 'center' },
     keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: keyFontSize },
     feedbackArea: { height: feedbackHeight, alignItems: 'center', justifyContent: 'center' },
-    feedbackText: { maxWidth: screenWidth - 48 - 88, marginRight: 88 },
-    itemsCapsule: { position: 'absolute', right: 0, top: (feedbackHeight - 36) / 2, width: 80, height: 36 },
+    itemsRow: { height: 36, alignItems: 'center', justifyContent: 'center' },
+    itemsCapsule: { width: 80, height: 36 },
     actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: actionBottomPadding },
     primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },

@@ -140,6 +140,8 @@ it('charges a fiat amount using a fresh quote and keeps the frozen amount beside
   await waitFor(() => expect(view.getByTestId('terminal-checkout-number').props.children).toBe('100.00'));
   expect(view.getByText('100 000 sats')).toBeTruthy();
   expect(view.queryByLabelText('Terminal settings')).toBeNull();
+  expect(view.getByLabelText('Terminal settings', { includeHiddenElements: true })).toBeTruthy();
+  expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
   const raw = await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a');
   expect(JSON.parse(raw || '{}').fiat).toEqual({ currency: 'USD', amountMinor: 10000, rate: '100000', fetchedAt: expect.any(Number) });
 });
@@ -236,6 +238,7 @@ it('requires an available rate before charging in fiat', async () => {
   fireEvent.press(view.getByLabelText('EUR'));
   fireEvent.press(view.getByLabelText('Close terminal settings'));
   await waitFor(() => expect(view.getByText('Refresh price')).toBeTruthy());
+  fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(view.getByText('Price expired. Refresh price before charging.')).toBeTruthy();
   expect(createTerminalInvoice).not.toHaveBeenCalled();
@@ -672,4 +675,28 @@ it('starts a fresh amount when changing basket currency without reinterpreting i
   fireEvent.press(view.getByLabelText('Items'));
   expect(view.getByText('USD 3.50')).toBeTruthy();
   expect(view.getByLabelText('Add Coffee').props.accessibilityState.disabled).toBe(false);
+});
+
+
+it.each(['sats', 'BTC', 'USD'])('keeps Generate inactive for an empty or zero %s amount without showing validation copy', async unit => {
+  (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  if (unit !== 'sats') {
+    fireEvent.press(view.getByLabelText('Terminal settings'));
+    await openCurrency(view);
+    fireEvent.press(view.getByLabelText(unit));
+    fireEvent.press(view.getByLabelText('Close terminal settings'));
+  }
+  expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(view.getByText('1'));
+  expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(false);
+  fireEvent.press(view.getByText('⌫'));
+  expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(view.getAllByText('0').slice(-1)[0]);
+  if (unit !== 'sats') { fireEvent.press(view.getByText('.')); fireEvent.press(view.getAllByText('0').slice(-1)[0]); }
+  expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(view.getByTestId('terminal-request'));
+  expect(createTerminalInvoice).not.toHaveBeenCalled();
+  expect(view.queryByText(/Enter an amount|Enter a valid amount|Enter BTC/)).toBeNull();
 });
