@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import TerminalSheetHeader, { TerminalSheetInteractionContext } from '../../screens/TerminalSheetHeader';
 import { GlassView } from '../../components/GlassView';
@@ -22,4 +23,5 @@ it('enables only the focused settled sheet header', () => {
   fireEvent.press(view.getByLabelText('Close items'));
   expect(close).toHaveBeenCalledTimes(1);
   expect(view.UNSAFE_getByType(GlassView).props.interactive).toBe(true);
+  expect(StyleSheet.flatten(view.getByLabelText('Close items').props.style)).toMatchObject({ width: 44, height: 44 });
 });

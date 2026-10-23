@@ -351,6 +351,8 @@ export default function MapScreen() {
         <View style={styles.fabContainer} pointerEvents={selectedMerchant ? 'none' : 'box-none'}>
           <TouchableOpacity
             style={styles.fab}
+            accessibilityRole="button"
+            accessibilityLabel="Change map type"
             onPress={toggleMapType}
             activeOpacity={0.8}
             disabled={!!selectedMerchant}
@@ -379,6 +381,8 @@ export default function MapScreen() {
 
           <TouchableOpacity
             style={styles.fab}
+            accessibilityRole="button"
+            accessibilityLabel="Center map on my location"
             onPress={centerOnUser}
             activeOpacity={0.8}
             disabled={!!selectedMerchant}

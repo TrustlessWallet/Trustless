@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AddressText } from '../components/AddressText';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import * as Clipboard from 'expo-clipboard';
-import { resolveLnurlOrAddress, fetchLnurlInvoice } from '../services/lnurl';
+import { resolveLnurlOrAddress, fetchLnurlInvoice, isLightningAddress } from '../services/lnurl';
 import { authenticate_transaction_action } from '../services/authState';
 
 
@@ -147,6 +147,15 @@ const SendScreen = () => {
     const [estimatingLnFee, setEstimatingLnFee] = useState(false);
     const [lnurlData, setLnurlData] = useState<any | null>(null);
     const [lnurlDomain, setLnurlDomain] = useState<string>('');
+    const [resolvedLightningInput, setResolvedLightningInput] = useState('');
+    const [resolutionError, setResolutionError] = useState('');
+    const [resolutionRetry, setResolutionRetry] = useState(0);
+    const currentLightningInput = lightningInvoice.trim();
+    const isLnurlInput = /^(?:lightning:)?lnurl(?:[pw]:\/\/|1)/i.test(currentLightningInput);
+    const isNetworkRecipient = currentLightningInput.includes('@') || isLnurlInput;
+    const isLnurlPending = isNetworkRecipient && resolvedLightningInput !== currentLightningInput;
+    const currentLnurlData = isNetworkRecipient && !isLnurlPending ? lnurlData : null;
+    const canPayLightning = resolvedLightningInput === currentLightningInput && (!isNetworkRecipient || !!currentLnurlData);
 
     const [loading, setLoading] = useState(false);
     const [hideBalance, setHideBalance] = useState(false);
@@ -180,67 +189,95 @@ const SendScreen = () => {
     }, [route.params?.prefill, route.params?.autoConfirm, mode, navigation]);
 
     useEffect(() => {
-        if (pendingAutoPay && hasFixedAmount && lightningInvoice.trim() && lnAmount && !loading) {
+        if (pendingAutoPay && hasFixedAmount && currentLightningInput && resolvedLightningInput === currentLightningInput && canPayLightning && lnAmount && !loading) {
             setPendingAutoPay(false);
             handlePayLightning(true);
         }
-    }, [pendingAutoPay, hasFixedAmount, lightningInvoice, lnAmount, loading]);
+    }, [pendingAutoPay, hasFixedAmount, currentLightningInput, resolvedLightningInput, canPayLightning, lnAmount, loading]);
 
     useEffect(() => {
-        let isMounted = true;
+        let active = true;
+        const controller = new AbortController();
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const input = currentLightningInput;
+        setLnurlData(null);
+        setLnurlDomain('');
+        setResolvedLightningInput('');
+        setResolutionError('');
+        setHasFixedAmount(false);
+        if (hasFixedAmount) setLnAmount('');
+
+        if (mode !== 'lightning' || !input) {
+            setLnAmount('');
+            return () => { active = false; controller.abort(); };
+        }
+
+        const parsedSats = parseBolt11Amount(input);
+        if (parsedSats !== null && parsedSats > 0) {
+            setLnAmount(parsedSats.toString());
+            setHasFixedAmount(true);
+            setResolvedLightningInput(input);
+            return () => { active = false; controller.abort(); };
+        }
+
+        // Amountless BOLT11 invoices use the amount the sender enters below.
+        if (/^(?:lightning:)?(?:lnbcrt|lntb|lnbc)[0-9a-z]*1/i.test(input)) {
+            setResolvedLightningInput(input);
+            return () => { active = false; controller.abort(); };
+        }
+
+        if (!isNetworkRecipient || (!isLnurlInput && input.includes('@') && !isLightningAddress(input))) {
+            return () => { active = false; controller.abort(); };
+        }
 
         const resolveInput = async () => {
-            if (mode !== 'lightning' || !lightningInvoice.trim()) {
-                if (isMounted) setHasFixedAmount(false);
-                return;
-            }
+            try {
+                const parsed = await resolveLnurlOrAddress(input, { signal: controller.signal });
+                if (!active || controller.signal.aborted) return;
 
-            const parsed = await resolveLnurlOrAddress(lightningInvoice.trim());
-            if (!isMounted) return;
+                setResolvedLightningInput(input);
+                if (parsed && parsed.tag === 'payRequest') {
+                    const minSats = Number(parsed.minSendable) / 1000;
+                    const maxSats = Number(parsed.maxSendable) / 1000;
 
-            if (parsed && parsed.tag === 'payRequest') {
-                const minSats = Number(parsed.minSendable) / 1000;
-                const maxSats = Number(parsed.maxSendable) / 1000;
+                    setLnurlData(parsed);
 
-                setLnurlData(parsed);
+                    try {
+                        const urlObj = new URL(parsed.callback);
+                        setLnurlDomain(urlObj.hostname);
+                    } catch {
+                        setLnurlDomain('');
+                    }
 
-                try {
-                    const urlObj = new URL(parsed.callback);
-                    setLnurlDomain(urlObj.hostname);
-                } catch {
-                    setLnurlDomain('');
+                    if (minSats === maxSats && minSats > 0) {
+                        setLnAmount(minSats.toString());
+                        setHasFixedAmount(true);
+                    }
                 }
-
-                if (minSats === maxSats && minSats > 0) {
-                    setLnAmount(minSats.toString());
-                    setHasFixedAmount(true);
-                } else {
-                    setHasFixedAmount(false);
+            } catch (error) {
+                if (active && !controller.signal.aborted) {
+                    setResolvedLightningInput(input);
+                    setLnurlData(null);
+                    setResolutionError(error instanceof Error ? error.message : 'Could not resolve recipient.');
                 }
-            } else {
-                const parsedSats = parseBolt11Amount(lightningInvoice);
-                if (parsedSats !== null && parsedSats > 0) {
-                    setLnAmount(parsedSats.toString());
-                    setHasFixedAmount(true);
-                } else {
-                    setHasFixedAmount(false);
-                }
-                setLnurlData(null);
-                setLnurlDomain('');
             }
         };
 
-        resolveInput();
+        timeout = setTimeout(resolveInput, 300);
 
-        return () => { isMounted = false; };
-    }, [lightningInvoice, mode]);
+        return () => {
+            active = false;
+            if (timeout) clearTimeout(timeout);
+            controller.abort();
+        };
+    }, [lightningInvoice, mode, resolutionRetry]);
 
     useEffect(() => {
         let isMounted = true;
 
         const sats = parseInt(lnAmount, 10);
 
-        if (isNaN(sats) || sats <= 0 || !lightningInvoice.trim()) {
+        if (isNaN(sats) || sats <= 0 || !currentLightningInput || !canPayLightning) {
             if (isMounted) {
                 setLnFeeEstimate(null);
                 setEstimatingLnFee(false);
@@ -255,8 +292,8 @@ const SendScreen = () => {
             try {
                 let estimatedFee: number | null = null;
 
-                if (lnurlData) {
-                    const invoicePr = await fetchLnurlInvoice(lnurlData.callback, sats * 1000);
+                if (currentLnurlData) {
+                    const invoicePr = await fetchLnurlInvoice(currentLnurlData.callback, sats * 1000);
                     if (!isMounted) return;
                     estimatedFee = await estimateLightningFee(invoicePr);
                 } else {
@@ -282,7 +319,7 @@ const SendScreen = () => {
             isMounted = false;
             clearTimeout(timeout);
         };
-    }, [lnAmount, lnurlData, lightningInvoice, hasFixedAmount, estimateLightningFee]);
+    }, [lnAmount, currentLnurlData, lightningInvoice, hasFixedAmount, canPayLightning, estimateLightningFee]);
 
     // Always-instant balance, sourced from WalletContext's own synced cache
     // (the same number WalletScreen already shows). Kept live via useEffect
@@ -547,6 +584,7 @@ const SendScreen = () => {
     };
 
     const handlePayLightning = async (skipAuth: boolean = false) => {
+        if (!canPayLightning) return;
         if (!lightningInvoice.trim()) {
             Alert.alert('Invalid input', 'Please enter a valid lightning invoice or address.');
             return;
@@ -568,10 +606,10 @@ const SendScreen = () => {
 
         setLoading(true);
         try {
-            const paymentRequest = lnurlData
-                ? await fetchLnurlInvoice(lnurlData.callback, sats * 1000)
+            const paymentRequest = currentLnurlData
+                ? await fetchLnurlInvoice(currentLnurlData.callback, sats * 1000)
                 : lightningInvoice.trim();
-            const transaction = await payLightningInvoice(paymentRequest, lnurlData || hasFixedAmount ? undefined : sats);
+            const transaction = await payLightningInvoice(paymentRequest, currentLnurlData || hasFixedAmount ? undefined : sats);
             navigation.navigate('TransactionSuccess', { type: 'lightning', transaction });
         } catch (error: any) {
             console.error("Lightning payment failed:", error);
@@ -671,13 +709,13 @@ const SendScreen = () => {
                                 keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
                             <View style={styles.addressInputRightElements}>
-                                <TouchableOpacity onPress={handlePasteFromClipboard} style={styles.iconButton}>
+                                <TouchableOpacity onPress={handlePasteFromClipboard} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Paste address">
                                     <Feather name="clipboard" size={20} color={theme.colors.primary} />
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} style={styles.iconButton}>
+                                <TouchableOpacity onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Open address book">
                                     <Feather name="book-open" size={20} color={theme.colors.primary} />
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={handleScanPress} style={styles.iconButton}>
+                                <TouchableOpacity onPress={handleScanPress} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Scan QR code">
                                     <Feather name="camera" size={20} color={theme.colors.primary} />
                                 </TouchableOpacity>
                             </View>
@@ -814,16 +852,25 @@ const SendScreen = () => {
                                     <TouchableOpacity onPress={async () => {
                                         const text = await Clipboard.getStringAsync();
                                         if (text) setLightningInvoice(text);
-                                    }} style={styles.iconButton}>
+                                    }} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Paste invoice">
                                         <Feather name="clipboard" size={20} color={theme.colors.primary} />
                                     </TouchableOpacity>
-                                    <TouchableOpacity onPress={handleScanPress} style={styles.iconButton}>
+                                    <TouchableOpacity onPress={handleScanPress} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Scan QR code">
                                         <Feather name="camera" size={20} color={theme.colors.primary} />
                                     </TouchableOpacity>
                                 </View>
                             }
                         />
                     </View>
+
+                    {!!resolutionError && resolvedLightningInput === currentLightningInput && (
+                        <View style={{ marginBottom: 12 }}>
+                            <Text style={{ color: theme.colors.error }}>{resolutionError}</Text>
+                            <TouchableOpacity onPress={() => setResolutionRetry(value => value + 1)} accessibilityRole="button" accessibilityLabel="Retry recipient resolution" style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+                                <Text style={{ color: theme.colors.primary }}>Retry</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
 
                     <Text style={styles.label}>Amount</Text>
                     <StyledInput
@@ -832,8 +879,8 @@ const SendScreen = () => {
                         onChangeText={setLnAmount}
                         keyboardType="numeric"
                         onFocus={handleInputFocus}
-                        editable={!hasFixedAmount}
-                        style={hasFixedAmount ? styles.inputDisabled : {}}
+                        editable={!(hasFixedAmount && resolvedLightningInput === currentLightningInput)}
+                        style={hasFixedAmount && resolvedLightningInput === currentLightningInput ? styles.inputDisabled : {}}
                         rightElement={<Text style={styles.currencyLabel}>sats</Text>}
                     />
 
@@ -852,8 +899,8 @@ const SendScreen = () => {
 
                     <TouchableOpacity
                         onPress={() => handlePayLightning()}
-                        style={[styles.sendButton, { marginTop: 8 }, (loading || !lightningInvoice.trim() || !lnAmount) && styles.buttonDisabled]}
-                        disabled={loading || !lightningInvoice.trim() || !lnAmount}
+                        style={[styles.sendButton, { marginTop: 8 }, (loading || !canPayLightning || !lnAmount) && styles.buttonDisabled]}
+                        disabled={loading || !canPayLightning || !lnAmount}
                     >
                         {loading ? <ActivityIndicator color={theme.colors.bitcoin} /> : (
                             <View style={styles.buttonContentRowCentered}>
@@ -906,7 +953,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
         paddingRight: 8,
         paddingTop: 8
     },
-    iconButton: { padding: 8 },
+    iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     unitSelector: { flexDirection: 'row', backgroundColor: theme.colors.border, borderRadius: 6, marginRight: 8, padding: 2 },
     unitButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
     unitButtonActive: { backgroundColor: theme.colors.primary },

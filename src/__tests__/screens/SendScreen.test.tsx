@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { render, waitFor, fireEvent, act } from '@testing-library/react-native';
 import { Alert, Keyboard } from 'react-native';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -60,6 +60,11 @@ jest.mock('../../contexts/ThemeContext', () => ({
 jest.mock('../../services/lnurl', () => ({
     resolveLnurlOrAddress: jest.fn(),
     fetchLnurlInvoice: jest.fn(),
+    isLightningAddress: jest.requireActual('../../services/lnurl').isLightningAddress,
+}));
+
+jest.mock('../../services/authState', () => ({
+    authenticate_transaction_action: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('../../services/bitcoin', () => ({
@@ -159,6 +164,116 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         jest.restoreAllMocks();
     });
 
+    const waitForResolutionDelay = () => act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 350));
+    });
+
+    it('pays an amountless BOLT11 with the manually entered amount without network resolution', async () => {
+        (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'lightning' } });
+        mockPayLightningInvoice.mockResolvedValue({ paymentHash: 'amountless' });
+        const { getByPlaceholderText, getByText } = renderSendScreen();
+        fireEvent.changeText(getByPlaceholderText('BOLT11 / LNURL / Lightning address'), 'lnbc1mockinvoice');
+        fireEvent.changeText(getByPlaceholderText('0'), '500');
+        fireEvent.press(getByText('Pay invoice'));
+        await waitFor(() => expect(mockPayLightningInvoice).toHaveBeenCalledWith('lnbc1mockinvoice', 500));
+        expect(resolveLnurlOrAddress).not.toHaveBeenCalled();
+    });
+
+    it('debounces address typing and never uses a superseded callback', async () => {
+        (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'lightning' } });
+        let finishFirst!: (value: any) => void;
+        (resolveLnurlOrAddress as jest.Mock)
+            .mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve; }))
+            .mockResolvedValueOnce({ tag: 'payRequest', minSendable: 1000, maxSendable: 10000, callback: 'https://new.example/pay' });
+        const { getByPlaceholderText, getByText, queryByText } = renderSendScreen();
+        const recipient = getByPlaceholderText('BOLT11 / LNURL / Lightning address');
+
+        fireEvent.changeText(recipient, 'alice@');
+        fireEvent.changeText(recipient, 'alice@example');
+        expect(resolveLnurlOrAddress).not.toHaveBeenCalled();
+        fireEvent.changeText(recipient, 'alice@example.com');
+        await waitForResolutionDelay();
+        expect(resolveLnurlOrAddress).toHaveBeenCalledTimes(1);
+        const firstSignal = (resolveLnurlOrAddress as jest.Mock).mock.calls[0][1].signal;
+
+        fireEvent.changeText(recipient, 'bob@example.com');
+        expect(firstSignal.aborted).toBe(true);
+        fireEvent.changeText(getByPlaceholderText('0'), '1000');
+        fireEvent.press(getByText('Pay invoice'));
+        expect(fetchLnurlInvoice).not.toHaveBeenCalled();
+        expect(mockPayLightningInvoice).not.toHaveBeenCalled();
+        await act(async () => finishFirst({ tag: 'payRequest', minSendable: 1000, maxSendable: 1000, callback: 'https://old.example/pay' }));
+        expect(queryByText('Paying to old.example')).toBeNull();
+        await waitForResolutionDelay();
+        await waitFor(() => expect(queryByText('Paying to new.example')).not.toBeNull());
+    });
+
+    it('cancels pending resolution when the recipient clears or the screen unmounts', async () => {
+        (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'lightning' } });
+        (resolveLnurlOrAddress as jest.Mock).mockImplementation(() => new Promise(() => {}));
+        const screen = renderSendScreen();
+        const recipient = screen.getByPlaceholderText('BOLT11 / LNURL / Lightning address');
+        fireEvent.changeText(recipient, 'alice@example.com');
+        await waitForResolutionDelay();
+        const signal = (resolveLnurlOrAddress as jest.Mock).mock.calls[0][1].signal;
+        fireEvent.changeText(recipient, '');
+        expect(signal.aborted).toBe(true);
+        fireEvent.changeText(recipient, 'bob@example.com');
+        screen.unmount();
+        await waitForResolutionDelay();
+        expect(resolveLnurlOrAddress).toHaveBeenCalledTimes(1);
+    });
+
+    it('aborts resolution when switching away from Lightning mode', async () => {
+        const route = { params: { mode: 'lightning' } };
+        (useRoute as jest.Mock).mockImplementation(() => route);
+        (resolveLnurlOrAddress as jest.Mock).mockImplementation(() => new Promise(() => {}));
+        const screen = renderSendScreen();
+        fireEvent.changeText(screen.getByPlaceholderText('BOLT11 / LNURL / Lightning address'), 'alice@example.com');
+        await waitForResolutionDelay();
+        const signal = (resolveLnurlOrAddress as jest.Mock).mock.calls[0][1].signal;
+        route.params.mode = 'onchain';
+        screen.rerender(<QueryClientProvider client={create_test_query_client()}><SendScreen /></QueryClientProvider>);
+        expect(signal.aborted).toBe(true);
+    });
+
+    it('auto-confirms a fixed-amount LNURL prefill after resolution', async () => {
+        (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'lightning', prefill: 'lightning:lnurlp://example.com/pay', autoConfirm: true } });
+        (resolveLnurlOrAddress as jest.Mock).mockResolvedValue({ tag: 'payRequest', minSendable: 2000000, maxSendable: 2000000, callback: 'https://example.com/cb' });
+        (fetchLnurlInvoice as jest.Mock).mockResolvedValue('lnbc20u1invoice');
+        mockPayLightningInvoice.mockResolvedValue({ paymentHash: 'fixed-lnurl' });
+        renderSendScreen();
+        await waitForResolutionDelay();
+        await waitFor(() => expect(mockPayLightningInvoice).toHaveBeenCalledWith('lnbc20u1invoice', undefined));
+    });
+
+    it('resolves LUD-17 links whose query contains an @ sign', async () => {
+        (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'lightning' } });
+        (resolveLnurlOrAddress as jest.Mock).mockResolvedValue({ tag: 'payRequest', minSendable: 1000, maxSendable: 2000, callback: 'https://example.com/cb' });
+        const { getByPlaceholderText, queryByText } = renderSendScreen();
+        const input = 'lnurlp://example.com/pay?email=alice@example.com';
+        fireEvent.changeText(getByPlaceholderText('BOLT11 / LNURL / Lightning address'), input);
+        await waitForResolutionDelay();
+        expect(resolveLnurlOrAddress).toHaveBeenCalledWith(input, expect.objectContaining({ signal: expect.any(Object) }));
+        await waitFor(() => expect(queryByText('Paying to example.com')).not.toBeNull());
+    });
+
+    it('shows a resolver failure and retries the same recipient', async () => {
+        (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'lightning' } });
+        (resolveLnurlOrAddress as jest.Mock)
+            .mockRejectedValueOnce(new Error('Provider unavailable'))
+            .mockResolvedValueOnce({ tag: 'payRequest', minSendable: 1000, maxSendable: 2000, callback: 'https://example.com/cb' });
+        const { getByPlaceholderText, getByText, queryByText } = renderSendScreen();
+        fireEvent.changeText(getByPlaceholderText('BOLT11 / LNURL / Lightning address'), 'alice@example.com');
+        await waitForResolutionDelay();
+        await waitFor(() => expect(getByText('Provider unavailable')).toBeTruthy());
+        fireEvent.press(getByText('Retry'));
+        await waitForResolutionDelay();
+        await waitFor(() => expect(queryByText('Paying to example.com')).not.toBeNull());
+        expect(resolveLnurlOrAddress).toHaveBeenCalledTimes(2);
+        expect(queryByText('Provider unavailable')).toBeNull();
+    });
+
     it('Standard Auto-Pay Execution: Fires payment automatically for fixed-amount BOLT11', async () => {
         // lnbc100u1... = 10,000 sats
         const validBolt11 = 'lightning:lnbc100u1p3x...'; 
@@ -209,7 +324,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
 
         // Wait for the async resolver to finish
         await waitFor(() => {
-            expect(resolveLnurlOrAddress).toHaveBeenCalledWith(lnurlRange.replace('lightning:', ''));
+            expect(resolveLnurlOrAddress).toHaveBeenCalledWith(lnurlRange.replace('lightning:', ''), expect.objectContaining({ signal: expect.any(Object) }));
         });
 
         // Assert payment is NEVER called because hasFixedAmount becomes false

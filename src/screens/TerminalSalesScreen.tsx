@@ -169,14 +169,17 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     return () => clearInterval(clock);
   }, [visible]);
 
-  const sales = state.scope === scope ? state.sales : [];
+  const sales = useMemo(() => state.scope === scope ? state.sales : [], [state.scope, state.sales, scope]);
   const loading = state.scope !== scope || state.loading;
   const error = state.scope === scope && state.error;
   const day = new Date(now);
-  const shown = sales.filter(sale => isInTerminalSalesPeriod(saleTime(sale), period, day))
-    .sort((a, b) => saleTime(b) - saleTime(a));
-  const paidCount = shown.filter(isPaid).length;
-  const totals = totalsFor(shown);
+  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+  // The status clock can tick without repeating full-ledger filtering/totals.
+  const periodDay = useMemo(() => new Date(dayStart), [dayStart]);
+  const shown = useMemo(() => sales.filter(sale => isInTerminalSalesPeriod(saleTime(sale), period, periodDay))
+    .sort((a, b) => saleTime(b) - saleTime(a)), [sales, period, periodDay]);
+  const paidCount = useMemo(() => shown.filter(isPaid).length, [shown]);
+  const totals = useMemo(() => totalsFor(shown), [shown]);
   const detail = selected?.scope === scope ? sales.find(sale => sale.request.id === selected.id) : undefined;
   const refundsLoaded = refundState.scope === scope && !refundState.loading && !refundState.error;
   const refunds = refundsLoaded && detail ? refundState.attempts.filter(attempt => attempt.saleId === detail.request.id) : [];
@@ -184,8 +187,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const refundsReady = refundsLoaded && refundRemaining !== null;
   const completedRefund = refunds.reduce((total, attempt) => attempt.status === 'complete' ? total + BigInt(attempt.amountSats) : total, 0n);
   const reservedRefund = refunds.reduce((total, attempt) => attempt.status === 'unknown' || attempt.status === 'pending' ? total + BigInt(attempt.amountSats) : total, 0n);
-  const refundedSats = refundsLoaded ? refundState.attempts.reduce((total, attempt) =>
-    attempt.status === 'complete' && isInTerminalSalesPeriod(attempt.updatedAt, period, day) ? total + BigInt(attempt.amountSats) : total, 0n) : 0n;
+  const refundedSats = useMemo(() => refundsLoaded ? refundState.attempts.reduce((total, attempt) =>
+    attempt.status === 'complete' && isInTerminalSalesPeriod(attempt.updatedAt, period, periodDay) ? total + BigInt(attempt.amountSats) : total, 0n) : 0n, [refundsLoaded, refundState.attempts, period, periodDay]);
   const close = () => { ++checkEpoch.current; checkBusy.current = false; onClose(); };
   const checkPayment = async () => {
     if (!detail || checkBusy.current) return;
@@ -358,7 +361,7 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     topBar: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     scroll: { flex: 1, minHeight: 0 },
     backButton: { width: 40, height: 40 },
-    exportButton: { width: 40, height: 40 },
+    exportButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'flex-start' },
     exportError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginHorizontal: 24, marginTop: 12 },
     glass: { overflow: 'visible' },
     heading: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 25 },

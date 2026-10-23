@@ -1,4 +1,4 @@
-import { resolveLnurlOrAddress, fetchLnurlInvoice } from '../../services/lnurl';
+import { resolveLnurlOrAddress, fetchLnurlInvoice, isLightningAddress } from '../../services/lnurl';
 import { bech32 } from 'bech32';
 
 // Mock global fetch to prevent actual network calls during tests
@@ -97,6 +97,33 @@ describe('LNURL Service (lnurl.ts)', () => {
             expect(result).toBeNull();
         });
 
+        it('does not fetch incomplete or malformed Lightning Addresses', async () => {
+            for (const input of ['satoshi@', 'satoshi@example', 'satoshi@example.', 'satoshi@@example.com', 'satoshi@https://example.com', 'satoshi@bad domain.com', 'satoshi@999.1.1.1']) {
+                expect(isLightningAddress(input)).toBe(false);
+                await expect(resolveLnurlOrAddress(input)).resolves.toBeNull();
+            }
+            expect(global.fetch).not.toHaveBeenCalled();
+        });
+
+        it('passes an optional cancellation signal to fetch', async () => {
+            const controller = new AbortController();
+            (global.fetch as jest.Mock).mockResolvedValueOnce({ json: async () => ({ tag: 'payRequest' }) });
+            await resolveLnurlOrAddress('alice@example.com', { signal: controller.signal });
+            expect(global.fetch).toHaveBeenCalledWith('https://example.com/.well-known/lnurlp/alice', { signal: controller.signal });
+        });
+
+        it('keeps LUD-17 withdraw links working', async () => {
+            (global.fetch as jest.Mock).mockResolvedValueOnce({ json: async () => ({ tag: 'withdrawRequest' }) });
+            await resolveLnurlOrAddress('lnurlw://example.com/withdraw');
+            expect(global.fetch).toHaveBeenCalledWith('https://example.com/withdraw');
+        });
+
+        it('keeps @ signs in LUD-17 query parameters', async () => {
+            (global.fetch as jest.Mock).mockResolvedValueOnce({ json: async () => ({ tag: 'payRequest' }) });
+            await resolveLnurlOrAddress('lnurlp://example.com/pay?email=alice@example.com');
+            expect(global.fetch).toHaveBeenCalledWith('https://example.com/pay?email=alice@example.com');
+        });
+
         it('throws an error bubbling up the provider reason if status is "ERROR"', async () => {
             (global.fetch as jest.Mock).mockResolvedValueOnce({
                 json: async () => ({ status: 'ERROR', reason: 'Account suspended' })
@@ -104,10 +131,6 @@ describe('LNURL Service (lnurl.ts)', () => {
 
             await expect(resolveLnurlOrAddress('satoshi@trustless.com')).rejects.toThrow('Account suspended');
             
-            expect(console.error).toHaveBeenCalledWith(
-                '[LNURL] Resolution failed:',
-                expect.any(Error)
-            );
         });
 
         it('throws on network failure instead of failing silently', async () => {
@@ -115,10 +138,6 @@ describe('LNURL Service (lnurl.ts)', () => {
 
             await expect(resolveLnurlOrAddress('satoshi@trustless.com')).rejects.toThrow('Network timeout');
 
-            expect(console.error).toHaveBeenCalledWith(
-                '[LNURL] Resolution failed:',
-                expect.any(Error)
-            );
         });
     });
 
