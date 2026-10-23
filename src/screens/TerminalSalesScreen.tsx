@@ -1,6 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Animated, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { ActivityIndicator, Pressable, FlatList, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import TerminalSheetHeader, { TerminalSheetInteractionContext } from './TerminalSheetHeader';
 import { Feather } from '@expo/vector-icons';
@@ -76,9 +75,6 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const { activeWallet, isLightningInitialized, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const fadeOpacity = scrollY.interpolate({ inputRange: [100, 140], outputRange: [0, 1], extrapolate: 'clamp' });
-  const onScroll = Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true });
   const scope = `${network}:${walletId}`;
   const [tab, setTab] = useState<Tab>('today');
   const [selected, setSelected] = useState<{ scope: string; id: string } | null>(null);
@@ -136,7 +132,6 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
   useEffect(() => { setExportError(''); }, [scope, tab]);
-  useEffect(() => { scrollY.setValue(0); }, [scope, selected?.id, refundOpen, scrollY]);
 
   const refreshRefunds = useCallback(async (showLoading = true) => {
     const generation = ++refundGeneration.current;
@@ -264,15 +259,13 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   if (refundOpen && detail && isPaid(detail) && refundsReady) return <TerminalRefundScreen sale={detail} attempts={refundState.attempts} onClose={() => setRefundOpen(false)} visible={visible} />;
 
   return <View style={styles.root}>
-    <Animated.View testID="sales-scroll-fade" pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}>
-      <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
-    </Animated.View>
+
     <TerminalSheetHeader title={detail ? 'Sale details' : tab === 'today' ? 'Today' : 'History'} closeLabel="Close sales" onClose={close} leading={!detail ? <Pressable accessibilityRole="button" accessibilityLabel={tab === 'today' ? 'Export today’s activity' : 'Export all activity'} accessibilityState={{ disabled: exporting || !visible || !headerEnabled, busy: exporting }} disabled={exporting || !visible || !headerEnabled} onPress={() => { void exportSales(); }} style={styles.exportButton}>
       <GlassView width={40} height={40} shape="circle" interactive={headerEnabled} style={styles.glass}>
         {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
       </GlassView>
     </Pressable> : undefined} />
-    {detail ? <Animated.ScrollView style={styles.scroll} onScroll={onScroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
+    {detail ? <ScrollView style={styles.scroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
       {header}
       <View style={styles.detailCard}>
         <View style={styles.detailStatus}><View style={[styles.statusDot, isPaid(detail) && styles.paidDot]} /><Text style={[styles.statusText, isPaid(detail) && styles.paidText]}>{statusFor(detail, now).label}</Text></View>
@@ -308,9 +301,9 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {checkError ? <Text style={styles.checkError}>{checkError}</Text> : null}
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check payment" disabled={checking} style={[styles.checkButton, checking && styles.checkDisabled]} onPress={() => { void checkPayment(); }}><Text style={styles.checkText}>{checking ? 'Checking…' : 'Check payment'}</Text></TouchableOpacity>
       </View> : null}
-    </Animated.ScrollView> : <Animated.FlatList
+    </ScrollView> : <FlatList
       style={styles.scroll}
-      onScroll={onScroll}
+
       scrollEventThrottle={16}
       data={error ? [] : shown}
       keyExtractor={item => item.request.id}
@@ -344,7 +337,6 @@ function DetailField({ label, value, styles, selectable = false }: { label: stri
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; border: string; muted: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
-    scrollFade: { position: 'absolute', top: 56, left: 0, right: 0, height: 48, zIndex: 1 },
     topBar: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     scroll: { flex: 1, minHeight: 0 },
     backButton: { width: 40, height: 40 },

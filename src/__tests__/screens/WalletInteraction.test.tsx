@@ -114,6 +114,34 @@ it('does not carry a pull gesture over a Terminal round trip', async () => {
     expect(refresh).not.toHaveBeenCalled();
 });
 
+it('starts a fresh list and shows a new pull spinner after switching wallets', async () => {
+    const screen = render(<WalletScreen />);
+    await act(async () => {});
+    const oldList = screen.getByTestId('wallet-transactions');
+    fireEvent(oldList, 'scrollBeginDrag');
+    scroll(screen, -70);
+
+    (useWallet as jest.Mock).mockReturnValue({
+        activeWallet: { id: 'savings', type: 'standard', derivedAddressInfoCache: [], derivedChangeAddresses: [], derivedReceiveAddresses: [] },
+        loading: false, triggerRefresh: refresh, lightningBalance: 100, lightningTransactions: [], isLightningInitialized: true,
+    });
+    screen.rerender(<WalletScreen />);
+    expect(screen.getByTestId('wallet-transactions')).not.toBe(oldList);
+    await act(async () => { await screen.UNSAFE_getByType(RefreshControl).props.onRefresh(); });
+    expect(refresh).not.toHaveBeenCalled();
+
+    let finish!: () => void;
+    refresh.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    fireEvent(screen.getByTestId('wallet-transactions'), 'scrollBeginDrag');
+    scroll(screen, -70);
+    let task!: Promise<void>;
+    act(() => { task = screen.UNSAFE_getByType(RefreshControl).props.onRefresh(); });
+    expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true);
+    expect(refresh).toHaveBeenCalledWith('onchain');
+    await act(async () => { finish(); await task; });
+    expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+});
+
 it('accepts native Android refresh at zero list offset', async () => {
     Platform.OS = 'android';
     const screen = render(<WalletScreen />);

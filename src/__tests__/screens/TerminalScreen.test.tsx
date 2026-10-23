@@ -4,6 +4,7 @@ import { createNavigationContainerRef, NavigationContainer } from '@react-naviga
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
+import { GlassView } from '../../components/GlassView';
 import { useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
@@ -424,6 +425,8 @@ it('blocks duplicate presses and reveals the QR only after storage succeeds', as
   fireEvent.press(view.getByTestId('terminal-request'));
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
+  expect(view.getByLabelText('Generating invoice').props.color).toBe('#f90');
+  expect(view.queryByText('Creating invoice…')).toBeNull();
   expect(view.queryByTestId('terminal-qr')).toBeNull();
   resolveInvoice({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
   await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
@@ -587,6 +590,38 @@ it('preloads local sales before Today opens and keeps them current while hidden'
   fireEvent.press(view.getByLabelText('Sales history'));
   expect(view.getByText('Paid')).toBeTruthy();
   expect(view.queryByText('Loading sales…')).toBeNull();
+});
+
+it('restores sheet close and export after a cancelled native gesture', async () => {
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Sales history')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Sales history'));
+  await waitFor(() => expect(view.getByLabelText('Close sales')).toBeTruthy());
+
+  const listeners = view.UNSAFE_root.find(node => node.props.screenListeners?.transitionStart).props.screenListeners;
+  const button = (label: string) => view.UNSAFE_root.findAll(node => node.props.accessibilityLabel === label && typeof node.props.onPress === 'function')[0];
+  const close = () => button('Close sales');
+  const exportButton = () => button('Export today’s activity');
+  const glassIsInteractive = (button: ReturnType<typeof close>) => button.findByType(GlassView).props.interactive;
+
+  expect(close().props.disabled).toBe(false);
+  expect(exportButton().props.disabled).toBe(false);
+  expect(glassIsInteractive(close())).toBe(true);
+  expect(glassIsInteractive(exportButton())).toBe(true);
+
+  act(() => listeners.transitionStart());
+  expect(close().props.disabled).toBe(true);
+  expect(exportButton().props.disabled).toBe(true);
+  expect(glassIsInteractive(close())).toBe(false);
+  expect(glassIsInteractive(exportButton())).toBe(false);
+
+  // A cancelled iOS sheet gesture emits gestureCancel without transitionEnd.
+  act(() => listeners.gestureCancel());
+  expect(close().props.disabled).toBe(false);
+  expect(exportButton().props.disabled).toBe(false);
+  expect(glassIsInteractive(close())).toBe(true);
+  expect(glassIsInteractive(exportButton())).toBe(true);
+  view.unmount();
 });
 
 

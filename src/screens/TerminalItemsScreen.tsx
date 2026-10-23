@@ -62,7 +62,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   return <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}><LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} /></Animated.View>
     <TerminalSheetHeader title="Items" closeLabel="Close items" onClose={onClose} />
-    <Animated.ScrollView style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 36 }]}>
+    <Animated.ScrollView style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: 24 }]}>
       {readError ? <View><Text style={[styles.message, { color: theme.colors.muted }]}>Saved items are unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => { void load(); }}><Text style={[styles.link, { color: theme.colors.bitcoin }]}>Retry</Text></TouchableOpacity></View>
         : <>
           {items.map(item => <View key={item.id} style={[styles.itemRow, { borderBottomColor: theme.colors.border }]}>
@@ -70,10 +70,15 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Edit ${item.name}`} disabled={busy} onPress={() => { if (ownerCurrent()) onEdit(item); }} style={styles.iconButton}><Feather name="edit" size={18} color={theme.colors.primary} /></TouchableOpacity>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Delete ${item.name}`} disabled={busy} onPress={() => { void remove(item); }} style={styles.iconButton}><Feather name="trash-2" size={17} color={theme.colors.primary} /></TouchableOpacity>
           </View>)}
-          {items.length < 30 ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add item" disabled={busy} onPress={() => { if (ownerCurrent()) onEdit(); }} style={[styles.add, { backgroundColor: theme.colors.primary }]}><Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold' }}>Add item</Text></TouchableOpacity> : null}
+
           {error ? <Text style={[styles.message, { color: theme.colors.muted }]}>{error}</Text> : null}
         </>}
     </Animated.ScrollView>
+    <View style={[styles.footer, { paddingBottom: insets.bottom + 24, backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add item" accessibilityHint={items.length >= 30 ? 'Catalog limit of 30 items reached' : undefined} disabled={busy || readError || items.length >= 30} onPress={() => { if (ownerCurrent()) onEdit(); }} style={[styles.add, { backgroundColor: theme.colors.primary, opacity: busy || readError || items.length >= 30 ? 0.55 : 1 }]}>
+        <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }}>Add item</Text>
+      </TouchableOpacity>
+    </View>
   </View>;
 }
 
@@ -84,5 +89,6 @@ const styles = StyleSheet.create({
   message: { fontSize: 12, marginTop: 12 }, link: { fontSize: 13, marginTop: 12 },
   itemRow: { minHeight: 65, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   itemInfo: { flex: 1 }, itemName: { fontSize: 16 }, itemPrice: { fontSize: 12, marginTop: 4 }, iconButton: { padding: 12 },
-  add: { minHeight: 48, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginTop: 22 },
+  footer: { padding: 24, borderTopWidth: StyleSheet.hairlineWidth },
+  add: { minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 });
