@@ -156,6 +156,87 @@ describe('bitcoin_service_functions', () => {
         expect(Array.isArray(transactions)).toBe(true);
     });
 
+    describe('transaction history header lookup', () => {
+        const history = [
+            { height: 100, input: 1 },
+            { height: 200, input: 2 },
+            { height: 200, input: 3 },
+            { height: 0, input: 4 },
+        ];
+
+        const setupHistory = () => {
+            const txHexById = new Map<string, string>();
+            const entries = history.map(({ height, input }) => {
+                const tx = new BitcoinTransaction();
+                tx.addInput(Buffer.alloc(32, input), 0);
+                tx.addOutput(Buffer.alloc(22, 1), 1000 + input);
+                txHexById.set(tx.getId(), tx.toHex());
+                return { tx_hash: tx.getId(), height };
+            });
+
+            jest.spyOn(electrum, 'electrumBatchGetHistory').mockResolvedValue([
+                { result: entries, error: null }
+            ]);
+            jest.spyOn(electrum, 'electrumBatchGetTransactions').mockImplementation(async (ids: string[]) =>
+                ids.map(id => ({ result: txHexById.get(id) ?? null }))
+            );
+            mock_electrum_client.request.mockImplementation(async (method: string, params: number[] = []) => {
+                if (method === 'blockchain.headers.subscribe') return { height: 300 };
+                if (method === 'blockchain.block.header') {
+                    const header = Buffer.alloc(80);
+                    header.writeUInt32LE(1700000000 + params[0], 68);
+                    return header.toString('hex');
+                }
+                return null;
+            });
+
+            return entries;
+        };
+
+        it('requests only the selected page’s confirmed block headers, once per height', async () => {
+            const entries = setupHistory();
+
+            const transactions = await fetch_address_transactions(['mock_addr'], 3);
+
+            const headerHeights = mock_electrum_client.request.mock.calls
+                .filter(([method]) => method === 'blockchain.block.header')
+                .map(([, params]) => params[0]);
+            expect(headerHeights).toEqual([200]);
+            expect(transactions.map(tx => tx.txid)).toEqual([
+                entries[3].tx_hash, entries[2].tx_hash, entries[1].tx_hash
+            ]);
+            expect(transactions[1].status.block_time).toBe(1700000200);
+            expect(transactions[2].status.block_time).toBe(1700000200);
+            expect(transactions[1].confirmations).toBe(101);
+        });
+
+        it('requests all distinct confirmed block headers when no limit is given', async () => {
+            setupHistory();
+
+            const transactions = await fetch_address_transactions(['mock_addr']);
+
+            const headerHeights = mock_electrum_client.request.mock.calls
+                .filter(([method]) => method === 'blockchain.block.header')
+                .map(([, params]) => params[0]);
+            expect(headerHeights).toEqual([100, 200]);
+            expect(transactions).toHaveLength(4);
+            expect(transactions.find(tx => tx.status.block_height === 100)?.status.block_time).toBe(1700000100);
+        });
+
+        it('requests headers for the offset page rather than earlier pages', async () => {
+            const entries = setupHistory();
+
+            const transactions = await fetch_address_transactions(['mock_addr'], 1, 3);
+
+            const headerHeights = mock_electrum_client.request.mock.calls
+                .filter(([method]) => method === 'blockchain.block.header')
+                .map(([, params]) => params[0]);
+            expect(headerHeights).toEqual([100]);
+            expect(transactions.map(tx => tx.txid)).toEqual([entries[0].tx_hash]);
+            expect(transactions[0].status.block_time).toBe(1700000100);
+        });
+    });
+
     it('broadcasts_transaction', async () => {
         const tx_id = await broadcast_transaction('mock_hex');
         expect(tx_id).toBe('mock_tx_id');

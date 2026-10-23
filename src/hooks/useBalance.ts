@@ -24,7 +24,7 @@ export const useWalletBalanceSync = (
     addresses: string[]
 ) => {
     return useQuery({
-        queryKey: ['wallet-balances', walletId, addresses.length],
+        queryKey: ['wallet-balances', walletId, NETWORK_NAME, [...addresses]],
         queryFn: async () => {
             if (!walletId || addresses.length === 0) return [];
             return await fetchAddressInfoBatch(addresses);
@@ -41,7 +41,7 @@ export const useAddressListSync = (
     items: BitcoinAddress[]
 ) => {
     return useQuery({
-        queryKey: [category, 'balances', items.length],
+        queryKey: [category, 'balances', NETWORK_NAME, items.map(item => item.address)],
         queryFn: async () => {
             if (items.length === 0) return [];
             const addresses = items.map(i => i.address);
@@ -60,46 +60,62 @@ export const useWalletTransactions = (
     limit?: number,
     offset: number = 0,
 ) => {
-    const [cachedTxs, setCachedTxs] = useState<Transaction[]>([]);
-    const [isDbLoaded, setIsDbLoaded] = useState(false);
+    const network = NETWORK_NAME;
+    const [dbCache, setDbCache] = useState<{
+        network: string;
+        walletId: string;
+        limit: number | undefined;
+        offset: number;
+        transactions: Transaction[];
+    } | null>(null);
+    const [loadedDbScope, setLoadedDbScope] = useState<string | null>(null);
+    const dbScope = JSON.stringify([network, walletId, limit, offset]);
 
     useEffect(() => {
         if (!walletId) {
-            setCachedTxs([]);
-            setIsDbLoaded(true);
+            setDbCache(null);
+            setLoadedDbScope(dbScope);
             return;
         }
 
         let isMounted = true;
 
-        setIsDbLoaded(false);
+        setLoadedDbScope(null);
 
         dbGetTransactions(walletId, limit, offset)
             .then(txs => {
                 if (isMounted) {
-                    setCachedTxs(txs);
-                    setIsDbLoaded(true);
+                    setDbCache({ network, walletId, limit, offset, transactions: txs });
+                    setLoadedDbScope(dbScope);
                 }
             })
             .catch(e => {
                 console.warn("Failed to load txs from DB", e);
 
                 if (isMounted) {
-                    setCachedTxs([]);
-                    setIsDbLoaded(true);
+                    setDbCache({ network, walletId, limit, offset, transactions: [] });
+                    setLoadedDbScope(dbScope);
                 }
             });
 
         return () => {
             isMounted = false;
         };
-    }, [walletId, limit, offset]);
+    }, [walletId, limit, offset, dbScope]);
+
+    const cachedTxs = dbCache?.network === network &&
+        dbCache?.walletId === walletId &&
+        dbCache?.limit === limit &&
+        dbCache?.offset === offset
+        ? dbCache.transactions
+        : [];
 
     const query = useQuery({
         queryKey: [
             'wallet-transactions',
             walletId,
-            addresses.length,
+            network,
+            [...addresses],
             limit ?? 'all',
             offset,
         ],
@@ -117,7 +133,7 @@ export const useWalletTransactions = (
                 await dbSaveTransactions(
                     walletId,
                     newTxs,
-                    NETWORK_NAME,
+                    network,
                 );
             }
 
@@ -141,7 +157,7 @@ export const useWalletTransactions = (
             : cachedTxs;
 
     const isLoading =
-        !isDbLoaded ||
+        loadedDbScope !== dbScope ||
         (query.isLoading && transactions.length === 0);
 
     return {

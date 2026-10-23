@@ -557,9 +557,9 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const checkout = <View pointerEvents={checkoutFocused && !transitioning ? 'auto' : 'none'} style={[styles.root, { paddingTop: insets.top }]}>
     <View style={styles.header}>
       {settingsButton}
-      <Pressable accessibilityRole="button" accessibilityLabel="Sales history" disabled={stage === 'creating'} onPress={() => checkoutNavigation.current?.navigate('Sales')}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Sales" disabled={stage === 'creating'} onPress={() => checkoutNavigation.current?.navigate('Sales')}>
         <GlassView width={80} height={40} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}>
-          <Text style={styles.salesLabel}>Today</Text>
+          <Text style={styles.salesLabel}>Sales</Text>
         </GlassView>
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Exit terminal" style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || cashierBusy || stage === 'creating' || hasRequest} onPress={close}>

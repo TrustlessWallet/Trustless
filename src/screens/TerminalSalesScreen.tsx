@@ -248,7 +248,6 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     : period === 'today' ? formatDate(now)
       : `${formatDate(bounds!.start)} – ${formatDate(bounds!.end - 1)}`;
   const sectionTitle = period === 'today' ? 'TODAY’S ACTIVITY' : period === 'week' ? 'LAST 7 DAYS’ ACTIVITY' : period === 'month' ? 'THIS MONTH’S ACTIVITY' : 'ALL ACTIVITY';
-  const screenTitle = period === 'today' ? 'Today' : period === 'all' ? 'History' : 'Sales';
 
   const header = <>
     <View style={styles.heading}>
@@ -279,7 +278,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   return <View style={styles.root}>
 
-    <TerminalSheetHeader title={detail ? 'Sale details' : screenTitle} closeLabel="Close sales" onClose={close} leading={!detail ? <Pressable accessibilityRole="button" accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} accessibilityState={{ disabled: exporting || !visible || !headerEnabled, busy: exporting }} disabled={exporting || !visible || !headerEnabled} onPress={() => { void exportSales(); }} style={styles.exportButton}>
+    <TerminalSheetHeader title={detail ? 'Sale details' : 'Sales'} closeLabel="Close sales" onClose={close} leading={!detail ? <Pressable accessibilityRole="button" accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} accessibilityState={{ disabled: exporting || !visible || !headerEnabled, busy: exporting }} disabled={exporting || !visible || !headerEnabled} onPress={() => { void exportSales(); }} style={styles.exportButton}>
       <GlassView width={40} height={40} shape="circle" interactive={headerEnabled} style={styles.glass}>
         {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
       </GlassView>

@@ -576,7 +576,7 @@ it('keeps saved-request hydration from creating a second invoice', async () => {
 });
 
 
-it('preloads local sales before Today opens and keeps them current while hidden', async () => {
+it('preloads local sales before Sales opens and keeps them current while hidden', async () => {
   const saved = {
     id: 'preloaded-sale', walletId: 'wallet-a', network: 'mainnet' as const,
     invoice: 'lnbcprefetchedabc', amountSats: 2100,
@@ -587,15 +587,15 @@ it('preloads local sales before Today opens and keeps them current while hidden'
   await waitFor(() => expect(view.getByText('Unpaid', { includeHiddenElements: true })).toBeTruthy());
   await act(async () => { await updateTerminalSalePayment(saved, { status: 'received' }); });
   await waitFor(() => expect(view.getByText('Paid', { includeHiddenElements: true })).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Sales history'));
+  fireEvent.press(view.getByLabelText('Sales'));
   expect(view.getByText('Paid')).toBeTruthy();
   expect(view.queryByText('Loading sales…')).toBeNull();
 });
 
 it('restores sheet close and export after a cancelled native gesture', async () => {
   const view = renderWithCurrencyMeasurement();
-  await waitFor(() => expect(view.getByLabelText('Sales history')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Sales history'));
+  await waitFor(() => expect(view.getByLabelText('Sales')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Sales'));
   await waitFor(() => expect(view.getByLabelText('Close sales')).toBeTruthy());
 
   const listeners = view.UNSAFE_root.find(node => node.props.screenListeners?.transitionStart).props.screenListeners;
