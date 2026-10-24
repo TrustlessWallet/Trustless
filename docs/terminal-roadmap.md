@@ -24,6 +24,10 @@ A period controls the same data in the summary, activity list, refund total, and
 
 Paid sales are grouped by the first local observation of completion (`receivedAt`); other requests by creation time. Refunds use the local status-observation time (`updatedAt`). These are not guaranteed settlement timestamps. A completed refund can belong to the period even when the sale itself does not. Gross fiat amounts retain their original currency and rate snapshot. Refund totals stay separate in sats; do not infer a fiat net revenue from current exchange rates.
 
+## CSV exchange rates
+
+Fiat-priced sales export `btc_fiat_rate` (units of the row's `fiat_currency` per 1 BTC) and `rate_fetched_at_utc`. These are the exact Coinbase rate string and local fetch timestamp saved when the invoice was generated, including existing sales with that snapshot. Export does not fetch a current rate or derive one from rounded sats. The checkout rate cache lasts up to 60 seconds; the fetch timestamp is not the settlement timestamp. Sats/BTC-only sales and refunds have blank rate fields because no fiat rate was captured for those records.
+
 ## Current foundation: growing local journals
 
 Sales and refund reads still check the saved document on every operation. A small cache retains validated records and their sorted order for the two most recently used wallet/network scopes per journal. It is reused only when the saved string is identical. Callers receive independent record copies, including original fiat and basket snapshots; changed, unreadable, or invalid saved data is never hidden by a warm cache.
