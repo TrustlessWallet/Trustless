@@ -7,6 +7,7 @@ import AppNavigator from '../../navigation/AppNavigator';
 import { useWallet } from '../../contexts/WalletContext';
 import { useWalletMode } from '../../contexts/WalletModeContext';
 
+let mockPromptActive = false;
 const mockRoutes: string[] = [];
 const mockContainers: { initialState?: unknown }[] = [];
 const mockNavigators: { initialRouteName?: string }[] = [];
@@ -17,7 +18,7 @@ jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: jest.fn() 
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', surface: '#eee', border: '#ccc', bitcoin: '#f90' } }, isDark: false }) }));
 jest.mock('../../navigation/TerminalNavigation', () => ({ CashierTerminalRoot: () => null, MainRoot: () => null, TerminalRoute: () => null }));
 jest.mock('../../services/nfc', () => ({ get_is_nfc_scanning: () => false, finish_nfc_scanning: jest.fn() }));
-jest.mock('../../services/authState', () => ({ get_biometric_prompt_shown: () => false, set_biometric_prompt_shown: jest.fn() }));
+jest.mock('../../services/authState', () => ({ get_biometric_prompt_shown: () => mockPromptActive, set_biometric_prompt_shown: jest.fn() }));
 jest.mock('../../screens/ExportPSBTScreen', () => () => null);
 jest.mock('../../screens/ImportPSBTScreen', () => () => null);
 jest.mock('../../screens/QRScannerScreen', () => () => null);
@@ -81,6 +82,7 @@ jest.mock('../../components/GlassView', () => ({ GlassView: () => null }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 
 beforeEach(async () => {
+  mockPromptActive = false;
   await AsyncStorage.clear();
   Object.defineProperty(AppState, 'currentState', { configurable: true, value: 'active' });
   mockRoutes.length = 0;
@@ -152,4 +154,38 @@ it('does not route a cashier session to generic AuthCheck on resume', async () =
   expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
   view.unmount();
   appState.mockRestore();
+});
+
+it('records real backgrounding and checks app lock even while a prompt flag is set', async () => {
+  await AsyncStorage.multiSet([['@hasCompletedOnboarding','true'], ['@biometricsEnabled','true'], ['@autoLockTime','0']]);
+  (LocalAuthentication.isEnrolledAsync as jest.Mock).mockResolvedValue(true);
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
+  let change!: (state: string) => void;
+  const listener = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, callback) => { change = callback as any; return { remove: jest.fn() } as any; });
+  const view = render(<AppNavigator />);
+  await waitFor(() => expect(mockRoutes).toContain('AuthCheck'));
+  mockNavRef.navigate.mockClear();
+  mockPromptActive = true;
+  await act(async () => { await change('background'); });
+  expect(await AsyncStorage.getItem('@lastActiveTime')).not.toBeNull();
+  await act(async () => { await change('active'); });
+  expect(mockNavRef.navigate).toHaveBeenCalledWith('AuthCheck');
+  view.unmount(); listener.mockRestore();
+});
+
+it('does not treat a transient system biometric inactive event as a full background return', async () => {
+  await AsyncStorage.multiSet([['@hasCompletedOnboarding','true'], ['@biometricsEnabled','true'], ['@autoLockTime','0']]);
+  (LocalAuthentication.isEnrolledAsync as jest.Mock).mockResolvedValue(true);
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
+  let change!: (state: string) => void;
+  const listener = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, callback) => { change = callback as any; return { remove: jest.fn() } as any; });
+  const view = render(<AppNavigator />);
+  await waitFor(() => expect(mockRoutes).toContain('AuthCheck'));
+  mockNavRef.navigate.mockClear();
+  mockPromptActive = true;
+  await act(async () => { await change('inactive'); });
+  mockPromptActive = false;
+  await act(async () => { await change('active'); });
+  expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
+  view.unmount(); listener.mockRestore();
 });

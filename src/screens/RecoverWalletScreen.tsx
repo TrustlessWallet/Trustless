@@ -99,7 +99,7 @@ const RecoverWalletScreen = () => {
             >
                 <View style={styles.top_content}>
                     <Text style={styles.subtitle}>
-                        Enter your 12, 18, or 24-word recovery phrase to restore your wallet.
+                        Enter your recovery phrase to restore your wallet. Additional BIP39 passphrases are not supported.
                     </Text>
                     
                     <View style={[styles.input_wrapper, is_input_focused && styles.input_wrapper_focused]}>

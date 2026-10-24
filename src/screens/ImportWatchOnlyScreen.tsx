@@ -17,8 +17,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
 import { Theme } from '../constants/theme';
-import { NETWORK, NETWORK_NAME } from '../constants/network';
-import { getBip32Node } from '../services/bitcoin';
+import { NETWORK } from '../constants/network';
+import { validateWatchOnlyImport } from '../services/bitcoin';
 import * as Clipboard from 'expo-clipboard';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ImportWatchOnly'>;
@@ -52,38 +52,19 @@ const ImportWatchOnlyScreen = () => {
         const raw_input = xpub.trim();
         if (!raw_input) return;
 
-        let final_xpub = raw_input;
-        let parsed_fingerprint = undefined;
-        let parsed_path = undefined;
-
-        const match = raw_input.match(/^\[([a-f0-9]{8})\/([^\]]+)\](.*)$/i);
-
-        if (match) {
-            parsed_fingerprint = match[1];
-            parsed_path = "m/" + match[2].replace(/'/g, "h");
-            final_xpub = match[3];
-        } else {
+        const match = raw_input.match(/^\[([^/\]]+)\/([^\]]+)\](.+)$/);
+        if (!match) {
             Alert.alert(
                 "Missing metadata",
                 "Hardware wallets require the master fingerprint and derivation path. Please scan the full format containing [fingerprint/path]."
             );
             return;
         }
-
-        const valid_prefixes = ['xpub', 'zpub', 'ypub', 'vpub', 'tpub', 'upub'];
-        if (!valid_prefixes.some(p => final_xpub.startsWith(p))) {
-            Alert.alert("Invalid key", "Please enter a valid extended public key.");
-            return;
-        }
-
+        let parsed;
         try {
-            getBip32Node(final_xpub, NETWORK);
+            parsed = validateWatchOnlyImport(match[3], match[1], `m/${match[2]}`, NETWORK);
         } catch (e) {
-            console.warn(e);
-            Alert.alert(
-                "Network Mismatch",
-                `This key is not valid for ${NETWORK_NAME}. Please switch networks or use a compatible key.`
-            );
+            Alert.alert('Invalid account key', e instanceof Error ? e.message : 'Could not validate this account key.');
             return;
         }
 
@@ -91,9 +72,9 @@ const ImportWatchOnlyScreen = () => {
         try {
             const wallet = await addWallet({
                 type: 'watch-only',
-                xpub: final_xpub,
-                fingerprint: parsed_fingerprint,
-                derivation_path: parsed_path,
+                xpub: parsed.xpub,
+                fingerprint: parsed.fingerprint,
+                derivation_path: parsed.derivation_path,
                 name: undefined
             });
 

@@ -3,8 +3,8 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 let is_biometric_prompt_shown = false;
-let is_backup_flow_active = false;
 let biometric_prompt_generation = 0;
+const scoped_biometric_prompts = new Set<symbol>();
 
 export const TX_BIOMETRIC_CONFIRM_KEY = '@require_biometric_tx_confirm';
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
@@ -43,11 +43,15 @@ export const set_biometric_prompt_shown = (value: boolean) => {
 };
 
 export const get_biometric_prompt_shown = () => {
-  return is_biometric_prompt_shown || is_backup_flow_active;
+  return is_biometric_prompt_shown || scoped_biometric_prompts.size > 0;
 };
 
-export const set_backup_flow_active = (value: boolean) => {
-  is_backup_flow_active = value;
+// A prompt owns its privacy exception. Its completion cannot clear a guard
+// belonging to another authentication operation.
+export const begin_biometric_prompt = (): (() => void) => {
+  const prompt = Symbol('biometric prompt');
+  scoped_biometric_prompts.add(prompt);
+  return () => scoped_biometric_prompts.delete(prompt);
 };
 
 export const is_tx_biometrics_enabled = async (): Promise<boolean> => {

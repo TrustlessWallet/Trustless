@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StatusBar, LogBox, View, Image, Text, TextInput, Animated, AppState } from 'react-native';
+import { StatusBar, LogBox, View, Image, Text, TextInput, Animated } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppNavigator from './src/navigation/AppNavigator';
 import { WalletProvider } from './src/contexts/WalletContext';
@@ -22,8 +22,7 @@ import './shim';
 
 import { registerRootComponent } from 'expo';
 import { initDatabase } from './src/services/database';
-import { get_is_nfc_scanning } from './src/services/nfc';
-import { get_biometric_prompt_shown, set_biometric_prompt_shown } from './src/services/authState';
+import PrivacySwitcherOverlay from './src/components/PrivacySwitcherOverlay';
 
 
 interface TextWithDefaultProps extends Text { defaultProps?: { allowFontScaling?: boolean }; }
@@ -48,54 +47,6 @@ const ThemedStatusBar = () => {
   );
 };
 
-
-const PrivacySwitcherOverlay = ({ isBooting }: { isBooting: boolean }) => {
-  const { isDark } = useTheme();
-  const [appState, setAppState] = useState(AppState.currentState);
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-
-    const subscription = AppState.addEventListener('change', nextAppState => {
-      setAppState(nextAppState);
-
-      if (nextAppState === 'active') {
-        // Delay resetting the biometric flag. 
-        // Lightning network initialization requests the keychain immediately after the initial unlock, 
-        // which causes the app to briefly dip into the 'inactive' state. 
-        // Keeping this true for a brief window prevents the privacy screen from flashing.
-        timer = setTimeout(() => {
-          set_biometric_prompt_shown(false);
-        }, 1500);
-      } else {
-        // Clear the timeout if the app goes inactive again so it doesn't reset prematurely
-        if (timer) clearTimeout(timer);
-      }
-    });
-
-    return () => {
-      subscription.remove();
-      if (timer) clearTimeout(timer);
-    };
-  }, []);
-
-  if (appState === 'active' || get_is_nfc_scanning() || get_biometric_prompt_shown() || isBooting) return null;
-
-  const splashBg = isDark ? '#000000' : '#ffffff';
-  const splashIcon = isDark
-    ? require('./assets/splash-icon-black.png')
-    : require('./assets/splash-icon-white.png');
-
-  return (
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: splashBg, zIndex: 99999 }}>
-      <Image
-        source={splashIcon}
-        style={{ height: '100%', width: '100%', resizeMode: 'cover' }}
-        fadeDuration={0}
-      />
-    </View>
-  );
-};
 
 export default function App() {
   const [isAppInitialized, setIsAppInitialized] = useState(false);

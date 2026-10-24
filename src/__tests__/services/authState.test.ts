@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { authenticate_terminal_cashier, authenticate_terminal_refund, get_biometric_prompt_shown, is_tx_biometrics_enabled, set_biometric_prompt_shown, TX_BIOMETRIC_CONFIRM_KEY } from '../../services/authState';
+import { authenticate_terminal_cashier, authenticate_terminal_refund, begin_biometric_prompt, get_biometric_prompt_shown, is_tx_biometrics_enabled, set_biometric_prompt_shown, TX_BIOMETRIC_CONFIRM_KEY } from '../../services/authState';
 
 jest.mock('expo-local-authentication', () => ({
   hasHardwareAsync: jest.fn(),
@@ -15,6 +15,18 @@ jest.mock('react-native-keychain', () => ({
 }));
 
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
+
+describe('scoped biometric prompt privacy guard', () => {
+  it('only releases its own prompt and is unaffected by legacy flag cleanup', () => {
+    const endFirst = begin_biometric_prompt();
+    const endSecond = begin_biometric_prompt();
+    set_biometric_prompt_shown(false);
+    endFirst();
+    expect(get_biometric_prompt_shown()).toBe(true);
+    endSecond();
+    expect(get_biometric_prompt_shown()).toBe(false);
+  });
+});
 
 describe('is_tx_biometrics_enabled', () => {
   beforeEach(async () => {

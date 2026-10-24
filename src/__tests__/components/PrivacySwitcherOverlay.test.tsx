@@ -1,0 +1,25 @@
+import React from 'react';
+import { AppState, View } from 'react-native';
+import { render, act } from '@testing-library/react-native';
+import PrivacySwitcherOverlay from '../../components/PrivacySwitcherOverlay';
+let mockPrompt = false;
+let mockNfc = false;
+jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ isDark: false }) }));
+jest.mock('../../services/authState', () => ({ get_biometric_prompt_shown: () => mockPrompt, set_biometric_prompt_shown: jest.fn() }));
+jest.mock('../../services/nfc', () => ({ get_is_nfc_scanning: () => mockNfc }));
+it('masks real backgrounding even when system prompt or NFC flags are active', () => {
+  jest.useFakeTimers();
+  Object.defineProperty(AppState, 'currentState', { configurable: true, value: 'active' });
+  let change!: (value: string) => void;
+  const listen = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, callback) => { change = callback as any; return { remove: jest.fn() } as any; });
+  const view = render(<PrivacySwitcherOverlay isBooting={false} />);
+  expect(view.UNSAFE_queryAllByType(View)).toHaveLength(0);
+  mockPrompt = true; mockNfc = true;
+  act(() => change('inactive'));
+  expect(view.UNSAFE_queryAllByType(View)).toHaveLength(0);
+  act(() => change('background'));
+  expect(view.UNSAFE_queryAllByType(View)).toHaveLength(1);
+  act(() => change('active'));
+  expect(view.UNSAFE_queryAllByType(View)).toHaveLength(0);
+  view.unmount(); listen.mockRestore(); jest.useRealTimers(); mockPrompt = false; mockNfc = false;
+});
