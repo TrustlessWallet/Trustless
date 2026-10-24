@@ -144,5 +144,30 @@ it('exports the original charge in normal decimal fiat units without recalculati
   }
   const original = sale('sats-only', today);
   const csv = buildTerminalSalesCsv([{ ...original, request: { ...original.request, fiat: undefined } }], [refund(today)], 'all', day);
-  for (const row of csv.trim().split('\r\n').slice(1)) expect(row.split(',')).toHaveLength(15);
+  for (const row of csv.trim().split('\r\n').slice(1)) expect(row.split(',')).toHaveLength(17);
+});
+
+it('exports the exact saved BTC-to-fiat rate and its fetch time per sale', () => {
+  const originals = [
+    { ...sale('usd-rate', today), request: { ...sale('usd-rate', today).request,
+      fiat: { currency: 'USD' as const, amountMinor: 250, rate: '98765.123456789012345678', fetchedAt: today - 45000 } } },
+    { ...sale('eur-rate', today), request: { ...sale('eur-rate', today).request,
+      fiat: { currency: 'EUR' as const, amountMinor: 250, rate: '85432.10', fetchedAt: today - 15000 } } },
+    { ...sale('sats-rate', today), request: { ...sale('sats-rate', today).request, fiat: undefined, inputUnit: 'sats' as const } },
+  ];
+  const lines = buildTerminalSalesCsv(originals, [{ ...refund(today), id: 'plain-refund', saleId: 'usd-rate', paymentId: 'payment' }], 'all', day).trim().split('\r\n');
+  const header = lines[0].split(',');
+  const rows = lines.slice(1).map(line => Object.fromEntries(line.split(',').map((value, index) => [header[index], value])));
+  const usd = rows.find(row => row.record_id === 'usd-rate')!;
+  expect(usd.btc_fiat_rate).toBe('98765.123456789012345678');
+  expect(usd.rate_fetched_at_utc).toBe(new Date(today - 45000).toISOString());
+  const eur = rows.find(row => row.record_id === 'eur-rate')!;
+  expect(eur.btc_fiat_rate).toBe('85432.10');
+  expect(eur.rate_fetched_at_utc).toBe(new Date(today - 15000).toISOString());
+  for (const id of ['sats-rate', 'plain-refund']) {
+    const row = rows.find(row => row.record_id === id)!;
+    expect(row.btc_fiat_rate).toBe('');
+    expect(row.rate_fetched_at_utc).toBe('');
+  }
+  for (const line of lines) expect(line.split(',')).toHaveLength(17);
 });

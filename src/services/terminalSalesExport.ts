@@ -18,6 +18,7 @@ const columns = [
   'record_type', 'record_id', 'sale_id', 'status', 'network',
   'created_at_utc', 'status_observed_at_utc', 'received_observed_at_utc',
   'amount_sats', 'quoted_fee_sats', 'input_unit', 'fiat_currency', 'fiat_amount', 'fiat_amount_minor', 'payment_id',
+  'btc_fiat_rate', 'rate_fetched_at_utc',
 ] as const;
 
 const utc = (timestamp?: number) => timestamp === undefined ? '' : new Date(timestamp).toISOString();
@@ -37,6 +38,7 @@ export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: r
         utc(sale.request.createdAt), utc(sale.updatedAt), utc(sale.receivedAt),
         sale.request.amountSats, '', sale.request.fiat?.currency ?? sale.request.inputUnit ?? 'sats',
         sale.request.fiat?.currency ?? '', sale.request.fiat ? formatFiatMinor(sale.request.fiat.amountMinor) : '', sale.request.fiat?.amountMinor ?? '', sale.paymentId ?? '',
+        sale.request.fiat?.rate ?? '', utc(sale.request.fiat?.fetchedAt),
       ],
     })),
     ...refunds.filter(refund => isInTerminalSalesPeriod(refund.updatedAt, period, day)).map(refund => ({
@@ -44,7 +46,7 @@ export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: r
       fields: [
         'refund', refund.id, refund.saleId, refund.status, refund.network,
         utc(refund.createdAt), utc(refund.updatedAt), '', refund.amountSats, refund.feeSats,
-        'sats', '', '', '', refund.paymentId ?? '',
+        'sats', '', '', '', refund.paymentId ?? '', '', '',
       ],
     })),
   ].sort((a, b) => b.time - a.time || String(a.fields[1]).localeCompare(String(b.fields[1])));
