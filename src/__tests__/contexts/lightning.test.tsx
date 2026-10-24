@@ -3,6 +3,8 @@ import { act, render, renderHook, waitFor, cleanup } from '@testing-library/reac
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WalletProvider, useWallet, useActiveWallet } from '../../contexts/WalletContext';
 import { WalletModeProvider, useWalletMode } from '../../contexts/WalletModeContext';
+import * as Keychain from 'react-native-keychain';
+import { dbSaveAddress, dbDeleteWallet, dbGetWallets } from '../../services/database';
 import * as sdkModule from '@breeztech/breez-sdk-spark-react-native';
 import * as refundJournal from '../../services/terminalRefunds';
 
@@ -16,6 +18,7 @@ jest.mock('../../services/database', () => ({
     dbGetWallets: jest.fn(async () => ['a', 'b'].map(id => ({ id, name: id, type: 'standard', nextUtxoCount: 0 }))),
     dbGetDerivedAddresses: jest.fn(async (id, chain) => Array.from({ length: 20 }, (_, index) => ({ address: `${id}-${chain}-${index}`, index }))),
     dbGetAddressCache: jest.fn(async () => []), dbGetUtxoLabels: jest.fn(async () => ({})),
+    dbDeleteWallet: jest.fn(),
     dbGetSavedAddresses: jest.fn(async () => []), dbUpdateAddressInfoBatch: jest.fn(), dbSaveAddress: jest.fn(),
 }));
 jest.mock('../../hooks/useBalance', () => ({
@@ -438,4 +441,99 @@ it('coalesces concurrent retry requests into one replacement connection', async 
     const before = (sdkModule.connect as jest.Mock).mock.calls.length;
     await act(async () => { await Promise.all([result.current.retryLightning(), result.current.retryLightning()]); });
     expect((sdkModule.connect as jest.Mock).mock.calls.length).toBe(before + 1);
+});
+
+it('discards a receive address request that finishes after switching wallets', async () => {
+    const hook = await connected();
+    const credentials = deferred<any>();
+    const original = Keychain.getGenericPassword as jest.Mock;
+    const normal = original.getMockImplementation()!;
+    let held = false;
+    original.mockImplementation((options: any) => {
+        if (!held && options.service === 'com.btc.trustless.mnemonic.v2.a') { held = true; return credentials.promise; }
+        return normal(options);
+    });
+    let next!: ReturnType<typeof hook.result.current.getOrCreateNextUnusedReceiveAddress>;
+    await act(async () => { next = hook.result.current.getOrCreateNextUnusedReceiveAddress('a-0-19', 19); });
+    await waitFor(() => expect(held).toBe(true));
+    await act(async () => { await hook.result.current.switchWallet('b'); });
+    const before = hook.result.current.activeWallet!.derivedReceiveAddresses;
+    (dbSaveAddress as jest.Mock).mockClear();
+    await act(async () => { credentials.resolve({ password: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' }); await next; });
+    expect(await next).toBeNull();
+    expect(hook.result.current.activeWallet?.id).toBe('b');
+    expect(hook.result.current.activeWallet?.derivedReceiveAddresses).toEqual(before);
+    expect(dbSaveAddress).not.toHaveBeenCalled();
+});
+
+it('coalesces concurrent next-address generation and publishes the new index once', async () => {
+    const hook = await connected();
+    (dbSaveAddress as jest.Mock).mockClear();
+    let values: any[] = [];
+    await act(async () => {
+        values = await Promise.all([
+            hook.result.current.getOrCreateNextUnusedReceiveAddress('a-0-19', 19),
+            hook.result.current.getOrCreateNextUnusedReceiveAddress('a-0-19', 19),
+        ]);
+    });
+    expect(values[0]?.index).toBe(20);
+    expect(values[1]).toEqual(values[0]);
+    expect(dbSaveAddress).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.activeWallet?.derivedReceiveAddresses.filter(a => a.index === 20)).toHaveLength(1);
+});
+
+it('invalidates an old receive request even when switching A to B and back to A', async () => {
+    const hook = await connected();
+    const credentials = deferred<any>();
+    const get = Keychain.getGenericPassword as jest.Mock;
+    const normal = get.getMockImplementation()!;
+    let held = false;
+    get.mockImplementation((options: any) => {
+        if (!held && options.service === 'com.btc.trustless.mnemonic.v2.a') { held = true; return credentials.promise; }
+        return normal(options);
+    });
+    let next!: Promise<any>;
+    await act(async () => { next = hook.result.current.getOrCreateNextUnusedReceiveAddress('a-0-19', 19); });
+    await waitFor(() => expect(held).toBe(true));
+    await act(async () => { await hook.result.current.switchWallet('b'); });
+    let back!: Promise<void>;
+    await act(async () => { back = hook.result.current.switchWallet('a'); });
+    await act(async () => {
+        credentials.resolve({ password: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' });
+        await Promise.all([next, back]);
+    });
+    expect(await next).toBeNull();
+    expect(hook.result.current.activeWallet?.id).toBe('a');
+    expect(hook.result.current.activeWallet?.derivedReceiveAddresses.some(a => a.index === 20)).toBe(false);
+});
+
+it('rejects an invalid recovery phrase at the provider boundary before storing credentials', async () => {
+    const hook = await connected();
+    const writes = (Keychain.setGenericPassword as jest.Mock).mock.calls.length;
+    await expect(hook.result.current.addWallet({ mnemonic: 'abandon '.repeat(12) })).rejects.toThrow('Invalid recovery phrase');
+    expect(Keychain.setGenericPassword).toHaveBeenCalledTimes(writes);
+});
+
+it('invalidates pending receive derivation before deleting an active wallet', async () => {
+    const hook = await connected();
+    const credentials = deferred<any>();
+    const get = Keychain.getGenericPassword as jest.Mock;
+    const normal = get.getMockImplementation()!;
+    let held = false;
+    get.mockImplementation((options: any) => {
+        if (!held && options.service === 'com.btc.trustless.mnemonic.v2.a') { held = true; return credentials.promise; }
+        return normal(options);
+    });
+    let next!: Promise<any>;
+    await act(async () => { next = hook.result.current.getOrCreateNextUnusedReceiveAddress('a-0-19', 19); });
+    await waitFor(() => expect(held).toBe(true));
+    (dbGetWallets as jest.Mock).mockResolvedValue([{ id: 'b', name: 'b', type: 'standard', nextUtxoCount: 0 }]);
+    let removal!: Promise<void>;
+    await act(async () => { removal = hook.result.current.removeWallet('a'); });
+    await waitFor(() => expect(dbDeleteWallet).toHaveBeenCalledWith('a'));
+    (dbSaveAddress as jest.Mock).mockClear();
+    await act(async () => { credentials.resolve({ password: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' }); await Promise.all([next, removal]); });
+    expect(await next).toBeNull();
+    expect(hook.result.current.activeWallet?.id).toBe('b');
+    expect(dbSaveAddress).not.toHaveBeenCalled();
 });

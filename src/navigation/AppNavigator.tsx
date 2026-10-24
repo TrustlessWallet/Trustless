@@ -97,6 +97,9 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const [current_route_name, set_current_route_name] = useState<string | undefined>(undefined);
   const [is_nav_ready, set_is_nav_ready] = useState(false);
   const app_state = useRef(AppState.currentState);
+  const was_backgrounded = useRef(false);
+  const prompt_caused_inactive = useRef(false);
+  const background_time_write = useRef<Promise<void> | null>(null);
 
   const [initial_nav_state, set_initial_nav_state] = useState<any>(null);
   const [nav_state_resolved, set_nav_state_resolved] = useState(false);
@@ -121,22 +124,33 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     const subscription = AppState.addEventListener('change', async next_app_state => {
       const is_prompt_active = get_biometric_prompt_shown();
       const is_nfc_active = get_is_nfc_scanning();
+      const previous_app_state = app_state.current;
+      const returned_from_background = was_backgrounded.current;
+      const returned_from_prompt = prompt_caused_inactive.current;
+      app_state.current = next_app_state;
+      if (next_app_state === 'background') was_backgrounded.current = true;
+      if (next_app_state === 'inactive' && is_prompt_active) prompt_caused_inactive.current = true;
+      if (next_app_state === 'active') {
+        was_backgrounded.current = false;
+        prompt_caused_inactive.current = false;
+      }
 
       if (next_app_state.match(/inactive|background/)) {
         set_is_backgrounded(true);
       } else if (next_app_state === 'active') {
-        if (!is_prompt_active && !is_nfc_active) {
+        if (returned_from_background || (!returned_from_prompt && !is_prompt_active && !is_nfc_active)) {
           set_is_checking_auth(true);
         }
         set_is_backgrounded(false);
       }
 
       if (
-        app_state.current.match(/inactive|background/) &&
+        previous_app_state.match(/inactive|background/) &&
         next_app_state === 'active'
       ) {
-        if (!is_prompt_active && !is_nfc_active) {
+        if (returned_from_background || (!returned_from_prompt && !is_prompt_active && !is_nfc_active)) {
           try {
+            if (returned_from_background) await background_time_write.current;
             await check_auth_needed_ref.current();
           } finally {
             set_is_checking_auth(false);
@@ -145,11 +159,12 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         set_biometric_prompt_shown(false);
         finish_nfc_scanning(true);
       } else if (next_app_state.match(/inactive|background/)) {
-        if (!is_prompt_active && !is_nfc_active) {
-          await AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
+        if (next_app_state === 'background' || (!is_prompt_active && !is_nfc_active)) {
+          const write = AsyncStorage.setItem('@lastActiveTime', Date.now().toString());
+          if (next_app_state === 'background') background_time_write.current = write;
+          await write;
         }
       }
-      app_state.current = next_app_state;
     });
 
     return () => {
@@ -284,7 +299,8 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     set_nav_state_resolved(true);
   }, [nav_state_resolved, wallet_loading, is_loading, needs_onboarding, has_shown_onboarding, initial_tab]);
 
-  const is_privacy_active = (is_backgrounded || is_checking_auth) && !get_biometric_prompt_shown() && !get_is_nfc_scanning();
+  const is_privacy_active = app_state.current === 'background' || is_checking_auth ||
+    (is_backgrounded && !get_biometric_prompt_shown() && !get_is_nfc_scanning());
 
   useEffect(() => {
     if (!is_nav_ready || !navigation_ref.isReady()) return;

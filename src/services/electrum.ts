@@ -9,8 +9,21 @@ import * as bitcoin from 'bitcoinjs-lib';
 
 export let IS_TESTNET = false;
 const SETTINGS_NETWORK_KEY = '@network_preference';
-const CUSTOM_ELECTRUM_NODE_KEY = '@customElectrumNode';
-const ALLOW_SELF_SIGNED_CERTIFICATES_KEY = '@allow_self_signed_certs';
+const CUSTOM_ELECTRUM_NODE_KEY = '@customElectrumNode'; // Legacy JSON preference
+const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
+// This preference is only for the user's explicitly selected custom node.
+export const CUSTOM_NODE_ALLOW_SELF_SIGNED_KEY = '@allowSelfSigned';
+
+function parseCustomNode(value: string): { host: string; port: number; protocol: 'tls' | 'tcp' } | null {
+  const parts = value.trim().split(':');
+  const parsed = value.trim().startsWith('{') ? JSON.parse(value)
+    : parts.length >= 2 && parts.length <= 3
+      ? { host: parts[0], port: Number(parts[1]), protocol: parts[2]?.toLowerCase() || 'tls' }
+      : null;
+  if (!parsed || typeof parsed.host !== 'string' || !parsed.host.trim() || !Number.isInteger(parsed.port)
+    || parsed.port < 1 || parsed.port > 65535 || !['tls', 'tcp'].includes(parsed.protocol)) return null;
+  return { ...parsed, host: parsed.host.trim() };
+}
 
 export interface PeerConfig {
   host: string;
@@ -295,7 +308,7 @@ async function raceConnections(candidates: PeerConfig[]): Promise<CustomElectrum
 
     for (const peer of candidates) {
       console.log(`  🔌 Racing ${peer.host}:${peer.port} (${peer.protocol})...`);
-      const cl = new CustomElectrumClient(peer.host, peer.port, peer.protocol, Boolean(peer.requiresSelfSigned));
+      const cl = new CustomElectrumClient(peer.host, peer.port, peer.protocol, false);
       contenders.push(cl);
 
       cl.connect(3000)
@@ -339,17 +352,17 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
       const netStr = await AsyncStorage.getItem(SETTINGS_NETWORK_KEY);
       IS_TESTNET = netStr === 'testnet';
 
-      const allowSelfSignedStr = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_CERTIFICATES_KEY);
+      const allowSelfSignedStr = await AsyncStorage.getItem(CUSTOM_NODE_ALLOW_SELF_SIGNED_KEY);
       const allowSelfSigned = allowSelfSignedStr === 'true';
 
-      const customNodeStr = await AsyncStorage.getItem(CUSTOM_ELECTRUM_NODE_KEY);
+      const customNodeStr = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY) || await AsyncStorage.getItem(CUSTOM_ELECTRUM_NODE_KEY);
 
       if (customNodeStr) {
         try {
-          const parsed = JSON.parse(customNodeStr);
-          if (parsed && parsed.host) {
+          const parsed = parseCustomNode(customNodeStr);
+          if (parsed) {
             console.log(`  🔌 Attempting custom node ${parsed.host}...`);
-            const cl = new CustomElectrumClient(parsed.host, parsed.port, parsed.protocol, true);
+            const cl = new CustomElectrumClient(parsed.host, parsed.port, parsed.protocol, allowSelfSigned);
             await cl.connect(5000);
             client = cl;
 
@@ -368,7 +381,8 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
       }
 
       const networkPeers = IS_TESTNET ? PEERS.testnet : PEERS.mainnet;
-      const validPeers = networkPeers.filter(p => allowSelfSigned || !p.requiresSelfSigned);
+      // Never relax identity validation or use plaintext for automatically selected peers.
+      const validPeers = networkPeers.filter(p => p.protocol === 'tls' && !p.requiresSelfSigned);
 
       const tier1 = validPeers.filter(p => !p.requiresSelfSigned);
       const tier2 = validPeers.filter(p => Boolean(p.requiresSelfSigned));
@@ -458,14 +472,9 @@ export const resetActiveConnection = () => {
 
 export const test_custom_node_connection = async (url: string, allowSelfSigned: boolean): Promise<boolean> => {
   try {
-    const parts = url.split(':');
-    if (parts.length < 2) return false;
-
-    const host = parts[0];
-    const port = parseInt(parts[1], 10);
-    const protocol = parts.length > 2 && parts[2].toLowerCase() === 'tcp' ? 'tcp' : 'tls';
-
-    const cl = new CustomElectrumClient(host, port, protocol, allowSelfSigned);
+    const parsed = parseCustomNode(url);
+    if (!parsed) return false;
+    const cl = new CustomElectrumClient(parsed.host, parsed.port, parsed.protocol, allowSelfSigned);
     await cl.connect(5000);
     cl.forceClose();
     return true;

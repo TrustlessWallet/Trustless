@@ -112,6 +112,41 @@ describe('Electrum Service', () => {
     });
 
     describe('getElectrumClient', () => {
+        it('only uses validated TLS for automatic peers, even with legacy permissive preferences', async () => {
+            (AsyncStorage.getItem as jest.Mock).mockImplementation(async key => key === '@allow_self_signed_certs' || key === '@allowSelfSigned' ? 'true' : null);
+            const task = getElectrumClient();
+            await flushPromises();
+            jest.advanceTimersByTime(20);
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
+            await task;
+            expect(mockTcp.createConnection).not.toHaveBeenCalled();
+            expect(mockTcp.connectTLS).toHaveBeenCalled();
+            for (const [options] of mockTcp.connectTLS.mock.calls) {
+                expect(options).toMatchObject({ rejectUnauthorized: true, tlsCheckValidity: true });
+            }
+        });
+
+        it('uses a permissive custom certificate only with explicit custom-node opt-in', async () => {
+            (AsyncStorage.getItem as jest.Mock).mockImplementation(async key => key === '@customElectrumNode' ? JSON.stringify({ host: 'my.node', port: 50002, protocol: 'tls' }) : key === '@allowSelfSigned' ? 'true' : null);
+            const task = getElectrumClient();
+            await flushPromises();
+            jest.advanceTimersByTime(20);
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
+            await task;
+            expect(mockTcp.connectTLS).toHaveBeenCalledWith(expect.objectContaining({ host: 'my.node', rejectUnauthorized: false }), expect.any(Function));
+        });
+
+        it('uses the custom node URL saved by Settings with certificate validation by default', async () => {
+            (AsyncStorage.getItem as jest.Mock).mockImplementation(async key => key === '@customNodeUrl' ? 'settings.node:50002:tls' : null);
+            const task = getElectrumClient();
+            await flushPromises();
+            jest.advanceTimersByTime(20);
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
+            const connected = await task;
+            expect(connected.host).toBe('settings.node');
+            expect(mockTcp.connectTLS).toHaveBeenCalledWith(expect.objectContaining({ host: 'settings.node', rejectUnauthorized: true }), expect.any(Function));
+        });
+
         it('connects to custom node if available in storage', async () => {
             (AsyncStorage.getItem as jest.Mock).mockImplementation((key: string) => {
                 if (key === '@customElectrumNode') return Promise.resolve('{"host":"custom.node.com","port":50002,"protocol":"tls"}');
@@ -128,7 +163,7 @@ describe('Electrum Service', () => {
             const client = await clientPromise;
 
             expect(mockTcp.connectTLS).toHaveBeenCalledWith(
-                expect.objectContaining({ host: 'custom.node.com', port: 50002, rejectUnauthorized: false }),
+                expect.objectContaining({ host: 'custom.node.com', port: 50002, rejectUnauthorized: true }),
                 expect.any(Function)
             );
             expect(client.host).toBe('custom.node.com');
@@ -170,9 +205,11 @@ describe('Electrum Service', () => {
             mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
             const client1 = await client1Promise;
 
+            const connectionsBeforeReuse = mockTcp.connectTLS.mock.calls.length;
             const client2 = await getElectrumClient();
             expect(client1).toBe(client2);
-            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(3); 
+            expect(connectionsBeforeReuse).toBeGreaterThan(0);
+            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(connectionsBeforeReuse);
         });
     });
 
@@ -356,6 +393,13 @@ describe('Electrum Service', () => {
     });
 
     describe('test_custom_node_connection', () => {
+        it.each(['test.com:50002junk:tls', 'test.com:0:tls', 'test.com:50002:unknown', 'test.com:50002:tls:extra'])(
+            'rejects malformed custom endpoint %s before connecting', async (value) => {
+                expect(await test_custom_node_connection(value, false)).toBe(false);
+                expect(mockTcp.connectTLS).not.toHaveBeenCalled();
+                expect(mockTcp.createConnection).not.toHaveBeenCalled();
+            },
+        );
         it('returns true on successful connection', async () => {
             const promise = test_custom_node_connection('test.com:50001:tcp', false);
             await flushPromises();

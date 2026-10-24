@@ -71,6 +71,48 @@ export const inferScriptType = (key: string): 'p2wpkh' | 'p2sh-p2wpkh' => {
     return 'p2wpkh';
 };
 
+export type WatchOnlyImport = {
+    xpub: string;
+    fingerprint: string;
+    derivation_path: string;
+    scriptType: 'p2wpkh' | 'p2sh-p2wpkh';
+};
+
+/** Validate the account origin and key together before any address is derived or stored. */
+export const validateWatchOnlyImport = (
+    xpub: string, fingerprint: string, derivationPath: string, network: typeof networks.bitcoin = NETWORK
+): WatchOnlyImport => {
+    const key = xpub.trim();
+    if (!/^[a-f\d]{8}$/i.test(fingerprint)) throw new Error('Master fingerprint must be eight hexadecimal characters.');
+    const path = derivationPath.replace(/h/gi, "'");
+    const match = /^m\/(49|84)'\/(0|1)'\/(0|[1-9]\d*)'$/.exec(path);
+    if (!match || Number(match[3]) > 0x7fffffff) {
+        throw new Error("Use a hardened BIP49 or BIP84 account origin, such as m/84'/0'/0'. BIP44 is not supported.");
+    }
+    const expectedCoin = network.bech32 === 'bc' ? '0' : '1';
+    if (match[2] !== expectedCoin) throw new Error('Account origin belongs to a different Bitcoin network.');
+
+    const prefix = key.slice(0, 4);
+    if (['xprv', 'yprv', 'zprv', 'tprv', 'uprv', 'vprv'].includes(prefix)) {
+        throw new Error('Import an extended public key, not a private key.');
+    }
+    const allowed = expectedCoin === '0' ? ['xpub', 'ypub', 'zpub'] : ['tpub', 'upub', 'vpub'];
+    if (!allowed.includes(prefix)) throw new Error('Extended public key is invalid or belongs to a different Bitcoin network.');
+    const scriptType = match[1] === '49' ? 'p2sh-p2wpkh' : 'p2wpkh';
+    const expectedPrefix = expectedCoin === '0'
+        ? (scriptType === 'p2wpkh' ? 'zpub' : 'ypub')
+        : (scriptType === 'p2wpkh' ? 'vpub' : 'upub');
+    if (prefix !== expectedPrefix && prefix !== (expectedCoin === '0' ? 'xpub' : 'tpub')) {
+        throw new Error('Extended public key format conflicts with its account origin.');
+    }
+    const node = getBip32Node(key, network);
+    if (!node.isNeutered()) throw new Error('Import an extended public key, not a private key.');
+    if (node.depth !== 3 || node.index !== (Number(match[3]) + 0x80000000)) {
+        throw new Error('Extended public key must be the account key at the stated hardened origin.');
+    }
+    return { xpub: key, fingerprint: fingerprint.toLowerCase(), derivation_path: path, scriptType };
+};
+
 export const format_public_key = (xpub: string, script_type: string, network_name: string): string => {
     if (!xpub) return '';
     try {
@@ -750,16 +792,48 @@ export const buildPSBT = (
     utxos: any[]
 ): string => {
     if (!activeWallet || activeWallet.type !== 'watch-only') throw new Error("Invalid wallet type");
-    if (!activeWallet.fingerprint || !activeWallet.xpub) throw new Error("Wallet is missing master fingerprint or xpub.");
-
-    const cleanAmount = amount.replace(',', '.');
-    const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
-    const totalInput = utxos.reduce((sum, u) => sum + u.value, 0);
+    if (!/^[a-f\d]{8}$/i.test(activeWallet.fingerprint || '') || !activeWallet.xpub) {
+        throw new Error("Wallet is missing a valid master fingerprint or xpub.");
+    }
+    if (!Array.isArray(utxos) || utxos.length === 0) throw new Error('Select at least one UTXO.');
+    if (!Number.isSafeInteger(fee) || fee < 0) throw new Error('Invalid transaction fee.');
+    const cleanAmount = amount.trim().replace(',', '.');
+    if (unit !== 'BTC' && unit !== 'sats') throw new Error('Invalid amount unit.');
+    if (unit === 'BTC' ? !/^\d+(?:\.\d{1,8})?$/.test(cleanAmount) : !/^\d+$/.test(cleanAmount)) {
+        throw new Error('Invalid transaction amount.');
+    }
+    const amountSatoshis = unit === 'BTC' ? Math.round(Number(cleanAmount) * 100000000) : Number(cleanAmount);
+    if (!Number.isSafeInteger(amountSatoshis) || amountSatoshis < DUST_THRESHOLD) {
+        throw new Error('Recipient amount is below the spendable minimum.');
+    }
+    btcAddress.toOutputScript(recipientAddress, NETWORK);
+    const totalInput = utxos.reduce((sum, u) => {
+        if (!Number.isSafeInteger(u.value) || u.value <= 0) throw new Error('Invalid UTXO value.');
+        if (!/^[a-f\d]{64}$/i.test(u.txid) || !Number.isSafeInteger(u.vout) || u.vout < 0 || u.vout > 0xffffffff) {
+            throw new Error('Invalid UTXO outpoint.');
+        }
+        const next = sum + u.value;
+        if (!Number.isSafeInteger(next)) throw new Error('UTXO total is too large.');
+        return next;
+    }, 0);
     const change = totalInput - amountSatoshis - fee;
+    if (!Number.isSafeInteger(change) || change < 0) throw new Error('Insufficient funds for amount and fee.');
+    if (change > 0 && change < DUST_THRESHOLD) throw new Error('Change is below the spendable minimum.');
+    const outpoints = new Set(utxos.map(u => `${u.txid.toLowerCase()}:${u.vout}`));
+    if (outpoints.size !== utxos.length) throw new Error('Duplicate UTXO selected.');
 
     const psbt = new Psbt({ network: NETWORK });
     const rootNode = getBip32Node(activeWallet.xpub, NETWORK);
+    if (!rootNode.isNeutered()) throw new Error('Wallet key must be public.');
     const masterFingerprint = Buffer.from(activeWallet.fingerprint, 'hex');
+    const scriptType = activeWallet.scriptType || inferScriptType(activeWallet.xpub);
+    if (scriptType !== 'p2wpkh' && scriptType !== 'p2sh-p2wpkh') throw new Error('Unsupported wallet script type.');
+    const paymentFor = (pubkey: Buffer) => {
+        const witness = payments.p2wpkh({ pubkey, network: NETWORK });
+        if (scriptType === 'p2wpkh') return { address: witness.address!, output: witness.output!, redeemScript: undefined };
+        const wrapped = payments.p2sh({ redeem: witness, network: NETWORK });
+        return { address: wrapped.address!, output: wrapped.output!, redeemScript: witness.output! };
+    };
 
     let basePath = activeWallet.derivation_path || DERIVATION_PARENT_PATH;
     if (basePath.startsWith('m/')) basePath = basePath.slice(2);
@@ -773,16 +847,19 @@ export const buildPSBT = (
 
         const chain = changeInfo ? 1 : 0;
         const index = changeInfo ? changeInfo.index : recvInfo!.index;
+        if (!Number.isSafeInteger(index) || index < 0 || index > 0x7fffffff) throw new Error('Invalid UTXO derivation index.');
         const pathSuffix = `${chain}/${index}`;
         const fullPath = `m/${basePath}/${pathSuffix}`.replace(/h/g, "'");
 
         const childNode = rootNode.derivePath(pathSuffix);
-        const p2wpkh = payments.p2wpkh({ pubkey: childNode.publicKey, network: NETWORK });
+        const payment = paymentFor(childNode.publicKey);
+        if (payment.address !== utxo.address) throw new Error('UTXO address does not match the wallet derivation.');
 
         psbt.addInput({
             hash: utxo.txid,
             index: utxo.vout,
-            witnessUtxo: { script: p2wpkh.output!, value: utxo.value },
+            witnessUtxo: { script: payment.output, value: utxo.value },
+            ...(payment.redeemScript ? { redeemScript: payment.redeemScript } : {}),
             bip32Derivation: [{
                 masterFingerprint,
                 path: fullPath,
@@ -795,6 +872,9 @@ export const buildPSBT = (
 
     if (change > 0) {
         let verifiedChangeIndex = activeWallet.changeAddressIndex ?? 0;
+        if (!Number.isSafeInteger(verifiedChangeIndex) || verifiedChangeIndex < 0 || verifiedChangeIndex > 0x7fffffff) {
+            throw new Error('Invalid change derivation index.');
+        }
         const changeSet = new Set(activeWallet.derivedChangeAddresses.map((a: any) => a.address));
         for (let i = verifiedChangeIndex; i < activeWallet.derivedChangeAddresses.length + 20; i++) {
             const info = activeWallet.derivedAddressInfoCache.find((c: any) => c.index === i && changeSet.has(c.address));
@@ -805,12 +885,13 @@ export const buildPSBT = (
         }
 
         const changeNode = rootNode.derivePath(`1/${verifiedChangeIndex}`);
-        const p2wpkhChange = payments.p2wpkh({ pubkey: changeNode.publicKey, network: NETWORK });
+        const changePayment = paymentFor(changeNode.publicKey);
         const fullChangePath = `m/${basePath}/1/${verifiedChangeIndex}`.replace(/h/g, "'");
 
         psbt.addOutput({
-            address: p2wpkhChange.address!,
+            address: changePayment.address,
             value: change,
+            ...(changePayment.redeemScript ? { redeemScript: changePayment.redeemScript } : {}),
             bip32Derivation: [{
                 masterFingerprint,
                 path: fullChangePath,

@@ -17,6 +17,7 @@ import { assertNoActiveExit, loadExit } from '../services/exitStorage';
 import type { RunExit } from '../services/unilateralExit';
 
 import { Wallet, DerivedAddress, BitcoinAddress, LightningTransaction } from '../types';
+import { canonicalMnemonic, generateWalletMnemonic, readWalletCredentials, storeWalletMnemonic, deleteWalletMnemonic } from '../services/walletSecrets';
 import { ActiveWalletProvider } from './ActiveWalletContext';
 import type { ActiveWallet } from './ActiveWalletContext';
 export { useActiveWallet } from './ActiveWalletContext';
@@ -24,7 +25,7 @@ import {
     calculateTransactionMetrics,
     fetchUTXOs,
     getBip32Node,
-    inferScriptType,
+    validateWatchOnlyImport,
     fetchAddressInfoBatch
 } from '../services/bitcoin';
 import { NETWORK, DERIVATION_PARENT_PATH, NETWORK_NAME, IS_TESTNET } from '../constants/network';
@@ -157,9 +158,6 @@ bitcoin.initEccLib(secp);
 // STORAGE CONSTANTS
 // ------------------------------------------------------------------
 
-// Keychain Service Name: Used to securely namespace the mnemonics in the OS secure storage.
-const KEYCHAIN_SERVICE_PREFIX = 'com.btc.trustless.mnemonic';
-
 // Stores the ID of the currently open wallet so the app remembers where you left off.
 const KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE = 'com.btc.trustless.activeWalletId';
 
@@ -266,6 +264,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // instead of firing later against a torn-down environment / stale wallet.
     const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
     const lightningInitVersionRef = useRef(0);
+    const walletGenerationRef = useRef(0);
+    const receiveDerivationsRef = useRef(new SingleFlight());
     const sdkRef = useRef<LightningSdk | null>(null);
     const recoveryModeRef = useRef(false);
     const listenerRef = useRef<string | null>(null);
@@ -333,6 +333,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     useEffect(() => {
         return () => {
             ++lightningInitVersionRef.current;
+            ++walletGenerationRef.current;
             activeWalletIdRef.current = null;
             pendingTimeoutsRef.current.forEach(id => clearTimeout(id));
             pendingTimeoutsRef.current.clear();
@@ -680,7 +681,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setDefaultLightningInvoice('');
             try {
                 await disposeActiveLightningNode();
-                const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
+                const credentials = await readWalletCredentials(walletId);
                 if (version !== lightningInitVersionRef.current || walletId !== activeWalletIdRef.current) return;
                 if (!credentials) throw new Error('Mnemonic not found for this wallet.');
                 await initLightningNode(credentials.password, walletId, version);
@@ -955,7 +956,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         try {
             const wallet = activeWallet;
             if (recoveryOnly && !recoveryModeRef.current) {
-                const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${wallet.id}` });
+                const credentials = await readWalletCredentials(wallet.id);
                 if (!credentials) throw new Error('Wallet credentials are unavailable.');
                 const version = ++lightningInitVersionRef.current;
                 resetLightningState();
@@ -971,7 +972,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             try {
                 const saved = await loadExit(activeWallet.id);
                 if (recoveryModeRef.current && (!saved || saved.phase === 'done')) {
-                    const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${activeWallet.id}` });
+                    const credentials = await readWalletCredentials(activeWallet.id);
                     if (!credentials) throw new Error('Wallet credentials are unavailable.');
                     const version = ++lightningInitVersionRef.current;
                     resetLightningState();
@@ -1356,7 +1357,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 throw new Error("Invalid Network Key");
             }
         } else {
-            const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${wallet.id}` });
+            const credentials = await readWalletCredentials(wallet.id);
             if (!credentials) throw new Error(`Mnemonic not found for wallet ${wallet.id}`);
             const mnemonic = credentials.password;
             const seed = bip39.mnemonicToSeedSync(mnemonic);
@@ -1366,6 +1367,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
         const loadStarted = Date.now();
+        const generation = ++walletGenerationRef.current;
+        const networkName = NETWORK_NAME;
+        const current = () => generation === walletGenerationRef.current && networkName === NETWORK_NAME;
         lightningTrace({ wallet: lightningWalletLabel(walletId), session: lightningInitVersionRef.current + 1 }, 'wallet.open.start');
         const initVersion = ++lightningInitVersionRef.current;
         resetLightningState();
@@ -1385,10 +1389,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setActiveWallet(null);
         let wallet = await buildActiveWallet(walletId);
         lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'wallet.local.loaded', { elapsedMs: Date.now() - loadStarted, found: !!wallet, receiveAddresses: wallet?.derivedReceiveAddresses.length, changeAddresses: wallet?.derivedChangeAddresses.length });
-        if (!wallet) return false;
+        if (!wallet || !current()) return false;
 
         try {
             const root = await getRootNode(wallet);
+            if (!current()) return false;
             const is_watch_only = wallet.type === 'watch-only';
             const script_type = wallet.scriptType || 'p2wpkh';
             let derived_new = false;
@@ -1447,10 +1452,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const current_batch: string[] = [];
 
                 for (let i = 0; i < batch_size; i++) {
+                    if (!current()) return false;
                     const index_to_derive = receive_index + i;
                     const derived = deriveReceiveAddress(root, index_to_derive, is_watch_only, script_type);
                     if (derived) {
-                        await dbSaveAddress(walletId, derived, 0, NETWORK_NAME);
+                        if (!current()) return false;
+                        await dbSaveAddress(walletId, derived, 0, networkName);
+                        if (!current()) return false;
                         current_batch.push(derived.address);
                         wallet!.derivedReceiveAddresses.push(derived);
                         derived_new = true;
@@ -1458,6 +1466,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 }
 
                 const usage_results = await checkUsage(current_batch);
+                if (!current()) return false;
 
                 for (let i = 0; i < usage_results.length; i++) {
                     if (usage_results[i]) {
@@ -1488,10 +1497,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 const current_batch: string[] = [];
 
                 for (let i = 0; i < batch_size; i++) {
+                    if (!current()) return false;
                     const index_to_derive = change_index + i;
                     const derived = deriveChangeAddress(root, index_to_derive, is_watch_only, script_type);
                     if (derived) {
-                        await dbSaveAddress(walletId, derived, 1, NETWORK_NAME);
+                        if (!current()) return false;
+                        await dbSaveAddress(walletId, derived, 1, networkName);
+                        if (!current()) return false;
                         current_batch.push(derived.address);
                         wallet!.derivedChangeAddresses.push(derived);
                         derived_new = true;
@@ -1499,6 +1511,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 }
 
                 const usage_results = await checkUsage(current_batch);
+                if (!current()) return false;
 
                 for (let i = 0; i < usage_results.length; i++) {
                     if (usage_results[i]) {
@@ -1517,7 +1530,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
 
             if (wallet) {
-                if (initVersion !== lightningInitVersionRef.current) return false;
+                if (!current() || initVersion !== lightningInitVersionRef.current) return false;
                 lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'wallet.discovery.finished', { elapsedMs: Date.now() - loadStarted });
                 activeWalletIdRef.current = walletId;
                 setActiveWallet(wallet);
@@ -1528,7 +1541,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                             await teardown;
                             lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'init.teardownReady');
                             if (initVersion !== lightningInitVersionRef.current) return;
-                            const credentials = await traceLightningStep({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'credentials.lookup', () => Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` }), value => ({ found: !!value }));
+                            const credentials = await traceLightningStep({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'credentials.lookup', () => readWalletCredentials(walletId), value => ({ found: !!value }));
                             if (!credentials) throw new Error('Mnemonic not found for this wallet.');
                             await initLightningNode(credentials.password, walletId, initVersion);
                         })().catch(error => {
@@ -1608,45 +1621,44 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         bootstrap();
     }, []);
 
-    const getOrCreateNextUnusedReceiveAddress = async (currentAddress: string, currentIndex: number): Promise<{ address: string, index: number } | null> => {
-        if (!activeWallet) return null;
-
-        const addresses = activeWallet.derivedReceiveAddresses;
-        const currentPos = addresses.findIndex(a => a.index === currentIndex);
-
-        if (currentPos !== -1 && currentPos < addresses.length - 1) {
-            return addresses[currentPos + 1];
-        }
-
-        try {
-            const root = await getRootNode(activeWallet);
-            const isWatchOnly = activeWallet.type === 'watch-only';
-            const scriptType = activeWallet.scriptType || 'p2wpkh';
-            const nextIndex = addresses[addresses.length - 1].index + 1;
-            const derived = deriveReceiveAddress(root, nextIndex, isWatchOnly, scriptType);
-
-            if (derived) {
-                await dbSaveAddress(activeWallet.id, derived, 0, NETWORK_NAME);
+    const getOrCreateNextUnusedReceiveAddress = async (_currentAddress: string, currentIndex: number): Promise<{ address: string, index: number } | null> => {
+        const wallet = activeWallet;
+        const generation = walletGenerationRef.current;
+        const networkName = NETWORK_NAME;
+        const current = () => !!wallet && generation === walletGenerationRef.current &&
+            networkName === NETWORK_NAME && activeWalletIdRef.current === wallet.id;
+        if (!wallet || !current()) return null;
+        const addresses = wallet.derivedReceiveAddresses;
+        const next = addresses.filter(a => a.index > currentIndex).sort((a, b) => a.index - b.index)[0];
+        if (next) return next;
+        return receiveDerivationsRef.current.run(JSON.stringify([wallet.id, generation, networkName]), async () => {
+            try {
+                const root = await getRootNode(wallet);
+                if (!current()) return null;
+                const nextIndex = Math.max(-1, ...addresses.map(a => a.index)) + 1;
+                if (!Number.isSafeInteger(nextIndex) || nextIndex >= 0x80000000) throw new Error('Receive address index exhausted.');
+                const derived = deriveReceiveAddress(root, nextIndex, wallet.type === 'watch-only', wallet.scriptType || 'p2wpkh');
+                if (!derived || !current()) return null;
+                await dbSaveAddress(wallet.id, derived, 0, networkName);
+                if (!current()) return null;
                 setActiveWallet(prev => {
-                    if (!prev) return null;
-                    return {
-                        ...prev,
+                    if (!current() || !prev || prev.id !== wallet.id || prev.derivedReceiveAddresses.some(a => a.index === derived.index)) return prev;
+                    return { ...prev,
                         derivedReceiveAddresses: [...prev.derivedReceiveAddresses, derived],
-                        derivedAddressInfoCache: [...prev.derivedAddressInfoCache, { address: derived.address, index: derived.index, balance: 0, tx_count: 0 }]
-                    }
+                        derivedAddressInfoCache: [...prev.derivedAddressInfoCache, { address: derived.address, index: derived.index, balance: 0, tx_count: 0 }],
+                    };
                 });
                 return derived;
+            } catch (error) {
+                if (current()) console.warn('Could not generate the next receive address.');
+                return null;
             }
-        } catch (e) {
-            console.error("Failed to get next unused address", e);
-        }
-
-        return null;
+        });
     };
 
     const generateMnemonic = async (strength: number = 128): Promise<string | null> => {
         try {
-            return bip39.generateMnemonic(strength);
+            return generateWalletMnemonic(strength);
         } catch (error) {
             console.error("Failed to create mnemonic", error);
             return null;
@@ -1655,18 +1667,26 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const addWallet = async (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; }): Promise<Wallet | null> => {
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
-        const { mnemonic, name } = params;
+        const { name } = params;
+        const mnemonic = params.type === 'watch-only' ? undefined : canonicalMnemonic(params.mnemonic ?? '');
         const type = params.type || 'standard';
         let walletXpub = params.xpub;
         let fingerprint = params.fingerprint;
         let derivation_path = params.derivation_path;
 
         let scriptType: 'p2wpkh' | 'p2sh-p2wpkh' = 'p2wpkh';
+        if (type !== 'standard' && type !== 'watch-only') throw new Error('Unsupported wallet type.');
+        if (type === 'watch-only') {
+            const checked = validateWatchOnlyImport(walletXpub ?? '', fingerprint ?? '', derivation_path ?? '', NETWORK);
+            walletXpub = checked.xpub;
+            fingerprint = checked.fingerprint;
+            derivation_path = checked.derivation_path;
+            scriptType = checked.scriptType;
+        }
+        const importNetwork = NETWORK_NAME;
+        const assertImportNetwork = () => { if (NETWORK_NAME !== importNetwork) throw new Error('Network changed. Please import the wallet again.'); };
 
         try {
-            if (walletXpub) {
-                scriptType = inferScriptType(walletXpub);
-            }
 
             if (type === 'standard' && mnemonic) {
                 const seed = bip39.mnemonicToSeedSync(mnemonic);
@@ -1676,14 +1696,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     walletXpub = accountNode.neutered().toBase58();
                     scriptType = 'p2wpkh';
 
-                    if (!fingerprint) {
-                        fingerprint = root.fingerprint.toString('hex');
-                    }
-                    if (!derivation_path) {
-                        derivation_path = DERIVATION_PARENT_PATH;
-                    }
+                    fingerprint = root.fingerprint.toString('hex');
+                    derivation_path = DERIVATION_PARENT_PATH;
                 } catch (err) {
-                    console.warn("Could not derive account xpub for standard wallet check", err);
+                    throw new Error('Could not derive the wallet account.');
                 }
             }
 
@@ -1716,18 +1732,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 }
             }
         } catch (e) {
-            console.warn("Duplicate check failed", e);
+            throw new Error('Could not validate the wallet before import.');
         }
+        assertImportNetwork();
 
         const isFirstWallet = wallets.length === 0;
         const defaultName = name || `Wallet ${wallets.length + 1}`;
         const newWalletId = uuidv4();
 
         if (type === 'standard' && mnemonic) {
-            await Keychain.setGenericPassword('user', mnemonic, { service: `${KEYCHAIN_SERVICE_PREFIX}.${newWalletId}` });
+            await storeWalletMnemonic(newWalletId, mnemonic);
         }
+        assertImportNetwork();
 
-        await dbCreateWallet(newWalletId, defaultName, NETWORK_NAME, type, walletXpub, scriptType, fingerprint, derivation_path);
+        await dbCreateWallet(newWalletId, defaultName, importNetwork, type, walletXpub, scriptType, fingerprint, derivation_path);
 
         const newWallets = await dbGetWallets(NETWORK_NAME);
         setWallets(newWallets);
@@ -1777,8 +1795,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await assertNoActiveExit(walletId);
         await removeTerminalRefunds(walletId, NETWORK_NAME);
         await removeTerminalSales(walletId, NETWORK_NAME);
+        if (activeWalletIdRef.current === walletId) {
+            ++walletGenerationRef.current;
+            activeWalletIdRef.current = null;
+            setActiveWallet(null);
+        }
         await dbDeleteWallet(walletId);
-        await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
+        await deleteWalletMnemonic(walletId);
 
         const remaining = await dbGetWallets(NETWORK_NAME);
         setWallets(remaining);
@@ -1788,6 +1811,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 await switchWallet(remaining[0].id);
             } else {
                 activeWalletIdRef.current = null;
+                ++walletGenerationRef.current;
                 ++lightningInitVersionRef.current;
                 resetLightningState();
                 await disposeActiveLightningNode();
@@ -1806,7 +1830,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const getMnemonicForWallet = async (walletId: string): Promise<string | null> => {
         try {
-            const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${walletId}` });
+            const credentials = await readWalletCredentials(walletId);
             return credentials ? credentials.password : null;
         } catch (error) { return null; }
     };
@@ -1815,6 +1839,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await assertNoActiveExit();
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
         activeWalletIdRef.current = null;
+        ++walletGenerationRef.current;
         ++lightningInitVersionRef.current;
         resetLightningState();
         await disposeActiveLightningNode();
@@ -1822,7 +1847,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         for (const w of d) {
             await removeTerminalRefunds(w.id, NETWORK_NAME);
             await removeTerminalSales(w.id, NETWORK_NAME);
-            await Keychain.resetGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${w.id}` });
+            await deleteWalletMnemonic(w.id);
             await dbDeleteWallet(w.id);
         }
         await Keychain.resetGenericPassword({ service: ACTIVE_WALLET_KEY });
@@ -1841,11 +1866,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         recipient: string, amount: number, utxos: any[], feeRate: number
     ): Promise<{ txHex: string | null; usedChangeIndex: number | null }> => {
         if (!activeWallet) throw new Error("No active wallet.");
+        const wallet = activeWallet;
+        const networkName = NETWORK_NAME;
+        const generation = walletGenerationRef.current;
+        const assertCurrent = () => {
+            if (generation !== walletGenerationRef.current || networkName !== NETWORK_NAME || activeWalletIdRef.current !== wallet.id)
+                throw new Error('The active wallet or network changed. Please review the transaction again.');
+        };
+        assertCurrent();
+        if (!Number.isSafeInteger(amount) || amount <= 0 || !Number.isFinite(feeRate) || feeRate <= 0 || !utxos.length)
+            throw new Error('Invalid transaction amount, fee rate or inputs.');
         if (paymentInFlightRef.current) throw new Error("Another wallet operation is running.");
         await assertNoActiveExit(activeWallet.id);
         if (activeWallet.type === 'watch-only') throw new Error("Watch-only wallets cannot sign transactions.");
 
-        const credentials = await Keychain.getGenericPassword({ service: `${KEYCHAIN_SERVICE_PREFIX}.${activeWallet.id}` });
+        assertCurrent();
+        const credentials = await readWalletCredentials(wallet.id);
+        assertCurrent();
         if (!credentials) throw new Error("Could not retrieve credentials.");
         const mnemonic = credentials.password;
         const seed = bip39.mnemonicToSeedSync(mnemonic);
@@ -1868,7 +1905,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (!changeAddress) {
             const derived = deriveChangeAddress(root, verified_change_index, false, scriptType);
             if (derived) {
-                await dbSaveAddress(activeWallet.id, derived, 1, NETWORK_NAME);
+                assertCurrent();
+                await dbSaveAddress(wallet.id, derived, 1, networkName);
+                assertCurrent();
                 changeAddress = derived.address;
             }
         }
@@ -1946,6 +1985,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 psbt.signInput(index, keyPair);
             });
 
+            assertCurrent();
             psbt.finalizeAllInputs();
             return { txHex: psbt.extractTransaction().toHex(), usedChangeIndex };
         } catch (error) {

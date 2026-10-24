@@ -143,11 +143,12 @@ const ReceiveScreen = () => {
     appliedAmountSats === 0 ? defaultLightningInvoice : '', invoiceRetry]);
 
   const path_prefix = useMemo(() => {
+    if (activeWallet?.derivation_path) return activeWallet.derivation_path.replace(/h/g, "'");
     if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
       return `m/49'/${COIN_TYPE}/0'`;
     }
     return `m/84'/${COIN_TYPE}/0'`;
-  }, [activeWallet?.scriptType]);
+  }, [activeWallet?.derivation_path, activeWallet?.scriptType]);
 
   const all_unused_addresses = useMemo(() => {
     if (!activeWallet) return [];

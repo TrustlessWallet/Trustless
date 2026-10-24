@@ -398,6 +398,7 @@ const SettingsScreen = () => {
 
     if (trimmed.length === 0) {
       await AsyncStorage.removeItem(CUSTOM_NODE_URL_KEY);
+      await AsyncStorage.removeItem('@customElectrumNode');
       await AsyncStorage.removeItem(ALLOW_SELF_SIGNED_KEY);
       set_connection_status('idle');
       set_is_editing_node(false);
@@ -423,6 +424,7 @@ const SettingsScreen = () => {
 
     if (is_connected) {
       await AsyncStorage.setItem(CUSTOM_NODE_URL_KEY, trimmed);
+      await AsyncStorage.removeItem('@customElectrumNode');
       await AsyncStorage.setItem(ALLOW_SELF_SIGNED_KEY, allow_self_signed ? 'true' : 'false');
 
       resetActiveConnection();
@@ -675,7 +677,13 @@ const SettingsScreen = () => {
 
                 <TouchableOpacity
                   style={styles.checkbox_row}
-                  onPress={() => set_allow_self_signed(!allow_self_signed)}
+                  onPress={() => {
+                    if (allow_self_signed) { set_allow_self_signed(false); return; }
+                    Alert.alert('Unverified node certificate', 'Only enable this for a custom node you trust on a secure network. An intercepted connection can expose address queries and falsify balances or history.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Allow for my node', onPress: () => set_allow_self_signed(true) },
+                    ]);
+                  }}
                 >
                   <Feather
                     name={allow_self_signed ? "check-square" : "square"}

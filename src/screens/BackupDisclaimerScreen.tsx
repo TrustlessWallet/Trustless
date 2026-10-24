@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { set_biometric_prompt_shown, set_backup_flow_active } from '../services/authState';
+import { begin_biometric_prompt } from '../services/authState';
 import { useFocusEffect } from '@react-navigation/native';
 
 type navigation_prop = NativeStackNavigationProp<any>;
@@ -32,84 +32,101 @@ const BackupDisclaimerScreen = () => {
     const { getMnemonicForWallet } = useWallet();
     const [is_loading_phrase, set_is_loading_phrase] = useState(false);
     const [is_loading_qr, set_is_loading_qr] = useState(false);
+    const request_id = useRef(0);
+    const focused = useRef(false);
+    const mounted = useRef(true);
+    const cancel_active_wait = useRef<(() => void) | null>(null);
     const { theme } = useTheme();
     const styles = useMemo(() => get_styles(theme), [theme]);
 
-    // Reset biometric flag when user returns to this screen
     useFocusEffect(
         React.useCallback(() => {
-            // Only clear flags if app is in active state
-            if (AppState.currentState === 'active') {
-                set_backup_flow_active(false);
-                set_biometric_prompt_shown(false);
-            } else {
-                // Wait for app to become active before clearing flags
-                const subscription = AppState.addEventListener('change', (nextState: string) => {
-                    if (nextState === 'active') {
-                        set_backup_flow_active(false);
-                        set_biometric_prompt_shown(false);
-                        subscription?.remove();
-                    }
-                });
-            }
-            
+            focused.current = true;
             return () => {
-                // Cleanup will be handled by subscription.remove()
+                focused.current = false;
+                ++request_id.current;
+                cancel_active_wait.current?.();
             };
         }, [])
     );
 
+    useEffect(() => {
+        mounted.current = true;
+        const subscription = AppState.addEventListener('change', nextState => {
+            if (nextState === 'background') {
+                ++request_id.current;
+                cancel_active_wait.current?.();
+                set_is_loading_phrase(false);
+                set_is_loading_qr(false);
+            }
+        });
+        return () => {
+            mounted.current = false;
+            ++request_id.current;
+            cancel_active_wait.current?.();
+            subscription.remove();
+        };
+    }, []);
+
+    const is_current = (id: number) =>
+        mounted.current && focused.current && request_id.current === id && AppState.currentState !== 'background';
+
+    const wait_until_active = async (): Promise<boolean> => {
+        if (AppState.currentState === 'active') return true;
+        return new Promise(resolve => {
+            let settled = false;
+            const finish = (active: boolean) => {
+                if (settled) return;
+                settled = true;
+                subscription.remove();
+                cancel_active_wait.current = null;
+                resolve(active);
+            };
+            const subscription = AppState.addEventListener('change', state => {
+                if (state === 'active' || state === 'background') {
+                    finish(state === 'active');
+                }
+            });
+            cancel_active_wait.current = () => finish(false);
+        });
+    };
+
     const authenticate_and_fetch = async (destination: string) => {
+        const id = ++request_id.current;
+        if (destination === 'ShowMnemonic') set_is_loading_phrase(true);
+        else set_is_loading_qr(true);
         try {
             const saved_setting = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
-            
-            // Start backup flow to prevent privacy overlay during entire process
-            set_backup_flow_active(true);
-            
+            if (!is_current(id)) return;
             if (saved_setting === 'true') {
-                // Set flag to prevent privacy overlay during biometric prompt
-                set_biometric_prompt_shown(true);
-                
-                const auth_result = await LocalAuthentication.authenticateAsync({
-                    promptMessage: 'Authenticate to view your recovery phrase',
-                    fallbackLabel: 'Use Passcode',
-                });
-                
-                if (!auth_result.success) {
-                    // Reset flags immediately on failure
-                    set_biometric_prompt_shown(false);
-                    set_backup_flow_active(false);
-                    return; 
+                const end_prompt = begin_biometric_prompt();
+                let authenticated = false;
+                try {
+                    const auth_result = await LocalAuthentication.authenticateAsync({
+                        promptMessage: 'Authenticate to view your recovery phrase',
+                        fallbackLabel: 'Use Passcode',
+                    });
+                    authenticated = auth_result.success === true;
+                } finally {
+                    end_prompt();
                 }
-            }
-
-            if (destination === 'ShowMnemonic') {
-                set_is_loading_phrase(true);
-            } else {
-                set_is_loading_qr(true);
+                if (!authenticated || !is_current(id) || !await wait_until_active() || !is_current(id)) return;
             }
 
             const mnemonic = await getMnemonicForWallet(walletId);
-            
-            set_is_loading_phrase(false);
-            set_is_loading_qr(false);
-
+            if (!is_current(id) || !await wait_until_active() || !is_current(id)) return;
             if (mnemonic) {
-                // Navigate to mnemonic screen
                 navigation.navigate(destination, { mnemonic, mode: 'backup' });
             } else {
-                // Reset flags on error
-                set_biometric_prompt_shown(false);
-                set_backup_flow_active(false);
                 Alert.alert("Error", "Could not retrieve recovery phrase for this wallet.");
             }
         } catch (error) {
-            set_is_loading_phrase(false);
-            set_is_loading_qr(false);
-            // Reset flags in case of error
-            set_biometric_prompt_shown(false);
-            set_backup_flow_active(false);
-            Alert.alert("Error", "An error occurred during authentication.");
+            if (is_current(id)) Alert.alert("Error", "An error occurred during authentication.");
+        } finally {
+            if (mounted.current && request_id.current === id) {
+                set_is_loading_phrase(false);
+                set_is_loading_qr(false);
+            }
         }
     };
 

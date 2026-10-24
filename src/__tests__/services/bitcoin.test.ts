@@ -17,6 +17,7 @@ import {
     getTransactionDetails as get_transaction_details,
     getTipHeight as get_tip_height,
     buildPSBT as build_psbt,
+    validateWatchOnlyImport,
     encodePSBTtoUR as encode_psbt_to_ur,
     finalizeAndBroadcastPSBT as finalize_and_broadcast_psbt
 } from '../../services/bitcoin';
@@ -26,6 +27,13 @@ import * as electrum from '../../services/electrum';
 
 const mock_electrum_client = {
     request: jest.fn()
+};
+
+const ACCOUNT_FIXTURES = {
+    nativeMain: 'zpub6qvRHJQEqEKSVjH1ZqFZGvqqXSowmdRgFTdDDts2umRiss7peQkJZD2t6ATxS9t386pBDEoU6UsKyVDeb3GkPuiX2VDmMxrVmU7PnBN2d7x',
+    wrappedMain: 'ypub6XZGfqAJwhqnBUZLJKSdvnh3DSYSh3sAP7aktByLfg9fsUGmRTTktwxRnzFjvgzQyDqZ3cQgFcQEQaQVVW5wyXEBU76M66cnbb4To6GCvDX',
+    nativeTest: 'vpub5YVQaGsAxpzmDV3S3YbEbe5DC5gaDHqCNTXyppa6h8NmYtVQcu2h3PtooZ3xiJZMRGazYJhiNcJtBDc5KbYHkyrhdCmMYe1LTRiRzuXSocF',
+    wrappedTest: 'upub5DM9NTt3ZDbgfpkoiuadvm9D7LVAJHCWcL9RwoXu4a8p8SNCWbJiTum77jTKLNEXphRE2EKqc2hhUGQ7f92Am7tepG4nnw7GqiqgcSCw8KC'
 };
 
 jest.mock('../../services/electrum', () => ({
@@ -275,21 +283,24 @@ describe('bitcoin_service_functions', () => {
     });
 
     it('build_psbt_generates_valid_base64_string_with_change', () => {
+        const root = get_bip32_node('xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8', networks.bitcoin);
+        const receiveAddress = payments.p2wpkh({ pubkey: root.derivePath('0/0').publicKey }).address!;
+        const changeAddress = payments.p2wpkh({ pubkey: root.derivePath('1/0').publicKey }).address!;
         const mock_wallet = {
             type: 'watch-only',
             fingerprint: 'deadbeef',
             xpub: 'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8',
             derivation_path: "m/84'/0'/0'",
             changeAddressIndex: 0,
-            derivedReceiveAddresses: [{ address: 'fake_address', index: 0 }],
-            derivedChangeAddresses: [{ address: 'fake_change', index: 0 }],
-            derivedAddressInfoCache: [{ address: 'fake_change', index: 0, tx_count: 0 }]
+            derivedReceiveAddresses: [{ address: receiveAddress, index: 0 }],
+            derivedChangeAddresses: [{ address: changeAddress, index: 0 }],
+            derivedAddressInfoCache: [{ address: changeAddress, index: 0, tx_count: 0 }]
         };
         const utxos = [{
             txid: '0000000000000000000000000000000000000000000000000000000000000000',
             vout: 0,
             value: 100000,
-            address: 'fake_address'
+            address: receiveAddress
         }];
 
         const psbt_base64 = build_psbt(mock_wallet, 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', '50000', 'sats', 1000, utxos);
@@ -448,13 +459,15 @@ describe('bitcoin_service_functions', () => {
     });
 
     it('build_psbt_handles_non_standard_derivation_paths', () => {
+        const root = get_bip32_node('xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8', networks.bitcoin);
+        const receiveAddress = payments.p2wpkh({ pubkey: root.derivePath('0/0').publicKey }).address!;
         const mock_wallet = {
             type: 'watch-only',
             fingerprint: 'deadbeef',
             xpub: 'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8',
             derivation_path: "m/84/0/1'",
             changeAddressIndex: 0,
-            derivedReceiveAddresses: [{ address: 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', index: 0 }],
+            derivedReceiveAddresses: [{ address: receiveAddress, index: 0 }],
             derivedChangeAddresses: [],
             derivedAddressInfoCache: []
         };
@@ -462,7 +475,7 @@ describe('bitcoin_service_functions', () => {
             txid: '0000000000000000000000000000000000000000000000000000000000000000',
             vout: 0,
             value: 100000,
-            address: 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu'
+            address: receiveAddress
         }];
 
         const psbt_base64 = build_psbt(mock_wallet as any, 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', '50000', 'sats', 1000, utxos);
@@ -470,5 +483,94 @@ describe('bitcoin_service_functions', () => {
 
         expect(typeof psbt_base64).toBe('string');
         expect(psbt.data.inputs[0].bip32Derivation![0].path).toBe("m/84/0/1'/0/0");
+    });
+});
+
+describe('watch-only account policy', () => {
+    it.each([
+        [ACCOUNT_FIXTURES.nativeMain, "m/84'/0'/7'", networks.bitcoin, 'p2wpkh'],
+        [ACCOUNT_FIXTURES.wrappedMain, "m/49'/0'/7'", networks.bitcoin, 'p2sh-p2wpkh'],
+        [ACCOUNT_FIXTURES.nativeTest, "m/84'/1'/7'", networks.testnet, 'p2wpkh'],
+        [ACCOUNT_FIXTURES.wrappedTest, "m/49'/1'/7'", networks.testnet, 'p2sh-p2wpkh'],
+    ] as const)('accepts public account key %s', (key, path, network, expected) => {
+        expect(validateWatchOnlyImport(key, 'DEADBEEF', path, network)).toMatchObject({
+            fingerprint: 'deadbeef', derivation_path: path, scriptType: expected
+        });
+    });
+
+    it('rejects wrong network, purpose, account index and depth', () => {
+        const key = ACCOUNT_FIXTURES.nativeMain;
+        expect(() => validateWatchOnlyImport(key, 'deadbeef', "m/84'/1'/7'", networks.bitcoin)).toThrow();
+        expect(() => validateWatchOnlyImport(key, 'deadbeef', "m/49'/0'/7'", networks.bitcoin)).toThrow();
+        expect(() => validateWatchOnlyImport(key, 'deadbeef', "m/84'/0'/8'", networks.bitcoin)).toThrow();
+        expect(() => validateWatchOnlyImport(key, 'deadbeef', "m/44'/0'/7'", networks.bitcoin)).toThrow(/BIP44/);
+        expect(() => validateWatchOnlyImport(key, 'wrong', "m/84'/0'/7'", networks.bitcoin)).toThrow();
+        const rootKey = 'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8';
+        expect(() => validateWatchOnlyImport(rootKey, 'deadbeef', "m/84'/0'/7'", networks.bitcoin)).toThrow(/account key/);
+        const privateAccount = 'xprv9yGYGTXWhVgBaepJo69JVci6dUgZUviq41fArifebR8ytsADbZ6vmHQ8CUEf3rMY1oenAXBMz72EsjFQWa7jTnaUvaTTvy9EZ2iUg1FPUuS';
+        expect(() => validateWatchOnlyImport(privateAccount, 'deadbeef', "m/84'/0'/7'", networks.bitcoin)).toThrow(/private key/);
+    });
+
+    it.each([
+        [ACCOUNT_FIXTURES.nativeMain, "m/84'/0'/7'", 'p2wpkh'],
+        [ACCOUNT_FIXTURES.wrappedMain, "m/49'/0'/7'", 'p2sh-p2wpkh'],
+    ] as const)('builds signable %s PSBT inputs and change', (key, path, scriptType) => {
+        const account = get_bip32_node(key, networks.bitcoin);
+        const inputNode = account.derivePath('0/2');
+        const witness = payments.p2wpkh({ pubkey: inputNode.publicKey, network: networks.bitcoin });
+        const payment = scriptType === 'p2wpkh' ? witness : payments.p2sh({ redeem: witness, network: networks.bitcoin });
+        const wallet = {
+            type: 'watch-only', xpub: key, fingerprint: 'deadbeef', derivation_path: path, scriptType,
+            changeAddressIndex: 3, derivedReceiveAddresses: [{ address: payment.address!, index: 2 }],
+            derivedChangeAddresses: [], derivedAddressInfoCache: []
+        };
+        const utxo = { txid: '00'.repeat(32), vout: 0, value: 100000, address: payment.address! };
+        const psbt = Psbt.fromBase64(build_psbt(wallet, payment.address!, '50000', 'sats', 1000, [utxo]));
+        expect(psbt.data.inputs[0].witnessUtxo?.script).toEqual(payment.output);
+        expect(psbt.data.inputs[0].redeemScript).toEqual(scriptType === 'p2wpkh' ? undefined : witness.output);
+        expect(psbt.data.inputs[0].bip32Derivation?.[0].path).toBe(`${path}/0/2`);
+        const changeNode = account.derivePath('1/3');
+        const changeWitness = payments.p2wpkh({ pubkey: changeNode.publicKey, network: networks.bitcoin });
+        const changePayment = scriptType === 'p2wpkh' ? changeWitness : payments.p2sh({ redeem: changeWitness, network: networks.bitcoin });
+        expect(psbt.txOutputs[1].address).toBe(changePayment.address);
+        expect(psbt.data.outputs[1].redeemScript).toEqual(scriptType === 'p2wpkh' ? undefined : changeWitness.output);
+        expect(psbt.data.outputs[1].bip32Derivation?.[0].path).toBe(`${path}/1/3`);
+        expect(() => build_psbt(wallet, payment.address!, '50000', 'sats', 1000, [{ ...utxo, address: changePayment.address! }])).toThrow(/Derivation info/);
+        expect(() => build_psbt({ ...wallet, derivedReceiveAddresses: [{ address: changePayment.address!, index: 2 }] }, payment.address!, '50000', 'sats', 1000, [{ ...utxo, address: changePayment.address! }])).toThrow(/does not match/);
+        expect(() => build_psbt(wallet, payment.address!, '99999', 'sats', 1000, [utxo])).toThrow(/Insufficient/);
+        expect(() => build_psbt(wallet, payment.address!, '98500', 'sats', 1000, [utxo])).toThrow(/Change is below/);
+    });
+});
+
+describe('public-fixture PSBT signing round trips', () => {
+    it.each([[false, 84], [false, 49], [true, 84], [true, 49]])('signs and finalizes testnet=%s purpose=%s with correct change policy', (testnet, purpose) => {
+        const config = require('../../constants/network');
+        const previous = config.NETWORK;
+        const network = testnet ? networks.testnet : networks.bitcoin;
+        config.NETWORK = network;
+        try {
+            const secp = require('@bitcoinerlab/secp256k1');
+            const bip32 = require('bip32').BIP32Factory(secp);
+            const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+            const root = bip32.fromSeed(require('bip39').mnemonicToSeedSync(mnemonic), network);
+            const path = `m/${purpose}'/${testnet ? 1 : 0}'/0'`;
+            const account = root.derivePath(path);
+            const makePayment = (pubkey: Buffer) => {
+                const witness = payments.p2wpkh({ pubkey, network });
+                return purpose === 84 ? witness : payments.p2sh({ redeem: witness, network });
+            };
+            const input = account.derivePath('0/0');
+            const payment = makePayment(input.publicKey);
+            const wallet = { type: 'watch-only', xpub: account.neutered().toBase58(), fingerprint: root.fingerprint.toString('hex'), derivation_path: path, scriptType: purpose === 84 ? 'p2wpkh' : 'p2sh-p2wpkh', derivedReceiveAddresses: [{ address: payment.address, index: 0 }], derivedChangeAddresses: [], derivedAddressInfoCache: [], changeAddressIndex: 0 };
+            const encoded = build_psbt(wallet, payment.address!, '50000', 'sats', 1000, [{ txid: '11'.repeat(32), vout: 0, value: 100000, address: payment.address }]);
+            const psbt = Psbt.fromBase64(encoded, { network });
+            const signer = require('ecpair').ECPairFactory(secp).fromPrivateKey(input.privateKey, { network });
+            psbt.signInput(0, signer);
+            expect(psbt.validateSignaturesOfAllInputs((pubkey, hash, signature) => secp.verify(hash, pubkey, signature))).toBe(true);
+            psbt.finalizeAllInputs();
+            const tx = psbt.extractTransaction();
+            expect(tx.outs[1].script).toEqual(makePayment(account.derivePath('1/0').publicKey).output);
+            expect(tx.outs.reduce((sum, out) => sum + out.value, 0)).toBe(99000);
+        } finally { config.NETWORK = previous; }
     });
 });
