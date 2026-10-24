@@ -23,6 +23,19 @@ const bip32 = BIP32Factory(secp);
 
 export const DUST_THRESHOLD = 546;
 
+// Opt-in for views that must distinguish a fetch failure from an empty address.
+// Existing wallet/discovery callers retain their current best-effort behavior.
+type AddressFetchOptions = { strict?: boolean };
+
+const requireBatchResults = (responses: any[], count: number, valid: (result: any) => boolean) => {
+    if (!Array.isArray(responses) || responses.length !== count ||
+        responses.some(response => !response || response.error || !valid(response.result))) {
+        throw new Error('Incomplete address response');
+    }
+};
+const validHistory = (value: any) => Array.isArray(value) && value.every(item =>
+    item && typeof item.tx_hash === 'string' && Number.isInteger(item.height));
+
 const ALT_NETWORKS = {
     bitcoin: [
         { ...networks.bitcoin, bip32: { public: 0x04b24746, private: 0x04b2430c } },
@@ -176,16 +189,29 @@ export const fetchAddressBalances = async (addresses: string[]): Promise<number[
     return addresses.map(a => map.get(a) || 0);
 };
 
-export const fetchBitcoinBalance = async (address: string): Promise<number> => {
+export const fetchBitcoinBalance = async (address: string, options: AddressFetchOptions = {}): Promise<number> => {
+    if (options.strict) {
+        const hash = addressToScriptHash(address);
+        if (!hash) throw new Error('Invalid address');
+        // The balance view needs no history request.
+        const responses = await electrumBatchGetBalance([hash]) as any[];
+        requireBatchResults(responses, 1, value => value &&
+            Number.isSafeInteger(value.confirmed) && value.confirmed >= 0 &&
+            Number.isSafeInteger(value.unconfirmed));
+        const balance = responses[0].result.confirmed + responses[0].result.unconfirmed;
+        if (!Number.isSafeInteger(balance) || balance < 0) throw new Error('Invalid address balance');
+        return balance;
+    }
     const [info] = await fetchAddressInfoBatch([address]);
     return info ? info.balance : 0;
 };
 
-export const fetchUTXOs = async (addresses: string[]) => {
+export const fetchUTXOs = async (addresses: string[], options: AddressFetchOptions = {}) => {
     if (addresses.length === 0) return [];
     try {
         // Filter invalid addresses and increase chunking speed
         const validAddresses = addresses.filter(a => addressToScriptHash(a) !== '');
+        if (options.strict && validAddresses.length !== addresses.length) throw new Error('Invalid address');
         const chunks = chunkArray(validAddresses, 10);
         const allUtxos = [];
 
@@ -194,6 +220,11 @@ export const fetchUTXOs = async (addresses: string[]) => {
                 const hash = addressToScriptHash(addr);
                 try {
                     const utxos = await electrumListUnspent(hash) as any[];
+                    if (options.strict && (!Array.isArray(utxos) || utxos.some(u =>
+                        !u || typeof u.tx_hash !== 'string' || !Number.isInteger(u.tx_pos) || u.tx_pos < 0 ||
+                        !Number.isSafeInteger(u.value) || u.value < 0 || !Number.isInteger(u.height)))) {
+                        throw new Error('Incomplete coin response');
+                    }
                     if (!utxos) return [];
                     return utxos.map((u: any) => ({
                         txid: u.tx_hash,
@@ -208,6 +239,7 @@ export const fetchUTXOs = async (addresses: string[]) => {
                         }
                     }));
                 } catch (e) {
+                    if (options.strict) throw e;
                     return [];
                 }
             });
@@ -216,11 +248,12 @@ export const fetchUTXOs = async (addresses: string[]) => {
         }
         return allUtxos;
     } catch (err) {
+        if (options.strict) throw err;
         return [];
     }
 };
 
-const hydrateInputDetails = async (txs: any[]) => {
+const hydrateInputDetails = async (txs: any[], options: AddressFetchOptions = {}) => {
     const parent_ids = new Set<string>();
     txs.forEach(tx => {
         if (tx.vin) {
@@ -241,11 +274,13 @@ const hydrateInputDetails = async (txs: any[]) => {
     for (const batch of batches) {
         try {
             const results = await electrumBatchGetTransactions(batch) as any[];
-            results.forEach((r: any) => {
+            if (options.strict) requireBatchResults(results, batch.length, value => typeof value === 'string' && value.length > 0);
+            results.forEach((r: any, index: number) => {
                 if (r && r.result) {
                     const raw_tx_hex = r.result as string;
                     const decoded_tx = BitcoinTransaction.fromHex(raw_tx_hex);
                     const txid = decoded_tx.getId();
+                    if (options.strict && txid !== batch[index]) throw new Error('Mismatched parent transaction');
 
                     const parsed_outputs = decoded_tx.outs.map(output => {
                         let output_address = null;
@@ -263,7 +298,9 @@ const hydrateInputDetails = async (txs: any[]) => {
                     parent_map.set(txid, { vout: parsed_outputs });
                 }
             });
-        } catch (e) { }
+        } catch (e) {
+            if (options.strict) throw e;
+        }
     }
 
     return txs.map(tx => {
@@ -284,6 +321,7 @@ const hydrateInputDetails = async (txs: any[]) => {
                     }
                 };
             }
+            if (options.strict) throw new Error('Missing transaction input');
             return input;
         });
 
@@ -385,6 +423,7 @@ export const fetchAddressTransactions = async (
     addresses: string[],
     limit?: number,
     offset: number = 0,
+    options: AddressFetchOptions = {},
 ): Promise<Transaction[]> => {
     if (addresses.length === 0) return [];
 
@@ -392,8 +431,10 @@ export const fetchAddressTransactions = async (
         const tip_height = await getTipHeight();
         const map = addresses.map(addr => ({ addr, hash: addressToScriptHash(addr) }));
         const hashes = map.map(m => m.hash);
+        if (options.strict && hashes.some(hash => !hash)) throw new Error('Invalid address');
 
         const histories = await electrumBatchGetHistory(hashes) as any[];
+        if (options.strict) requireBatchResults(histories, hashes.length, validHistory);
         const tx_ids = new Set<string>();
         const height_map = new Map<string, number>();
 
@@ -494,16 +535,19 @@ export const fetchAddressTransactions = async (
 
         for (const batch of batches) {
             const results = await electrumBatchGetTransactions(batch) as any[];
+            if (options.strict) requireBatchResults(results, batch.length, value => typeof value === 'string' && value.length > 0);
             results.forEach((r: any, index: number) => {
                 if (r.result) {
                     const raw_tx_hex = r.result as string;
                     const decoded_tx = BitcoinTransaction.fromHex(raw_tx_hex);
 
+                    if (options.strict && decoded_tx.getId() !== batch[index]) throw new Error('Mismatched transaction');
                     const transaction_inputs = decoded_tx.ins.map(input => {
                         return {
                             txid: Buffer.from(input.hash).reverse().toString('hex'),
                             vout: input.index,
-                            sequence: input.sequence
+                            sequence: input.sequence,
+                            ...(options.strict && decoded_tx.isCoinbase() ? { coinbase: true } : {}),
                         };
                     });
 
@@ -544,12 +588,13 @@ export const fetchAddressTransactions = async (
             });
         }
 
-        const hydrated_txs = await hydrateInputDetails(full_txs);
+        const hydrated_txs = await hydrateInputDetails(full_txs, options);
         const wallet_address_set = new Set(addresses);
         const processed = hydrated_txs.map(tx => processTransaction(tx, wallet_address_set, tip_height));
 
         return processed.sort((a, b) => (b.status.block_time || 0) - (a.status.block_time || 0));
     } catch (err) {
+        if (options.strict) throw err;
         return [];
     }
 };

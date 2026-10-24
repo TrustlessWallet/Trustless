@@ -1,20 +1,20 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Linking, Alert, ScrollView, TextInput, Clipboard, Share } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, Transaction, UTXO } from '../types';
-import { fetchAddressTransactions, fetchUTXOs, fetchBitcoinBalance } from '../services/bitcoin';
+import { RootStackParamList, UTXO } from '../types';
 import QRCode from 'react-native-qrcode-svg';
 import { useWallet } from '../contexts/WalletContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
+import { EXPLORER_UI_URL, COIN_TYPE, NETWORK_NAME } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GlassView } from '../components/GlassView';
+import GlassIconButton from '../components/GlassIconButton';
+import { useAddressDetails } from '../hooks/useAddressDetails';
 
 const QR_SIZE = 220;
 
@@ -31,7 +31,7 @@ const formatBalance = (sats: number) => {
   }).format(btc).replace(/,/g, ' ');
 };
 
-const AddressDetailsScreen = () => {
+const AddressDetailsContent = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RoutePropType>();
   const isFocused = useIsFocused();
@@ -41,11 +41,9 @@ const AddressDetailsScreen = () => {
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
   const [copied, set_copied] = useState(false);
-  const [balance, setBalance] = useState(0);
-  const [utxos, setUtxos] = useState<UTXO[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [hideBalance, setHideBalance] = useState(false);
+  const { balance, utxos, transactions } = useAddressDetails(activeWallet?.id, address);
+  // Keep values masked until the saved privacy setting has loaded.
+  const [hideBalance, setHideBalance] = useState(true);
 
   const [editingUtxoKey, setEditingUtxoKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
@@ -78,50 +76,20 @@ const AddressDetailsScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <GlassView
-            width={32}
-            height={32}
-            borderRadius={16}
-            shape="circle"
-            interactive={true}
-          >
-            <Feather name="x" size={20} color={theme.colors.primary} />
-          </GlassView>
-        </TouchableOpacity>
+        <GlassIconButton onPress={() => navigation.goBack()} accessibilityLabel="Close" visualSize={32} align="flex-end" touchable disabled={!isFocused}>
+          <Feather name="x" size={20} color={theme.colors.primary} />
+        </GlassIconButton>
       ),
     });
-  }, [navigation, theme.colors.primary]);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const balancePromise = fetchBitcoinBalance(address);
-      const utxosPromise = fetchUTXOs([address]);
-      const txsPromise = fetchAddressTransactions([address]);
-
-      setBalance(await balancePromise);
-      setUtxos(await utxosPromise);
-      setTransactions(await txsPromise);
-    } catch (e) {
-      console.error("Failed to fetch address details", e);
-      Alert.alert("Error", "Could not fetch address details.");
-    } finally {
-      setLoading(false);
-    }
-  }, [address]);
+  }, [navigation, theme.colors.primary, isFocused]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    const loadPreference = async () => {
-      const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
-      setHideBalance(savedPref === 'true');
-    };
     if (isFocused) {
-      loadPreference();
+      let current = true;
+      AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY)
+        .then(savedPref => { if (current) setHideBalance(savedPref === 'true'); })
+        .catch(() => { /* Keep balances hidden if the preference cannot be read. */ });
+      return () => { current = false; };
     }
   }, [isFocused]);
 
@@ -187,13 +155,15 @@ const AddressDetailsScreen = () => {
     Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open block explorer."));
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centeredContainer}>
-        <ActivityIndicator size="large" color={theme.colors.bitcoin} />
-      </View>
-    );
-  }
+  const resourceError = (label: string, retry: () => void, hasData: boolean, isFetching: boolean) => (
+    <View style={styles.resourceMessage}>
+      <Text style={styles.resourceMessageText}>Could not {hasData ? 'refresh' : 'load'} {label}.</Text>
+      <TouchableOpacity onPress={retry} disabled={isFetching} accessibilityRole="button" accessibilityLabel={`Retry ${label}`} accessibilityState={{ disabled: isFetching, busy: isFetching }} style={styles.retryButton}>
+        {isFetching ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.retryText}>Retry</Text>}
+      </TouchableOpacity>
+    </View>
+  );
+  const unavailable = !activeWallet || !address;
 
   return (
     <ScrollView
@@ -204,11 +174,18 @@ const AddressDetailsScreen = () => {
       bounces={false}
     >
       <View style={styles.header}>
-        <Text style={styles.balanceText}>
-          {hideBalance ? '*******' : (
-            <>{formatBtc(balance)} <Text style={styles.orangeSymbol}>₿</Text></>
-          )}
-        </Text>
+        <View style={styles.balanceArea}>
+          {unavailable ? <Text style={styles.resourceMessageText}>Wallet unavailable.</Text>
+            : balance.data !== undefined ? (
+              <Text style={styles.balanceText}>
+                {hideBalance ? '*******' : <>{formatBtc(balance.data)} <Text style={styles.orangeSymbol}>₿</Text></>}
+              </Text>
+            ) : balance.isPending ? (
+              <ActivityIndicator accessibilityLabel="Loading balance" color={theme.colors.bitcoin} />
+            ) : null}
+          {balance.data !== undefined && balance.isFetching && !balance.isError && <ActivityIndicator size="small" accessibilityLabel="Refreshing balance" color={theme.colors.bitcoin} />}
+          {balance.isError && resourceError('balance', () => { void balance.refetch(); }, balance.data !== undefined, balance.isFetching)}
+        </View>
 
         {derivation_path && (
           <Text style={styles.derivationPathDisplay}>{derivation_path}</Text>
@@ -220,12 +197,12 @@ const AddressDetailsScreen = () => {
               <Text style={styles.copiedText}>Copied!</Text>
             </View>
           )}
-          <QRCode
+          {!!address && <QRCode
             value={address}
             size={QR_SIZE}
             backgroundColor={theme.colors.background}
             color={theme.colors.primary}
-          />
+          />}
         </TouchableOpacity>
 
         <AddressText
@@ -277,12 +254,18 @@ const AddressDetailsScreen = () => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Spendable coins</Text>
-        {utxos.length === 0 ? (
+        <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Spendable coins</Text>
+          {utxos.data !== undefined && utxos.isFetching && !utxos.isError && <ActivityIndicator size="small" accessibilityLabel="Refreshing spendable coins" color={theme.colors.bitcoin} />}
+        </View>
+        {unavailable ? <Text style={styles.emptyText}>Wallet unavailable.</Text>
+        : utxos.data === undefined ? (
+          utxos.isPending ? <ActivityIndicator accessibilityLabel="Loading spendable coins" color={theme.colors.bitcoin} /> : null
+        ) : utxos.data.length === 0 ? (
           <Text style={styles.emptyText}>No UTXOs found</Text>
         ) : (
           <>
-            {utxos.map((item) => {
+            {utxos.data.map((item) => {
               const key = `${item.txid}:${item.vout}`;
               const label = getUtxoLabel(item.txid, item.vout) || 'UTXO';
               const isEditing = editingUtxoKey === key;
@@ -332,15 +315,22 @@ const AddressDetailsScreen = () => {
             })}
           </>
         )}
+        {utxos.isError && resourceError('spendable coins', () => { void utxos.refetch(); }, utxos.data !== undefined, utxos.isFetching)}
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Transaction history</Text>
-        {transactions.length === 0 ? (
+        <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Transaction history</Text>
+          {transactions.data !== undefined && transactions.isFetching && !transactions.isError && <ActivityIndicator size="small" accessibilityLabel="Refreshing transaction history" color={theme.colors.bitcoin} />}
+        </View>
+        {unavailable ? <Text style={styles.emptyText}>Wallet unavailable.</Text>
+        : transactions.data === undefined ? (
+          transactions.isPending ? <ActivityIndicator accessibilityLabel="Loading transaction history" color={theme.colors.bitcoin} /> : null
+        ) : transactions.data.length === 0 ? (
           <Text style={styles.emptyText}>No transaction history found.</Text>
         ) : (
           <>
-            {transactions.map((item) => {
+            {transactions.data.map((item) => {
               const isSend = item.type === 'send';
               let otherAddress = 'Multiple';
 
@@ -390,6 +380,7 @@ const AddressDetailsScreen = () => {
             })}
           </>
         )}
+        {transactions.isError && resourceError('transaction history', () => { void transactions.refetch(); }, transactions.data !== undefined, transactions.isFetching)}
       </View>
     </ScrollView>
   );
@@ -401,11 +392,30 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingBottom: 32,
     backgroundColor: theme.colors.background,
   },
-  centeredContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
+  balanceArea: {
+    minHeight: 82,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  resourceMessage: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  resourceMessageText: {
+    fontSize: 14,
+    color: theme.colors.muted,
+    textAlign: 'center',
+  },
+  retryButton: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  retryText: {
+    fontSize: 14,
+    color: theme.colors.primary,
+    fontWeight: '600',
   },
   header: {
     alignItems: 'center',
@@ -518,6 +528,11 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     paddingTop: 24,
     paddingHorizontal: 20,
   },
+  sectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -619,5 +634,11 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     color: theme.colors.muted,
   },
 });
+
+const AddressDetailsScreen = () => {
+  const route = useRoute<RoutePropType>();
+  const { activeWallet } = useWallet();
+  return <AddressDetailsContent key={JSON.stringify([NETWORK_NAME, activeWallet?.id, route.params.address])} />;
+};
 
 export default AddressDetailsScreen;

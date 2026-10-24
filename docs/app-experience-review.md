@@ -15,6 +15,8 @@ This is a source-based review, not a release-build performance profile or a clai
 - Consolidate standard and Terminal sheet headers at the existing wallet geometry, retaining their glass sizes and Terminal interaction guards. Disable export touch and native glass together while busy/covered.
 - Replace generic address fonts in Send and Address Book with loaded Space Mono faces. Let the Address Book list and loading region fill available height above its footer.
 
+- Show Address Details QR/actions immediately and resolve its balance, coins and history independently. Cache each resource by wallet/network/address; preserve same-scope data on refresh errors and provide local retry. Strict fetches distinguish failed responses from empty data and verify transaction input hydration.
+
 ## Prioritized follow-up work
 
 | Priority | Finding and evidence | Recommended change | Verification |
@@ -31,7 +33,7 @@ This is a source-based review, not a release-build performance profile or a clai
 
 `fetchAddressInfoBatch` sends balance and history batches sequentially for each address chunk (`src/services/bitcoin.ts:143`). Those independent calls could run together with bounded concurrency. Measure server limits and keep partial-failure semantics before changing this.
 
-Address Details starts balance, UTXO and transaction requests concurrently, but one loading state waits for the entire group (`src/screens/AddressDetailsScreen.tsx:96`). Render cached/available sections independently and keep failures local; do not describe these requests as sequential network operations.
+Address Details now uses independent, scoped cached queries instead of blocking the whole screen on the group. Its balance query requests only balance, avoiding the history fetch previously performed by `fetchBitcoinBalance`. Other wallet/discovery callers retain their existing best-effort behavior. Strict Address Details history rejects missing transaction bodies or input parents rather than displaying invented amounts. Optional timestamp hydration remains best-effort. Simulator verification uses controlled delayed/failing responses; it is not a live-node benchmark.
 
 Do not remove existing interactive glass or input-focus feedback on the assumption that it is the main bottleneck. The review found unnecessary data work and broad render subscriptions; their actual frame-time impact must be measured. Keep native sheet presentation, working keyboard behavior, payment checks and refresh indicators intact.
 
