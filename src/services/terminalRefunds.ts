@@ -30,6 +30,18 @@ export const TERMINAL_REFUNDS_KEY = '@terminalRefunds:v1';
 const scopedKey = (walletId: string, network: TerminalNetwork) => `${TERMINAL_REFUNDS_KEY}:${network}:${walletId}`;
 const listeners = new Set<(walletId: string, network: TerminalNetwork) => void>();
 let storageQueue: Promise<unknown> = Promise.resolve();
+const validated = new Map<string, { raw: string; attempts: TerminalRefundAttempt[] }>();
+const CACHE_LIMIT = 2;
+
+function remember(key: string, raw: string, attempts: TerminalRefundAttempt[]): void {
+  validated.delete(key);
+  validated.set(key, { raw, attempts });
+  if (validated.size > CACHE_LIMIT) validated.delete(validated.keys().next().value!);
+}
+
+function newestFirst(a: TerminalRefundAttempt, b: TerminalRefundAttempt): number {
+  return b.createdAt - a.createdAt || b.id.localeCompare(a.id);
+}
 
 function serial<T>(operation: () => Promise<T>): Promise<T> {
   const result = storageQueue.then(operation, operation);
@@ -68,8 +80,18 @@ function isAttempt(value: unknown, walletId: string, network: TerminalNetwork): 
 }
 
 async function readAttempts(walletId: string, network: TerminalNetwork): Promise<TerminalRefundAttempt[]> {
-  const raw = await AsyncStorage.getItem(scopedKey(walletId, network));
-  if (raw === null) return [];
+  const key = scopedKey(walletId, network);
+  const raw = await AsyncStorage.getItem(key);
+  if (raw === null) {
+    validated.delete(key);
+    return [];
+  }
+  const hit = validated.get(key);
+  if (hit?.raw === raw) {
+    remember(key, raw, hit.attempts);
+    return hit.attempts.map(attempt => ({ ...attempt }));
+  }
+  validated.delete(key);
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { throw new Error('Saved Terminal refunds are unreadable.'); }
   if (!parsed || typeof parsed !== 'object' || (parsed as any).version !== 1 || !Array.isArray((parsed as any).attempts)) {
@@ -90,7 +112,9 @@ async function readAttempts(walletId: string, network: TerminalNetwork): Promise
       unresolved.add(attempt.saleId);
     }
   }
-  return attempts as TerminalRefundAttempt[];
+  const sorted = (attempts as TerminalRefundAttempt[]).sort(newestFirst);
+  remember(key, raw, sorted);
+  return sorted.map(attempt => ({ ...attempt }));
 }
 
 function notify(walletId: string, network: TerminalNetwork): void {
@@ -100,7 +124,9 @@ function notify(walletId: string, network: TerminalNetwork): void {
 }
 
 async function writeAttempts(walletId: string, network: TerminalNetwork, attempts: TerminalRefundAttempt[]): Promise<void> {
-  await AsyncStorage.setItem(scopedKey(walletId, network), JSON.stringify({ version: 1, attempts }));
+  const key = scopedKey(walletId, network);
+  await AsyncStorage.setItem(key, JSON.stringify({ version: 1, attempts }));
+  validated.delete(key);
   notify(walletId, network);
 }
 
@@ -120,8 +146,7 @@ export function subscribeTerminalRefunds(listener: (walletId: string, network: T
 
 export function listTerminalRefunds(walletId: string, network: string): Promise<TerminalRefundAttempt[]> {
   const identity = scope(walletId, network);
-  return serial(async () => (await readAttempts(identity.walletId, identity.network))
-    .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id)));
+  return serial(() => readAttempts(identity.walletId, identity.network));
 }
 
 export function remainingTerminalRefundSats(sale: TerminalSale, attempts: readonly TerminalRefundAttempt[]): number {
@@ -246,8 +271,12 @@ export function removeTerminalRefunds(walletId: string, network: string): Promis
   const identity = scope(walletId, network);
   return serial(async () => {
     const key = scopedKey(identity.walletId, identity.network);
-    if (await AsyncStorage.getItem(key) === null) return;
+    if (await AsyncStorage.getItem(key) === null) {
+      validated.delete(key);
+      return;
+    }
     await AsyncStorage.removeItem(key);
+    validated.delete(key);
     notify(identity.walletId, identity.network);
   });
 }

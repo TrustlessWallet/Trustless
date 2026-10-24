@@ -16,13 +16,19 @@ Keep the functionality already delivered available free:
 
 The catalog currently has a 30-item safety limit; this document does not remove it or promise unlimited products. The local cashier lock is not a delegated wallet or a multi-device staff account.
 
-## Next increment: period reporting
+## Delivered: period reporting
 
 Extend the existing Sales sheet with Today, 7 days, Month, and All. This remains free. Avoid a separate dashboard, charts, promotional labels, or changes to the checkout screen.
 
 A period controls the same data in the summary, activity list, refund total, and CSV. Seven days includes today and the preceding six local calendar days. Month starts on the first of the current month. Bounded periods end at the next local midnight, with an exclusive upper bound. Calendar boundaries must handle daylight-saving changes without assuming 24-hour days.
 
 Paid sales are grouped by the first local observation of completion (`receivedAt`); other requests by creation time. Refunds use the local status-observation time (`updatedAt`). These are not guaranteed settlement timestamps. A completed refund can belong to the period even when the sale itself does not. Gross fiat amounts retain their original currency and rate snapshot. Refund totals stay separate in sats; do not infer a fiat net revenue from current exchange rates.
+
+## Current foundation: growing local journals
+
+Sales and refund reads still check the saved document on every operation. A small cache retains validated records and their sorted order for the two most recently used wallet/network scopes per journal. It is reused only when the saved string is identical. Callers receive independent record copies, including original fiat and basket snapshots; changed, unreadable, or invalid saved data is never hidden by a warm cache.
+
+This avoids repeated parsing, validation, and sorting when reopening Sales or reconciling unchanged history. It does not change the storage format, payment rules, or durability requirements. Writes still serialize the complete document. Indexed, paginated storage with an independently verified migration remains necessary before extensive analytics over large histories.
 
 ## Proposed Premium boundary
 
