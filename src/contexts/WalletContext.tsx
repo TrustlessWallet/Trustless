@@ -17,6 +17,9 @@ import { assertNoActiveExit, loadExit } from '../services/exitStorage';
 import type { RunExit } from '../services/unilateralExit';
 
 import { Wallet, DerivedAddress, BitcoinAddress, LightningTransaction } from '../types';
+import { ActiveWalletProvider } from './ActiveWalletContext';
+import type { ActiveWallet } from './ActiveWalletContext';
+export { useActiveWallet } from './ActiveWalletContext';
 import {
     calculateTransactionMetrics,
     fetchUTXOs,
@@ -165,12 +168,6 @@ const KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE = 'com.btc.trustless.activeWalletId';
 const GAP_LIMIT = 20;
 
 const getStorageKey = (base: string) => `${base}.${NETWORK_NAME}`;
-
-// Extended interface for the currently active wallet, including its runtime cache.
-interface ActiveWallet extends Wallet {
-    address: string; // The current "next" receiving address
-    receiveAddressIndex: number;
-}
 
 interface WalletContextType {
     runLightningRecovery: RunExit;
@@ -2053,7 +2050,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         withdrawToOnchain,
     };
 
-    return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+    return <WalletContext.Provider value={value}>
+        <ActiveWalletProvider value={activeWallet}>{children}</ActiveWalletProvider>
+    </WalletContext.Provider>;
 };
 
 export const useWallet = (): WalletContextType => {

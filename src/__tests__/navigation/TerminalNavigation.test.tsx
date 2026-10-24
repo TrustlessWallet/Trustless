@@ -3,11 +3,11 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { CashierTerminalRoot, MainRoot, TerminalRoute } from '../../navigation/TerminalNavigation';
 import { useWalletMode } from '../../contexts/WalletModeContext';
-import { useWallet } from '../../contexts/WalletContext';
+import { useActiveWallet } from '../../contexts/WalletContext';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: jest.fn() }));
-jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
+jest.mock('../../contexts/WalletContext', () => ({ useActiveWallet: jest.fn() }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', muted: '#888', inversePrimary: '#fff', bitcoin: '#f90' } } }) }));
 jest.mock('@react-navigation/native', () => ({ useNavigation: jest.fn(), useIsFocused: jest.fn() }));
 const mockMount = jest.fn();
@@ -27,7 +27,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   (useNavigation as jest.Mock).mockReturnValue({ navigate, goBack, replace, canGoBack: () => true, addListener: (_: string, listener: () => void) => { beforeRemove = listener; return jest.fn(); } });
   (useIsFocused as jest.Mock).mockReturnValue(true);
-  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'shop', type: 'standard' } });
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'shop', type: 'standard' });
   (useWalletMode as jest.Mock).mockReturnValue({ mode: 'wallet', setMode });
 });
 it('keeps the wallet navigator mounted across repeated Terminal visits', () => {
@@ -54,7 +54,7 @@ it('does not open restored Terminal while authentication or another screen cover
 });
 it('does not open Terminal for a watch-only wallet', () => {
   (useWalletMode as jest.Mock).mockReturnValue({ mode: 'terminal', setMode });
-  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'watch', type: 'watch-only' } });
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'watch', type: 'watch-only' });
   render(<MainRoot />);
   expect(navigate).not.toHaveBeenCalled();
 });

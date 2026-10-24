@@ -2,7 +2,7 @@ import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useWalletMode, WalletModeProvider, WALLET_MODE_KEY, SHOW_TERMINAL_KEY } from '../../contexts/WalletModeContext';
-import { useWallet } from '../../contexts/WalletContext';
+import { useActiveWallet } from '../../contexts/WalletContext';
 import { CASHIER_LOCK_KEY } from '../../services/cashierLock';
 import { authenticate_terminal_cashier } from '../../services/authState';
 
@@ -10,7 +10,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() },
 }));
-jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
+jest.mock('../../contexts/WalletContext', () => ({ useActiveWallet: jest.fn() }));
 jest.mock('../../services/authState', () => ({ authenticate_terminal_cashier: jest.fn() }));
 
 const wrapper = ({ children }: { children: React.ReactNode }) => <WalletModeProvider>{children}</WalletModeProvider>;
@@ -20,7 +20,7 @@ beforeEach(() => {
   (AsyncStorage.getItem as jest.Mock).mockReset().mockImplementation(async key => values.get(key) ?? null);
   (AsyncStorage.setItem as jest.Mock).mockReset().mockImplementation(async (key, value) => { values.set(key, value); });
   (AsyncStorage.removeItem as jest.Mock).mockReset().mockImplementation(async key => { values.delete(key); });
-  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'wallet-a', type: 'standard' } });
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-a', type: 'standard' });
   (authenticate_terminal_cashier as jest.Mock).mockReset().mockResolvedValue(true);
 });
 
@@ -148,7 +148,7 @@ it('ignores an owner-auth result after the active wallet changes', async () => {
   await act(async () => { await result.current.setMode('terminal'); });
   let enabling!: Promise<boolean>;
   act(() => { enabling = result.current.enableCashier(); });
-  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'wallet-b', type: 'standard' } });
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-b', type: 'standard' });
   rerender({});
   await act(async () => { finishAuth(true); expect(await enabling).toBe(false); });
   expect(result.current.cashierState).toBe('off');
@@ -166,7 +166,7 @@ it('restricts a different wallet if it appears while a lock write is completing'
   let enabling!: Promise<boolean>;
   act(() => { enabling = result.current.enableCashier(); });
   await waitFor(() => expect(finishWrite).toBeDefined());
-  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'wallet-b', type: 'standard' } });
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-b', type: 'standard' });
   rerender({});
   await act(async () => { finishWrite(); expect(await enabling).toBe(true); });
   expect(result.current.cashierState).toBe('recovery');
@@ -188,7 +188,7 @@ it('restores a durable lock before children mount and restricts wallet-scope mis
   (AsyncStorage.getItem as jest.Mock).mockImplementation(async key => key === CASHIER_LOCK_KEY ? lock : key === WALLET_MODE_KEY ? 'terminal' : null);
   const { result, rerender } = renderHook(() => useWalletMode(), { wrapper });
   await waitFor(() => expect(result.current.cashierState).toBe('locked'));
-  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'wallet-b', type: 'standard' } });
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-b', type: 'standard' });
   rerender({});
   expect(result.current.cashierState).toBe('recovery');
   await expect(result.current.setMode('wallet')).rejects.toThrow('owner unlock');
@@ -227,7 +227,7 @@ it('rejects stale unlock authentication before storage mutation and duplicate un
   let second!: Promise<boolean>;
   act(() => { first = result.current.unlockCashier(); second = result.current.unlockCashier(); });
   expect(await second).toBe(false);
-  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'wallet-b', type: 'standard' } });
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-b', type: 'standard' });
   rerender({});
   await act(async () => { finishAuth(true); expect(await first).toBe(false); });
   expect(result.current.cashierState).toBe('recovery');
@@ -246,7 +246,7 @@ it('lets an authenticated owner-device unlock finish if the wallet changes durin
   act(() => { unlocking = result.current.unlockCashier(); });
   await waitFor(() => expect(finishRemove).toBeDefined());
   expect(authenticate_terminal_cashier).toHaveBeenCalledTimes(1);
-  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'wallet-b', type: 'standard' } });
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-b', type: 'standard' });
   rerender({});
   expect(result.current.cashierState).toBe('recovery');
   await act(async () => { finishRemove(); expect(await unlocking).toBe(true); });

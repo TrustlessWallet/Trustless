@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyledInput } from '../components/StyledInput';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
-import { useWallet } from '../contexts/WalletContext';
+import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import { formatTerminalBasketAmount, parseFiatMinor, parseTerminalAmount, TerminalNetwork, TerminalUnit } from '../services/terminal';
@@ -24,7 +24,7 @@ function priceText(item?: TerminalItem) {
 
 export default function TerminalItemEditorScreen({ walletId, network, preferredUnit, initialItem, onClose }: Props) {
   const { theme } = useTheme();
-  const { activeWallet } = useWallet();
+  const activeWallet = useActiveWallet();
   const { cashierState } = useWalletMode();
   const focused = useIsFocused();
   const navigation = useNavigation();
