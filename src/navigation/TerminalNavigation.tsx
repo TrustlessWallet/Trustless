@@ -3,7 +3,7 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 import { RootStackParamList } from '../types';
-import { useWallet } from '../contexts/WalletContext';
+import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import TabNavigator from './TabNavigator';
 import TerminalScreen from '../screens/TerminalScreen';
@@ -16,7 +16,7 @@ type Navigation = NativeStackNavigationProp<RootStackParamList>;
 // Returning preserves the native tab controller, scroll position and queries.
 export function MainRoot() {
   const { mode } = useWalletMode();
-  const { activeWallet } = useWallet();
+  const activeWallet = useActiveWallet();
   const navigation = useNavigation<Navigation>();
   const focused = useIsFocused();
   useEffect(() => {
@@ -29,7 +29,7 @@ export function MainRoot() {
 
 export function TerminalRoute() {
   const { mode, setMode, cashierState } = useWalletMode();
-  const { activeWallet } = useWallet();
+  const activeWallet = useActiveWallet();
   const navigation = useNavigation<Navigation>();
   const unsupported = activeWallet?.type === 'watch-only';
   const focused = useIsFocused();

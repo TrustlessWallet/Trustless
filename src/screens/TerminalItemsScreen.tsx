@@ -6,7 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
-import { useWallet } from '../contexts/WalletContext';
+import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { formatTerminalBasketAmount, TerminalNetwork, TerminalUnit } from '../services/terminal';
 import { deleteTerminalItem, listTerminalItems, TerminalItem } from '../services/terminalItems';
@@ -17,7 +17,7 @@ type Props = { walletId: string; network: TerminalNetwork; preferredUnit: Termin
 
 export default function TerminalItemsScreen({ walletId, network, onClose, onEdit }: Props) {
   const { theme } = useTheme();
-  const { activeWallet } = useWallet();
+  const activeWallet = useActiveWallet();
   const { cashierState } = useWalletMode();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();

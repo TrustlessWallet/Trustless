@@ -7,7 +7,7 @@ import { GlassView } from '../components/GlassView';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { TerminalUnit } from '../services/terminal';
-import { useWallet } from '../contexts/WalletContext';
+import { useActiveWallet } from '../contexts/WalletContext';
 import { CashierTerminalDraft, useWalletMode } from '../contexts/WalletModeContext';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import { SHEET_HEADER_HEIGHT } from '../constants/theme';
@@ -17,7 +17,7 @@ const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 
 export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, getTerminalDraft }: Props) {
   const { theme } = useTheme();
-  const { activeWallet } = useWallet();
+  const activeWallet = useActiveWallet();
   const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
   const [cashierError, setCashierError] = useState('');
   const cashierPress = async () => {

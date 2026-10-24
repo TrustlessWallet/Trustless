@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useWallet } from './WalletContext';
+import { useActiveWallet } from './WalletContext';
 import { NETWORK_NAME } from '../constants/network';
 import { terminalNetwork, TerminalBasketLine, TerminalNetwork, TerminalUnit } from '../services/terminal';
 import { authenticate_terminal_cashier } from '../services/authState';
@@ -30,7 +30,7 @@ type ModeContext = {
 const Context = createContext<ModeContext | null>(null);
 
 export function WalletModeProvider({ children }: { children: React.ReactNode }) {
-  const { activeWallet } = useWallet();
+  const activeWallet = useActiveWallet();
   const network = terminalNetwork(NETWORK_NAME);
   const walletScope = `${network}:${activeWallet?.id ?? ''}:${activeWallet?.type ?? ''}`;
   const walletScopeRef = useRef(walletScope);

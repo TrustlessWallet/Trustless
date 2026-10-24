@@ -1,7 +1,8 @@
-import React from 'react';
-import { act, renderHook, waitFor, cleanup } from '@testing-library/react-native';
+import React, { memo } from 'react';
+import { act, render, renderHook, waitFor, cleanup } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WalletProvider, useWallet } from '../../contexts/WalletContext';
+import { WalletProvider, useWallet, useActiveWallet } from '../../contexts/WalletContext';
+import { WalletModeProvider, useWalletMode } from '../../contexts/WalletModeContext';
 import * as sdkModule from '@breeztech/breez-sdk-spark-react-native';
 import * as refundJournal from '../../services/terminalRefunds';
 
@@ -144,6 +145,51 @@ it('connects the active wallet and explicitly synchronizes its balance', async (
     expect(result.current.lightningBalance).toBe(100);
     expect(a.syncWallet).toHaveBeenCalledTimes(1);
     expect(result.current.lightningLastSyncedAt).not.toBeNull();
+});
+
+it('keeps active-wallet readers still through Lightning-only updates and delivers real wallet switches', async () => {
+    const broadAddresses: string[] = [];
+    const narrowWallets: ReturnType<typeof useActiveWallet>[] = [];
+    const modeRenders: string[] = [];
+    let broad!: ReturnType<typeof useWallet>;
+    const BroadReader = memo(() => {
+        broad = useWallet();
+        broadAddresses.push(broad.lightningAddress);
+        return null;
+    });
+    const WalletReader = memo(() => {
+        narrowWallets.push(useActiveWallet());
+        return null;
+    });
+    const ModeReader = memo(() => {
+        modeRenders.push(useWalletMode().mode);
+        return null;
+    });
+    const view = render(<QueryClientProvider client={client}><WalletProvider>
+        <BroadReader />
+        <WalletReader />
+        <WalletModeProvider><ModeReader /></WalletModeProvider>
+    </WalletProvider></QueryClientProvider>);
+    await waitFor(() => expect(broad.isLightningInitialized).toBe(true));
+    await waitFor(() => expect(broad.lightningSyncing).toBe(false));
+    await waitFor(() => expect(modeRenders.length).toBeGreaterThan(0));
+    expect(narrowWallets.at(-1)).toBe(broad.activeWallet);
+    const narrowBefore = narrowWallets.length;
+    const broadBefore = broadAddresses.length;
+    const modeBefore = modeRenders.length;
+    await act(async () => { await a.emit({ tag: 'LightningAddressChanged', inner: { lightningAddress: { lightningAddress: 'one@example.test' } } }); });
+    await act(async () => { await a.emit({ tag: 'LightningAddressChanged', inner: { lightningAddress: { lightningAddress: 'two@example.test' } } }); });
+    expect(broad.lightningAddress).toBe('two@example.test');
+    expect(broadAddresses.length).toBeGreaterThanOrEqual(broadBefore + 2);
+    expect(narrowWallets).toHaveLength(narrowBefore);
+    expect(modeRenders).toHaveLength(modeBefore);
+    expect(narrowWallets.at(-1)).toBe(broad.activeWallet);
+
+    await act(async () => { await broad.switchWallet('b'); });
+    await waitFor(() => expect(broad.activeWallet?.id).toBe('b'));
+    expect(narrowWallets.at(-1)).toBe(broad.activeWallet);
+    expect(narrowWallets.length).toBeGreaterThan(narrowBefore);
+    view.unmount();
 });
 
 it('creates the default invoice only after the initial Lightning sync completes', async () => {
