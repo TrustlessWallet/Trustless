@@ -162,3 +162,94 @@ it('removes only the selected wallet and network history', async () => {
   expect(listener).toHaveBeenCalledTimes(1);
   unsubscribe();
 });
+
+it.each([100, 1000, 10000])('validates a %i-sale fixture once for unchanged reads', async count => {
+  const walletId = `fixture-${count}`;
+  storage.set(`${TERMINAL_SALES_KEY}:mainnet:${walletId}`, JSON.stringify({ version: 1, sales:
+    Array.from({ length: count }, (_, index) => ({
+      request: { ...another, id: `sale-${index}`, walletId, invoice: `lnbc${index}abc`,
+        createdAt: index + 1, expiresAt: count + 10000 },
+      status: 'unknown', updatedAt: index + 1,
+    })),
+  }));
+  const parse = jest.spyOn(JSON, 'parse');
+  try {
+    expect(await listTerminalSales(walletId, 'mainnet')).toHaveLength(count);
+    expect(await listTerminalSales(walletId, 'mainnet')).toHaveLength(count);
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(AsyncStorage.getItem).toHaveBeenCalledTimes(2);
+  } finally { parse.mockRestore(); }
+});
+
+it('does not let a caller mutate cached nested sale data or an existing return', async () => {
+  const withBasket = { ...request, basket: { unit: 'CHF' as const, total: 100,
+    lines: [{ itemId: 'tea', name: 'Tea', unitPrice: 100, quantity: 1, total: 100 }] } };
+  await recordTerminalSale(withBasket);
+  const listed = await listTerminalSales('wallet-a', 'mainnet');
+  (listed[0].request.fiat as any).amountMinor = 999;
+  (listed[0].request.basket!.lines[0] as any).name = 'Changed';
+  const existing = await recordTerminalSale(withBasket);
+  (existing.request.basket!.lines[0] as any).name = 'Again';
+  const fresh = (await listTerminalSales('wallet-a', 'mainnet'))[0];
+  expect(fresh.request.fiat?.amountMinor).toBe(100);
+  expect(fresh.request.basket?.lines[0].name).toBe('Tea');
+});
+
+it('revalidates replacement, corruption, duplicates, deletion and recreation', async () => {
+  await recordTerminalSale(request);
+  await listTerminalSales('wallet-a', 'mainnet');
+  storage.set(key, JSON.stringify({ version: 1, sales: [{ request: another, status: 'unknown', updatedAt: 5000 }] }));
+  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.id).toBe('two');
+  storage.set(key, '{broken');
+  await expect(listTerminalSales('wallet-a', 'mainnet')).rejects.toThrow('unreadable');
+  storage.set(key, JSON.stringify({ version: 1, sales: [
+    { request, status: 'unknown', updatedAt: 5000 },
+    { request, status: 'unknown', updatedAt: 5000 },
+  ] }));
+  await expect(listTerminalSales('wallet-a', 'mainnet')).rejects.toThrow('duplicates');
+  storage.delete(key);
+  expect(await listTerminalSales('wallet-a', 'mainnet')).toEqual([]);
+  storage.set(key, JSON.stringify({ version: 1, sales: [{ request, status: 'unknown', updatedAt: 5000 }] }));
+  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.id).toBe('one');
+});
+
+it('propagates a storage read error even with a warm cache', async () => {
+  await recordTerminalSale(request);
+  await listTerminalSales('wallet-a', 'mainnet');
+  (AsyncStorage.getItem as jest.Mock).mockRejectedValueOnce(new Error('read failed'));
+  await expect(listTerminalSales('wallet-a', 'mainnet')).rejects.toThrow('read failed');
+  expect(await listTerminalSales('wallet-a', 'mainnet')).toHaveLength(1);
+});
+
+it('keeps a warm sale unchanged after a failed update and allows retry', async () => {
+  await recordTerminalSale(request);
+  await listTerminalSales('wallet-a', 'mainnet');
+  const before = storage.get(key);
+  const listener = jest.fn();
+  const unsubscribe = subscribeTerminalSales(listener);
+  try {
+    (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk unavailable'));
+    await expect(updateTerminalSalePayment(request, { status: 'received' }, 5000))
+      .rejects.toThrow('disk unavailable');
+    expect(storage.get(key)).toBe(before);
+    expect((await listTerminalSales('wallet-a', 'mainnet'))[0].status).toBe('unknown');
+    expect(listener).not.toHaveBeenCalled();
+    expect((await updateTerminalSalePayment(request, { status: 'received' }, 5000)).status).toBe('received');
+    expect(listener).toHaveBeenCalledTimes(1);
+  } finally { unsubscribe(); }
+});
+
+it('evicts the least recently used scope', async () => {
+  for (const walletId of ['evict-a', 'evict-b', 'evict-c']) {
+    storage.set(`${TERMINAL_SALES_KEY}:mainnet:${walletId}`, JSON.stringify({ version: 1, sales: [
+      { request: { ...request, walletId }, status: 'unknown', updatedAt: 5000 },
+    ] }));
+  }
+  const parse = jest.spyOn(JSON, 'parse');
+  try {
+    for (const walletId of ['evict-a', 'evict-b', 'evict-a', 'evict-c', 'evict-b']) {
+      await listTerminalSales(walletId, 'mainnet');
+    }
+    expect(parse).toHaveBeenCalledTimes(4);
+  } finally { parse.mockRestore(); }
+});

@@ -17,6 +17,34 @@ export const TERMINAL_SALES_KEY = '@terminalSales:v1';
 const scopedKey = (walletId: string, network: TerminalNetwork) => `${TERMINAL_SALES_KEY}:${network}:${walletId}`;
 const listeners = new Set<(walletId: string, network: TerminalNetwork) => void>();
 let storageQueue: Promise<unknown> = Promise.resolve();
+// Keep only recently used scopes. The raw value is checked against storage on every read.
+const validated = new Map<string, { raw: string; sales: TerminalSale[] }>();
+const CACHE_LIMIT = 2;
+
+function copySale(sale: TerminalSale): TerminalSale {
+  const request = sale.request;
+  return {
+    ...sale,
+    request: {
+      ...request,
+      ...(request.fiat ? { fiat: { ...request.fiat } } : {}),
+      ...(request.basket ? { basket: {
+        ...request.basket,
+        lines: request.basket.lines.map(line => ({ ...line })),
+      } } : {}),
+    },
+  };
+}
+
+function remember(key: string, raw: string, sales: TerminalSale[]): void {
+  validated.delete(key);
+  validated.set(key, { raw, sales });
+  if (validated.size > CACHE_LIMIT) validated.delete(validated.keys().next().value!);
+}
+
+function newestFirst(a: TerminalSale, b: TerminalSale): number {
+  return b.request.createdAt - a.request.createdAt || b.request.id.localeCompare(a.request.id);
+}
 
 function serial<T>(operation: () => Promise<T>): Promise<T> {
   const result = storageQueue.then(operation, operation);
@@ -69,8 +97,18 @@ function isSale(value: unknown, walletId: string, network: TerminalNetwork): val
 }
 
 async function readSales(walletId: string, network: TerminalNetwork): Promise<TerminalSale[]> {
-  const raw = await AsyncStorage.getItem(scopedKey(walletId, network));
-  if (raw === null) return [];
+  const key = scopedKey(walletId, network);
+  const raw = await AsyncStorage.getItem(key);
+  if (raw === null) {
+    validated.delete(key);
+    return [];
+  }
+  const hit = validated.get(key);
+  if (hit?.raw === raw) {
+    remember(key, raw, hit.sales);
+    return hit.sales.map(copySale);
+  }
+  validated.delete(key);
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { throw new Error('Saved Terminal sales are unreadable.'); }
   if (!parsed || typeof parsed !== 'object' || (parsed as any).version !== 1 || !Array.isArray((parsed as any).sales)) {
@@ -86,11 +124,15 @@ async function readSales(walletId: string, network: TerminalNetwork): Promise<Te
     ids.add(sale.request.id);
     invoices.add(invoice);
   }
-  return sales as TerminalSale[];
+  const sorted = (sales as TerminalSale[]).sort(newestFirst);
+  remember(key, raw, sorted);
+  return sorted.map(copySale);
 }
 
 async function writeSales(walletId: string, network: TerminalNetwork, sales: TerminalSale[]): Promise<void> {
-  await AsyncStorage.setItem(scopedKey(walletId, network), JSON.stringify({ version: 1, sales }));
+  const key = scopedKey(walletId, network);
+  await AsyncStorage.setItem(key, JSON.stringify({ version: 1, sales }));
+  validated.delete(key);
   notify(walletId, network);
 }
 
@@ -118,7 +160,7 @@ export function listTerminalSales(walletId: string, network: string): Promise<Te
   const identity = scope(walletId, network);
   return serial(async () => {
     const sales = await readSales(identity.walletId, identity.network);
-    return sales.sort((a, b) => b.request.createdAt - a.request.createdAt || b.request.id.localeCompare(a.request.id));
+    return sales;
   });
 }
 
@@ -126,8 +168,12 @@ export function removeTerminalSales(walletId: string, network: string): Promise<
   const identity = scope(walletId, network);
   return serial(async () => {
     const key = scopedKey(identity.walletId, identity.network);
-    if (await AsyncStorage.getItem(key) === null) return;
+    if (await AsyncStorage.getItem(key) === null) {
+      validated.delete(key);
+      return;
+    }
     await AsyncStorage.removeItem(key);
+    validated.delete(key);
     notify(identity.walletId, identity.network);
   });
 }
