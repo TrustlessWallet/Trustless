@@ -144,7 +144,7 @@ it('exports the original charge in normal decimal fiat units without recalculati
   }
   const original = sale('sats-only', today);
   const csv = buildTerminalSalesCsv([{ ...original, request: { ...original.request, fiat: undefined } }], [refund(today)], 'all', day);
-  for (const row of csv.trim().split('\r\n').slice(1)) expect(row.split(',')).toHaveLength(17);
+  for (const row of csv.trim().split('\r\n').slice(1)) expect(row.split(',')).toHaveLength(20);
 });
 
 it('exports the exact saved BTC-to-fiat rate and its fetch time per sale', () => {
@@ -169,5 +169,36 @@ it('exports the exact saved BTC-to-fiat rate and its fetch time per sale', () =>
     expect(row.btc_fiat_rate).toBe('');
     expect(row.rate_fetched_at_utc).toBe('');
   }
-  for (const line of lines) expect(line.split(',')).toHaveLength(17);
+  for (const line of lines) expect(line.split(',')).toHaveLength(20);
+});
+
+it('exports recorded rates for fiat, BTC and sats sales and refunds without changing charge fields', () => {
+  const reporting = { currency: 'CHF' as const, rate: '91234.56', fetchedAt: today - 1000,
+    source: 'coinbase' as const, status: 'stale' as const };
+  const original = sale('fiat-new', today);
+  const records: TerminalSale[] = [
+    { ...original, request: { ...original.request, reportingRate: reporting } },
+    { ...sale('btc-new', today), request: { ...sale('btc-new', today).request, fiat: undefined, inputUnit: 'BTC', reportingRate: reporting } },
+    { ...sale('sats-unavailable', today), request: { ...sale('sats-unavailable', today).request, fiat: undefined, inputUnit: 'sats', reportingRate: null } },
+    { ...sale('legacy-fiat', today) },
+  ];
+  const refunds = [{ ...refund(today), id: 'refund-new', reportingRate: reporting },
+    { ...refund(today), id: 'refund-unavailable', reportingRate: null }];
+  const lines = buildTerminalSalesCsv(records, refunds, 'all', day).trim().split('\r\n');
+  const header = lines[0].split(',');
+  const rows = lines.slice(1).map(line => Object.fromEntries(line.split(',').map((value, index) => [header[index], value])));
+  for (const id of ['fiat-new', 'btc-new', 'refund-new']) {
+    const row = rows.find(item => item.record_id === id)!;
+    expect([row.btc_fiat_rate, row.rate_currency, row.rate_status, row.rate_source]).toEqual(['91234.56', 'CHF', 'stale', 'coinbase']);
+    expect(row.rate_fetched_at_utc).toBe(new Date(today - 1000).toISOString());
+  }
+  expect(rows.find(item => item.record_id === 'fiat-new')?.fiat_amount).toBe('2.50');
+  expect(rows.find(item => item.record_id === 'btc-new')?.input_unit).toBe('BTC');
+  expect(rows.find(item => item.record_id === 'refund-new')?.fiat_amount).toBe('');
+  for (const id of ['sats-unavailable', 'refund-unavailable']) {
+    const row = rows.find(item => item.record_id === id)!;
+    expect([row.btc_fiat_rate, row.rate_currency, row.rate_status, row.rate_source]).toEqual(['', '', 'unavailable', '']);
+  }
+  expect(rows.find(item => item.record_id === 'legacy-fiat')?.rate_status).toBe('quoted');
+  expect(rows.find(item => item.record_id === 'legacy-fiat')?.rate_source).toBe('coinbase');
 });

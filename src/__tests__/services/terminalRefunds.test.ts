@@ -201,6 +201,24 @@ it('copies cached refund records and revalidates changed storage', async () => {
   expect(await listTerminalRefunds('wallet-a', 'mainnet')).toHaveLength(1);
 });
 
+it('freezes refund reporting metadata while retrying the same quote independently of a new lookup', async () => {
+  const sale = await paidSale();
+  const rate = { currency: 'EUR' as const, rate: '87000', fetchedAt: 1000,
+    source: 'coinbase' as const, status: 'stale' as const };
+  const reservation = { ...quote('reporting-refund', 'lnbc654abc', 100), reportingRate: rate };
+  const pending = reserveTerminalRefund(sale, reservation);
+  (reservation.reportingRate as any).rate = '1';
+  const attempt = await pending;
+  expect(attempt.reportingRate?.rate).toBe('87000');
+  const listed = (await listTerminalRefunds('wallet-a', 'mainnet'))[0];
+  (listed.reportingRate as any).rate = '2';
+  expect((await listTerminalRefunds('wallet-a', 'mainnet'))[0].reportingRate?.rate).toBe('87000');
+  expect((await reserveTerminalRefund(sale, { ...reservation, reportingRate: null })).reportingRate?.rate).toBe('87000');
+  await expect(updateTerminalRefund({ ...attempt, reportingRate: { ...rate, rate: '2' } }, { status: 'pending' }))
+    .rejects.toThrow('does not match');
+  expect((await updateTerminalRefund(attempt, { status: 'pending' })).reportingRate?.rate).toBe('87000');
+});
+
 it('propagates warm read errors and evicts old refund scopes', async () => {
   const sale = await paidSale();
   await reserveTerminalRefund(sale, quote('read-error', 'lnbc876abc', 100));

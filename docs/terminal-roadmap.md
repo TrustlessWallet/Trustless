@@ -26,13 +26,23 @@ Paid sales are grouped by the first local observation of completion (`receivedAt
 
 ## CSV exchange rates
 
-Fiat-priced sales export `btc_fiat_rate` (units of the row's `fiat_currency` per 1 BTC) and `rate_fetched_at_utc`. These are the exact Coinbase rate string and local fetch timestamp saved when the invoice was generated, including existing sales with that snapshot. Export does not fetch a current rate or derive one from rounded sats. The checkout rate cache lasts up to 60 seconds; the fetch timestamp is not the settlement timestamp. Sats/BTC-only sales and refunds have blank rate fields because no fiat rate was captured for those records.
+New invoices retain an independent reporting-rate snapshot: the selected currency for fiat pricing and USD for sats/BTC pricing. Refunds capture their own snapshot at reservation, rather than copying the sale's old rate. Reporting metadata does not turn Bitcoin-priced sales into fiat-priced sales or change totals. CSV includes `btc_fiat_rate` (units of `rate_currency` per 1 BTC), `rate_fetched_at_utc`, `rate_currency`, `rate_status`, and `rate_source`.
+
+Status is frozen with the record: `fresh` is a current quote; `stale` is the last known reporting quote under 24 hours old when the provider is slow or unavailable; `unavailable` means the lookup had no usable quote; `not_recorded` identifies older Bitcoin-priced sales/refunds without a snapshot. Existing fiat quotes export their original price rate with status `quoted`. No historical rates are fabricated or fetched at export time. Rate time is a local fetch observation, not a settlement timestamp.
+
+The Coinbase request is shared across concurrent callers and cached for 60 seconds, with optional disk persistence for restart recovery. Failed requests enter a bounded exponential cooldown; a valid `Retry-After` response extends it (up to 24 hours). Fresh quotes are required for fiat conversion. Bitcoin-priced invoice generation and refund reporting wait at most one extra second for metadata and continue with a stale or unavailable reporting snapshot if necessary. Price-provider failure must not stop accepting a known Bitcoin amount. No retry loop runs merely to fill old records later.
 
 ## Current foundation: growing local journals
 
 Sales and refund reads still check the saved document on every operation. A small cache retains validated records and their sorted order for the two most recently used wallet/network scopes per journal. It is reused only when the saved string is identical. Callers receive independent record copies, including original fiat and basket snapshots; changed, unreadable, or invalid saved data is never hidden by a warm cache.
 
 This avoids repeated parsing, validation, and sorting when reopening Sales or reconciling unchanged history. It does not change the storage format, payment rules, or durability requirements. Writes still serialize the complete document. Indexed, paginated storage with an independently verified migration remains necessary before extensive analytics over large histories.
+
+## Large-history next step
+
+The Sales list virtualizes rows, so it does not mount every transaction at once. The current journal cache avoids repeated parsing and sorting; it does not bound the initial full-document read, copy cost, aggregate calculations, or full-document writes. A 10,000-record simulator fixture is regression coverage, not a guarantee of unlimited history.
+
+Before expanding analytics, move sales and refund records into indexed SQLite storage using the existing dependency. Read visible rows in cursor-based pages (for example 50–100 rows), calculate period totals in SQL, and export records in bounded batches. Index wallet/network plus observation time and stable ID; retain exact invoice identity and refund reservation constraints. Migration must be transactional and idempotent, verify counts/identities/snapshots before marking complete, preserve the legacy copy for recovery, and handle interruption, full disk, corrupt data, duplicate records, rollback, and deletion. Keep all records; do not silently truncate a merchant's history to improve speed.
 
 ## Proposed Premium boundary
 

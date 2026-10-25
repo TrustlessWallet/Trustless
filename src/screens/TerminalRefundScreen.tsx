@@ -14,6 +14,7 @@ import { authenticate_terminal_refund } from '../services/authState';
 import { formatTerminalSats, parseTerminalAmount } from '../services/terminal';
 import { TerminalSale } from '../services/terminalSales';
 import { remainingTerminalRefundSats, reserveTerminalRefund, TerminalRefundAttempt, updateTerminalRefund } from '../services/terminalRefunds';
+import { getTerminalReportingRate } from '../services/terminalRates';
 
 type Quote = { quoteId: string; invoice: string; amountSats: number; feeSats: number; expiresAt: number };
 type Props = { sale: TerminalSale; attempts: TerminalRefundAttempt[]; onClose: () => void; visible?: boolean };
@@ -96,7 +97,11 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
       if (!await authenticate_terminal_refund()) { if (current(captured)) setPhase('review'); return; }
       if (!current(captured)) return;
       if (activeWallet?.id !== sale.request.walletId || quote.expiresAt <= Date.now()) throw new Error('Refund quote expired.');
-      reserved = await reserveTerminalRefund(sale, { id: uuidv4(), invoice: quote.invoice, amountSats: quote.amountSats, feeSats: quote.feeSats, quoteExpiresAt: quote.expiresAt });
+      const reportingCurrency = sale.request.fiat?.currency ?? sale.request.reportingRate?.currency ?? 'USD';
+      const reportingRate = await getTerminalReportingRate(reportingCurrency);
+      if (!current(captured)) return;
+      if (quote.expiresAt <= Date.now()) throw new Error('Refund quote expired.');
+      reserved = await reserveTerminalRefund(sale, { id: uuidv4(), invoice: quote.invoice, amountSats: quote.amountSats, feeSats: quote.feeSats, quoteExpiresAt: quote.expiresAt, reportingRate });
       if (current(captured)) setLocalAttempt(reserved);
       if (current(captured)) setPhase('sending');
       // Once reserved, finish recording the payment outcome even if this view closes.

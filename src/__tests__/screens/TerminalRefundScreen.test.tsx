@@ -7,6 +7,7 @@ import { authenticate_terminal_refund } from '../../services/authState';
 import { recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 import { listTerminalRefunds } from '../../services/terminalRefunds';
 import { TerminalRequest } from '../../services/terminal';
+import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 
 jest.mock('@react-navigation/native', () => ({ ...jest.requireActual('@react-navigation/native'), useIsFocused: () => true }));
 
@@ -29,11 +30,45 @@ const request: TerminalRequest = {
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  clearTerminalRateCacheForTests();
+  (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
   prepareTerminalRefund.mockReset().mockImplementation(async (invoice, amountSats) => ({ quoteId: 'quote-one', invoice, amountSats, feeSats: 12, expiresAt: Date.now() + 120_000 }));
   sendTerminalRefund.mockReset().mockResolvedValue({ status: 'complete', paymentId: 'payment-one' });
   verifyTerminalRefund.mockReset();
   (authenticate_terminal_refund as jest.Mock).mockReset().mockResolvedValue(true);
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'wallet-a' }, isLightningInitialized: true, prepareTerminalRefund, sendTerminalRefund, verifyTerminalRefund });
+});
+
+it.each([true, false])('captures a new refund rate at reservation, with outage=%s', async outage => {
+  const previous = { currency: 'CHF' as const, rate: '40000', fetchedAt: 1000,
+    source: 'coinbase' as const, status: 'stale' as const };
+  const original = { ...request, reportingRate: previous };
+  await recordTerminalSale(original);
+  const sale = await updateTerminalSalePayment(original, { status: 'received' });
+  (global as any).fetch = outage ? jest.fn().mockRejectedValue(new Error('provider down')) :
+    jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
+  const view = render(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
+  await review(view);
+  fireEvent.press(view.getByLabelText('Authorize refund'));
+  await waitFor(() => expect(sendTerminalRefund).toHaveBeenCalledTimes(1));
+  const [saved] = await listTerminalRefunds('wallet-a', 'mainnet');
+  expect(saved.reportingRate).toEqual(outage ? null : {
+    currency: 'CHF', rate: '80000', fetchedAt: expect.any(Number), source: 'coinbase', status: 'fresh',
+  });
+  expect(saved.reportingRate).not.toEqual(previous);
+});
+
+it('does not reserve a refund if the screen closes during reporting lookup', async () => {
+  const sale = await paidSale();
+  (global as any).fetch = jest.fn().mockImplementation(() => new Promise(() => {}));
+  const view = render(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
+  await review(view);
+  fireEvent.press(view.getByLabelText('Authorize refund'));
+  await waitFor(() => expect((global as any).fetch).toHaveBeenCalled());
+  view.rerender(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} visible={false} />);
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  expect(await listTerminalRefunds('wallet-a', 'mainnet')).toEqual([]);
+  expect(sendTerminalRefund).not.toHaveBeenCalled();
 });
 
 async function paidSale() {
