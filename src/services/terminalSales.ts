@@ -28,6 +28,7 @@ function copySale(sale: TerminalSale): TerminalSale {
     request: {
       ...request,
       ...(request.fiat ? { fiat: { ...request.fiat } } : {}),
+      ...(request.reportingRate !== undefined ? { reportingRate: request.reportingRate ? { ...request.reportingRate } : null } : {}),
       ...(request.basket ? { basket: {
         ...request.basket,
         lines: request.basket.lines.map(line => ({ ...line })),
@@ -71,6 +72,7 @@ function snapshot(request: TerminalRequest): TerminalRequest {
     createdAt: request.createdAt,
     expiresAt: request.expiresAt,
     ...(request.fiat ? { fiat: { ...request.fiat } } : {}),
+    ...(request.reportingRate !== undefined ? { reportingRate: request.reportingRate ? { ...request.reportingRate } : null } : {}),
     ...(request.inputUnit ? { inputUnit: request.inputUnit } : {}),
     ...(request.basket ? { basket: {
       unit: request.basket.unit,

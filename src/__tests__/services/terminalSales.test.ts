@@ -195,6 +195,19 @@ it('does not let a caller mutate cached nested sale data or an existing return',
   expect(fresh.request.basket?.lines[0].name).toBe('Tea');
 });
 
+it('persists and isolates reporting snapshots for Bitcoin sales, including explicit unavailability', async () => {
+  const rate = { currency: 'USD' as const, rate: '95000.25', fetchedAt: 1000,
+    source: 'coinbase' as const, status: 'fresh' as const };
+  await recordTerminalSale({ ...request, fiat: undefined, inputUnit: 'BTC', reportingRate: rate });
+  const saved = (await listTerminalSales('wallet-a', 'mainnet'))[0];
+  (saved.request.reportingRate as any).rate = '1';
+  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.reportingRate).toEqual(rate);
+  expect(JSON.parse(storage.get(key)!).sales[0].request.reportingRate).toEqual(rate);
+  await recordTerminalSale({ ...another, inputUnit: 'sats', reportingRate: null });
+  expect((await listTerminalSales('wallet-a', 'mainnet')).find(sale => sale.request.id === 'two')?.request.reportingRate).toBeNull();
+  expect(JSON.parse(storage.get(key)!).sales.find((sale: any) => sale.request.id === 'two').request.reportingRate).toBeNull();
+});
+
 it('revalidates replacement, corruption, duplicates, deletion and recreation', async () => {
   await recordTerminalSale(request);
   await listTerminalSales('wallet-a', 'mainnet');

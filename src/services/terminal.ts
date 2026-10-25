@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FiatCurrency, isRateString } from './terminalRates';
+import { FiatCurrency, isRateString, isTerminalReportingRate, TerminalReportingRate } from './terminalRates';
 
 export type TerminalUnit = 'sats' | 'BTC' | FiatCurrency;
 export type TerminalNetwork = 'mainnet' | 'testnet';
@@ -16,6 +16,7 @@ export type TerminalRequest = Readonly<{
   createdAt: number;
   expiresAt: number;
   fiat?: TerminalFiatQuote;
+  reportingRate?: TerminalReportingRate | null;
   inputUnit?: 'sats' | 'BTC';
   basket?: TerminalBasket;
 }>;
@@ -136,7 +137,8 @@ export function isTerminalRequest(value: unknown): value is TerminalRequest {
     }
     return sum === BigInt(basket.total);
   })();
-  return !!validFiat && validBasket && (r.inputUnit === undefined || r.inputUnit === 'sats' || r.inputUnit === 'BTC') &&
+  return !!validFiat && validBasket && (r.reportingRate === undefined || r.reportingRate === null || isTerminalReportingRate(r.reportingRate)) &&
+    (r.inputUnit === undefined || r.inputUnit === 'sats' || r.inputUnit === 'BTC') &&
     !(fiat && r.inputUnit !== undefined) && typeof r.id === 'string' && !!r.id && typeof r.walletId === 'string' && !!r.walletId &&
     (r.network === 'mainnet' || r.network === 'testnet') &&
     typeof r.invoice === 'string' && /^ln(bc|tb)[a-z0-9]+$/i.test(r.invoice) &&

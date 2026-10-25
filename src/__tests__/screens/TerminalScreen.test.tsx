@@ -5,11 +5,11 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
 import { GlassView } from '../../components/GlassView';
-import { useWallet } from '../../contexts/WalletContext';
+import { useActiveWallet, useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 
-jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
+jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn(), useActiveWallet: jest.fn() }));
 const mockSetMode = jest.fn();
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: mockSetMode, changing: false, cashierState: 'off', cashierBusy: false, consumeCashierTerminalDraft: () => null }) }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' }, LAYOUT: { radius: 8, inputHeight: 48 } } }) }));
@@ -32,6 +32,7 @@ beforeEach(async () => {
   validateTerminalInvoice.mockReset();
   verifyTerminalInvoice.mockReset().mockResolvedValue({ status: 'unknown' });
   (useWallet as jest.Mock).mockReturnValue({ activeWallet: wallet, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
+  (useActiveWallet as jest.Mock).mockImplementation(() => (useWallet as jest.Mock)().activeWallet);
 });
 
 const renderWithCurrencyMeasurement = () => render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
@@ -145,6 +146,37 @@ it('charges a fiat amount using a fresh quote and keeps the frozen amount beside
   expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
   const raw = await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a');
   expect(JSON.parse(raw || '{}').fiat).toEqual({ currency: 'USD', amountMinor: 10000, rate: '100000', fetchedAt: expect.any(Number) });
+  expect(JSON.parse(raw || '{}').reportingRate).toEqual({ currency: 'USD', rate: '100000', fetchedAt: JSON.parse(raw || '{}').fiat.fetchedAt, source: 'coinbase', status: 'fresh' });
+});
+
+it.each(['sats', 'BTC'] as const)('saves a USD reporting snapshot for a %s invoice without a rate spinner', async unit => {
+  (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '101000', EUR: '91000', CHF: '81000' } } }) });
+  if (unit === 'BTC') await AsyncStorage.setItem('@terminalPreferredUnit', 'BTC');
+  createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  if (unit === 'BTC') await waitFor(() => expect(view.getByText('₿')).toBeTruthy());
+  expect(view.queryByLabelText('Refreshing price')).toBeNull();
+  fireEvent.press(view.getByText('1'));
+  fireEvent.press(view.getByTestId('terminal-request'));
+  await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+  const saved = JSON.parse((await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a'))!);
+  expect(saved.reportingRate).toEqual({ currency: 'USD', rate: '101000', fetchedAt: expect.any(Number), source: 'coinbase', status: 'fresh' });
+  expect(saved.inputUnit).toBe(unit);
+  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.reportingRate).toEqual(saved.reportingRate);
+});
+
+it('still saves a sats invoice with an explicit unavailable snapshot during a rate outage', async () => {
+  (global as any).fetch = jest.fn().mockRejectedValue(new Error('provider down'));
+  createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
+  const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByText('1'));
+  fireEvent.press(view.getByTestId('terminal-request'));
+  await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+  const saved = JSON.parse((await AsyncStorage.getItem('@terminalActiveRequest:mainnet:wallet-a'))!);
+  expect(saved.reportingRate).toBeNull();
+  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.reportingRate).toBeNull();
 });
 
 it('quotes rapid basket quantity changes from one fiat grand total and freezes selected items', async () => {
@@ -434,14 +466,16 @@ it('blocks duplicate presses and reveals the QR only after storage succeeds', as
 
 it('does not show a QR if persisting the invoice fails', async () => {
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
-  jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('storage full'));
+  const save = (AsyncStorage.setItem as jest.Mock).getMockImplementation()!;
+  (AsyncStorage.setItem as jest.Mock).mockImplementation((key, value) =>
+    key.startsWith('@terminalSales:v1:') ? Promise.reject(new Error('storage full')) : save(key, value));
   const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(view.getByText('storage full')).toBeTruthy());
   expect(view.queryByTestId('terminal-qr')).toBeNull();
-  jest.restoreAllMocks();
+  (AsyncStorage.setItem as jest.Mock).mockImplementation(save);
 });
 
 it('discards an invoice response after the active wallet changes', async () => {

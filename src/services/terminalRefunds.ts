@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { normalizeInvoice, terminalNetwork, TerminalNetwork } from './terminal';
 import { listTerminalSales, TerminalSale } from './terminalSales';
+import { isTerminalReportingRate, TerminalReportingRate } from './terminalRates';
 
 export type TerminalRefundStatus = 'unknown' | 'pending' | 'complete' | 'failed';
 export type TerminalRefundAttempt = Readonly<{
@@ -16,6 +17,7 @@ export type TerminalRefundAttempt = Readonly<{
   createdAt: number;
   status: TerminalRefundStatus;
   paymentId?: string;
+  reportingRate?: TerminalReportingRate | null;
   updatedAt: number;
 }>;
 export type TerminalRefundReservation = Readonly<{
@@ -24,6 +26,7 @@ export type TerminalRefundReservation = Readonly<{
   amountSats: number;
   feeSats: number;
   quoteExpiresAt: number;
+  reportingRate?: TerminalReportingRate | null;
 }>;
 
 export const TERMINAL_REFUNDS_KEY = '@terminalRefunds:v1';
@@ -32,6 +35,12 @@ const listeners = new Set<(walletId: string, network: TerminalNetwork) => void>(
 let storageQueue: Promise<unknown> = Promise.resolve();
 const validated = new Map<string, { raw: string; attempts: TerminalRefundAttempt[] }>();
 const CACHE_LIMIT = 2;
+
+function copyAttempt(attempt: TerminalRefundAttempt): TerminalRefundAttempt {
+  return { ...attempt,
+    ...(attempt.reportingRate !== undefined ? { reportingRate: attempt.reportingRate ? { ...attempt.reportingRate } : null } : {}),
+  };
+}
 
 function remember(key: string, raw: string, attempts: TerminalRefundAttempt[]): void {
   validated.delete(key);
@@ -76,7 +85,8 @@ function isAttempt(value: unknown, walletId: string, network: TerminalNetwork): 
     sats(attempt.amountSats) && sats(attempt.feeSats, true) &&
     timestamp(attempt.quoteExpiresAt) && timestamp(attempt.createdAt) && timestamp(attempt.updatedAt) &&
     (attempt.status === 'unknown' || attempt.status === 'pending' || attempt.status === 'complete' || attempt.status === 'failed') &&
-    (attempt.paymentId === undefined || (typeof attempt.paymentId === 'string' && !!attempt.paymentId));
+    (attempt.paymentId === undefined || (typeof attempt.paymentId === 'string' && !!attempt.paymentId)) &&
+    (attempt.reportingRate === undefined || attempt.reportingRate === null || isTerminalReportingRate(attempt.reportingRate));
 }
 
 async function readAttempts(walletId: string, network: TerminalNetwork): Promise<TerminalRefundAttempt[]> {
@@ -89,7 +99,7 @@ async function readAttempts(walletId: string, network: TerminalNetwork): Promise
   const hit = validated.get(key);
   if (hit?.raw === raw) {
     remember(key, raw, hit.attempts);
-    return hit.attempts.map(attempt => ({ ...attempt }));
+    return hit.attempts.map(copyAttempt);
   }
   validated.delete(key);
   let parsed: unknown;
@@ -114,7 +124,7 @@ async function readAttempts(walletId: string, network: TerminalNetwork): Promise
   }
   const sorted = (attempts as TerminalRefundAttempt[]).sort(newestFirst);
   remember(key, raw, sorted);
-  return sorted.map(attempt => ({ ...attempt }));
+  return sorted.map(copyAttempt);
 }
 
 function notify(walletId: string, network: TerminalNetwork): void {
@@ -131,11 +141,14 @@ async function writeAttempts(walletId: string, network: TerminalNetwork, attempt
 }
 
 function immutableFields(attempt: TerminalRefundAttempt): string {
+  const rate = attempt.reportingRate;
   return JSON.stringify({
     id: attempt.id, walletId: attempt.walletId, network: attempt.network,
     saleId: attempt.saleId, saleInvoice: attempt.saleInvoice, invoice: attempt.invoice,
     amountSats: attempt.amountSats, feeSats: attempt.feeSats,
     quoteExpiresAt: attempt.quoteExpiresAt, createdAt: attempt.createdAt,
+    reportingRate: rate ? { currency: rate.currency, rate: rate.rate, fetchedAt: rate.fetchedAt,
+      source: rate.source, status: rate.status } : rate,
   });
 }
 
@@ -165,7 +178,8 @@ export function reserveTerminalRefund(sale: TerminalSale, reservation: TerminalR
   const identity = scope(sale.request.walletId, sale.request.network);
   if (typeof reservation.id !== 'string' || !reservation.id || !validInvoice(reservation.invoice, identity.network) ||
       !sats(reservation.amountSats) || !sats(reservation.feeSats, true) ||
-      !timestamp(reservation.quoteExpiresAt)) {
+      !timestamp(reservation.quoteExpiresAt) ||
+      (reservation.reportingRate !== undefined && reservation.reportingRate !== null && !isTerminalReportingRate(reservation.reportingRate))) {
     return Promise.reject(new Error('Invalid or expired Terminal refund quote.'));
   }
   const now = Date.now();
@@ -174,6 +188,7 @@ export function reserveTerminalRefund(sale: TerminalSale, reservation: TerminalR
     saleId: sale.request.id, saleInvoice: sale.request.invoice,
     invoice: reservation.invoice, amountSats: reservation.amountSats,
     feeSats: reservation.feeSats, quoteExpiresAt: reservation.quoteExpiresAt,
+    ...(reservation.reportingRate !== undefined ? { reportingRate: reservation.reportingRate ? { ...reservation.reportingRate } : null } : {}),
     createdAt: now, status: 'unknown', updatedAt: now,
   };
   return serial(async () => {

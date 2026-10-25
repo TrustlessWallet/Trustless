@@ -1,6 +1,7 @@
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { formatFiatMinor, TerminalNetwork } from './terminal';
+import { formatFiatMinor, TerminalFiatQuote, TerminalNetwork } from './terminal';
+import { TerminalReportingRate } from './terminalRates';
 import { listTerminalSales, TerminalSale } from './terminalSales';
 import { listTerminalRefunds, TerminalRefundAttempt } from './terminalRefunds';
 import { isInTerminalSalesPeriod, SalesPeriod, terminalSalesPeriodBounds } from './terminalSalesPeriod';
@@ -18,10 +19,16 @@ const columns = [
   'record_type', 'record_id', 'sale_id', 'status', 'network',
   'created_at_utc', 'status_observed_at_utc', 'received_observed_at_utc',
   'amount_sats', 'quoted_fee_sats', 'input_unit', 'fiat_currency', 'fiat_amount', 'fiat_amount_minor', 'payment_id',
-  'btc_fiat_rate', 'rate_fetched_at_utc',
+  'btc_fiat_rate', 'rate_fetched_at_utc', 'rate_currency', 'rate_status', 'rate_source',
 ] as const;
 
 const utc = (timestamp?: number) => timestamp === undefined ? '' : new Date(timestamp).toISOString();
+function rateFields(reportingRate: TerminalReportingRate | null | undefined, fiat?: TerminalFiatQuote): (string | number)[] {
+  if (reportingRate) return [reportingRate.rate, utc(reportingRate.fetchedAt), reportingRate.currency, reportingRate.status, reportingRate.source];
+  if (reportingRate === null) return ['', '', '', 'unavailable', ''];
+  if (fiat) return [fiat.rate, utc(fiat.fetchedAt), fiat.currency, 'quoted', 'coinbase'];
+  return ['', '', '', 'not_recorded', ''];
+}
 const safeText = (value: string) => /^[\s\uFEFF]*[=+\-@]/u.test(value) ? `'${value}` : value;
 const cell = (value: string | number) => {
   const text = typeof value === 'string' ? safeText(value) : String(value);
@@ -38,7 +45,7 @@ export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: r
         utc(sale.request.createdAt), utc(sale.updatedAt), utc(sale.receivedAt),
         sale.request.amountSats, '', sale.request.fiat?.currency ?? sale.request.inputUnit ?? 'sats',
         sale.request.fiat?.currency ?? '', sale.request.fiat ? formatFiatMinor(sale.request.fiat.amountMinor) : '', sale.request.fiat?.amountMinor ?? '', sale.paymentId ?? '',
-        sale.request.fiat?.rate ?? '', utc(sale.request.fiat?.fetchedAt),
+        ...rateFields(sale.request.reportingRate, sale.request.fiat),
       ],
     })),
     ...refunds.filter(refund => isInTerminalSalesPeriod(refund.updatedAt, period, day)).map(refund => ({
@@ -46,7 +53,7 @@ export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: r
       fields: [
         'refund', refund.id, refund.saleId, refund.status, refund.network,
         utc(refund.createdAt), utc(refund.updatedAt), '', refund.amountSats, refund.feeSats,
-        'sats', '', '', '', refund.paymentId ?? '', '', '',
+        'sats', '', '', '', refund.paymentId ?? '', ...rateFields(refund.reportingRate),
       ],
     })),
   ].sort((a, b) => b.time - a.time || String(a.fields[1]).localeCompare(String(b.fields[1])));

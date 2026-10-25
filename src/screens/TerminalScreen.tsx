@@ -15,7 +15,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { NETWORK_NAME } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalBasket, TerminalBasketLine, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
-import { FiatCurrency, getTerminalRates, TerminalRates } from '../services/terminalRates';
+import { FiatCurrency, getTerminalRates, getTerminalReportingRate, TerminalRates, TerminalReportingRate } from '../services/terminalRates';
 import { recordTerminalSale, updateTerminalSalePayment } from '../services/terminalSales';
 import TerminalSalesScreen from './TerminalSalesScreen';
 import TerminalSettingsScreen from './TerminalSettingsScreen';
@@ -207,6 +207,9 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   useEffect(() => {
     if (!request && active && isFiat(unit) && (!rates || Date.now() < rates.fetchedAt || Date.now() - rates.fetchedAt >= 60_000)) void refreshRates();
   }, [active, unit, request?.id, rates?.fetchedAt, now, refreshRates]);
+  useEffect(() => {
+    if (active && !request && stage === 'entry') void getTerminalReportingRate('USD'); // The provider returns all three currencies in one fetch.
+  }, [active, request?.id, stage]);
   useEffect(() => { if (active && !request && isFiat(unit)) { const timer = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(timer); } }, [active, request?.id, unit]);
 
   useEffect(() => {
@@ -354,6 +357,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     setStage('creating'); setError('');
     let sats: number;
     let fiatQuote: TerminalFiatQuote | undefined;
+    let reportingRate: TerminalReportingRate | null = null;
     try {
       if (isFiat(requestUnit)) {
         const minor = parseFiatMinor(requestAmount);
@@ -362,14 +366,18 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
         if (!mounted.current || captured !== generation.current || capturedScope !== scopeRef.current) return;
         sats = satsFromFiat(minor, fresh.rates[requestUnit]);
         fiatQuote = { currency: requestUnit, amountMinor: minor, rate: fresh.rates[requestUnit], fetchedAt: fresh.fetchedAt };
+        reportingRate = { currency: requestUnit, rate: fresh.rates[requestUnit], fetchedAt: fresh.fetchedAt, source: 'coinbase', status: 'fresh' };
         setRates(fresh); setNow(Date.now()); setRateError('');
       } else sats = parseTerminalAmount(requestAmount, requestUnit);
+      const reportingFlight = fiatQuote ? Promise.resolve(reportingRate) : getTerminalReportingRate('USD');
       const created = await createTerminalInvoice(sats);
+      reportingRate = await reportingFlight;
       if (!mounted.current || captured !== generation.current || capturedScope !== scopeRef.current) return;
       const next: TerminalRequest = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         walletId, network, invoice: created.invoice, amountSats: sats,
         createdAt: Date.now(), expiresAt: created.expiresAt, fiat: fiatQuote,
+        reportingRate,
         inputUnit: isFiat(requestUnit) ? undefined : requestUnit, basket,
       };
       await recordTerminalSale(next);
