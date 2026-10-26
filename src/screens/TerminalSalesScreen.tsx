@@ -18,6 +18,7 @@ import { CustomSalesDateRange, localSalesDateKey, previousTerminalSalesPeriodBou
 import TerminalRefundScreen from './TerminalRefundScreen';
 import TerminalDateRangePicker, { TerminalDateRangeDraft } from '../components/TerminalDateRangePicker';
 import TerminalPeriodComparison from '../components/TerminalPeriodComparison';
+import TerminalItemPerformance from '../components/TerminalItemPerformance';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
 type Cursor = { at: number; id: string };
@@ -37,7 +38,7 @@ type LoadState = {
 const periods: { value: SalesPeriod; title: string; label: string; exportLabel: string }[] = [
   { value: 'today', title: 'Today', label: 'Today sales', exportLabel: 'Export today’s activity' },
   { value: 'week', title: '7 days', label: 'Last 7 days sales', exportLabel: 'Export last 7 days activity' },
-  { value: 'month', title: 'Month', label: 'This month sales', exportLabel: 'Export this month’s activity' },
+  { value: 'month', title: 'This month', label: 'This month sales', exportLabel: 'Export this month’s activity' },
   { value: 'all', title: 'All', label: 'All sales', exportLabel: 'Export all activity' },
   { value: 'custom', title: 'Custom', label: 'Custom sales range', exportLabel: 'Export custom activity' },
 ];
@@ -376,11 +377,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   const header = <>
     <View style={styles.tabs}>
-        {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole={item.value === 'custom' ? 'button' : 'tab'} accessibilityState={{ selected: period === item.value && !detail, ...(item.value === 'custom' ? { expanded: !!editingCustom } : {}) }} accessibilityLabel={item.label} onPress={() => { if (item.value === 'custom') { openCustomEditor(); return; } ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); setPeriodState({ scope, value: item.value }); }} style={[styles.tab, item.value === 'custom' && styles.customTab, item.value !== 'custom' && period === item.value && !detail && styles.activeTab]}>
+        {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole={item.value === 'custom' ? 'button' : 'tab'} accessibilityState={{ selected: period === item.value && !detail, ...(item.value === 'custom' ? { expanded: !!editingCustom } : {}) }} accessibilityLabel={item.label} onPress={() => { if (item.value === 'custom') { openCustomEditor(); return; } ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); setPeriodState({ scope, value: item.value }); }} style={[styles.tab, item.value === 'custom' && styles.customTab, item.value === 'month' && styles.monthTab, item.value !== 'custom' && period === item.value && !detail && styles.activeTab]}>
           {item.value === 'custom' ? <View style={[styles.customControl, (period === 'custom' || !!editingCustom) && styles.customControlActive]}>
             <Feather name="calendar" size={13} color={period === 'custom' || editingCustom ? theme.colors.primary : theme.colors.muted} />
             <Text style={[styles.customControlText, (period === 'custom' || !!editingCustom) && styles.activeTabText]}>{item.title}</Text>
-          </View> : <Text style={[styles.tabText, period === item.value && !detail && styles.activeTabText]}>{item.title}</Text>}
+          </View> : <Text style={[styles.tabText, item.value === 'month' && styles.monthTabText, period === item.value && !detail && styles.activeTabText]}>{item.title}</Text>}
         </TouchableOpacity>)}
     </View>
     {detail ? <View style={styles.heading}><Text style={styles.subheading}>{formatLongDate(saleTime(detail))}</Text></View> : null}
@@ -397,6 +398,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
         {visible && summary && refundedSats !== null && range && previousRange ? <TerminalPeriodComparison walletId={walletId} network={network} scope={scope} periodDay={periodDay} currentRange={range} previousRange={previousRange} currentSummary={summary} currentRefunds={refundedSats} /> : null}
       </View> : null}
+      {!error && summary && refundedSats !== null && paidCount > 0 ? <TerminalItemPerformance walletId={walletId} network={network} scope={scope} range={range} visible={visible} currentSummary={summary} currentRefunds={refundedSats} /> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text><Text style={styles.sectionCount}>{summary?.activityCount ?? shown.length}</Text></View> : null}
     </> : null}
   </>;
@@ -500,6 +502,8 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     customControlText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 11 },
     activeTab: { borderBottomColor: colors.bitcoin },
     tabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
+    monthTab: { flex: 1.4 },
+    monthTabText: { fontSize: 11 },
     activeTabText: { color: colors.primary },
     customRangeRow: { minHeight: 44, marginHorizontal: 24, marginTop: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
     customRangeText: { flex: 1, color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 11 },

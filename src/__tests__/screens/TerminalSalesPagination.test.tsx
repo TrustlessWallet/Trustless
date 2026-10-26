@@ -15,6 +15,7 @@ jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'test-id' }));
 jest.mock('../../services/terminalSalesExport', () => ({ exportTerminalSalesCsv: jest.fn() }));
 jest.mock('../../services/terminalSalesComparison', () => ({ ...jest.requireActual('../../services/terminalSalesComparison'), getTerminalSalesComparison: jest.fn(() => new Promise(() => undefined)) }));
+jest.mock('../../services/terminalItemPerformance', () => ({ getTerminalItemPerformance: jest.fn(() => new Promise(() => undefined)), formatTerminalItemGross: jest.fn() }));
 jest.mock('../../services/terminalSales', () => ({
   listTerminalSalesPage: jest.fn(),
   getTerminalSalesSummary: jest.fn(),

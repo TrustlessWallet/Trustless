@@ -4,6 +4,7 @@ import TerminalSalesScreen from '../../screens/TerminalSalesScreen';
 import { getTerminalSalesSummary, listTerminalSalesPage } from '../../services/terminalSales';
 import { getTerminalRefundTotal } from '../../services/terminalRefunds';
 import { getTerminalSalesComparison } from '../../services/terminalSalesComparison';
+import { getTerminalItemPerformance } from '../../services/terminalItemPerformance';
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: () => ({ activeWallet: { id: 'wallet-a' }, isLightningInitialized: true, validateTerminalInvoice: jest.fn(), verifyTerminalInvoice: jest.fn() }) }));
@@ -12,6 +13,7 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'comparison-test-id' }));
 jest.mock('../../services/terminalSalesExport', () => ({ exportTerminalSalesCsv: jest.fn(async () => true) }));
+jest.mock('../../services/terminalItemPerformance', () => ({ getTerminalItemPerformance: jest.fn(() => new Promise(() => undefined)), formatTerminalItemGross: (gross: bigint, unit: string) => `${unit} ${gross}` }));
 jest.mock('../../services/terminalSales', () => ({
   listTerminalSalesPage: jest.fn(async () => ({ items: [], nextCursor: null })),
   getTerminalSalesSummary: jest.fn(),
@@ -51,6 +53,14 @@ it('shows exact previous values and signed absolute changes for currency, sats, 
   expect(view.getByText(/^Compared with /)).toBeTruthy();
   expect(view.getByText('Current period in progress')).toBeTruthy();
   expect(view.queryByText(/%/)).toBeNull();
+});
+
+it('mounts the independent top-items section between summary data and activity', async () => {
+  (getTerminalItemPerformance as jest.Mock).mockResolvedValueOnce({ items: [{ itemId: 'latte', name: 'Paid latte snapshot', unit: 'USD', quantity: 4n, gross: 2000n }], hasMore: false, paidWithoutItems: 0 });
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByLabelText('Paid latte snapshot, quantity 4, gross USD 2000')).toBeTruthy());
+  expect(view.getByText('TOP ITEMS')).toBeTruthy();
+  expect(view.getByText('TODAY’S ACTIVITY')).toBeTruthy();
 });
 
 it('hides comparison for All without starting a previous-period request', async () => {
