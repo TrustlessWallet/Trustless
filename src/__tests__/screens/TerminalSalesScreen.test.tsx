@@ -21,6 +21,7 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'refund-test-id' }));
 jest.mock('../../services/terminalSalesExport', () => ({ exportTerminalSalesCsv: jest.fn() }));
+jest.mock('../../services/terminalSalesComparison', () => ({ ...jest.requireActual('../../services/terminalSalesComparison'), getTerminalSalesComparison: jest.fn(() => new Promise(() => undefined)) }));
 
 const validateTerminalInvoice = jest.fn();
 const verifyTerminalInvoice = jest.fn();

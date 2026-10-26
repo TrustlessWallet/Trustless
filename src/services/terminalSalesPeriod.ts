@@ -48,3 +48,20 @@ export function isInTerminalSalesPeriod(timestamp: number, period: SalesPeriod, 
   const bounds = terminalSalesPeriodBounds(period, day, customRange);
   return bounds === null || (timestamp >= bounds.start && timestamp < bounds.end);
 }
+
+/** Previous local calendar window. Month compares month-to-date, clamped to its last day. */
+export function previousTerminalSalesPeriodBounds(period: SalesPeriod, day: Date, customRange?: CustomSalesDateRange): { start: number; end: number; shorter: boolean } | null {
+  const current = terminalSalesPeriodBounds(period, day, customRange);
+  if (!current) return null;
+  const first = new Date(current.start);
+  const last = new Date(current.end);
+  const ordinal = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000;
+  const days = ordinal(last) - ordinal(first);
+  if (period === 'month') {
+    const previousStart = new Date(first.getFullYear(), first.getMonth() - 1, 1);
+    const previousMonthDays = new Date(first.getFullYear(), first.getMonth(), 0).getDate();
+    const previousDays = Math.min(days, previousMonthDays);
+    return { start: previousStart.getTime(), end: new Date(previousStart.getFullYear(), previousStart.getMonth(), previousDays + 1).getTime(), shorter: previousDays < days };
+  }
+  return { start: new Date(first.getFullYear(), first.getMonth(), first.getDate() - days).getTime(), end: current.start, shorter: false };
+}
