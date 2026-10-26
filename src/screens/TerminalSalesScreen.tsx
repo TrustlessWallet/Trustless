@@ -14,9 +14,10 @@ import { getTerminalSale, getTerminalSalesSummary, listTerminalSalesPage, subscr
 import { getTerminalRefundTotal, listTerminalRefundsForSale, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
 import { exportTerminalSalesCsv } from '../services/terminalSalesExport';
-import { CustomSalesDateRange, localSalesDateKey, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
+import { CustomSalesDateRange, localSalesDateKey, previousTerminalSalesPeriodBounds, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 import TerminalRefundScreen from './TerminalRefundScreen';
 import TerminalDateRangePicker, { TerminalDateRangeDraft } from '../components/TerminalDateRangePicker';
+import TerminalPeriodComparison from '../components/TerminalPeriodComparison';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
 type Cursor = { at: number; id: string };
@@ -101,6 +102,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
   const periodDay = useMemo(() => new Date(dayStart), [dayStart]);
   const range = useMemo(() => terminalSalesPeriodBounds(period, periodDay, customRange ?? undefined), [period, periodDay, customRange]);
+  const previousRange = useMemo(() => previousTerminalSalesPeriodBounds(period, periodDay, customRange ?? undefined), [period, periodDay, customRange]);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
   const loadIdentity = `${scope}:${period}:${rangeKey}`;
   const [checking, setChecking] = useState(false);
@@ -393,6 +395,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {totals.length ? totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.amount}</Text></View>) : <Text style={styles.noTotals}>No paid sales {period === 'today' ? 'today' : period === 'all' ? 'yet' : 'in this period'}</Text>}
         {refundedSats !== null ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View> : null}
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
+        {visible && summary && refundedSats !== null && range && previousRange ? <TerminalPeriodComparison walletId={walletId} network={network} scope={scope} periodDay={periodDay} currentRange={range} previousRange={previousRange} currentSummary={summary} currentRefunds={refundedSats} /> : null}
       </View> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text><Text style={styles.sectionCount}>{summary?.activityCount ?? shown.length}</Text></View> : null}
     </> : null}

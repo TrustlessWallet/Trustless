@@ -13,6 +13,7 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'custom-range-test-id' }));
 jest.mock('../../services/terminalSalesExport', () => ({ exportTerminalSalesCsv: jest.fn(async () => true) }));
+jest.mock('../../services/terminalSalesComparison', () => ({ ...jest.requireActual('../../services/terminalSalesComparison'), getTerminalSalesComparison: jest.fn(() => new Promise(() => undefined)) }));
 jest.mock('../../services/terminalSales', () => ({
   listTerminalSalesPage: jest.fn(async () => ({ items: [], nextCursor: null })),
   getTerminalSalesSummary: jest.fn(async () => ({ activityCount: 0, receivedCount: 0, sats: 0n, bitcoinSats: 0n, fiatMinor: {} })),

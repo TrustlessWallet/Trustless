@@ -87,3 +87,9 @@ Use focused calendar/filter/export/state tests and simulator checks with fixture
 ### Custom date range
 
 Custom opens a compact calendar without changing the applied report. Apply selects inclusive local From/To dates for sales, totals, refunds, and CSV; Cancel leaves the current report intact. Same-day ranges are supported, future dates are disabled, and reversed ranges cannot be applied. CSV filenames include both dates. Calendar boundaries use the next local midnight, including daylight-saving changes.
+
+### Period comparisons
+
+Sales compares Today with yesterday, 7 days with the preceding seven local calendar days, and Custom with the immediately preceding equal-length calendar window. Month compares month-to-date with the same dates in the previous month, clamping to its last day and disclosing a shorter baseline. All has no comparison. Exact baseline dates are shown; a current-day-ending period is marked in progress rather than implying a completed period.
+
+The compact comparison shows previous values and exact signed changes for paid count, each original fiat currency, Bitcoin-priced sales in sats, and completed refunds separately in sats. A currency appearing only in the previous period remains visible. Zero baselines produce absolute changes, never infinite percentages. No currency conversion or fiat net revenue is inferred. Queries use indexed SQLite aggregates and never load previous-period history rows. Comparison failures cannot block the current report. This prototype introduces no subscription gate or billing dependency.
