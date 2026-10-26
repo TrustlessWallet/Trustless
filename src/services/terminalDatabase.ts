@@ -113,7 +113,7 @@ export function createTerminalExportSnapshot(
   range: { start: number; end: number } | null,
 ): Promise<string> {
   const validRange = range === null || (!!range && typeof range === 'object' &&
-    Number.isSafeInteger(range.start) && Number.isSafeInteger(range.end) && range.start >= 0 && range.end > range.start);
+    Number.isSafeInteger(range.start) && Number.isSafeInteger(range.end) && range.end > range.start);
   if (typeof walletId !== 'string' || !walletId || walletId !== walletId.trim() ||
       (network !== 'mainnet' && network !== 'testnet') ||
       !validRange) {

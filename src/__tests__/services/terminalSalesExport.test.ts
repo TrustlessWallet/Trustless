@@ -19,7 +19,7 @@ jest.mock('expo-file-system', () => ({
     constructor(_cache: string, name: string) { this.uri = `private-cache/${name}`; mockFiles.push(this); }
     write(value: string) { this.contents = value; this.exists = true; }
     create() { this.exists = true; }
-    open() { return { writeBytes: (bytes: Uint8Array) => { this.contents += Buffer.from(bytes).toString('utf8'); }, close: jest.fn() }; }
+    open() { return { writeBytes: (bytes: Uint8Array) => { expect(Object.getPrototypeOf(bytes)).toBe(Uint8Array.prototype); this.contents += Buffer.from(bytes).toString('utf8'); }, close: jest.fn() }; }
     delete() { this.exists = false; this.deleted = true; }
   },
 }));
@@ -242,4 +242,30 @@ it('keeps exported rows fixed while later writes and deletions continue', async 
     expect(JSON.parse(page.rows[0].payload).status).toBe('unknown');
     expect(JSON.parse(page.rows[0].payload).request.id).toBe('snapshot');
   } finally { await exportStore.removeTerminalExportSnapshot(token); }
+});
+
+it('exports only the inclusive custom date range and names both selected dates', async () => {
+  const customRange = { startDate: '2026-10-19', endDate: '2026-10-20' };
+  const inside = new Date(2026, 9, 20, 23, 59, 59, 999).getTime();
+  const outside = new Date(2026, 9, 21).getTime();
+  const inSale = sale('insidecustom', inside), outSale = sale('outsidecustom', outside);
+  const csv = buildTerminalSalesCsv([inSale, outSale], [refund(inside), { ...refund(outside), id: 'outside-refund' }], 'custom', day, customRange);
+  expect(csv).toContain('insidecustom');
+  expect(csv).toContain("'@refund");
+  expect(csv).not.toContain('outsidecustom');
+  expect(csv).not.toContain('outside-refund');
+  await recordTerminalSale(inSale.request);
+  await recordTerminalSale({ ...outSale.request, invoice: 'lnbcoutsidecustom' });
+  expect(await exportTerminalSalesCsv({ walletId: 'wallet-a', network: 'mainnet', period: 'custom', day, customRange, isCurrent: () => true })).toBe(true);
+  expect(mockFiles[0].uri).toContain('terminal-custom-2026-10-19-2026-10-20-');
+  expect(mockFiles[0].contents).toContain('insidecustom');
+  expect(mockFiles[0].contents).not.toContain('outsidecustom');
+  expect(mockFiles[0].deleted).toBe(true);
+});
+
+it('validates custom dates before opening a snapshot or sharing a file', async () => {
+  await expect(exportTerminalSalesCsv({ walletId: 'wallet-a', network: 'mainnet', period: 'custom', day,
+    customRange: { startDate: '2026-02-30', endDate: '2026-03-01' }, isCurrent: () => true })).rejects.toThrow();
+  expect(mockFiles).toHaveLength(0);
+  expect(Sharing.shareAsync).not.toHaveBeenCalled();
 });

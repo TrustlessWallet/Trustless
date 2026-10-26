@@ -114,3 +114,9 @@ it('rolls back failed writes, preserves identity and never downgrades receipt st
     expect((await getTerminalSalesSummary('wallet-a', 'mainnet', null)).sats).toBe(1000n);
   } finally { stop(); }
 });
+
+ it('accepts ranges spanning local January 1 1970 before the UTC epoch', async () => {
+  const range = { start: -3600000, end: 82800000 };
+  expect((await listTerminalSalesPage('wallet-a', 'mainnet', { range })).items).toEqual([]);
+  expect(await getTerminalSalesSummary('wallet-a', 'mainnet', range)).toMatchObject({ activityCount: 0 });
+});

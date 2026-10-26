@@ -14,8 +14,9 @@ import { getTerminalSale, getTerminalSalesSummary, listTerminalSalesPage, subscr
 import { getTerminalRefundTotal, listTerminalRefundsForSale, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
 import { exportTerminalSalesCsv } from '../services/terminalSalesExport';
-import { SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
+import { CustomSalesDateRange, localSalesDateKey, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 import TerminalRefundScreen from './TerminalRefundScreen';
+import TerminalDateRangePicker, { TerminalDateRangeDraft } from '../components/TerminalDateRangePicker';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
 type Cursor = { at: number; id: string };
@@ -37,6 +38,7 @@ const periods: { value: SalesPeriod; title: string; label: string; exportLabel: 
   { value: 'week', title: '7 days', label: 'Last 7 days sales', exportLabel: 'Export last 7 days activity' },
   { value: 'month', title: 'Month', label: 'This month sales', exportLabel: 'Export this month’s activity' },
   { value: 'all', title: 'All', label: 'All sales', exportLabel: 'Export all activity' },
+  { value: 'custom', title: 'Custom', label: 'Custom sales range', exportLabel: 'Export custom activity' },
 ];
 
 const formatTime = (timestamp: number) => new Date(timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -89,12 +91,16 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const scope = `${network}:${walletId}`;
   const [periodState, setPeriodState] = useState<{ scope: string; value: SalesPeriod }>({ scope, value: 'today' });
   const period = periodState.scope === scope ? periodState.value : 'today';
+  const [customRangeState, setCustomRangeState] = useState<{ scope: string; value: CustomSalesDateRange | null }>({ scope, value: null });
+  const customRange = customRangeState.scope === scope ? customRangeState.value : null;
+  const [customEditor, setCustomEditor] = useState<{ scope: string; draft: TerminalDateRangeDraft } | null>(null);
+  const editingCustom = customEditor?.scope === scope ? customEditor : null;
   const [selected, setSelected] = useState<{ scope: string; id: string } | null>(null);
   const [now, setNow] = useState(Date.now());
   const day = new Date(now);
   const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
   const periodDay = useMemo(() => new Date(dayStart), [dayStart]);
-  const range = useMemo(() => terminalSalesPeriodBounds(period, periodDay), [period, periodDay]);
+  const range = useMemo(() => terminalSalesPeriodBounds(period, periodDay, customRange ?? undefined), [period, periodDay, customRange]);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
   const loadIdentity = `${scope}:${period}:${rangeKey}`;
   const [checking, setChecking] = useState(false);
@@ -124,7 +130,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   visibleRef.current = visible;
   const selectedKey = useRef('');
   selectedKey.current = selected ? `${selected.scope}:${selected.id}` : '';
-  const exportIdentity = `${scope}:${period}:${visible}:${selectedKey.current}`;
+  const customRangeKey = customRange ? `${customRange.startDate}:${customRange.endDate}` : '';
+  const exportIdentity = `${scope}:${period}:${customRangeKey}:${visible}:${selectedKey.current}`;
   const exportRevision = useRef({ identity: exportIdentity, value: 0 });
   if (exportRevision.current.identity !== exportIdentity) {
     exportRevision.current = { identity: exportIdentity, value: exportRevision.current.value + 1 };
@@ -213,7 +220,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
-  useEffect(() => { setSelected(null); setPeriodState({ scope, value: 'today' }); }, [scope]);
+  useEffect(() => { setSelected(null); setPeriodState({ scope, value: 'today' }); setCustomRangeState({ scope, value: null }); setCustomEditor(null); }, [scope]);
   useEffect(() => { setExportError(''); setExporting(false); }, [exportIdentity]);
 
   const refreshDetail = useCallback(async () => {
@@ -325,13 +332,14 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     if (exportBusy.current || !visibleRef.current || selectedKey.current) return;
     const capturedScope = scope;
     const capturedPeriod = period;
+    const capturedCustomRange = customRange ? { ...customRange } : undefined;
     const capturedDay = new Date(now);
     const capturedRevision = exportRevision.current.value;
     const isCurrent = () => mounted.current && visibleRef.current && currentScope.current === capturedScope && !selectedKey.current && exportRevision.current.value === capturedRevision;
     exportBusy.current = true;
     setExporting(true);
     setExportError('');
-    try { await exportTerminalSalesCsv({ walletId, network, period: capturedPeriod, day: capturedDay, isCurrent }); }
+    try { await exportTerminalSalesCsv({ walletId, network, period: capturedPeriod, day: capturedDay, customRange: capturedCustomRange, isCurrent }); }
     catch (failure) {
       if (isCurrent()) setExportError(failure instanceof Error && failure.message === 'Sharing unavailable on this device.'
         ? failure.message : 'Couldn’t export sales. Try again.');
@@ -343,22 +351,38 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     }
   };
 
-  const bounds = terminalSalesPeriodBounds(period, day);
+  const bounds = terminalSalesPeriodBounds(period, day, customRange ?? undefined);
   const dateCaption = period === 'all' ? 'All sales for this wallet'
     : period === 'today' ? formatDate(now)
       : `${formatDate(bounds!.start)} – ${formatDate(bounds!.end - 1)}`;
-  const sectionTitle = period === 'today' ? 'TODAY’S ACTIVITY' : period === 'week' ? 'LAST 7 DAYS’ ACTIVITY' : period === 'month' ? 'THIS MONTH’S ACTIVITY' : 'ALL ACTIVITY';
+  const sectionTitle = period === 'today' ? 'TODAY’S ACTIVITY' : period === 'week' ? 'LAST 7 DAYS’ ACTIVITY' : period === 'month' ? 'THIS MONTH’S ACTIVITY' : period === 'custom' ? 'CUSTOM ACTIVITY' : 'ALL ACTIVITY';
+
+  const openCustomEditor = () => {
+    ++checkEpoch.current;
+    checkBusy.current = false;
+    setSelected(null);
+    const today = localSalesDateKey(new Date(now));
+    setCustomEditor({ scope, draft: customRange ? { ...customRange } : { startDate: today, endDate: today } });
+  };
+  const applyCustomRange = () => {
+    if (!editingCustom || editingCustom.draft.startDate > editingCustom.draft.endDate) return;
+    const applied = { ...editingCustom.draft };
+    setCustomRangeState({ scope, value: applied });
+    setPeriodState({ scope, value: 'custom' });
+    setCustomEditor(null);
+  };
 
   const header = <>
-    <View style={styles.heading}>
+    {detail || period !== 'custom' ? <View style={styles.heading}>
       <Text style={styles.subheading}>{detail ? formatLongDate(saleTime(detail)) : dateCaption}</Text>
-    </View>
+    </View> : null}
     <View style={styles.tabs}>
-        {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole="tab" accessibilityState={{ selected: period === item.value && !detail }} accessibilityLabel={item.label} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected(null); setPeriodState({ scope, value: item.value }); }} style={[styles.tab, period === item.value && !detail && styles.activeTab]}>
+        {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole="tab" accessibilityState={{ selected: period === item.value && !detail }} accessibilityLabel={item.label} onPress={() => { if (item.value === 'custom') { openCustomEditor(); return; } ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); setPeriodState({ scope, value: item.value }); }} style={[styles.tab, period === item.value && !detail && styles.activeTab]}>
           <Text style={[styles.tabText, period === item.value && !detail && styles.activeTabText]}>{item.title}</Text>
         </TouchableOpacity>)}
     </View>
     {!detail ? <>
+      {editingCustom ? <TerminalDateRangePicker value={editingCustom.draft} today={new Date(now)} onChange={draft => setCustomEditor({ scope, draft })} onApply={applyCustomRange} onCancel={() => setCustomEditor(null)} /> : period === 'custom' && customRange ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit custom date range" onPress={openCustomEditor} style={styles.customRangeRow}><Text style={styles.customRangeText}>{dateCaption}</Text><Feather name="calendar" size={16} color={theme.colors.muted} /></TouchableOpacity> : null}
       {exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.summary}>
         <Text style={styles.summaryLabel}>PAID SALES</Text>
@@ -468,6 +492,8 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     activeTab: { borderBottomColor: colors.bitcoin },
     tabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     activeTabText: { color: colors.primary },
+    customRangeRow: { minHeight: 44, marginHorizontal: 24, marginTop: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    customRangeText: { flex: 1, color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 11 },
     summary: { marginHorizontal: 24, marginTop: 26, padding: 22, borderRadius: 18, backgroundColor: colors.surface },
     summaryLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
     paidCount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 48, marginTop: 3 },
