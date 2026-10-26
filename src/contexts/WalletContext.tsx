@@ -42,7 +42,7 @@ import {
 import { InteractionManager } from 'react-native';
 import { matchTerminalPayment, normalizeInvoice } from '../services/terminal';
 import { reconcileTerminalSales, removeTerminalSales } from '../services/terminalSales';
-import { listTerminalRefunds, reconcileTerminalRefunds, removeTerminalRefunds, updateTerminalRefund } from '../services/terminalRefunds';
+import { getTerminalRefund, findTerminalRefundByInvoice, listTerminalRefundsForInvoices, reconcileTerminalRefunds, removeTerminalRefunds, updateTerminalRefund } from '../services/terminalRefunds';
 import { checkedRefundInvoice, checkedRefundQuote, matchRefundPayment, preflightRefund, TerminalRefundQuote, TerminalRefundResult } from '../services/terminalRefundPayment';
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
 
@@ -89,7 +89,12 @@ const reconcileSalesPayments = (walletId: string, payments: breezSdk.Payment[]) 
 
 const reconcileRefundPayments = async (walletId: string, payments: breezSdk.Payment[]) => {
     const network = IS_TESTNET ? 'testnet' : 'mainnet';
-    const attempts = await listTerminalRefunds(walletId, network);
+    const invoices = payments.flatMap(payment => {
+        const invoice = (payment.details?.inner as { invoice?: unknown } | undefined)?.invoice;
+        return typeof invoice === 'string' ? [invoice] : [];
+    });
+    if (!invoices.length) return;
+    const attempts = await listTerminalRefundsForInvoices(walletId, network, invoices);
     if (!attempts.length) return;
     const matches = payments.flatMap(payment => attempts.flatMap(attempt => {
         const result = matchRefundPayment(payment, attempt.invoice, attempt.amountSats);
@@ -873,10 +878,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             activeWallet?.type === 'watch-only' || paymentInFlightRef.current || recoveryModeRef.current) {
             preflightRefund('The refund wallet changed. Prepare it again.');
         }
-        const attempts = await listTerminalRefunds(prepared.walletId, IS_TESTNET ? 'testnet' : 'mainnet')
+        const attempt = await getTerminalRefund(prepared.walletId, IS_TESTNET ? 'testnet' : 'mainnet', attemptId)
             .catch(error => preflightRefund(lightningErrorMessage(error)));
         try { assertCurrent(); } catch (error) { preflightRefund(lightningErrorMessage(error)); }
-        const attempt = attempts.find(item => item.id === attemptId);
         if (!attempt || attempt.status !== 'unknown' || attempt.paymentId ||
             normalizeInvoice(attempt.invoice) !== normalizeInvoice(prepared.quote.invoice) ||
             attempt.amountSats !== prepared.quote.amountSats || attempt.feeSats !== prepared.quote.feeSats ||
@@ -916,8 +920,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const verifyTerminalRefund = async (invoice: string, createdAt: number, knownPaymentId?: string): Promise<TerminalRefundResult> => {
         const { sdk, assertCurrent } = requireLightningSession();
         const walletId = activeWalletIdRef.current;
-        const attempts = await listTerminalRefunds(walletId || '', IS_TESTNET ? 'testnet' : 'mainnet');
-        const attempt = attempts.find(item => normalizeInvoice(item.invoice) === normalizeInvoice(invoice));
+        const attempt = await findTerminalRefundByInvoice(walletId || '', IS_TESTNET ? 'testnet' : 'mainnet', invoice);
         if (!attempt) preflightRefund('Saved refund attempt was not found.');
         assertCurrent();
         if (knownPaymentId) {

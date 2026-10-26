@@ -1,3 +1,4 @@
+import { resetTerminalSqlite } from '../helpers/terminalSqlite';
 import React, { memo } from 'react';
 import { act, render, renderHook, waitFor, cleanup } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -83,7 +84,8 @@ async function connected() {
     await waitFor(() => expect(hook.result.current.lightningSyncing).toBe(false));
     return hook;
 }
-beforeEach(() => {
+beforeEach(async () => {
+    await resetTerminalSqlite();
     process.env.EXPO_PUBLIC_BREEZ_API_KEY = 'test';
     a = session(100); b = session(900);
     client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -108,7 +110,7 @@ it('sends only the saved refund attempt with its ID as the SDK idempotency key',
     const attempt: any = { id: '123e4567-e89b-42d3-a456-426614174001', walletId: 'a', network: 'mainnet',
         saleId: 'sale', saleInvoice: 'lnbcsale', invoice: refundInvoice, amountSats: 123,
         feeSats: 7, quoteExpiresAt: quote.expiresAt, status: 'unknown' };
-    jest.spyOn(refundJournal, 'listTerminalRefunds').mockResolvedValue([attempt]);
+    jest.spyOn(refundJournal, 'getTerminalRefund').mockResolvedValue(attempt);
     jest.spyOn(refundJournal, 'updateTerminalRefund').mockResolvedValue(attempt);
     a.sendPayment.mockRejectedValueOnce(new Error('native timeout'));
     const result = await hook.result.current.sendTerminalRefund(quote.quoteId, attempt.id);
@@ -125,7 +127,7 @@ it('rejects an unmatched durable attempt before invoking the SDK', async () => {
     const hook = await connected();
     mockRefundPreparation();
     const quote = await hook.result.current.prepareTerminalRefund(refundInvoice, 123);
-    jest.spyOn(refundJournal, 'listTerminalRefunds').mockResolvedValue([]);
+    jest.spyOn(refundJournal, 'getTerminalRefund').mockResolvedValue(null);
     await expect(hook.result.current.sendTerminalRefund(quote.quoteId, '123e4567-e89b-42d3-a456-426614174001'))
         .rejects.toMatchObject({ mayHaveSent: false });
     expect(a.sendPayment).not.toHaveBeenCalled();

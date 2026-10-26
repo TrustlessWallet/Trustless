@@ -1,4 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resetTerminalSqlite } from '../helpers/terminalSqlite';
+import { getTerminalDatabase } from '../../services/terminalDatabase';
+import * as exportStore from '../../services/terminalDatabase';
+import { recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
+import { reserveTerminalRefund, removeTerminalRefunds } from '../../services/terminalRefunds';
 import * as Sharing from 'expo-sharing';
 import { buildTerminalSalesCsv, exportTerminalSalesCsv } from '../../services/terminalSalesExport';
 import { TerminalSale } from '../../services/terminalSales';
@@ -6,7 +10,7 @@ import { TerminalRefundAttempt } from '../../services/terminalRefunds';
 
 const mockFiles: { uri: string; contents: string; exists: boolean; deleted: boolean }[] = [];
 jest.mock('expo-file-system', () => ({
-  Paths: { cache: 'private-cache' },
+  Paths: { cache: 'private-cache' }, FileMode: { WriteOnly: 'w' },
   File: class {
     uri: string;
     contents = '';
@@ -14,6 +18,8 @@ jest.mock('expo-file-system', () => ({
     deleted = false;
     constructor(_cache: string, name: string) { this.uri = `private-cache/${name}`; mockFiles.push(this); }
     write(value: string) { this.contents = value; this.exists = true; }
+    create() { this.exists = true; }
+    open() { return { writeBytes: (bytes: Uint8Array) => { this.contents += Buffer.from(bytes).toString('utf8'); }, close: jest.fn() }; }
     delete() { this.exists = false; this.deleted = true; }
   },
 }));
@@ -39,7 +45,7 @@ const refund = (updatedAt: number): TerminalRefundAttempt => ({
 });
 
 beforeEach(async () => {
-  await AsyncStorage.clear();
+  await resetTerminalSqlite();
   mockFiles.length = 0;
   (Sharing.isAvailableAsync as jest.Mock).mockReset().mockResolvedValue(true);
   (Sharing.shareAsync as jest.Mock).mockReset().mockResolvedValue(undefined);
@@ -95,8 +101,8 @@ it('filters week and month by observed sale and refund times, excluding future r
 
 it('reads both journals before sharing, uses a unique private CSV file, and deletes it after sharing', async () => {
   const request = sale('one', today).request;
-  await AsyncStorage.setItem('@terminalSales:v1:mainnet:wallet-a', JSON.stringify({ version: 1, sales: [{ request, status: 'unknown', updatedAt: today }] }));
-  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', JSON.stringify({ version: 1, attempts: [] }));
+  await recordTerminalSale(request);
+  await removeTerminalRefunds('wallet-a', 'mainnet');
   const options = { walletId: 'wallet-a', network: 'mainnet' as const, period: 'all' as const, day, isCurrent: () => true };
   expect(await exportTerminalSalesCsv(options)).toBe(true);
   expect(await exportTerminalSalesCsv(options)).toBe(true);
@@ -114,13 +120,16 @@ it('reads both journals before sharing, uses a unique private CSV file, and dele
 
 it('fails closed on unreadable refunds and never shares a stale scope', async () => {
   const request = sale('one', today).request;
-  await AsyncStorage.setItem('@terminalSales:v1:mainnet:wallet-a', JSON.stringify({ version: 1, sales: [{ request, status: 'unknown', updatedAt: today }] }));
-  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', '{broken');
+  await recordTerminalSale(request);
+  const paid = await updateTerminalSalePayment(request, { status: 'received' }, today);
+  await reserveTerminalRefund(paid, { id: 'corrupt', invoice: 'lnbccorrupt', amountSats: 100, feeSats: 1, quoteExpiresAt: Date.now() + 60000 });
+  await (await getTerminalDatabase()).runAsync("UPDATE terminal_refunds SET payload = '{broken'");
   const options = { walletId: 'wallet-a', network: 'mainnet' as const, period: 'all' as const, day, isCurrent: () => true };
   await expect(exportTerminalSalesCsv(options)).rejects.toThrow();
-  expect(mockFiles).toHaveLength(0);
+  expect(mockFiles.every(file => file.deleted)).toBe(true);
   expect(Sharing.shareAsync).not.toHaveBeenCalled();
-  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', JSON.stringify({ version: 1, attempts: [] }));
+  mockFiles.length = 0;
+  await removeTerminalRefunds('wallet-a', 'mainnet');
   expect(await exportTerminalSalesCsv({ ...options, isCurrent: () => false })).toBe(false);
   expect(mockFiles).toHaveLength(0);
   expect(Sharing.shareAsync).not.toHaveBeenCalled();
@@ -201,4 +210,36 @@ it('exports recorded rates for fiat, BTC and sats sales and refunds without chan
   }
   expect(rows.find(item => item.record_id === 'legacy-fiat')?.rate_status).toBe('quoted');
   expect(rows.find(item => item.record_id === 'legacy-fiat')?.rate_source).toBe('coinbase');
+});
+
+it('streams a fixed multi-page snapshot and removes it after sharing', async () => {
+  for (let index = 0; index < 205; index++) {
+    const request = { ...sale(`batch${index}`, today).request, invoice: `lnbcbatch${index}` };
+    await recordTerminalSale(request);
+  }
+  const pages = jest.spyOn(exportStore, 'readTerminalExportPage');
+  try {
+    expect(await exportTerminalSalesCsv({ walletId: 'wallet-a', network: 'mainnet', period: 'all', day, isCurrent: () => true })).toBe(true);
+    expect(pages).toHaveBeenCalledTimes(3);
+    expect(pages.mock.calls.every(call => call[2] === 100)).toBe(true);
+    const lines = mockFiles[0].contents.trim().split('\r\n');
+    expect(lines).toHaveLength(206);
+    expect(new Set(lines.slice(1).map(line => line.split(',')[1])).size).toBe(205);
+    const left = await (await getTerminalDatabase()).getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM terminal_export_rows');
+    expect(left?.count).toBe(0);
+  } finally { pages.mockRestore(); }
+});
+
+it('keeps exported rows fixed while later writes and deletions continue', async () => {
+  const request = sale('snapshot', today).request;
+  await recordTerminalSale(request);
+  const token = await exportStore.createTerminalExportSnapshot('wallet-a', 'mainnet', null);
+  try {
+    await updateTerminalSalePayment(request, { status: 'received' }, today + 1);
+    await recordTerminalSale({ ...request, id: 'later', invoice: 'lnbclater' });
+    const page = await exportStore.readTerminalExportPage(token, 0, 100);
+    expect(page.rows).toHaveLength(1);
+    expect(JSON.parse(page.rows[0].payload).status).toBe('unknown');
+    expect(JSON.parse(page.rows[0].payload).request.id).toBe('snapshot');
+  } finally { await exportStore.removeTerminalExportSnapshot(token); }
 });

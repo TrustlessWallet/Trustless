@@ -1,9 +1,11 @@
-import { File, Paths } from 'expo-file-system';
+import { File, FileMode, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { formatFiatMinor, TerminalFiatQuote, TerminalNetwork } from './terminal';
 import { TerminalReportingRate } from './terminalRates';
-import { listTerminalSales, TerminalSale } from './terminalSales';
-import { listTerminalRefunds, TerminalRefundAttempt } from './terminalRefunds';
+import { isTerminalSale, TerminalSale } from './terminalSales';
+import { isTerminalRefundAttempt, TerminalRefundAttempt } from './terminalRefunds';
+import { Buffer } from 'buffer';
+import { createTerminalExportSnapshot, readTerminalExportPage, removeTerminalExportSnapshot } from './terminalDatabase';
 import { isInTerminalSalesPeriod, SalesPeriod, terminalSalesPeriodBounds } from './terminalSalesPeriod';
 
 export type SalesExportPeriod = SalesPeriod;
@@ -61,22 +63,49 @@ export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: r
 }
 
 export async function exportTerminalSalesCsv({ walletId, network, period, day, isCurrent }: ExportOptions): Promise<boolean> {
-  // Read both journals at export time. If either is unreadable, no partial ledger is shared.
-  const [sales, refunds] = await Promise.all([listTerminalSales(walletId, network), listTerminalRefunds(walletId, network)]);
+  const range = terminalSalesPeriodBounds(period, day);
   if (!isCurrent()) return false;
   if (!await Sharing.isAvailableAsync()) throw new Error('Sharing unavailable on this device.');
   if (!isCurrent()) return false;
-  const csv = buildTerminalSalesCsv(sales, refunds, period, day);
-  const localDate = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-  const stamp = `${period === 'all' ? '' : `${localDate}-`}${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const file = new File(Paths.cache, `trustless-terminal-${period}-${stamp}.csv`);
+  // Copy the selected ledger atomically in SQLite, then release its transaction.
+  // Payments can continue while the fixed snapshot is streamed into a CSV file.
+  const token = await createTerminalExportSnapshot(walletId, network, range);
+  let file: File | undefined;
+  let handle: ReturnType<File['open']> | undefined;
   try {
     if (!isCurrent()) return false;
-    file.write(csv);
+    const localDate = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    const stamp = `${period === 'all' ? '' : `${localDate}-`}${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    file = new File(Paths.cache, `trustless-terminal-${period}-${stamp}.csv`);
+    file.create();
+    handle = file.open(FileMode.WriteOnly);
+    handle.writeBytes(Buffer.from(columns.join(',') + '\r\n', 'utf8'));
+    let afterSeq = 0;
+    while (true) {
+      if (!isCurrent()) return false;
+      const page = await readTerminalExportPage(token, afterSeq, 100);
+      if (!isCurrent()) return false;
+      const parts: string[] = [];
+      for (const row of page.rows) {
+        const record: unknown = JSON.parse(row.payload);
+        if (row.kind === 'sale' && isTerminalSale(record, walletId, network)) {
+          parts.push(buildTerminalSalesCsv([record], [], 'all', day).slice(columns.join(',').length + 2));
+        } else if (row.kind === 'refund' && isTerminalRefundAttempt(record, walletId, network)) {
+          parts.push(buildTerminalSalesCsv([], [record], 'all', day).slice(columns.join(',').length + 2));
+        } else throw new Error('Saved Terminal export record is invalid.');
+      }
+      if (parts.length) handle.writeBytes(Buffer.from(parts.join(''), 'utf8'));
+      if (page.nextSeq === null) break;
+      if (page.nextSeq <= afterSeq) throw new Error('Invalid Terminal export cursor.');
+      afterSeq = page.nextSeq;
+    }
+    handle.close(); handle = undefined;
     if (!isCurrent()) return false;
     await Sharing.shareAsync(file.uri, { mimeType: 'text/csv', dialogTitle: 'Export Terminal sales', UTI: 'public.comma-separated-values-text' });
     return true;
   } finally {
-    try { if (file.exists) file.delete(); } catch { /* Sharing has already finished; cache cleanup is best effort. */ }
+    try { handle?.close(); } catch { /* Continue cleanup even if the file handle failed. */ }
+    try { if (file?.exists) file.delete(); } catch { /* Cache cleanup is best effort after sharing. */ }
+    await removeTerminalExportSnapshot(token).catch(() => {}); // Abandoned snapshots are also cleared on database open.
   }
 }

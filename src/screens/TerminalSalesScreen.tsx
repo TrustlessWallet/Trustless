@@ -10,15 +10,28 @@ import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWallet } from '../contexts/WalletContext';
 import { formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, TerminalNetwork, TerminalRequest } from '../services/terminal';
-import { listTerminalSales, subscribeTerminalSales, terminalSaleDisplayStatus, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
-import { listTerminalRefunds, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
+import { getTerminalSale, getTerminalSalesSummary, listTerminalSalesPage, subscribeTerminalSales, terminalSaleDisplayStatus, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
+import { getTerminalRefundTotal, listTerminalRefundsForSale, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
 import { exportTerminalSalesCsv } from '../services/terminalSalesExport';
-import { isInTerminalSalesPeriod, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
+import { SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 import TerminalRefundScreen from './TerminalRefundScreen';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
-type LoadState = { scope: string; sales: TerminalSale[]; loading: boolean; refreshing: boolean; error: boolean };
+type Cursor = { at: number; id: string };
+type SalesSummary = Awaited<ReturnType<typeof getTerminalSalesSummary>>;
+type LoadState = {
+  identity: string;
+  sales: TerminalSale[];
+  nextCursor: Cursor | null;
+  summary: SalesSummary | null;
+  refundedSats: bigint | null;
+  loading: boolean;
+  refreshing: boolean;
+  error: boolean;
+  pageLoading: boolean;
+  pageError: boolean;
+};
 const periods: { value: SalesPeriod; title: string; label: string; exportLabel: string }[] = [
   { value: 'today', title: 'Today', label: 'Today sales', exportLabel: 'Export today’s activity' },
   { value: 'week', title: '7 days', label: 'Last 7 days sales', exportLabel: 'Export last 7 days activity' },
@@ -42,14 +55,10 @@ const displayAmount = (request: TerminalRequest) => request.fiat
     ? `${formatTerminalAmount(request.amountSats, 'BTC')} ₿`
     : `${formatTerminalSats(request.amountSats)} sats`;
 
-function totalsFor(sales: TerminalSale[]): { label: string; amount: string }[] {
-  const totals = new Map<string, bigint>();
-  for (const sale of sales) {
-    if (!isPaid(sale)) continue;
-    const currency = sale.request.fiat?.currency ?? 'sats';
-    const amount = BigInt(sale.request.fiat?.amountMinor ?? sale.request.amountSats);
-    totals.set(currency, (totals.get(currency) ?? 0n) + amount);
-  }
+function totalsFor(summary: SalesSummary | null): { label: string; amount: string }[] {
+  if (!summary) return [];
+  const totals = new Map<string, bigint>(Object.entries(summary.fiatMinor).filter((entry): entry is [string, bigint] => entry[1] !== undefined));
+  if (summary.bitcoinSats > 0n) totals.set('sats', summary.bitcoinSats);
   const order = ['USD', 'EUR', 'CHF', 'sats'];
   return order.filter(currency => totals.has(currency)).map(currency => {
     const amount = totals.get(currency)!;
@@ -82,10 +91,17 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const period = periodState.scope === scope ? periodState.value : 'today';
   const [selected, setSelected] = useState<{ scope: string; id: string } | null>(null);
   const [now, setNow] = useState(Date.now());
+  const day = new Date(now);
+  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+  const periodDay = useMemo(() => new Date(dayStart), [dayStart]);
+  const range = useMemo(() => terminalSalesPeriodBounds(period, periodDay), [period, periodDay]);
+  const rangeKey = range ? `${range.start}:${range.end}` : 'all';
+  const loadIdentity = `${scope}:${period}:${rangeKey}`;
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState('');
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundState, setRefundState] = useState<{ scope: string; attempts: TerminalRefundAttempt[]; loading: boolean; error: boolean }>({ scope: '', attempts: [], loading: true, error: false });
+  const [detailState, setDetailState] = useState<{ key: string; sale: TerminalSale | null }>({ key: '', sale: null });
   const [receiptError, setReceiptError] = useState('');
   const [exportError, setExportError] = useState('');
   const [exporting, setExporting] = useState(false);
@@ -94,10 +110,16 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const checkBusy = useRef(false);
   const checkEpoch = useRef(0);
   const mounted = useRef(true);
-  const [state, setState] = useState<LoadState>({ scope, sales: [], loading: true, refreshing: false, error: false });
+  const [state, setState] = useState<LoadState>({ identity: loadIdentity, sales: [], nextCursor: null, summary: null, refundedSats: null, loading: true, refreshing: false, error: false, pageLoading: false, pageError: false });
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const loadGeneration = useRef(0);
+  const pageBusy = useRef(false);
+  const refreshInFlight = useRef(0);
   const currentScope = useRef(scope);
   currentScope.current = scope;
+  const currentLoadIdentity = useRef(loadIdentity);
+  currentLoadIdentity.current = loadIdentity;
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const selectedKey = useRef('');
@@ -111,17 +133,68 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   const refresh = useCallback(async (showLoading = true, userInitiated = false) => {
     const generation = ++loadGeneration.current;
-    const capturedScope = scope;
-    if (showLoading) setState(previous => ({ scope: capturedScope, sales: previous.scope === capturedScope ? previous.sales : [], loading: true, refreshing: userInitiated, error: false }));
+    refreshInFlight.current = generation;
+    const identity = loadIdentity;
+    const prior = stateRef.current;
+    const retainedCount = !showLoading && prior.identity === identity ? Math.max(50, prior.sales.length) : 50;
+    pageBusy.current = false;
+    if (showLoading) setState(previous => ({
+      identity,
+      sales: previous.identity === identity ? previous.sales : [],
+      nextCursor: previous.identity === identity ? previous.nextCursor : null,
+      summary: previous.identity === identity ? previous.summary : null,
+      refundedSats: previous.identity === identity ? previous.refundedSats : null,
+      loading: true, refreshing: userInitiated, error: false, pageLoading: false, pageError: false,
+    }));
+    else setState(previous => previous.identity === identity ? { ...previous, pageLoading: false, pageError: false } : previous);
     try {
-      const sales = await listTerminalSales(walletId, network);
-      if (generation !== loadGeneration.current || capturedScope !== currentScope.current) return;
-      setState({ scope: capturedScope, sales, loading: false, refreshing: false, error: false });
+      const [firstPage, summary, refundedSats] = await Promise.all([
+        listTerminalSalesPage(walletId, network, { range, limit: 50 }),
+        getTerminalSalesSummary(walletId, network, range),
+        getTerminalRefundTotal(walletId, network, range),
+      ]);
+      if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
+      const sales = [...firstPage.items];
+      const ids = new Set(sales.map(sale => sale.request.id));
+      let nextCursor = firstPage.nextCursor;
+      while (!showLoading && sales.length < retainedCount && nextCursor) {
+        const page = await listTerminalSalesPage(walletId, network, { range, cursor: nextCursor, limit: 50 });
+        if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
+        for (const sale of page.items) if (!ids.has(sale.request.id)) { ids.add(sale.request.id); sales.push(sale); }
+        nextCursor = page.nextCursor;
+      }
+      setState({ identity, sales, nextCursor, summary, refundedSats, loading: false, refreshing: false, error: false, pageLoading: false, pageError: false });
     } catch {
-      if (generation !== loadGeneration.current || capturedScope !== currentScope.current) return;
-      setState({ scope: capturedScope, sales: [], loading: false, refreshing: false, error: true });
+      if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
+      setState(previous => !showLoading && previous.identity === identity && previous.summary !== null
+        ? { ...previous, loading: false, refreshing: false, pageLoading: false, pageError: false }
+        : { ...previous, identity, sales: [], nextCursor: null, summary: null, refundedSats: null, loading: false, refreshing: false, error: true, pageLoading: false, pageError: false });
+    } finally {
+      if (refreshInFlight.current === generation) refreshInFlight.current = 0;
     }
-  }, [scope, walletId, network]);
+  }, [loadIdentity, walletId, network, range]);
+
+  const loadNextPage = useCallback(async () => {
+    if (!visibleRef.current || pageBusy.current || refreshInFlight.current || state.identity !== loadIdentity || state.loading || state.error || !state.nextCursor) return;
+    const generation = loadGeneration.current;
+    const identity = loadIdentity;
+    const cursor = state.nextCursor;
+    pageBusy.current = true;
+    setState(previous => previous.identity === identity ? { ...previous, pageLoading: true, pageError: false } : previous);
+    try {
+      const page = await listTerminalSalesPage(walletId, network, { range, cursor, limit: 50 });
+      if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
+      setState(previous => {
+        if (previous.identity !== identity) return previous;
+        const ids = new Set(previous.sales.map(sale => sale.request.id));
+        return { ...previous, sales: [...previous.sales, ...page.items.filter(sale => !ids.has(sale.request.id))], nextCursor: page.nextCursor, pageLoading: false, pageError: false };
+      });
+    } catch {
+      if (generation === loadGeneration.current && identity === currentLoadIdentity.current) setState(previous => previous.identity === identity ? { ...previous, pageLoading: false, pageError: true } : previous);
+    } finally {
+      if (generation === loadGeneration.current && identity === currentLoadIdentity.current) pageBusy.current = false;
+    }
+  }, [state.identity, state.loading, state.error, state.nextCursor, loadIdentity, walletId, network, range]);
 
   useEffect(() => {
     mounted.current = true;
@@ -135,7 +208,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     const unsubscribe = subscribeTerminalSales((changedWallet, changedNetwork) => {
       if (changedWallet === walletId && changedNetwork === network) void refresh(false);
     });
-    return () => { ++loadGeneration.current; unsubscribe(); };
+    return () => { ++loadGeneration.current; pageBusy.current = false; refreshInFlight.current = 0; unsubscribe(); };
   }, [refresh]);
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
@@ -143,25 +216,52 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   useEffect(() => { setSelected(null); setPeriodState({ scope, value: 'today' }); }, [scope]);
   useEffect(() => { setExportError(''); setExporting(false); }, [exportIdentity]);
 
+  const refreshDetail = useCallback(async () => {
+    const key = selected?.scope === scope ? `${scope}:${selected.id}` : '';
+    if (!key || !selected) { setDetailState({ key: '', sale: null }); return; }
+    try {
+      const sale = await getTerminalSale(walletId, network, selected.id);
+      if (selectedKey.current === key) setDetailState({ key, sale });
+    } catch {
+      // Keep the last immutable snapshot when an incidental detail refresh fails.
+    }
+  }, [scope, walletId, network, selected]);
+
+  useEffect(() => {
+    void refreshDetail();
+    const unsubscribe = subscribeTerminalSales((changedWallet, changedNetwork) => {
+      if (changedWallet === walletId && changedNetwork === network) void refreshDetail();
+    });
+    return unsubscribe;
+  }, [walletId, network, refreshDetail]);
+
   const refreshRefunds = useCallback(async (showLoading = true) => {
     const generation = ++refundGeneration.current;
     const capturedScope = scope;
+    const selectedId = selected?.scope === scope ? selected.id : null;
+    if (!selectedId) {
+      setRefundState({ scope: capturedScope, attempts: [], loading: false, error: false });
+      return;
+    }
     if (showLoading) setRefundState({ scope: capturedScope, attempts: [], loading: true, error: false });
     try {
-      const attempts = await listTerminalRefunds(walletId, network);
-      if (generation === refundGeneration.current && capturedScope === currentScope.current) setRefundState({ scope: capturedScope, attempts, loading: false, error: false });
+      const attempts = await listTerminalRefundsForSale(walletId, network, selectedId);
+      if (generation === refundGeneration.current && capturedScope === currentScope.current && selectedKey.current === `${capturedScope}:${selectedId}`) setRefundState({ scope: capturedScope, attempts, loading: false, error: false });
     } catch {
       if (generation === refundGeneration.current && capturedScope === currentScope.current) setRefundState({ scope: capturedScope, attempts: [], loading: false, error: true });
     }
-  }, [scope, walletId, network]);
+  }, [scope, walletId, network, selected]);
 
   useEffect(() => {
     void refreshRefunds();
     const unsubscribe = subscribeTerminalRefunds((changedWallet, changedNetwork) => {
-      if (changedWallet === walletId && changedNetwork === network) void refreshRefunds(false);
+      if (changedWallet === walletId && changedNetwork === network) {
+        void refreshRefunds(false);
+        void refresh(false);
+      }
     });
     return () => { ++refundGeneration.current; unsubscribe(); };
-  }, [scope, walletId, network, refreshRefunds]);
+  }, [scope, walletId, network, selected?.id, refreshRefunds, refresh]);
 
   useEffect(() => {
     if (!visible) return;
@@ -170,26 +270,22 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     return () => clearInterval(clock);
   }, [visible]);
 
-  const sales = useMemo(() => state.scope === scope ? state.sales : [], [state.scope, state.sales, scope]);
-  const loading = state.scope !== scope || state.loading;
-  const error = state.scope === scope && state.error;
-  const day = new Date(now);
-  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
-  // The status clock can tick without repeating full-ledger filtering/totals.
-  const periodDay = useMemo(() => new Date(dayStart), [dayStart]);
-  const shown = useMemo(() => sales.filter(sale => isInTerminalSalesPeriod(saleTime(sale), period, periodDay))
-    .sort((a, b) => saleTime(b) - saleTime(a)), [sales, period, periodDay]);
-  const paidCount = useMemo(() => shown.filter(isPaid).length, [shown]);
-  const totals = useMemo(() => totalsFor(shown), [shown]);
-  const detail = selected?.scope === scope ? sales.find(sale => sale.request.id === selected.id) : undefined;
+  const sales = state.identity === loadIdentity ? state.sales : [];
+  const loading = state.identity !== loadIdentity || state.loading;
+  const error = state.identity === loadIdentity && state.error;
+  const summary = state.identity === loadIdentity ? state.summary : null;
+  const shown = sales;
+  const paidCount = summary?.receivedCount ?? 0;
+  const totals = useMemo(() => totalsFor(summary), [summary]);
+  const detailKey = selected?.scope === scope ? `${scope}:${selected.id}` : '';
+  const detail = detailState.key === detailKey ? detailState.sale ?? undefined : undefined;
   const refundsLoaded = refundState.scope === scope && !refundState.loading && !refundState.error;
-  const refunds = refundsLoaded && detail ? refundState.attempts.filter(attempt => attempt.saleId === detail.request.id) : [];
+  const refunds = refundsLoaded && detail ? refundState.attempts : [];
   const refundRemaining = refundsLoaded && detail && isPaid(detail) ? safeRefundRemaining(detail, refunds) : null;
   const refundsReady = refundsLoaded && refundRemaining !== null;
   const completedRefund = refunds.reduce((total, attempt) => attempt.status === 'complete' ? total + BigInt(attempt.amountSats) : total, 0n);
   const reservedRefund = refunds.reduce((total, attempt) => attempt.status === 'unknown' || attempt.status === 'pending' ? total + BigInt(attempt.amountSats) : total, 0n);
-  const refundedSats = useMemo(() => refundsLoaded ? refundState.attempts.reduce((total, attempt) =>
-    attempt.status === 'complete' && isInTerminalSalesPeriod(attempt.updatedAt, period, periodDay) ? total + BigInt(attempt.amountSats) : total, 0n) : 0n, [refundsLoaded, refundState.attempts, period, periodDay]);
+  const refundedSats = state.identity === loadIdentity ? state.refundedSats : null;
   const close = () => { ++checkEpoch.current; checkBusy.current = false; onClose(); };
   const checkPayment = async () => {
     if (!detail || checkBusy.current) return;
@@ -269,12 +365,10 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         <Text style={styles.paidCount}>{paidCount}</Text>
         <View style={styles.summaryRule} />
         {totals.length ? totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.amount}</Text></View>) : <Text style={styles.noTotals}>No paid sales {period === 'today' ? 'today' : period === 'all' ? 'yet' : 'in this period'}</Text>}
-        {refundsLoaded ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View>
-          : refundState.scope === scope && refundState.error ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry refund totals" onPress={() => { void refreshRefunds(); }}><Text style={styles.summaryNote}>Refund totals unavailable · Retry</Text></TouchableOpacity>
-            : <Text style={styles.summaryNote}>Loading refund totals…</Text>}
+        {refundedSats !== null ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View> : null}
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
       </View> : null}
-      {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text><Text style={styles.sectionCount}>{shown.length}</Text></View> : null}
+      {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text><Text style={styles.sectionCount}>{summary?.activityCount ?? shown.length}</Text></View> : null}
     </> : null}
   </>;
 
@@ -331,10 +425,12 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       contentInsetAdjustmentBehavior="never"
       automaticallyAdjustContentInsets={false}
       contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 28 }]}
-      refreshControl={<RefreshControl refreshing={state.scope === scope && state.refreshing} onRefresh={() => { void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={SHEET_HEADER_HEIGHT} />}
+      refreshControl={<RefreshControl refreshing={state.identity === loadIdentity && state.refreshing} onRefresh={() => { void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={SHEET_HEADER_HEIGHT} />}
+      onEndReached={() => { void loadNextPage(); }}
+      onEndReachedThreshold={0.35}
       renderItem={({ item }) => {
         const status = statusFor(item, now);
-        return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setSelected({ scope, id: item.request.id }); }}>
+        return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setDetailState({ key: `${scope}:${item.request.id}`, sale: item }); setSelected({ scope, id: item.request.id }); }}>
           <View style={[styles.rowIcon, status.tone === 'paid' && styles.paidRowIcon]}><Feather name={status.tone === 'paid' ? 'check' : 'clock'} size={18} color={status.tone === 'paid' ? theme.colors.bitcoin : theme.colors.muted} /></View>
           <View style={styles.rowMiddle}><Text style={styles.rowAmount} numberOfLines={1}>{displayAmount(item.request)}</Text><Text style={styles.rowMeta}>{period === 'today' ? formatTime(saleTime(item)) : `${formatDate(saleTime(item))} · ${formatTime(saleTime(item))}`}</Text></View>
           <View style={styles.rowEnd}><Text style={[styles.rowStatus, status.tone === 'paid' && styles.paidText]}>{status.label}</Text><Feather name="chevron-right" size={17} color={theme.colors.muted} /></View>
@@ -345,6 +441,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
           : loading ? null
             : <><Feather name="shopping-bag" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>{period === 'today' ? 'No sales today' : period === 'all' ? 'No sales yet' : 'No sales in this period'}</Text><Text style={styles.emptyBody}>{period === 'today' ? 'New payment requests will appear here.' : period === 'all' ? 'Payment requests from this wallet will appear here.' : 'Payment requests in this period will appear here.'}</Text></>}
       </View>}
+      ListFooterComponent={state.identity === loadIdentity && state.pageLoading
+        ? <View style={styles.pageFooter}><ActivityIndicator size="small" color={theme.colors.bitcoin} /></View>
+        : state.identity === loadIdentity && state.pageError
+          ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading more sales" onPress={() => { void loadNextPage(); }} style={styles.pageFooter}><Feather name="refresh-cw" size={18} color={theme.colors.bitcoin} /></TouchableOpacity>
+          : null}
       showsVerticalScrollIndicator={false}
     />}
   </View>;
@@ -395,6 +496,7 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     emptyBody: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, lineHeight: 19, marginTop: 8, textAlign: 'center' },
     retry: { marginTop: 20, paddingHorizontal: 24, minHeight: 42, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.border },
     retryText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
+    pageFooter: { minHeight: 54, alignItems: 'center', justifyContent: 'center' },
     detailContent: { paddingTop: 20, paddingBottom: 28 },
     detailCard: { marginHorizontal: 24, padding: 24, backgroundColor: colors.surface, borderRadius: 18 },
     detailStatus: { flexDirection: 'row', alignItems: 'center', gap: 8 },

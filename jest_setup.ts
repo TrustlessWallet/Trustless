@@ -4,6 +4,10 @@ jest.mock('@react-native-async-storage/async-storage', () =>
     require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
 
+jest.mock('expo-sqlite', () =>
+    require('./src/__tests__/helpers/terminalSqlite').expoSqliteMock
+);
+
 jest.mock('react-native-tcp-socket', () => ({
     default: {
         createConnection: jest.fn(),

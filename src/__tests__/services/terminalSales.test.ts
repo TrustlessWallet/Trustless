@@ -1,268 +1,116 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
 import { TerminalRequest } from '../../services/terminal';
-import {
-  listTerminalSales, localDayRange, reconcileTerminalSales, recordTerminalSale,
-  removeTerminalSales, subscribeTerminalSales, summarizeTerminalSales, terminalSaleDisplayStatus,
-  TERMINAL_SALES_KEY, updateTerminalSalePayment,
-} from '../../services/terminalSales';
+import { getTerminalDatabase, setTerminalDatabaseForTests } from '../../services/terminalDatabase';
+import { getTerminalSale, getTerminalSalesSummary, listTerminalSalesPage, recordTerminalSale,
+  reconcileTerminalSales, subscribeTerminalSales, updateTerminalSalePayment } from '../../services/terminalSales';
 
-jest.mock('@react-native-async-storage/async-storage', () => ({
-  __esModule: true,
-  default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() },
-}));
+const request = (id: string, createdAt: number, amountSats = 1000): TerminalRequest => ({ id, walletId: 'wallet-a',
+  network: 'mainnet', invoice: `lnbc${id}abc`, amountSats, createdAt, expiresAt: createdAt + 10_000 });
 
-const storage = new Map<string, string>();
-const request: TerminalRequest = {
-  id: 'one', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc123abc',
-  amountSats: 334, createdAt: 1000, expiresAt: 2000,
-  fiat: { currency: 'CHF', amountMinor: 100, rate: '300000', fetchedAt: 1200 },
-};
-const another: TerminalRequest = {
-  id: 'two', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc456def',
-  amountSats: 1200, createdAt: 2000, expiresAt: 3000,
-};
-const key = `${TERMINAL_SALES_KEY}:mainnet:wallet-a`;
+beforeEach(resetTerminalSqlite);
 
-beforeEach(() => {
-  storage.clear();
-  jest.clearAllMocks();
-  (AsyncStorage.getItem as jest.Mock).mockImplementation(async path => storage.get(path) ?? null);
-  (AsyncStorage.setItem as jest.Mock).mockImplementation(async (path, value) => { storage.set(path, value); });
-  (AsyncStorage.removeItem as jest.Mock).mockImplementation(async path => { storage.delete(path); });
+it('pages activity deterministically across timestamp ties and range boundaries', async () => {
+  for (const id of ['a', 'c', 'b']) await recordTerminalSale(request(id, 1000));
+  await updateTerminalSalePayment(request('a', 1000), { status: 'received' }, 2000);
+  const first = await listTerminalSalesPage('wallet-a', 'mainnet', { range: { start: 1000, end: 3000 }, limit: 2 });
+  expect(first.items.map(item => item.request.id)).toEqual(['a', 'c']);
+  expect(first.nextCursor).toEqual({ at: 1000, id: 'c' });
+  const second = await listTerminalSalesPage('wallet-a', 'mainnet', { range: { start: 1000, end: 3000 }, cursor: first.nextCursor, limit: 2 });
+  expect(second.items.map(item => item.request.id)).toEqual(['b']);
+  expect(second.nextCursor).toBeNull();
+  expect((await listTerminalSalesPage('wallet-a', 'mainnet', { range: { start: 2000, end: 2001 } })).items).toHaveLength(1);
 });
 
-it('serializes concurrent additions, retains closed invoices, and returns newest first', async () => {
-  await Promise.all([recordTerminalSale(request), recordTerminalSale(another), recordTerminalSale(request)]);
-  expect((await listTerminalSales('wallet-a', 'Bitcoin')).map(sale => sale.request.id)).toEqual(['two', 'one']);
-  expect((AsyncStorage.setItem as jest.Mock).mock.calls).toHaveLength(2);
-  expect(await listTerminalSales('wallet-b', 'mainnet')).toEqual([]);
-  expect(await listTerminalSales('wallet-a', 'testnet')).toEqual([]);
-});
-
-it('keeps the first request snapshot and refuses an identity collision', async () => {
-  const mutable = { ...request, fiat: { ...request.fiat! } };
-  await recordTerminalSale(mutable);
-  mutable.fiat.amountMinor = 200;
-  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.fiat?.amountMinor).toBe(100);
-  await expect(recordTerminalSale({ ...request, id: 'different' })).rejects.toThrow('conflicts');
-  await expect(recordTerminalSale({ ...request, invoice: 'lnbc999abc' })).rejects.toThrow('conflicts');
-  expect((AsyncStorage.setItem as jest.Mock).mock.calls).toHaveLength(1);
-});
-
-it('deep-copies the original item basket into a sale snapshot', async () => {
-  const mutable = { ...request, basket: { unit: 'CHF' as const, total: 100, lines: [{ itemId: 'tea', name: 'Tea', unitPrice: 50, quantity: 2, total: 100 }] } };
-  await recordTerminalSale(mutable);
-  mutable.basket.lines[0].name = 'Changed';
-  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.basket?.lines[0].name).toBe('Tea');
-});
-
-it('persists first receipt observation and never downgrades a received sale', async () => {
-  const observed = await updateTerminalSalePayment(request, { status: 'received', paymentId: 'sdk-1' }, 4000);
-  expect(observed.receivedAt).toBe(4000);
-  expect(observed.paymentId).toBe('sdk-1');
-  expect(terminalSaleDisplayStatus(observed, 9999)).toBe('received');
-  expect(await updateTerminalSalePayment(request, { status: 'pending', paymentId: 'sdk-2' }, 5000)).toEqual(observed);
-  expect(await updateTerminalSalePayment(request, { status: 'unknown' }, 6000)).toEqual(observed);
-  expect((AsyncStorage.setItem as jest.Mock).mock.calls).toHaveLength(1);
-  expect((await listTerminalSales('wallet-a', 'mainnet'))[0]).toEqual(observed);
-});
-
-it('derives expiry at display time without changing the stored payment status', async () => {
-  const sale = await recordTerminalSale(request);
-  expect(terminalSaleDisplayStatus(sale, 1999)).toBe('unpaid');
-  expect(terminalSaleDisplayStatus(sale, 2000)).toBe('expired');
-  const pending = await updateTerminalSalePayment(request, { status: 'pending' }, 2100);
-  expect(terminalSaleDisplayStatus(pending, 2100)).toBe('pending');
-  expect(pending.status).toBe('pending');
-  expect(await updateTerminalSalePayment(request, { status: 'unknown' }, 2200)).toEqual(pending);
-});
-
-it('rejects corrupt or cross-scope storage without replacing it', async () => {
-  storage.set(key, '{broken');
-  await expect(recordTerminalSale(request)).rejects.toThrow('unreadable');
-  expect(storage.get(key)).toBe('{broken');
-  storage.set(key, JSON.stringify({ version: 1, sales: [{ request: { ...request, walletId: 'wallet-b' }, status: 'unknown', updatedAt: 5000 }] }));
-  await expect(updateTerminalSalePayment(request, { status: 'received' }, 6000)).rejects.toThrow('invalid');
-  expect((AsyncStorage.setItem as jest.Mock).mock.calls).toHaveLength(0);
-});
-
-it('reconciles exact invoice matches in one write, ignoring unrelated history and paid downgrades', async () => {
-  await recordTerminalSale(request);
-  await recordTerminalSale(another);
-  (AsyncStorage.setItem as jest.Mock).mockClear();
-  const change = await reconcileTerminalSales('wallet-a', 'mainnet', [
-    { invoice: 'LNBC123ABC', status: 'pending', paymentId: 'sdk-1' },
-    { invoice: 'lnbc123abc', status: 'received', paymentId: 'sdk-1' },
-    { invoice: 'lnbc456def', status: 'pending', paymentId: 'sdk-2' },
-    { invoice: 'lnbc-no-match', status: 'received', paymentId: 'sdk-3' },
-  ], 7000);
-  expect(change).toBe(2);
-  expect((AsyncStorage.setItem as jest.Mock).mock.calls).toHaveLength(1);
-  const sales = await listTerminalSales('wallet-a', 'mainnet');
-  expect(sales.find(s => s.request.id === 'one')?.receivedAt).toBe(7000);
-  expect(sales.find(s => s.request.id === 'two')?.status).toBe('pending');
-  expect(await reconcileTerminalSales('wallet-a', 'mainnet', [
-    { invoice: request.invoice, status: 'pending', paymentId: 'other' },
-    { invoice: another.invoice, status: 'pending', paymentId: 'sdk-2' },
-  ], 8000)).toBe(0);
-  expect((AsyncStorage.setItem as jest.Mock).mock.calls).toHaveLength(1);
-});
-
-it('counts observed receipts in the local day and sums original fiat using BigInt', async () => {
-  const noon = new Date(2026, 9, 19, 12).getTime();
-  const range = localDayRange(noon);
-  expect(range.start).toBe(new Date(2026, 9, 19).getTime());
-  expect(range.end).toBe(new Date(2026, 9, 20).getTime());
-  await updateTerminalSalePayment(request, { status: 'received' }, range.start);
-  await updateTerminalSalePayment(another, { status: 'received' }, range.end);
-  expect(summarizeTerminalSales(await listTerminalSales('wallet-a', 'mainnet'), range)).toEqual({
-    receivedCount: 1, sats: 334n, fiatMinor: { CHF: 100n },
+it('stores exact MAX_SAFE_INTEGER totals with SQL limbs', async () => {
+  const max = Number.MAX_SAFE_INTEGER;
+  for (const id of ['maxa', 'maxb']) await updateTerminalSalePayment(request(id, 1000, max), { status: 'received' }, 2000);
+  expect(await getTerminalSalesSummary('wallet-a', 'mainnet', null)).toMatchObject({
+    activityCount: 2, receivedCount: 2, sats: BigInt(max) * 2n, bitcoinSats: BigInt(max) * 2n,
   });
-  const large = { request: { ...another, amountSats: Number.MAX_SAFE_INTEGER },
-    status: 'received' as const, receivedAt: range.start + 1, updatedAt: range.start + 1 };
-  expect(summarizeTerminalSales([large, large], range).sats).toBe(2n * BigInt(Number.MAX_SAFE_INTEGER));
+  const plan = await (await getTerminalDatabase()).getAllAsync<{ detail: string }>(`EXPLAIN QUERY PLAN SELECT COUNT(*) FROM terminal_sales
+    WHERE wallet_id=? AND network=? AND status='received' AND activity_at>=? AND activity_at<?`, ['wallet-a', 'mainnet', 1000, 3000]);
+  expect(plan.map(row => row.detail).join('\n')).toMatch(/SEARCH terminal_sales USING COVERING INDEX terminal_sales_status_activity .*activity_at[<=>]/);
 });
 
-it('notifies subscribers only after a successful changed write', async () => {
-  const listener = jest.fn();
-  const unsubscribe = subscribeTerminalSales(listener);
-  await recordTerminalSale(request);
-  await recordTerminalSale(request);
-  await updateTerminalSalePayment(request, { status: 'unknown' }, 5000);
-  expect(listener).toHaveBeenCalledTimes(1);
-  unsubscribe();
-  await updateTerminalSalePayment(request, { status: 'received' }, 6000);
-  expect(listener).toHaveBeenCalledTimes(1);
+it('reconciles only input invoice batches and rejects corrupt payloads on read', async () => {
+  await Promise.all([recordTerminalSale(request('one', 1000)), recordTerminalSale(request('two', 1001))]);
+  expect(await reconcileTerminalSales('wallet-a', 'mainnet', [
+    { invoice: 'LNBCONEABC', status: 'received', paymentId: 'sdk' },
+  ], 3000)).toBe(1);
+  expect((await getTerminalSale('wallet-a', 'mainnet', 'two'))?.status).toBe('unknown');
+  const db = await getTerminalDatabase();
+  await db.runAsync("UPDATE terminal_sales SET payload='{bad' WHERE id='two'");
+  await expect(getTerminalSale('wallet-a', 'mainnet', 'two')).rejects.toThrow('unreadable');
 });
 
-it('does not expose a failed write and can retry it', async () => {
-  const listener = jest.fn();
-  const unsubscribe = subscribeTerminalSales(listener);
-  (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk unavailable'));
-  await expect(recordTerminalSale(request)).rejects.toThrow('disk unavailable');
-  expect(await listTerminalSales('wallet-a', 'mainnet')).toEqual([]);
-  expect(listener).not.toHaveBeenCalled();
-  expect((await recordTerminalSale(request)).request.fiat).toEqual(request.fiat);
-  expect(listener).toHaveBeenCalledTimes(1);
-  unsubscribe();
+it('returns immutable nested snapshots', async () => {
+  const nested: TerminalRequest = { ...request('nested', 1000), basket: { unit: 'sats', total: 1000,
+    lines: [{ itemId: 'tea', name: 'Tea', unitPrice: 1000, quantity: 1, total: 1000 }] } };
+  const saved = await recordTerminalSale(nested);
+  (saved.request.basket!.lines[0] as any).name = 'Changed';
+  expect((await getTerminalSale('wallet-a', 'mainnet', 'nested'))?.request.basket?.lines[0].name).toBe('Tea');
 });
 
-it('removes only the selected wallet and network history', async () => {
-  await recordTerminalSale(request);
-  await recordTerminalSale({ ...request, walletId: 'wallet-b' });
-  await recordTerminalSale({ ...request, id: 'testnet', network: 'testnet', invoice: 'lntb123abc' });
-  const listener = jest.fn();
-  const unsubscribe = subscribeTerminalSales(listener);
-  await removeTerminalSales('wallet-a', 'Bitcoin');
-  expect(await listTerminalSales('wallet-a', 'mainnet')).toEqual([]);
-  expect(await listTerminalSales('wallet-b', 'mainnet')).toHaveLength(1);
-  expect(await listTerminalSales('wallet-a', 'testnet')).toHaveLength(1);
-  expect(listener).toHaveBeenCalledWith('wallet-a', 'mainnet');
-  await removeTerminalSales('wallet-a', 'mainnet');
-  expect(listener).toHaveBeenCalledTimes(1);
-  unsubscribe();
+it('persists rows when the database is closed and reopened', async () => {
+  await recordTerminalSale(request('reopen', 1000));
+  await setTerminalDatabaseForTests(null);
+  expect((await getTerminalSale('wallet-a', 'mainnet', 'reopen'))?.request.id).toBe('reopen');
 });
 
-it.each([100, 1000, 10000])('validates a %i-sale fixture once for unchanged reads', async count => {
-  const walletId = `fixture-${count}`;
-  storage.set(`${TERMINAL_SALES_KEY}:mainnet:${walletId}`, JSON.stringify({ version: 1, sales:
-    Array.from({ length: count }, (_, index) => ({
-      request: { ...another, id: `sale-${index}`, walletId, invoice: `lnbc${index}abc`,
-        createdAt: index + 1, expiresAt: count + 10000 },
-      status: 'unknown', updatedAt: index + 1,
-    })),
-  }));
-  const parse = jest.spyOn(JSON, 'parse');
-  try {
-    expect(await listTerminalSales(walletId, 'mainnet')).toHaveLength(count);
-    expect(await listTerminalSales(walletId, 'mainnet')).toHaveLength(count);
-    expect(parse).toHaveBeenCalledTimes(1);
-    expect(AsyncStorage.getItem).toHaveBeenCalledTimes(2);
-  } finally { parse.mockRestore(); }
-});
-
-it('does not let a caller mutate cached nested sale data or an existing return', async () => {
-  const withBasket = { ...request, basket: { unit: 'CHF' as const, total: 100,
-    lines: [{ itemId: 'tea', name: 'Tea', unitPrice: 100, quantity: 1, total: 100 }] } };
-  await recordTerminalSale(withBasket);
-  const listed = await listTerminalSales('wallet-a', 'mainnet');
-  (listed[0].request.fiat as any).amountMinor = 999;
-  (listed[0].request.basket!.lines[0] as any).name = 'Changed';
-  const existing = await recordTerminalSale(withBasket);
-  (existing.request.basket!.lines[0] as any).name = 'Again';
-  const fresh = (await listTerminalSales('wallet-a', 'mainnet'))[0];
-  expect(fresh.request.fiat?.amountMinor).toBe(100);
-  expect(fresh.request.basket?.lines[0].name).toBe('Tea');
-});
-
-it('persists and isolates reporting snapshots for Bitcoin sales, including explicit unavailability', async () => {
-  const rate = { currency: 'USD' as const, rate: '95000.25', fetchedAt: 1000,
-    source: 'coinbase' as const, status: 'fresh' as const };
-  await recordTerminalSale({ ...request, fiat: undefined, inputUnit: 'BTC', reportingRate: rate });
-  const saved = (await listTerminalSales('wallet-a', 'mainnet'))[0];
-  (saved.request.reportingRate as any).rate = '1';
-  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.reportingRate).toEqual(rate);
-  expect(JSON.parse(storage.get(key)!).sales[0].request.reportingRate).toEqual(rate);
-  await recordTerminalSale({ ...another, inputUnit: 'sats', reportingRate: null });
-  expect((await listTerminalSales('wallet-a', 'mainnet')).find(sale => sale.request.id === 'two')?.request.reportingRate).toBeNull();
-  expect(JSON.parse(storage.get(key)!).sales.find((sale: any) => sale.request.id === 'two').request.reportingRate).toBeNull();
-});
-
-it('revalidates replacement, corruption, duplicates, deletion and recreation', async () => {
-  await recordTerminalSale(request);
-  await listTerminalSales('wallet-a', 'mainnet');
-  storage.set(key, JSON.stringify({ version: 1, sales: [{ request: another, status: 'unknown', updatedAt: 5000 }] }));
-  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.id).toBe('two');
-  storage.set(key, '{broken');
-  await expect(listTerminalSales('wallet-a', 'mainnet')).rejects.toThrow('unreadable');
-  storage.set(key, JSON.stringify({ version: 1, sales: [
-    { request, status: 'unknown', updatedAt: 5000 },
-    { request, status: 'unknown', updatedAt: 5000 },
-  ] }));
-  await expect(listTerminalSales('wallet-a', 'mainnet')).rejects.toThrow('duplicates');
-  storage.delete(key);
-  expect(await listTerminalSales('wallet-a', 'mainnet')).toEqual([]);
-  storage.set(key, JSON.stringify({ version: 1, sales: [{ request, status: 'unknown', updatedAt: 5000 }] }));
-  expect((await listTerminalSales('wallet-a', 'mainnet'))[0].request.id).toBe('one');
-});
-
-it('propagates a storage read error even with a warm cache', async () => {
-  await recordTerminalSale(request);
-  await listTerminalSales('wallet-a', 'mainnet');
-  (AsyncStorage.getItem as jest.Mock).mockRejectedValueOnce(new Error('read failed'));
-  await expect(listTerminalSales('wallet-a', 'mainnet')).rejects.toThrow('read failed');
-  expect(await listTerminalSales('wallet-a', 'mainnet')).toHaveLength(1);
-});
-
-it('keeps a warm sale unchanged after a failed update and allows retry', async () => {
-  await recordTerminalSale(request);
-  await listTerminalSales('wallet-a', 'mainnet');
-  const before = storage.get(key);
-  const listener = jest.fn();
-  const unsubscribe = subscribeTerminalSales(listener);
-  try {
-    (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk unavailable'));
-    await expect(updateTerminalSalePayment(request, { status: 'received' }, 5000))
-      .rejects.toThrow('disk unavailable');
-    expect(storage.get(key)).toBe(before);
-    expect((await listTerminalSales('wallet-a', 'mainnet'))[0].status).toBe('unknown');
-    expect(listener).not.toHaveBeenCalled();
-    expect((await updateTerminalSalePayment(request, { status: 'received' }, 5000)).status).toBe('received');
-    expect(listener).toHaveBeenCalledTimes(1);
-  } finally { unsubscribe(); }
-});
-
-it('evicts the least recently used scope', async () => {
-  for (const walletId of ['evict-a', 'evict-b', 'evict-c']) {
-    storage.set(`${TERMINAL_SALES_KEY}:mainnet:${walletId}`, JSON.stringify({ version: 1, sales: [
-      { request: { ...request, walletId }, status: 'unknown', updatedAt: 5000 },
-    ] }));
-  }
-  const parse = jest.spyOn(JSON, 'parse');
-  try {
-    for (const walletId of ['evict-a', 'evict-b', 'evict-a', 'evict-c', 'evict-b']) {
-      await listTerminalSales(walletId, 'mainnet');
+it('uses a bounded composite-index seek and pages a 1000-row fixture 100 at a time', async () => {
+  const db = await getTerminalDatabase();
+  await db.withExclusiveTransactionAsync(async transaction => {
+    for (let index = 0; index < 1000; index++) {
+      const id = `bulk${String(index).padStart(4, '0')}`;
+      const sale = { request: request(id, 10_000 + index), status: 'unknown', updatedAt: 20_000 + index };
+      await transaction.runAsync(`INSERT INTO terminal_sales
+        (wallet_id,network,id,normalized_invoice,status,created_at,activity_at,updated_at,amount_hi,amount_lo,input_is_fiat,payload)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, ['wallet-a', 'mainnet', id, sale.request.invoice, sale.status,
+        sale.request.createdAt, sale.request.createdAt, sale.updatedAt, 0, 1000, 0, JSON.stringify(sale)]);
     }
-    expect(parse).toHaveBeenCalledTimes(4);
-  } finally { parse.mockRestore(); }
+  });
+  let cursor = null;
+  const ids: string[] = [];
+  for (let page = 0; page < 10; page++) {
+    const result = await listTerminalSalesPage('wallet-a', 'mainnet', { range: null, cursor, limit: 100 });
+    ids.push(...result.items.map(item => item.request.id));
+    cursor = result.nextCursor;
+  }
+  expect(ids).toHaveLength(1000);
+  expect(new Set(ids).size).toBe(1000);
+  expect(cursor).toBeNull();
+  const plan = await db.getAllAsync<{ detail: string }>(`EXPLAIN QUERY PLAN SELECT payload,activity_at,id FROM terminal_sales
+    WHERE wallet_id=? AND network=? AND activity_at>=? AND activity_at<? AND (activity_at,id)<(?,?)
+    ORDER BY activity_at DESC,id DESC LIMIT ?`, ['wallet-a', 'mainnet', 10_000, 20_000, 10_900, 'bulk0900', 101]);
+  expect(plan.map(row => row.detail).join('\n')).toMatch(/SEARCH terminal_sales USING INDEX terminal_sales_activity .*activity_at[<=>]/);
+});
+
+it('rejects non-string reconciliation fields before writing', async () => {
+  const operation = reconcileTerminalSales('wallet-a', 'mainnet', [
+    { invoice: 123, status: 'received', paymentId: 'sdk' },
+    { invoice: 'lnbcvalidabc', status: 'received', paymentId: 123 },
+  ] as any, 3000);
+  await expect(operation).rejects.toThrow('Invalid Terminal payment history');
+  await expect(updateTerminalSalePayment(request('invalidpayment', 1000),
+    { status: 'pending', paymentId: 123 } as any, 3000)).rejects.toThrow('Invalid Terminal payment update');
+  expect((await getTerminalSalesSummary('wallet-a', 'mainnet', null)).activityCount).toBe(0);
+});
+
+it('rolls back failed writes, preserves identity and never downgrades receipt status', async () => {
+  const original = request('safe', 1000);
+  const listener = jest.fn();
+  const stop = subscribeTerminalSales(listener);
+  try {
+    await recordTerminalSale(original);
+    failNextTerminalSqliteWrite(new Error('disk full'));
+    await expect(updateTerminalSalePayment(original, { status: 'received', paymentId: 'paid' }, 3000)).rejects.toThrow('disk full');
+    expect((await getTerminalSale('wallet-a', 'mainnet', original.id))?.status).toBe('unknown');
+    expect(listener).toHaveBeenCalledTimes(1);
+    const paid = await updateTerminalSalePayment(original, { status: 'received', paymentId: 'paid' }, 3000);
+    expect(await updateTerminalSalePayment(original, { status: 'pending', paymentId: 'other' }, 4000)).toEqual(paid);
+    await expect(recordTerminalSale({ ...original, amountSats: 2000 })).rejects.toThrow('conflicts');
+    await expect(recordTerminalSale({ ...original, id: 'other' })).rejects.toThrow('conflicts');
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect((await getTerminalSalesSummary('wallet-a', 'mainnet', null)).sats).toBe(1000n);
+  } finally { stop(); }
 });
