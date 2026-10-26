@@ -22,6 +22,7 @@ jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'refund-test-id' }));
 jest.mock('../../services/terminalSalesExport', () => ({ exportTerminalSalesCsv: jest.fn() }));
 jest.mock('../../services/terminalSalesComparison', () => ({ ...jest.requireActual('../../services/terminalSalesComparison'), getTerminalSalesComparison: jest.fn(() => new Promise(() => undefined)) }));
+jest.mock('../../services/terminalItemPerformance', () => ({ getTerminalItemPerformance: jest.fn(() => new Promise(() => undefined)), formatTerminalItemGross: jest.fn() }));
 
 const validateTerminalInvoice = jest.fn();
 const verifyTerminalInvoice = jest.fn();
@@ -265,4 +266,22 @@ it('invalidates pending export callbacks when period changes, even if it changes
   await act(async () => { fireEvent.press(view.getByLabelText('Export today’s activity')); });
   expect(exportTerminalSalesCsv).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'today', day: expect.any(Date) }));
   expect(exportTerminalSalesCsv).toHaveBeenCalledTimes(2);
+});
+
+
+it('keeps Sales minimal and passes a copied selection to Reports without loading either report', async () => {
+  const onOpenReports = jest.fn();
+  const comparisons = require('../../services/terminalSalesComparison').getTerminalSalesComparison as jest.Mock;
+  const items = require('../../services/terminalItemPerformance').getTerminalItemPerformance as jest.Mock;
+  comparisons.mockClear(); items.mockClear();
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} onOpenReports={onOpenReports} />);
+  await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
+  expect(view.queryByLabelText('Period comparison')).toBeNull();
+  expect(view.queryByLabelText('Top items')).toBeNull();
+  expect(comparisons).not.toHaveBeenCalled();
+  expect(items).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  fireEvent.press(view.getByLabelText('Open reports'));
+  expect(onOpenReports).toHaveBeenCalledWith(expect.objectContaining({ period: 'week', day: expect.any(Number) }));
+  expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
 });

@@ -14,6 +14,7 @@ jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'custom-range-test-id' }));
 jest.mock('../../services/terminalSalesExport', () => ({ exportTerminalSalesCsv: jest.fn(async () => true) }));
 jest.mock('../../services/terminalSalesComparison', () => ({ ...jest.requireActual('../../services/terminalSalesComparison'), getTerminalSalesComparison: jest.fn(() => new Promise(() => undefined)) }));
+jest.mock('../../services/terminalItemPerformance', () => ({ getTerminalItemPerformance: jest.fn(() => new Promise(() => undefined)), formatTerminalItemGross: jest.fn() }));
 jest.mock('../../services/terminalSales', () => ({
   listTerminalSalesPage: jest.fn(async () => ({ items: [], nextCursor: null })),
   getTerminalSalesSummary: jest.fn(async () => ({ activityCount: 0, receivedCount: 0, sats: 0n, bitcoinSats: 0n, fiatMinor: {} })),
@@ -34,6 +35,7 @@ beforeEach(() => jest.clearAllMocks());
 it('keeps the applied filter and queries unchanged while the custom editor is opened and cancelled', async () => {
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
+  expect(view.getByText('This month')).toBeTruthy();
   const callsBefore = (listTerminalSalesPage as jest.Mock).mock.calls.length;
   fireEvent.press(view.getByLabelText('Custom sales range'));
   expect(view.getByLabelText('Today sales').props.accessibilityState.selected).toBe(true);
