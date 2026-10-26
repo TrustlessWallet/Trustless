@@ -6,7 +6,7 @@ import { isTerminalSale, TerminalSale } from './terminalSales';
 import { isTerminalRefundAttempt, TerminalRefundAttempt } from './terminalRefunds';
 import { Buffer } from 'buffer';
 import { createTerminalExportSnapshot, readTerminalExportPage, removeTerminalExportSnapshot } from './terminalDatabase';
-import { isInTerminalSalesPeriod, SalesPeriod, terminalSalesPeriodBounds } from './terminalSalesPeriod';
+import { isInTerminalSalesPeriod, CustomSalesDateRange, SalesPeriod, terminalSalesPeriodBounds } from './terminalSalesPeriod';
 
 export type SalesExportPeriod = SalesPeriod;
 type ExportOptions = {
@@ -14,6 +14,7 @@ type ExportOptions = {
   network: TerminalNetwork;
   period: SalesExportPeriod;
   day: Date;
+  customRange?: CustomSalesDateRange;
   isCurrent: () => boolean;
 };
 
@@ -37,10 +38,10 @@ const cell = (value: string | number) => {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
-export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: readonly TerminalRefundAttempt[], period: SalesExportPeriod, day: Date): string {
-  terminalSalesPeriodBounds(period, day);
+export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: readonly TerminalRefundAttempt[], period: SalesExportPeriod, day: Date, customRange?: CustomSalesDateRange): string {
+  terminalSalesPeriodBounds(period, day, customRange);
   const records = [
-    ...sales.filter(sale => isInTerminalSalesPeriod(sale.receivedAt ?? sale.request.createdAt, period, day)).map(sale => ({
+    ...sales.filter(sale => isInTerminalSalesPeriod(sale.receivedAt ?? sale.request.createdAt, period, day, customRange)).map(sale => ({
       time: sale.receivedAt ?? sale.request.createdAt,
       fields: [
         'sale', sale.request.id, sale.request.id, sale.status, sale.request.network,
@@ -50,7 +51,7 @@ export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: r
         ...rateFields(sale.request.reportingRate, sale.request.fiat),
       ],
     })),
-    ...refunds.filter(refund => isInTerminalSalesPeriod(refund.updatedAt, period, day)).map(refund => ({
+    ...refunds.filter(refund => isInTerminalSalesPeriod(refund.updatedAt, period, day, customRange)).map(refund => ({
       time: refund.updatedAt,
       fields: [
         'refund', refund.id, refund.saleId, refund.status, refund.network,
@@ -62,8 +63,10 @@ export function buildTerminalSalesCsv(sales: readonly TerminalSale[], refunds: r
   return [columns.join(','), ...records.map(record => record.fields.map(cell).join(','))].join('\r\n') + '\r\n';
 }
 
-export async function exportTerminalSalesCsv({ walletId, network, period, day, isCurrent }: ExportOptions): Promise<boolean> {
-  const range = terminalSalesPeriodBounds(period, day);
+export async function exportTerminalSalesCsv({ walletId, network, period, day, customRange, isCurrent }: ExportOptions): Promise<boolean> {
+  const reportDay = new Date(day.getTime());
+  const selectedDates = customRange ? { startDate: customRange.startDate, endDate: customRange.endDate } : undefined;
+  const range = terminalSalesPeriodBounds(period, reportDay, selectedDates);
   if (!isCurrent()) return false;
   if (!await Sharing.isAvailableAsync()) throw new Error('Sharing unavailable on this device.');
   if (!isCurrent()) return false;
@@ -74,12 +77,13 @@ export async function exportTerminalSalesCsv({ walletId, network, period, day, i
   let handle: ReturnType<File['open']> | undefined;
   try {
     if (!isCurrent()) return false;
-    const localDate = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-    const stamp = `${period === 'all' ? '' : `${localDate}-`}${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const localDate = `${reportDay.getFullYear()}-${String(reportDay.getMonth() + 1).padStart(2, '0')}-${String(reportDay.getDate()).padStart(2, '0')}`;
+    const dates = period === 'custom' ? `${selectedDates!.startDate}-${selectedDates!.endDate}-` : period === 'all' ? '' : `${localDate}-`;
+    const stamp = `${dates}${Date.now()}-${Math.random().toString(36).slice(2)}`;
     file = new File(Paths.cache, `trustless-terminal-${period}-${stamp}.csv`);
     file.create();
     handle = file.open(FileMode.WriteOnly);
-    handle.writeBytes(Buffer.from(columns.join(',') + '\r\n', 'utf8'));
+    handle.writeBytes(Uint8Array.from(Buffer.from(columns.join(',') + '\r\n', 'utf8')));
     let afterSeq = 0;
     while (true) {
       if (!isCurrent()) return false;
@@ -94,7 +98,7 @@ export async function exportTerminalSalesCsv({ walletId, network, period, day, i
           parts.push(buildTerminalSalesCsv([], [record], 'all', day).slice(columns.join(',').length + 2));
         } else throw new Error('Saved Terminal export record is invalid.');
       }
-      if (parts.length) handle.writeBytes(Buffer.from(parts.join(''), 'utf8'));
+      if (parts.length) handle.writeBytes(Uint8Array.from(Buffer.from(parts.join(''), 'utf8')));
       if (page.nextSeq === null) break;
       if (page.nextSeq <= afterSeq) throw new Error('Invalid Terminal export cursor.');
       afterSeq = page.nextSeq;

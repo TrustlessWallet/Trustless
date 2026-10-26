@@ -18,7 +18,7 @@ The catalog currently has a 30-item safety limit; this document does not remove 
 
 ## Delivered: period reporting
 
-Extend the existing Sales sheet with Today, 7 days, Month, and All. This remains free. Avoid a separate dashboard, charts, promotional labels, or changes to the checkout screen.
+Extend the existing Sales sheet with Today, 7 days, Month, All, and Custom. This remains free. Avoid a separate dashboard, charts, promotional labels, or changes to the checkout screen.
 
 A period controls the same data in the summary, activity list, refund total, and CSV. Seven days includes today and the preceding six local calendar days. Month starts on the first of the current month. Bounded periods end at the next local midnight, with an exclusive upper bound. Calendar boundaries must handle daylight-saving changes without assuming 24-hour days.
 
@@ -83,3 +83,7 @@ Use focused calendar/filter/export/state tests and simulator checks with fixture
 ## Reference
 
 [BTCPay's reporting documentation](https://docs.btcpayserver.org/Reporting/) separates payments and products-sold reporting. It is a useful benchmark for later business reports; the proposed Trustless tier boundary above is a product decision, not a claim about competitors' pricing.
+
+### Custom date range
+
+Custom opens a compact calendar without changing the applied report. Apply selects inclusive local From/To dates for sales, totals, refunds, and CSV; Cancel leaves the current report intact. Same-day ranges are supported, future dates are disabled, and reversed ranges cannot be applied. CSV filenames include both dates. Calendar boundaries use the next local midnight, including daylight-saving changes.

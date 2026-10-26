@@ -116,7 +116,7 @@ function validRange(range: unknown): range is TerminalRange {
   if (!range || typeof range !== 'object') return false;
   const value = range as Record<string, unknown>;
   return Number.isSafeInteger(value.start) && Number.isSafeInteger(value.end) &&
-    (value.start as number) >= 0 && (value.end as number) > (value.start as number);
+    (value.end as number) > (value.start as number);
 }
 
 export function listTerminalSalesPage(walletId: string, network: string,

@@ -1,4 +1,4 @@
-import { isInTerminalSalesPeriod, terminalSalesPeriodBounds } from '../../services/terminalSalesPeriod';
+import { isInTerminalSalesPeriod, parseSalesDate, localSalesDateKey, terminalSalesPeriodBounds } from '../../services/terminalSalesPeriod';
 
 it('uses inclusive local midnight and exclusive next midnight for today', () => {
   const day = new Date(2026, 9, 20, 15, 42);
@@ -57,4 +57,29 @@ it('rejects invalid periods, dates, and timestamps', () => {
   expect(() => terminalSalesPeriodBounds('bad' as never, new Date())).toThrow();
   expect(() => terminalSalesPeriodBounds('all', new Date(NaN))).toThrow();
   expect(() => isInTerminalSalesPeriod(NaN, 'all', new Date())).toThrow();
+});
+
+it('includes both custom calendar dates and rejects rollover, reverse and missing dates', () => {
+  const custom = { startDate: '2024-02-28', endDate: '2024-02-29' };
+  const bounds = terminalSalesPeriodBounds('custom', new Date(), custom)!;
+  expect(bounds).toEqual({ start: new Date(2024, 1, 28).getTime(), end: new Date(2024, 2, 1).getTime() });
+  expect(isInTerminalSalesPeriod(bounds.start, 'custom', new Date(), custom)).toBe(true);
+  expect(isInTerminalSalesPeriod(bounds.end - 1, 'custom', new Date(), custom)).toBe(true);
+  expect(isInTerminalSalesPeriod(bounds.end, 'custom', new Date(), custom)).toBe(false);
+  expect(localSalesDateKey(parseSalesDate(custom.endDate))).toBe('2024-02-29');
+  for (const invalid of ['2023-02-29', '2026-04-31', '2026-00-10', '2026-13-01', '2026-01-00', '2026-1-1', '01/01/2026', '0099-01-01']) {
+    expect(() => parseSalesDate(invalid)).toThrow('Invalid sales date');
+  }
+  expect(() => terminalSalesPeriodBounds('custom', new Date())).toThrow();
+  expect(() => terminalSalesPeriodBounds('custom', new Date(), { startDate: '2026-10-20', endDate: '2026-10-19' })).toThrow('End date');
+});
+
+it('handles same-day custom ranges through spring and autumn clock changes', () => {
+  for (const date of ['2026-03-08', '2026-11-01', '2026-03-29', '2026-10-25']) {
+    const local = parseSalesDate(date);
+    const bounds = terminalSalesPeriodBounds('custom', new Date(), { startDate: date, endDate: date })!;
+    expect(bounds.start).toBe(local.getTime());
+    expect(bounds.end).toBe(new Date(local.getFullYear(), local.getMonth(), local.getDate() + 1).getTime());
+    expect(bounds.end).toBeGreaterThan(bounds.start);
+  }
 });

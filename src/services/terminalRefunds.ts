@@ -230,7 +230,7 @@ export function removeTerminalRefunds(walletId: string, network: string): Promis
 export function getTerminalRefundTotal(walletId: string, network: string, range: TerminalRange): Promise<bigint> {
   const identity = terminalScope(walletId, network);
   const validRange = range === null || (!!range && typeof range === 'object' && Number.isSafeInteger(range.start) &&
-    Number.isSafeInteger(range.end) && range.start >= 0 && range.end > range.start);
+    Number.isSafeInteger(range.end) && range.end > range.start);
   if (!validRange) {
     return Promise.reject(new Error('Invalid Terminal refund range.'));
   }
