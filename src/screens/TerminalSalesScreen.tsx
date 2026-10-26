@@ -14,13 +14,13 @@ import { getTerminalSale, getTerminalSalesSummary, listTerminalSalesPage, subscr
 import { getTerminalRefundTotal, listTerminalRefundsForSale, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
 import { exportTerminalSalesCsv } from '../services/terminalSalesExport';
-import { CustomSalesDateRange, localSalesDateKey, previousTerminalSalesPeriodBounds, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
+import { CustomSalesDateRange, localSalesDateKey, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 import TerminalRefundScreen from './TerminalRefundScreen';
-import TerminalDateRangePicker, { TerminalDateRangeDraft } from '../components/TerminalDateRangePicker';
-import TerminalPeriodComparison from '../components/TerminalPeriodComparison';
-import TerminalItemPerformance from '../components/TerminalItemPerformance';
+import { TerminalDateRangeDraft } from '../components/TerminalDateRangePicker';
+import TerminalSalesPeriodControls from '../components/TerminalSalesPeriodControls';
+import type { TerminalReportSelection } from './TerminalReportsScreen';
 
-type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean };
+type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean; onOpenReports?: (selection: TerminalReportSelection) => void };
 type Cursor = { at: number; id: string };
 type SalesSummary = Awaited<ReturnType<typeof getTerminalSalesSummary>>;
 type LoadState = {
@@ -83,7 +83,7 @@ function statusFor(sale: TerminalSale, now: number): { label: string; tone: 'pai
   }
 }
 
-export default function TerminalSalesScreen({ walletId, network, onClose, visible = true }: Props) {
+export default function TerminalSalesScreen({ walletId, network, onClose, visible = true, onOpenReports }: Props) {
   const { theme } = useTheme();
   const focused = useIsFocused();
   const headerEnabled = useContext(TerminalSheetInteractionContext) && focused;
@@ -103,7 +103,6 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
   const periodDay = useMemo(() => new Date(dayStart), [dayStart]);
   const range = useMemo(() => terminalSalesPeriodBounds(period, periodDay, customRange ?? undefined), [period, periodDay, customRange]);
-  const previousRange = useMemo(() => previousTerminalSalesPeriodBounds(period, periodDay, customRange ?? undefined), [period, periodDay, customRange]);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
   const loadIdentity = `${scope}:${period}:${rangeKey}`;
   const [checking, setChecking] = useState(false);
@@ -354,10 +353,6 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     }
   };
 
-  const bounds = terminalSalesPeriodBounds(period, day, customRange ?? undefined);
-  const dateCaption = period === 'all' ? 'All sales for this wallet'
-    : period === 'today' ? formatDate(now)
-      : `${formatDate(bounds!.start)} – ${formatDate(bounds!.end - 1)}`;
   const sectionTitle = period === 'today' ? 'TODAY’S ACTIVITY' : period === 'week' ? 'LAST 7 DAYS’ ACTIVITY' : period === 'month' ? 'THIS MONTH’S ACTIVITY' : period === 'custom' ? 'CUSTOM ACTIVITY' : 'ALL ACTIVITY';
 
   const openCustomEditor = () => {
@@ -376,18 +371,13 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   };
 
   const header = <>
-    <View style={styles.tabs}>
-        {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole={item.value === 'custom' ? 'button' : 'tab'} accessibilityState={{ selected: period === item.value && !detail, ...(item.value === 'custom' ? { expanded: !!editingCustom } : {}) }} accessibilityLabel={item.label} onPress={() => { if (item.value === 'custom') { openCustomEditor(); return; } ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); setPeriodState({ scope, value: item.value }); }} style={[styles.tab, item.value === 'custom' && styles.customTab, item.value === 'month' && styles.monthTab, item.value !== 'custom' && period === item.value && !detail && styles.activeTab]}>
-          {item.value === 'custom' ? <View style={[styles.customControl, (period === 'custom' || !!editingCustom) && styles.customControlActive]}>
-            <Feather name="calendar" size={13} color={period === 'custom' || editingCustom ? theme.colors.primary : theme.colors.muted} />
-            <Text style={[styles.customControlText, (period === 'custom' || !!editingCustom) && styles.activeTabText]}>{item.title}</Text>
-          </View> : <Text style={[styles.tabText, item.value === 'month' && styles.monthTabText, period === item.value && !detail && styles.activeTabText]}>{item.title}</Text>}
-        </TouchableOpacity>)}
-    </View>
-    {detail ? <View style={styles.heading}><Text style={styles.subheading}>{formatLongDate(saleTime(detail))}</Text></View> : null}
+    <TerminalSalesPeriodControls period={period} customRange={customRange} draft={editingCustom?.draft ?? null} day={day} disabled={!visible || !headerEnabled}
+      detailCaption={detail ? formatLongDate(saleTime(detail)) : undefined}
+      onSelect={value => {
+        if (value === 'custom') { openCustomEditor(); return; }
+        ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); setPeriodState({ scope, value });
+      }} onDraftChange={draft => setCustomEditor({ scope, draft })} onApply={applyCustomRange} onCancel={() => setCustomEditor(null)} />
     {!detail ? <>
-      {editingCustom ? <TerminalDateRangePicker value={editingCustom.draft} today={new Date(now)} onChange={draft => setCustomEditor({ scope, draft })} onApply={applyCustomRange} onCancel={() => setCustomEditor(null)} /> : period === 'custom' && customRange ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit custom date range" onPress={openCustomEditor} style={styles.customRangeRow}><Text style={styles.customRangeText}>{dateCaption}</Text><Feather name="calendar" size={16} color={theme.colors.muted} /></TouchableOpacity> : null}
-      {period !== 'custom' ? <View style={styles.heading}><Text style={styles.subheading}>{dateCaption}</Text></View> : null}
       {exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.summary}>
         <Text style={styles.summaryLabel}>PAID SALES</Text>
@@ -396,9 +386,10 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {totals.length ? totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.amount}</Text></View>) : <Text style={styles.noTotals}>No paid sales {period === 'today' ? 'today' : period === 'all' ? 'yet' : 'in this period'}</Text>}
         {refundedSats !== null ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View> : null}
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
-        {visible && summary && refundedSats !== null && range && previousRange ? <TerminalPeriodComparison walletId={walletId} network={network} scope={scope} periodDay={periodDay} currentRange={range} previousRange={previousRange} currentSummary={summary} currentRefunds={refundedSats} /> : null}
       </View> : null}
-      {!error && summary && refundedSats !== null && paidCount > 0 ? <TerminalItemPerformance walletId={walletId} network={network} scope={scope} range={range} visible={visible} currentSummary={summary} currentRefunds={refundedSats} /> : null}
+      {onOpenReports ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => onOpenReports({ period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now })} style={styles.reportsRow}>
+        <Text style={styles.reportsText}>Reports</Text><Feather name="chevron-right" size={18} color={theme.colors.muted} />
+      </TouchableOpacity> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text><Text style={styles.sectionCount}>{summary?.activityCount ?? shown.length}</Text></View> : null}
     </> : null}
   </>;
@@ -491,22 +482,8 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     root: { flex: 1, backgroundColor: colors.background },
     scroll: { flex: 1, minHeight: 0 },
     exportError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginHorizontal: 24, marginTop: 12 },
-    heading: { paddingHorizontal: 24, paddingTop: 16 },
-    title: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 42 },
-    subheading: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 13 },
-    tabs: { flexDirection: 'row', marginHorizontal: 24, marginTop: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
-    tab: { flex: 1, minWidth: 0, minHeight: 44, paddingHorizontal: 2, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-    customTab: { flex: 1.35, paddingVertical: 5 },
-    customControl: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
-    customControlActive: { borderColor: colors.bitcoin },
-    customControlText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 11 },
-    activeTab: { borderBottomColor: colors.bitcoin },
-    tabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
-    monthTab: { flex: 1.4 },
-    monthTabText: { fontSize: 11 },
-    activeTabText: { color: colors.primary },
-    customRangeRow: { minHeight: 44, marginHorizontal: 24, marginTop: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-    customRangeText: { flex: 1, color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 11 },
+    reportsRow: { minHeight: 52, marginHorizontal: 24, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    reportsText: { color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 14 },
     summary: { marginHorizontal: 24, marginTop: 26, padding: 22, borderRadius: 18, backgroundColor: colors.surface },
     summaryLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
     paidCount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 48, marginTop: 3 },

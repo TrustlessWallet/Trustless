@@ -12,8 +12,10 @@ type Props = {
   scope: string;
   range: TerminalRange;
   visible: boolean;
-  currentSummary: TerminalSalesSummary;
-  currentRefunds: bigint;
+  currentSummary?: TerminalSalesSummary;
+  currentRefunds?: bigint;
+  revision?: number;
+  showRefundNote?: boolean;
 };
 
 type Result = Awaited<ReturnType<typeof getTerminalItemPerformance>>;
@@ -23,7 +25,7 @@ type State =
 
 const quantity = (value: bigint) => value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
-export default function TerminalItemPerformance({ walletId, network, scope, range, visible, currentSummary, currentRefunds }: Props) {
+export default function TerminalItemPerformance({ walletId, network, scope, range, visible, currentSummary, currentRefunds = 0n, revision = 0, showRefundNote }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const mounted = useRef(true);
@@ -33,7 +35,7 @@ export default function TerminalItemPerformance({ walletId, network, scope, rang
     currentInput.current = { summary: currentSummary, refunds: currentRefunds, revision: currentInput.current.revision + 1 };
   }
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
-  const identity = `${scope}:${rangeKey}:${currentInput.current.revision}`;
+  const identity = `${scope}:${rangeKey}:${currentInput.current.revision}:${revision}`;
   const [state, setState] = useState<State>({ identity, status: 'loading', result: null });
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export default function TerminalItemPerformance({ walletId, network, scope, rang
   }, []);
 
   const load = useCallback(async () => {
-    if (!visible || currentSummary.receivedCount === 0) return;
+    if (!visible || currentSummary?.receivedCount === 0) return;
     const request = ++generation.current;
     setState(previous => previous.identity === identity && previous.status === 'loading' ? previous : { identity, status: 'loading', result: null });
     try {
@@ -54,11 +56,11 @@ export default function TerminalItemPerformance({ walletId, network, scope, rang
   }, [identity, walletId, network, range, visible, currentSummary]);
 
   useEffect(() => {
-    if (visible && currentSummary.receivedCount > 0) void load();
+    if (visible && currentSummary?.receivedCount !== 0) void load();
     return () => { ++generation.current; };
-  }, [load, visible, currentSummary.receivedCount]);
+  }, [load, visible, currentSummary?.receivedCount]);
 
-  if (!visible || currentSummary.receivedCount === 0) return null;
+  if (!visible || currentSummary?.receivedCount === 0) return null;
   const result = state.identity === identity && state.status === 'ready' ? state.result : null;
   const loading = state.identity !== identity || state.status === 'loading';
   const error = state.identity === identity && state.status === 'error';
@@ -79,7 +81,7 @@ export default function TerminalItemPerformance({ walletId, network, scope, rang
         <Text style={styles.quantity}>× {quantity(item.quantity)}</Text>
         <Text style={styles.gross}>{formatTerminalItemGross(item.gross, item.unit)}</Text>
       </View>) : <Text style={styles.empty}>No item sales in this period</Text>}
-      {currentRefunds > 0n ? <Text style={styles.note}>Refunds aren’t assigned to items.</Text> : null}
+      {showRefundNote === true || (showRefundNote === undefined && currentRefunds > 0n) ? <Text style={styles.note}>Refunds aren’t assigned to items.</Text> : null}
       {result.paidWithoutItems > 0 ? <Text style={styles.note}>{result.paidWithoutItems} paid {result.paidWithoutItems === 1 ? 'sale' : 'sales'} without item details excluded</Text> : null}
     </> : null}
   </View>;

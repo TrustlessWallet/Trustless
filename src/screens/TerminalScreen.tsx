@@ -18,6 +18,7 @@ import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerm
 import { FiatCurrency, getTerminalRates, getTerminalReportingRate, TerminalRates, TerminalReportingRate } from '../services/terminalRates';
 import { recordTerminalSale, updateTerminalSalePayment } from '../services/terminalSales';
 import TerminalSalesScreen from './TerminalSalesScreen';
+import TerminalReportsScreen, { TerminalReportSelection } from './TerminalReportsScreen';
 import TerminalSettingsScreen from './TerminalSettingsScreen';
 import TerminalItemsScreen from './TerminalItemsScreen';
 import TerminalItemEditorScreen from './TerminalItemEditorScreen';
@@ -30,7 +31,7 @@ const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
 const isFiat = (unit: TerminalUnit): unit is FiatCurrency => FIAT_UNITS.includes(unit as FiatCurrency);
 export const isTerminalPollDue = (lastAttempt: number, intervalMs: number, now = Date.now()) => now < lastAttempt || now - lastAttempt >= intervalMs;
 
-type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined; Items: undefined; QuickItems: undefined; ItemEditor: { item?: TerminalItem } | undefined; Invoice: undefined };
+type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined; Reports: { walletId: string; network: ReturnType<typeof terminalNetwork>; selection: TerminalReportSelection }; Items: undefined; QuickItems: undefined; ItemEditor: { item?: TerminalItem } | undefined; Invoice: undefined };
 const TerminalStack = createNativeStackNavigator<TerminalStackParams>();
 type CheckoutNavigation = NativeStackNavigationProp<TerminalStackParams, 'Checkout'>;
 type InvoiceNavigation = NativeStackNavigationProp<TerminalStackParams, 'Invoice'>;
@@ -88,9 +89,14 @@ function CheckoutVisibility({ onChange, children }: { onChange: (focused: boolea
   return <>{children}</>;
 }
 
-function SalesRoute({ walletId, network, rootVisible, onClose }: { walletId: string; network: ReturnType<typeof terminalNetwork>; rootVisible: boolean; onClose: () => void }) {
+function SalesRoute({ walletId, network, rootVisible, onClose, onOpenReports }: { walletId: string; network: ReturnType<typeof terminalNetwork>; rootVisible: boolean; onClose: () => void; onOpenReports: (selection: TerminalReportSelection) => void }) {
   const focused = useIsFocused();
-  return <TerminalSalesScreen walletId={walletId} network={network} visible={rootVisible && focused} onClose={onClose} />;
+  return <TerminalSalesScreen walletId={walletId} network={network} visible={rootVisible && focused} onClose={onClose} onOpenReports={onOpenReports} />;
+}
+
+function ReportsRoute({ walletId, network, rootVisible, selection, onClose }: { walletId: string; network: ReturnType<typeof terminalNetwork>; rootVisible: boolean; selection: TerminalReportSelection; onClose: () => void }) {
+  const focused = useIsFocused();
+  return <TerminalReportsScreen walletId={walletId} network={network} initialSelection={selection} visible={rootVisible && focused} onClose={onClose} />;
 }
 
 type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expired' | 'verificationUnavailable' | 'creationFailed' | 'walletChanged';
@@ -631,7 +637,10 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} getTerminalDraft={getTerminalDraft} onOpenItems={() => navigation.navigate('Items')} onClose={() => navigation.goBack()} />}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Sales" options={sheetOptions}>
-      {({ navigation }) => activeWallet ? <SalesRoute walletId={activeWallet.id} network={network} rootVisible={visible} onClose={() => navigation.goBack()} /> : null}
+      {({ navigation }) => activeWallet ? <SalesRoute walletId={activeWallet.id} network={network} rootVisible={visible} onClose={() => navigation.goBack()} onOpenReports={selection => navigation.navigate('Reports', { walletId: activeWallet.id, network, selection })} /> : null}
+    </TerminalStack.Screen>
+    <TerminalStack.Screen name="Reports" options={sheetOptions}>
+      {({ navigation, route }) => activeWallet?.id === route.params.walletId && network === route.params.network ? <ReportsRoute walletId={route.params.walletId} network={route.params.network} rootVisible={visible} selection={route.params.selection} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Items" options={sheetOptions}>
       {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onEdit={item => navigation.navigate('ItemEditor', { item })} onClose={() => navigation.goBack()} /> : null}

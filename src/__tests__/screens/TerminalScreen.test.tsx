@@ -769,3 +769,22 @@ it.each(['sats', 'BTC', 'USD'])('keeps Generate inactive for an empty or zero %s
   expect(createTerminalInvoice).not.toHaveBeenCalled();
   expect(view.queryByText(/Enter an amount|Enter a valid amount|Enter BTC/)).toBeNull();
 });
+
+it('opens Reports as its own sheet and preserves the Sales filter on return', async () => {
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Sales')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Sales'));
+  await waitFor(() => expect(view.getByLabelText('Close sales')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  fireEvent.press(view.getByLabelText('Open reports'));
+  await waitFor(() => expect(view.getByLabelText('Close reports')).toBeTruthy());
+  expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
+  const hiddenSalesClose = view.getByLabelText('Close sales', { includeHiddenElements: true });
+  expect(hiddenSalesClose.props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(view.getByLabelText('All sales'));
+  expect(view.getByLabelText('All sales').props.accessibilityState.selected).toBe(true);
+  fireEvent.press(view.getByLabelText('Close reports'));
+  await waitFor(() => expect(view.getByLabelText('Close sales')).toBeTruthy());
+  expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
+  expect(view.queryByLabelText('Close reports')).toBeNull();
+});

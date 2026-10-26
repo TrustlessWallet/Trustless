@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import TerminalSalesScreen from '../../screens/TerminalSalesScreen';
+import TerminalReportsScreen from '../../screens/TerminalReportsScreen';
 import { getTerminalSalesSummary, listTerminalSalesPage } from '../../services/terminalSales';
 import { getTerminalRefundTotal } from '../../services/terminalRefunds';
 import { getTerminalSalesComparison } from '../../services/terminalSalesComparison';
@@ -44,7 +44,7 @@ beforeEach(() => {
 });
 
 it('shows exact previous values and signed absolute changes for currency, sats, and refunds', async () => {
-  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  const view = render(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByLabelText('Paid sales, previous 1, change +2')).toBeTruthy());
   expect(view.getByLabelText('USD, previous $0.00, change +$10.00')).toBeTruthy();
   expect(view.getByLabelText('EUR, previous €5.00, change −€5.00')).toBeTruthy();
@@ -55,16 +55,17 @@ it('shows exact previous values and signed absolute changes for currency, sats, 
   expect(view.queryByText(/%/)).toBeNull();
 });
 
-it('mounts the independent top-items section between summary data and activity', async () => {
+it('mounts item performance only after selecting the Items report', async () => {
   (getTerminalItemPerformance as jest.Mock).mockResolvedValueOnce({ items: [{ itemId: 'latte', name: 'Paid latte snapshot', unit: 'USD', quantity: 4n, gross: 2000n }], hasMore: false, paidWithoutItems: 0 });
-  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  const view = render(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  fireEvent.press(view.getByLabelText('Item reports'));
   await waitFor(() => expect(view.getByLabelText('Paid latte snapshot, quantity 4, gross USD 2000')).toBeTruthy());
   expect(view.getByText('TOP ITEMS')).toBeTruthy();
-  expect(view.getByText('TODAY’S ACTIVITY')).toBeTruthy();
+  expect(view.queryByText('TODAY’S ACTIVITY')).toBeNull();
 });
 
 it('hides comparison for All without starting a previous-period request', async () => {
-  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  const view = render(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByLabelText('Period comparison')).toBeTruthy());
   (getTerminalSalesComparison as jest.Mock).mockClear();
   fireEvent.press(view.getByLabelText('All sales'));
@@ -78,7 +79,7 @@ it('discards a stale comparison after the selected period changes', async () => 
   (getTerminalSalesComparison as jest.Mock)
     .mockImplementationOnce(() => new Promise(resolve => { finishToday = resolve; }))
     .mockImplementationOnce(() => new Promise(resolve => { finishWeek = resolve; }));
-  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  const view = render(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(finishToday).toBeDefined());
   fireEvent.press(view.getByLabelText('Last 7 days sales'));
   await waitFor(() => expect(finishWeek).toBeDefined());
@@ -91,7 +92,7 @@ it('discards a stale comparison after the selected period changes', async () => 
 
 it('keeps current totals visible when comparison fails and retries only the comparison', async () => {
   (getTerminalSalesComparison as jest.Mock).mockRejectedValueOnce(new Error('comparison failed'));
-  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  const view = render(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('Comparison unavailable')).toBeTruthy());
   expect(view.getAllByText('3').length).toBeGreaterThan(0);
   const currentReads = (listTerminalSalesPage as jest.Mock).mock.calls.length;
@@ -104,9 +105,9 @@ it('keeps current totals visible when comparison fails and retries only the comp
 it('never displays the prior wallet comparison after switching wallets', async () => {
   let finishOld!: (value: unknown) => void;
   (getTerminalSalesComparison as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
-  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  const view = render(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(finishOld).toBeDefined());
-  view.rerender(<TerminalSalesScreen walletId="wallet-b" network="mainnet" onClose={jest.fn()} />);
+  view.rerender(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-b" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByLabelText('Paid sales, previous 1, change +2')).toBeTruthy());
   expect(getTerminalSalesComparison).toHaveBeenLastCalledWith('wallet-b', 'mainnet', expect.any(Object));
   await act(async () => { finishOld({ summary: summary(99), refundedSats: 0n }); });
