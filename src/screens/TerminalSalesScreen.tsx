@@ -373,16 +373,18 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   };
 
   const header = <>
-    {detail || period !== 'custom' ? <View style={styles.heading}>
-      <Text style={styles.subheading}>{detail ? formatLongDate(saleTime(detail)) : dateCaption}</Text>
-    </View> : null}
     <View style={styles.tabs}>
-        {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole="tab" accessibilityState={{ selected: period === item.value && !detail }} accessibilityLabel={item.label} onPress={() => { if (item.value === 'custom') { openCustomEditor(); return; } ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); setPeriodState({ scope, value: item.value }); }} style={[styles.tab, period === item.value && !detail && styles.activeTab]}>
-          <Text style={[styles.tabText, period === item.value && !detail && styles.activeTabText]}>{item.title}</Text>
+        {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole={item.value === 'custom' ? 'button' : 'tab'} accessibilityState={{ selected: period === item.value && !detail, ...(item.value === 'custom' ? { expanded: !!editingCustom } : {}) }} accessibilityLabel={item.label} onPress={() => { if (item.value === 'custom') { openCustomEditor(); return; } ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); setPeriodState({ scope, value: item.value }); }} style={[styles.tab, item.value === 'custom' && styles.customTab, item.value !== 'custom' && period === item.value && !detail && styles.activeTab]}>
+          {item.value === 'custom' ? <View style={[styles.customControl, (period === 'custom' || !!editingCustom) && styles.customControlActive]}>
+            <Feather name="calendar" size={13} color={period === 'custom' || editingCustom ? theme.colors.primary : theme.colors.muted} />
+            <Text style={[styles.customControlText, (period === 'custom' || !!editingCustom) && styles.activeTabText]}>{item.title}</Text>
+          </View> : <Text style={[styles.tabText, period === item.value && !detail && styles.activeTabText]}>{item.title}</Text>}
         </TouchableOpacity>)}
     </View>
+    {detail ? <View style={styles.heading}><Text style={styles.subheading}>{formatLongDate(saleTime(detail))}</Text></View> : null}
     {!detail ? <>
       {editingCustom ? <TerminalDateRangePicker value={editingCustom.draft} today={new Date(now)} onChange={draft => setCustomEditor({ scope, draft })} onApply={applyCustomRange} onCancel={() => setCustomEditor(null)} /> : period === 'custom' && customRange ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit custom date range" onPress={openCustomEditor} style={styles.customRangeRow}><Text style={styles.customRangeText}>{dateCaption}</Text><Feather name="calendar" size={16} color={theme.colors.muted} /></TouchableOpacity> : null}
+      {period !== 'custom' ? <View style={styles.heading}><Text style={styles.subheading}>{dateCaption}</Text></View> : null}
       {exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.summary}>
         <Text style={styles.summaryLabel}>PAID SALES</Text>
@@ -484,11 +486,15 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     root: { flex: 1, backgroundColor: colors.background },
     scroll: { flex: 1, minHeight: 0 },
     exportError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginHorizontal: 24, marginTop: 12 },
-    heading: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 25 },
+    heading: { paddingHorizontal: 24, paddingTop: 16 },
     title: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 42 },
-    subheading: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, marginTop: 5 },
-    tabs: { flexDirection: 'row', marginHorizontal: 24, borderBottomWidth: 1, borderBottomColor: colors.border },
+    subheading: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 13 },
+    tabs: { flexDirection: 'row', marginHorizontal: 24, marginTop: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     tab: { flex: 1, minWidth: 0, minHeight: 44, paddingHorizontal: 2, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    customTab: { flex: 1.35, paddingVertical: 5 },
+    customControl: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
+    customControlActive: { borderColor: colors.bitcoin },
+    customControlText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 11 },
     activeTab: { borderBottomColor: colors.bitcoin },
     tabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     activeTabText: { color: colors.primary },
