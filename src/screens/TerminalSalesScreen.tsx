@@ -388,7 +388,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
       </View> : null}
       {onOpenReports ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => onOpenReports({ period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now })} style={styles.reportsRow}>
-        <Text style={styles.reportsText}>Reports</Text><Feather name="chevron-right" size={18} color={theme.colors.muted} />
+        <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text><Feather name="chevron-right" size={18} color={theme.colors.muted} />
       </TouchableOpacity> : null}
       {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text><Text style={styles.sectionCount}>{summary?.activityCount ?? shown.length}</Text></View> : null}
     </> : null}
@@ -482,8 +482,8 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     root: { flex: 1, backgroundColor: colors.background },
     scroll: { flex: 1, minHeight: 0 },
     exportError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginHorizontal: 24, marginTop: 12 },
-    reportsRow: { minHeight: 52, marginHorizontal: 24, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-    reportsText: { color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 14 },
+    reportsRow: { minHeight: 52, marginHorizontal: 24, marginTop: 16, paddingHorizontal: 16, gap: 12, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
+    reportsText: { flex: 1, color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
     summary: { marginHorizontal: 24, marginTop: 26, padding: 22, borderRadius: 18, backgroundColor: colors.surface },
     summaryLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
     paidCount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 48, marginTop: 3 },
