@@ -1,3 +1,5 @@
+import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
+import { getTerminalDatabase } from '../../services/terminalDatabase';
 import React from 'react';
 import { Alert, Modal } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
@@ -26,6 +28,7 @@ const verifyTerminalInvoice = jest.fn();
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  await resetTerminalSqlite();
   mockSetMode.mockClear();
   clearTerminalRateCacheForTests();
   createTerminalInvoice.mockReset();
@@ -466,16 +469,13 @@ it('blocks duplicate presses and reveals the QR only after storage succeeds', as
 
 it('does not show a QR if persisting the invoice fails', async () => {
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
-  const save = (AsyncStorage.setItem as jest.Mock).getMockImplementation()!;
-  (AsyncStorage.setItem as jest.Mock).mockImplementation((key, value) =>
-    key.startsWith('@terminalSales:v1:') ? Promise.reject(new Error('storage full')) : save(key, value));
+  failNextTerminalSqliteWrite(new Error('storage full'));
   const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(view.getByText('storage full')).toBeTruthy());
   expect(view.queryByTestId('terminal-qr')).toBeNull();
-  (AsyncStorage.setItem as jest.Mock).mockImplementation(save);
 });
 
 it('discards an invoice response after the active wallet changes', async () => {

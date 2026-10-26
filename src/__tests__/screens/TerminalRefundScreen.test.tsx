@@ -1,3 +1,5 @@
+import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
+import { getTerminalDatabase } from '../../services/terminalDatabase';
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -30,6 +32,7 @@ const request: TerminalRequest = {
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  await resetTerminalSqlite();
   clearTerminalRateCacheForTests();
   (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
   prepareTerminalRefund.mockReset().mockImplementation(async (invoice, amountSats) => ({ quoteId: 'quote-one', invoice, amountSats, feeSats: 12, expiresAt: Date.now() + 120_000 }));
@@ -109,15 +112,14 @@ it('sends once when authorize is pressed twice', async () => {
 
 it('does not send when reservation storage fails', async () => {
   const sale = await paidSale();
-  const original = (AsyncStorage.setItem as jest.Mock).getMockImplementation()!;
-  (AsyncStorage.setItem as jest.Mock).mockImplementation((key: string, value: string) => key.startsWith('@terminalRefunds') ? Promise.reject(new Error('disk full')) : original(key, value));
+  failNextTerminalSqliteWrite(new Error('disk full'));
   try {
     const view = render(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
     await review(view);
     fireEvent.press(view.getByLabelText('Authorize refund'));
     await waitFor(() => expect(view.getByText('Refund was not sent. Review the invoice and try again.')).toBeTruthy());
     expect(sendTerminalRefund).not.toHaveBeenCalled();
-  } finally { (AsyncStorage.setItem as jest.Mock).mockImplementation(original); }
+  } finally { /* The write failure is consumed once. */ }
 });
 
 it('keeps an unknown result visible and blocks another refund after restart', async () => {

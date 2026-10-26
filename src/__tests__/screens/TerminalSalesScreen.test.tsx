@@ -1,3 +1,6 @@
+import { resetTerminalSqlite } from '../helpers/terminalSqlite';
+import * as salesStore from '../../services/terminalSales';
+import * as refundStore from '../../services/terminalRefunds';
 import React from 'react';
 import { RefreshControl } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
@@ -29,6 +32,8 @@ const request = (id: string, walletId = 'wallet-a', amountSats = 1200): Terminal
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  await resetTerminalSqlite();
+  jest.restoreAllMocks();
   validateTerminalInvoice.mockReset();
   verifyTerminalInvoice.mockReset();
   (exportTerminalSalesCsv as jest.Mock).mockReset().mockResolvedValue(true);
@@ -45,19 +50,19 @@ it('exports the selected period once per share and keeps the action off sale det
   let finishShare!: (value: boolean) => void;
   (exportTerminalSalesCsv as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finishShare = resolve; }));
   const button = view.getByLabelText(/^Export (today’s|all) activity$/);
-  fireEvent.press(button);
-  fireEvent.press(button);
+  await act(async () => { fireEvent.press(button); });
+  await act(async () => { fireEvent.press(button); });
   expect(exportTerminalSalesCsv).toHaveBeenCalledTimes(1);
   expect(exportTerminalSalesCsv).toHaveBeenCalledWith(expect.objectContaining({ walletId: 'wallet-a', network: 'mainnet', period: 'today', day: expect.any(Date), isCurrent: expect.any(Function) }));
   expect(view.getByLabelText(/^Export (today’s|all) activity$/).props.accessibilityState.busy).toBe(true);
   expect(view.UNSAFE_getAllByType(GlassView)[0].props.interactive).toBe(false);
   await act(async () => { finishShare(true); });
-  fireEvent.press(view.getByLabelText('All sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('All sales')); });
   await act(async () => { fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/)); });
   expect(exportTerminalSalesCsv).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'all' }));
   await recordTerminalSale(request('detail'));
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Unpaid/)).toBeTruthy());
-  fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/));
+  await act(async () => { fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/)); });
   expect(view.queryByLabelText(/^Export (today’s|all) activity$/)).toBeNull();
 });
 
@@ -66,15 +71,15 @@ it('stops a pending export after leaving the list and shows genuine share errors
   (exportTerminalSalesCsv as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finishShare = resolve; }));
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
-  fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/));
+  await act(async () => { fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/)); });
   const options = (exportTerminalSalesCsv as jest.Mock).mock.calls[0][0];
   expect(options.isCurrent()).toBe(true);
   await recordTerminalSale(request('detail'));
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Unpaid/)).toBeTruthy());
-  fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/));
+  await act(async () => { fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/)); });
   expect(options.isCurrent()).toBe(false);
   await act(async () => { finishShare(false); });
-  fireEvent.press(view.getByLabelText('Today sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('Today sales')); });
   (exportTerminalSalesCsv as jest.Mock).mockRejectedValueOnce(new Error('Share failed'));
   await act(async () => { fireEvent.press(view.getByLabelText(/^Export (today’s|all) activity$/)); });
   await waitFor(() => expect(view.getByText('Couldn’t export sales. Try again.')).toBeTruthy());
@@ -115,8 +120,8 @@ it('checks one selected sale only on request and records a verified payment', as
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('1 200 sats')).toBeTruthy());
   expect(verifyTerminalInvoice).not.toHaveBeenCalled();
-  fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/));
-  fireEvent.press(view.getByLabelText('Check payment'));
+  await act(async () => { fireEvent.press(view.getByLabelText(/1 200 sats, Unpaid/)); });
+  await act(async () => { fireEvent.press(view.getByLabelText('Check payment')); });
   await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledWith(sale.invoice, sale.createdAt, undefined, true));
   await waitFor(() => expect(view.getByText('Paid')).toBeTruthy());
   expect(view.getByText('VERIFIED')).toBeTruthy();
@@ -125,7 +130,7 @@ it('checks one selected sale only on request and records a verified payment', as
 });
 
 it('shows a retry state when saved sales cannot be read', async () => {
-  await AsyncStorage.setItem('@terminalSales:v1:mainnet:wallet-a', '{broken');
+  jest.spyOn(salesStore, 'listTerminalSalesPage').mockRejectedValueOnce(new Error('read failed'));
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('Sales unavailable')).toBeTruthy());
   expect(view.getByText('Retry')).toBeTruthy();
@@ -141,10 +146,10 @@ it('keeps paid details open but blocks refund actions for inconsistent refund to
     invoice, amountSats: 1000, feeSats: 0, quoteExpiresAt: now + 60_000,
     createdAt: now, status: 'complete', updatedAt: now,
   });
-  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', JSON.stringify({ version: 1, attempts: [attempt('one', 'lnbcfirstrefund'), attempt('two', 'lnbcsecondrefund')] }));
+  jest.spyOn(refundStore, 'listTerminalRefundsForSale').mockResolvedValue([attempt('one', 'lnbcfirstrefund'), attempt('two', 'lnbcsecondrefund')] as any);
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
-  fireEvent.press(view.getByLabelText(/1 200 sats, Paid/));
+  await act(async () => { fireEvent.press(view.getByLabelText(/1 200 sats, Paid/)); });
   await waitFor(() => expect(view.getByText('Refund records need attention. Refund and receipt are unavailable.')).toBeTruthy());
   expect(view.queryByLabelText('Refund sale')).toBeNull();
   expect(view.queryByLabelText('Share receipt')).toBeNull();
@@ -152,25 +157,22 @@ it('keeps paid details open but blocks refund actions for inconsistent refund to
 
 
 it('does not reveal pull-to-refresh while opening, but shows it for a user refresh', async () => {
-  const readMock = AsyncStorage.getItem as jest.Mock;
-  const originalRead = readMock.getMockImplementation()!;
-  let finishRead!: (value: string | null) => void;
-  const salesKey = '@terminalSales:v1:mainnet:wallet-a';
-  readMock.mockImplementation(key => key === salesKey
-    ? new Promise(resolve => { finishRead = resolve; }) : originalRead(key));
+  let finishRead!: (value: { items: never[]; nextCursor: null }) => void;
+  const readMock = jest.spyOn(salesStore, 'listTerminalSalesPage').mockImplementation(() =>
+    new Promise(resolve => { finishRead = resolve; }));
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   try {
     await waitFor(() => expect(finishRead).toBeDefined());
     expect(view.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
     expect(view.queryByText('Loading sales…')).toBeNull();
-    await act(async () => { finishRead(null); });
+    await act(async () => { finishRead({ items: [], nextCursor: null }); });
     await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
     fireEvent(view.UNSAFE_getByType(RefreshControl), 'refresh');
     await waitFor(() => expect(view.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true));
-    await act(async () => { finishRead(null); });
+    await act(async () => { finishRead({ items: [], nextCursor: null }); });
     await waitFor(() => expect(view.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false));
   } finally {
-    readMock.mockImplementation(originalRead);
+    readMock.mockRestore();
   }
 });
 
@@ -193,7 +195,7 @@ it('filters paid and unpaid activity by local verification date across the four 
   await waitFor(() => expect(view.getByLabelText(/2 100 sats, Paid/)).toBeTruthy());
   expect(view.queryByLabelText(/3 200 sats, Paid/)).toBeNull();
   expect(view.getByText('By local verification date')).toBeTruthy();
-  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('Last 7 days sales')); });
   expect(view.getByLabelText(/2 100 sats, Paid/)).toBeTruthy();
   expect(view.getByLabelText(/3 200 sats, Paid/)).toBeTruthy();
   expect(view.queryByLabelText(/1 200 sats, Paid/)).toBeNull();
@@ -202,11 +204,11 @@ it('filters paid and unpaid activity by local verification date across the four 
   const start = new Date(at(6)).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const end = new Date(at(0)).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   expect(view.getByText(`${start} – ${end}`)).toBeTruthy();
-  fireEvent.press(view.getByLabelText('This month sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('This month sales')); });
   expect(view.getByText('THIS MONTH’S ACTIVITY')).toBeTruthy();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   expect(view.getByText(`${monthStart} – ${end}`)).toBeTruthy();
-  fireEvent.press(view.getByLabelText('All sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('All sales')); });
   expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy();
   expect(view.getByText('6 500 sats')).toBeTruthy();
 });
@@ -217,14 +219,12 @@ it('shows completed refunds in a period even when no sale is listed there', asyn
   const sale = { ...request('refundedold'), createdAt: at(8), expiresAt: at(8) + 60_000 };
   await recordTerminalSale(sale);
   await updateTerminalSalePayment(sale, { status: 'received' }, at(8));
-  await AsyncStorage.setItem('@terminalRefunds:v1:mainnet:wallet-a', JSON.stringify({ version: 1, attempts: [{
-    id: 'refund-only', walletId: 'wallet-a', network: 'mainnet', saleId: sale.id, saleInvoice: sale.invoice,
-    invoice: 'lnbcrefundonly', amountSats: 500, feeSats: 0, quoteExpiresAt: at(0) + 60_000,
-    createdAt: at(0), status: 'complete', updatedAt: at(0),
-  }] }));
+  const paid = await salesStore.getTerminalSale('wallet-a', 'mainnet', sale.id);
+  const attempt = await refundStore.reserveTerminalRefund(paid!, { id: 'refund-only', invoice: 'lnbcrefundonly', amountSats: 500, feeSats: 0, quoteExpiresAt: Date.now() + 60000 });
+  await refundStore.updateTerminalRefund(attempt, { status: 'complete' }, at(0));
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('500 sats')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('Last 7 days sales')); });
   expect(view.getByText('No sales in this period')).toBeTruthy();
   expect(view.getByText('No paid sales in this period')).toBeTruthy();
   expect(view.getByText('500 sats')).toBeTruthy();
@@ -237,10 +237,10 @@ it('keeps the chosen period when returning from details and resets it for a new 
   await recordTerminalSale({ ...request('yesterday'), createdAt: yesterday, expiresAt: yesterday + 60_000 });
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Last 7 days sales'));
-  fireEvent.press(view.getByLabelText(/1 200 sats, Expired/));
+  await act(async () => { fireEvent.press(view.getByLabelText('Last 7 days sales')); });
+  await act(async () => { fireEvent.press(view.getByLabelText(/1 200 sats, Expired/)); });
   expect(view.getByText('Sale details')).toBeTruthy();
-  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('Last 7 days sales')); });
   expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
   expect(view.getByLabelText(/1 200 sats, Expired/)).toBeTruthy();
   view.rerender(<TerminalSalesScreen walletId="wallet-b" network="mainnet" onClose={jest.fn()} />);
@@ -253,12 +253,12 @@ it('invalidates pending export callbacks when period changes, even if it changes
   (exportTerminalSalesCsv as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Export today’s activity'));
+  await act(async () => { fireEvent.press(view.getByLabelText('Export today’s activity')); });
   const first = (exportTerminalSalesCsv as jest.Mock).mock.calls[0][0];
   expect(first.isCurrent()).toBe(true);
-  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('Last 7 days sales')); });
   expect(first.isCurrent()).toBe(false);
-  fireEvent.press(view.getByLabelText('Today sales'));
+  await act(async () => { fireEvent.press(view.getByLabelText('Today sales')); });
   expect(first.isCurrent()).toBe(false);
   await act(async () => { finish(false); });
   await act(async () => { fireEvent.press(view.getByLabelText('Export today’s activity')); });
