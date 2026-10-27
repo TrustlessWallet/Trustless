@@ -92,8 +92,8 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
       </View>
   </>;
   return <View style={styles.root}>
-    <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} />
-    {activeTab === 'items' ? <TerminalItemsReport walletId={walletId} network={network} scope={scope} range={range} visible={visible} revision={revision} listHeader={reportHeader} />
+    {activeTab !== 'items' ? <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} /> : null}
+    {activeTab === 'items' ? <TerminalItemsReport walletId={walletId} network={network} scope={scope} range={range} visible={visible} revision={revision} listHeader={reportHeader} exportSelection={{ period: filter.period, day, customRange: filter.customRange ?? undefined }} renderSheetHeader={leading => <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} leading={leading} />} />
       : <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }} showsVerticalScrollIndicator={false}>
         {reportHeader}
         {visible ? <ReportsOverview walletId={walletId} network={network} scope={scope} period={filter.period} customRange={filter.customRange} day={day} range={range} revision={revision} /> : null}

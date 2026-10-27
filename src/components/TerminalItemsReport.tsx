@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import GlassIconButton from './GlassIconButton';
+import { exportTerminalItemsCsv } from '../services/terminalItemsExport';
+import { CustomSalesDateRange, SalesPeriod } from '../services/terminalSalesPeriod';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './StyledText';
 import { useTheme } from '../contexts/ThemeContext';
@@ -10,7 +14,7 @@ import {
   readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot, TerminalItemPerformanceRow,
 } from '../services/terminalItemPerformance';
 
-type Props = { walletId: string; network: TerminalNetwork; scope: string; range: TerminalRange; visible: boolean; revision: number; listHeader: React.ReactNode };
+type Props = { walletId: string; network: TerminalNetwork; scope: string; range: TerminalRange; visible: boolean; revision: number; listHeader: React.ReactNode; exportSelection?: { period: SalesPeriod; day: Date; customRange?: CustomSalesDateRange }; renderSheetHeader?: (exportButton: React.ReactNode) => React.ReactNode };
 type State = {
   identity: string; reportKey: string; items: TerminalItemPerformanceRow[]; nextSeq: number | null;
   totalCount: number; paidWithoutItems: number; loading: boolean; refreshing: boolean; error: boolean; pageLoading: boolean; pageError: boolean;
@@ -18,7 +22,7 @@ type State = {
 const units: { value: ItemUnit | null; title: string }[] = [{ value: null, title: 'All' }, { value: 'USD', title: 'USD' }, { value: 'EUR', title: 'EUR' }, { value: 'CHF', title: 'CHF' }, { value: 'sats', title: 'sats' }];
 const quantityText = (value: bigint) => value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
-export default function TerminalItemsReport({ walletId, network, scope, range, visible, revision, listHeader }: Props) {
+export default function TerminalItemsReport({ walletId, network, scope, range, visible, revision, listHeader, exportSelection, renderSheetHeader }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const insets = useSafeAreaInsets();
@@ -35,6 +39,31 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
   const generation = useRef(0);
   const pageBusy = useRef(false);
   const ownedToken = useRef<string | null>(null);
+  const exportKey = `${reportKey}:${exportSelection?.period ?? ''}:${exportSelection?.day.getTime() ?? ''}`;
+  const exportContext = useRef({ key: exportKey, visible, epoch: 0 });
+  if (exportContext.current.key !== exportKey || exportContext.current.visible !== visible) {
+    exportContext.current = { key: exportKey, visible, epoch: exportContext.current.epoch + 1 };
+  }
+  const exportBusy = useRef<number | null>(null);
+  const [exportState, setExportState] = useState({ epoch: -1, busy: false, error: '' });
+  const exporting = exportState.epoch === exportContext.current.epoch && exportState.busy;
+  const exportError = exportState.epoch === exportContext.current.epoch ? exportState.error : '';
+  const exportItems = async () => {
+    if (!visible || !exportSelection || exportBusy.current === exportContext.current.epoch) return;
+    const epoch = exportContext.current.epoch;
+    const isCurrent = () => mounted.current && exportContext.current.visible && exportContext.current.epoch === epoch;
+    exportBusy.current = epoch;
+    setExportState({ epoch, busy: true, error: '' });
+    try {
+      await exportTerminalItemsCsv({ walletId, network, ...exportSelection, unit, sort, isCurrent });
+    } catch (error) {
+      if (isCurrent()) setExportState({ epoch, busy: false, error: error instanceof Error && error.message === 'Sharing unavailable on this device.' ? error.message : 'Couldn’t export items. Try again.' });
+    } finally {
+      if (exportBusy.current === epoch) exportBusy.current = null;
+      if (isCurrent()) setExportState(previous => ({ ...previous, busy: false }));
+    }
+  };
+
 
   const removeToken = useCallback((token: string | null) => {
     if (!token) return;
@@ -124,10 +153,15 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
     <View style={styles.coverageHeading}><View><Text style={styles.heading}>ITEM PERFORMANCE</Text><Text style={styles.caption}>{current.loading ? '' : `${current.totalCount} ${current.totalCount === 1 ? 'result' : 'results'}${unit ? ` · ${unit}` : ''}`}</Text></View>{current.loading || current.refreshing ? <ActivityIndicator accessibilityLabel="Loading item report" size="small" color={theme.colors.bitcoin} /> : null}</View>
     <Text style={styles.note}>Gross sales before refunds. Refunds aren’t assigned to items.</Text>
     {current.paidWithoutItems > 0 ? <Text style={styles.note}>{unit ? 'All currencies: ' : ''}{quantityText(BigInt(current.paidWithoutItems))} paid {current.paidWithoutItems === 1 ? 'sale' : 'sales'} without item details excluded.</Text> : null}
+    {exportError ? <Text accessibilityRole="alert" style={styles.note}>{exportError}</Text> : null}
     {current.error ? <View style={styles.errorRow}><Text style={styles.note}>{current.items.length ? 'Couldn’t refresh item report' : 'Item report unavailable'}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry item report" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
   </>;
 
-  return <FlatList
+  return <View style={styles.list}>
+    {renderSheetHeader?.(<GlassIconButton accessibilityLabel="Export item report" disabled={!visible || exporting || !exportSelection} busy={exporting} onPress={() => { void exportItems(); }} visualSize={40} align="flex-start">
+      {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
+    </GlassIconButton>)}
+    <FlatList
     key={reportKey}
     testID="terminal-items-report"
     style={styles.list}
@@ -143,7 +177,7 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
     automaticallyAdjustContentInsets={false}
     contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
     showsVerticalScrollIndicator={false}
-  />;
+  /></View>;
 }
 
 function makeStyles(colors: { background: string; primary: string; surface: string; border: string; muted: string; bitcoin: string }) {
