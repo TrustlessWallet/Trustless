@@ -8,13 +8,13 @@ import { listTerminalReportPresets, removeTerminalReportPreset, reportPresetKey,
 import { parseSalesDate } from '../services/terminalSalesPeriod';
 
 type Props = { walletId: string; network: TerminalNetwork; current: TerminalReportPreset; visible: boolean; onApply: (preset: TerminalReportPreset) => void };
-const periodNames = { today: 'Today', week: '7 days', month: 'This month', all: 'All dates', custom: 'Custom' };
+const periodNames = { today: 'Today', week: '7 days', month: 'Month', all: 'All dates', custom: 'Custom' };
 function title(preset: TerminalReportPreset) {
   const date = (value: string) => parseSalesDate(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   const period = preset.period === 'custom' && preset.customRange ? `${date(preset.customRange.startDate)} – ${date(preset.customRange.endDate)}` : periodNames[preset.period];
   return `${period} · ${preset.tab === 'items' ? 'Items' : 'Overview'}`;
 }
-const details = (preset: TerminalReportPreset) => preset.tab === 'items' ? `${preset.unit ?? 'All currencies'} · ${preset.sort === 'gross' ? 'Gross' : 'Quantity'}` : '';
+const details = (preset: TerminalReportPreset) => preset.tab === 'items' ? `${preset.unit ?? 'All currencies'} · ${preset.sort === 'gross' ? 'Sales amount' : 'Quantity'}` : '';
 
 export default function TerminalSavedReports({ walletId, network, current, visible, onApply }: Props) {
   const { theme } = useTheme();

@@ -134,7 +134,7 @@ it('applies saved period, tab, currency and sorting together and retains item fi
   const view = render(<TerminalReportsScreen walletId="wallet-a" network="mainnet" initialSelection={initialSelection} onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('Saved reports · 1')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Saved reports'));
-  fireEvent.press(view.getByLabelText('Open saved report 7 days · Items · USD · Gross'));
+  fireEvent.press(view.getByLabelText('Open saved report 7 days · Items · USD · Sales amount'));
   await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(1));
   const day = new Date(); day.setHours(0, 0, 0, 0);
   const end = new Date(day); end.setDate(end.getDate() + 1);
@@ -145,7 +145,7 @@ it('applies saved period, tab, currency and sorting together and retains item fi
   fireEvent.press(view.getByLabelText('Overview reports'));
   fireEvent.press(view.getByLabelText('Item reports'));
   await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(2));
-  expect(view.getByLabelText('Sort items by gross').props.accessibilityState.selected).toBe(true);
+  expect(view.getByLabelText('Sort items by sales amount').props.accessibilityState.selected).toBe(true);
 });
 
 

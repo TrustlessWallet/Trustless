@@ -26,9 +26,9 @@ it('saves only after persistence, deduplicates and applies a complete configurat
   await act(async () => finish([current]));
   expect(view.getByLabelText('Report saved').props.accessibilityState.disabled).toBe(true);
   fireEvent.press(view.getByLabelText('Saved reports'));
-  fireEvent.press(view.getByLabelText('Open saved report 7 days · Items · USD · Gross'));
+  fireEvent.press(view.getByLabelText('Open saved report 7 days · Items · USD · Sales amount'));
   expect(props.onApply).toHaveBeenCalledWith(current);
-  expect(view.queryByLabelText('Open saved report 7 days · Items · USD · Gross')).toBeNull();
+  expect(view.queryByLabelText('Open saved report 7 days · Items · USD · Sales amount')).toBeNull();
 });
 it('retains entries after failed removal and allows retry without changing the report', async () => {
   (listTerminalReportPresets as jest.Mock).mockResolvedValue([current]);
@@ -36,10 +36,10 @@ it('retains entries after failed removal and allows retry without changing the r
   const view = render(<TerminalSavedReports {...props} />);
   await waitFor(() => expect(view.getByText('Saved reports · 1')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Saved reports'));
-  fireEvent.press(view.getByLabelText('Remove saved report 7 days · Items · USD · Gross'));
+  fireEvent.press(view.getByLabelText('Remove saved report 7 days · Items · USD · Sales amount'));
   await waitFor(() => expect(view.getByText('Couldn’t remove report. Try again.')).toBeTruthy());
-  expect(view.getByLabelText('Open saved report 7 days · Items · USD · Gross')).toBeTruthy();
-  fireEvent.press(view.getByLabelText('Remove saved report 7 days · Items · USD · Gross'));
+  expect(view.getByLabelText('Open saved report 7 days · Items · USD · Sales amount')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Remove saved report 7 days · Items · USD · Sales amount'));
   await waitFor(() => expect(view.queryByText('Saved reports · 1')).toBeNull());
   expect(props.onApply).not.toHaveBeenCalled();
 });
