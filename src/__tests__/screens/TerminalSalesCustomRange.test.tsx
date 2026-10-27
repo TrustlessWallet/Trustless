@@ -35,7 +35,7 @@ beforeEach(() => jest.clearAllMocks());
 it('keeps the applied filter and queries unchanged while the custom editor is opened and cancelled', async () => {
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
-  expect(view.getByText('This month')).toBeTruthy();
+  expect(view.getByText('Month')).toBeTruthy();
   const callsBefore = (listTerminalSalesPage as jest.Mock).mock.calls.length;
   fireEvent.press(view.getByLabelText('Custom sales range'));
   expect(view.getByLabelText('Today sales').props.accessibilityState.selected).toBe(true);

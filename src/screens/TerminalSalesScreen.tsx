@@ -38,7 +38,7 @@ type LoadState = {
 const periods: { value: SalesPeriod; title: string; label: string; exportLabel: string }[] = [
   { value: 'today', title: 'Today', label: 'Today sales', exportLabel: 'Export today’s activity' },
   { value: 'week', title: '7 days', label: 'Last 7 days sales', exportLabel: 'Export last 7 days activity' },
-  { value: 'month', title: 'This month', label: 'This month sales', exportLabel: 'Export this month’s activity' },
+  { value: 'month', title: 'Month', label: 'This month sales', exportLabel: 'Export this month’s activity' },
   { value: 'all', title: 'All', label: 'All sales', exportLabel: 'Export all activity' },
   { value: 'custom', title: 'Custom', label: 'Custom sales range', exportLabel: 'Export custom activity' },
 ];

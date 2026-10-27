@@ -14,24 +14,28 @@ import {
   readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot, TerminalItemPerformanceRow,
 } from '../services/terminalItemPerformance';
 
-type Props = { walletId: string; network: TerminalNetwork; scope: string; range: TerminalRange; visible: boolean; revision: number; listHeader: React.ReactNode; exportSelection?: { period: SalesPeriod; day: Date; customRange?: CustomSalesDateRange }; renderSheetHeader?: (exportButton: React.ReactNode) => React.ReactNode };
+type Props = { walletId: string; network: TerminalNetwork; scope: string; range: TerminalRange; visible: boolean; revision: number; listHeader: React.ReactNode; selection?: { unit: ItemUnit | null; sort: ItemSort }; onSelectionChange?: (value: { unit: ItemUnit | null; sort: ItemSort }) => void; exportSelection?: { period: SalesPeriod; day: Date; customRange?: CustomSalesDateRange }; renderSheetHeader?: (exportButton: React.ReactNode) => React.ReactNode };
 type State = {
   identity: string; reportKey: string; items: TerminalItemPerformanceRow[]; nextSeq: number | null;
   totalCount: number; paidWithoutItems: number; loading: boolean; refreshing: boolean; error: boolean; pageLoading: boolean; pageError: boolean;
 };
-const units: { value: ItemUnit | null; title: string }[] = [{ value: null, title: 'All' }, { value: 'USD', title: 'USD' }, { value: 'EUR', title: 'EUR' }, { value: 'CHF', title: 'CHF' }, { value: 'sats', title: 'sats' }];
+const units: { value: ItemUnit | null; title: string }[] = [{ value: null, title: 'All currencies' }, { value: 'USD', title: 'USD' }, { value: 'EUR', title: 'EUR' }, { value: 'CHF', title: 'CHF' }, { value: 'sats', title: 'sats' }];
 const quantityText = (value: bigint) => value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
-export default function TerminalItemsReport({ walletId, network, scope, range, visible, revision, listHeader, exportSelection, renderSheetHeader }: Props) {
+export default function TerminalItemsReport({ walletId, network, scope, range, visible, revision, listHeader, exportSelection, renderSheetHeader, selection, onSelectionChange }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const insets = useSafeAreaInsets();
-  const [unit, setUnit] = useState<ItemUnit | null>(null);
-  const [sort, setSort] = useState<ItemSort>('quantity');
+  const [localSelection, setLocalSelection] = useState<{ unit: ItemUnit | null; sort: ItemSort }>({ unit: null, sort: 'quantity' });
+  const { unit, sort } = selection ?? localSelection;
+  const select = onSelectionChange ?? setLocalSelection;
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [choosingSalesCurrency, setChoosingSalesCurrency] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
   const reportKey = `${scope}:${rangeKey}:${unit ?? 'all'}:${sort}`;
   const identity = `${reportKey}:${revision}`;
+  useEffect(() => { setCurrencyOpen(false); setChoosingSalesCurrency(false); setInfoOpen(false); }, [reportKey]);
   const [state, setState] = useState<State>({ identity, reportKey, items: [], nextSeq: null, totalCount: 0, paidWithoutItems: 0, loading: true, refreshing: false, error: false, pageLoading: false, pageError: false });
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -144,17 +148,26 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
   const selectedUnit = units.find(option => option.value === unit)!.title;
   const controls = <>
     <View style={styles.controls}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Item currency ${selectedUnit}`} accessibilityState={{ expanded: currencyOpen }} onPress={() => setCurrencyOpen(open => !open)} style={styles.currencyButton}><Text style={styles.controlText}>{selectedUnit}</Text><Text style={styles.chevron}>⌄</Text></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Item currency ${selectedUnit}`} accessibilityState={{ expanded: currencyOpen, disabled: !visible }} disabled={!visible} onPress={() => { setCurrencyOpen(open => !open); setChoosingSalesCurrency(false); setInfoOpen(false); }} style={styles.currencyButton}><Text style={styles.controlText}>{selectedUnit}</Text><Feather name="chevron-down" size={14} color={theme.colors.muted} /></TouchableOpacity>
+      <View style={styles.resultCount}><Text style={styles.caption}>{current.loading || (current.error && !current.items.length) ? '' : `${current.totalCount} ${current.totalCount === 1 ? 'result' : 'results'}`}</Text>{current.loading || current.refreshing ? <ActivityIndicator accessibilityLabel="Loading item report" size="small" color={theme.colors.bitcoin} /> : null}</View>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="About item reports" accessibilityState={{ expanded: infoOpen, disabled: !visible }} disabled={!visible} onPress={() => { setInfoOpen(open => !open); setCurrencyOpen(false); setChoosingSalesCurrency(false); }} style={styles.infoButton}><Feather name="info" size={18} color={theme.colors.muted} /></TouchableOpacity>
+    </View>
+    {currencyOpen ? <View style={styles.currencyPicker}>
+      {choosingSalesCurrency ? <Text style={styles.pickerNote}>Choose a currency to compare sales amounts.</Text> : null}
+      <View style={styles.currencyOptions}>{units.map(option => <TouchableOpacity key={option.title} accessibilityRole="button" accessibilityLabel={`Item currency option ${option.title}`} accessibilityState={{ selected: unit === option.value, disabled: !visible }} disabled={!visible} onPress={() => { select({ unit: option.value, sort: option.value === null ? 'quantity' : choosingSalesCurrency ? 'gross' : sort }); setCurrencyOpen(false); setChoosingSalesCurrency(false); }} style={[styles.currencyOption, unit === option.value && styles.currencySelected]}><Text style={[styles.optionText, unit === option.value && styles.selectedText]}>{option.title}</Text></TouchableOpacity>)}</View>
+    </View> : null}
+    {infoOpen ? <View style={styles.infoDetails}>
+      <Text style={styles.pickerNote}>Paid sales with item details only. Quantities and amounts are before refunds; refunds aren’t assigned to individual items.</Text>
+      {!current.loading && current.paidWithoutItems > 0 ? <Text style={styles.pickerNote}>{quantityText(BigInt(current.paidWithoutItems))} paid {current.paidWithoutItems === 1 ? 'sale without item details is' : 'sales without item details are'} excluded across all currencies in this period.</Text> : null}
+    </View> : null}
+    <View style={styles.sortSection}>
+      <Text style={styles.sortLabel}>Sort by</Text>
       <View style={styles.sortControl}>
-        {(['quantity', 'gross'] as const).map(value => { const disabled = value === 'gross' && unit === null; return <TouchableOpacity key={value} accessibilityRole="button" accessibilityLabel={`Sort items by ${value}`} accessibilityHint={disabled ? 'Choose a currency to sort by gross sales' : undefined} accessibilityState={{ selected: sort === value, disabled }} disabled={disabled} onPress={() => setSort(value)} style={[styles.sortButton, sort === value && styles.sortSelected, disabled && styles.disabled]}><Text style={[styles.controlText, sort === value && styles.selectedText]}>{value === 'quantity' ? 'Quantity' : 'Gross'}</Text></TouchableOpacity>; })}
+        {(['quantity', 'gross'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityLabel={`Sort items by ${value === 'gross' ? 'sales amount' : 'quantity'}`} accessibilityHint={value === 'gross' && unit === null ? 'Choose a currency first' : undefined} accessibilityState={{ selected: sort === value, disabled: !visible }} disabled={!visible} onPress={() => { if (value === 'gross' && unit === null) { setCurrencyOpen(true); setChoosingSalesCurrency(true); setInfoOpen(false); } else { setCurrencyOpen(false); setChoosingSalesCurrency(false); select({ unit, sort: value }); } }} style={[styles.sortButton, sort === value && styles.sortSelected]}><Text style={[styles.controlText, sort === value && styles.selectedText]}>{value === 'quantity' ? 'Quantity' : 'Sales amount'}</Text></TouchableOpacity>)}
       </View>
     </View>
-    {currencyOpen ? <View style={styles.currencyOptions}>{units.map(option => <TouchableOpacity key={option.title} accessibilityRole="button" accessibilityLabel={`Item currency option ${option.title}`} accessibilityState={{ selected: unit === option.value }} onPress={() => { setUnit(option.value); if (option.value === null) setSort('quantity'); setCurrencyOpen(false); }} style={[styles.currencyOption, unit === option.value && styles.currencySelected]}><Text style={[styles.optionText, unit === option.value && styles.selectedText]}>{option.title}</Text></TouchableOpacity>)}</View> : null}
-    <View style={styles.coverageHeading}><View><Text style={styles.heading}>ITEM PERFORMANCE</Text><Text style={styles.caption}>{current.loading ? '' : `${current.totalCount} ${current.totalCount === 1 ? 'result' : 'results'}${unit ? ` · ${unit}` : ''}`}</Text></View>{current.loading || current.refreshing ? <ActivityIndicator accessibilityLabel="Loading item report" size="small" color={theme.colors.bitcoin} /> : null}</View>
-    <Text style={styles.note}>Gross sales before refunds. Refunds aren’t assigned to items.</Text>
-    {current.paidWithoutItems > 0 ? <Text style={styles.note}>{unit ? 'All currencies: ' : ''}{quantityText(BigInt(current.paidWithoutItems))} paid {current.paidWithoutItems === 1 ? 'sale' : 'sales'} without item details excluded.</Text> : null}
     {exportError ? <Text accessibilityRole="alert" style={styles.note}>{exportError}</Text> : null}
-    {current.error ? <View style={styles.errorRow}><Text style={styles.note}>{current.items.length ? 'Couldn’t refresh item report' : 'Item report unavailable'}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry item report" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
+    {current.error ? <View style={styles.errorRow}><Text style={[styles.note, styles.inlineNote]}>{current.items.length ? 'Couldn’t refresh item report' : 'Item report unavailable'}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry item report" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
   </>;
 
   return <View style={styles.list}>
@@ -183,24 +196,28 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
 function makeStyles(colors: { background: string; primary: string; surface: string; border: string; muted: string; bitcoin: string }) {
   return StyleSheet.create({
     list: { flex: 1, backgroundColor: colors.background },
-    controls: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 24, marginTop: 18 },
-    currencyButton: { minHeight: 44, minWidth: 92, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-    chevron: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
-    sortControl: { flex: 1, minHeight: 44, flexDirection: 'row', padding: 3, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
-    sortButton: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
+    controls: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 24, marginTop: 12 },
+    resultCount: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 6 },
+    infoButton: { width: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
+    infoDetails: { marginHorizontal: 24, paddingVertical: 10, gap: 8 },
+    sortSection: { marginHorizontal: 24, marginTop: 10, marginBottom: 8, gap: 7 },
+    sortLabel: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12 },
+    currencyButton: { minHeight: 44,  paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    sortControl: { minHeight: 50, flexDirection: 'row', padding: 3, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
+    sortButton: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
     sortSelected: { backgroundColor: colors.primary },
     controlText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
     selectedText: { color: colors.background },
-    disabled: { opacity: 0.4 },
-    currencyOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginHorizontal: 24, marginTop: 8 },
+    currencyPicker: { marginHorizontal: 24, marginTop: 8, gap: 8 },
+    pickerNote: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, lineHeight: 18 },
+    currencyOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
     currencyOption: { minHeight: 44, minWidth: 54, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     currencySelected: { backgroundColor: colors.primary },
     optionText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
-    coverageHeading: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginHorizontal: 24, marginTop: 22 },
-    heading: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 13, letterSpacing: 1.2 },
-    caption: { minHeight: 18, color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, lineHeight: 18, marginTop: 3 },
+    caption: { minHeight: 18, color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, lineHeight: 18 },
     note: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, lineHeight: 18, marginHorizontal: 24, marginTop: 7 },
     errorRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginHorizontal: 24 },
+    inlineNote: { flex: 1, marginHorizontal: 0, marginTop: 0 },
     retry: { minHeight: 44, paddingHorizontal: 12, justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
     retryText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
     itemRow: { minHeight: 70, paddingHorizontal: 24, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },

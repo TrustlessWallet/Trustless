@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import TerminalSalesPeriodControls from '../components/TerminalSalesPeriodControls';
 import TerminalItemsReport from '../components/TerminalItemsReport';
+import TerminalSavedReports from '../components/TerminalSavedReports';
+import { TerminalReportPreset } from '../services/terminalReportPresets';
 import TerminalPeriodComparison from '../components/TerminalPeriodComparison';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
@@ -14,7 +16,7 @@ import { CustomSalesDateRange, localSalesDateKey, previousTerminalSalesPeriodBou
 
 export type TerminalReportSelection = { period: SalesPeriod; customRange?: CustomSalesDateRange; day: number };
 type Props = { walletId: string; network: TerminalNetwork; initialSelection: TerminalReportSelection; onClose: () => void; visible?: boolean };
-type FilterState = { scope: string; period: SalesPeriod; customRange: CustomSalesDateRange | null; draft: CustomSalesDateRange | null };
+type FilterState = { scope: string; period: SalesPeriod; customRange: CustomSalesDateRange | null; draft: CustomSalesDateRange | null; tab: 'overview' | 'items'; unit: 'USD' | 'EUR' | 'CHF' | 'sats' | null; sort: 'quantity' | 'gross' };
 
 const localDayStart = (value: number) => {
   const date = new Date(value);
@@ -22,7 +24,7 @@ const localDayStart = (value: number) => {
 };
 const initialFilter = (scope: string, selection: TerminalReportSelection): FilterState => {
   const validCustom = selection.period === 'custom' && selection.customRange;
-  return { scope, period: validCustom ? 'custom' : selection.period === 'custom' ? 'today' : selection.period, customRange: validCustom ? { ...selection.customRange! } : null, draft: null };
+  return { scope, period: validCustom ? 'custom' : selection.period === 'custom' ? 'today' : selection.period, customRange: validCustom ? { ...selection.customRange! } : null, draft: null, tab: 'overview', unit: null, sort: 'quantity' };
 };
 
 export default function TerminalReportsScreen({ walletId, network, initialSelection, onClose, visible = true }: Props) {
@@ -33,11 +35,10 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
   const [filterState, setFilterState] = useState(() => initialFilter(scope, initialSelection));
   const filter = filterState.scope === scope ? filterState : initialFilter(scope, initialSelection);
   const [dayStart, setDayStart] = useState(() => localDayStart(initialSelection.day));
-  const [tab, setTab] = useState<'overview' | 'items'>('overview');
   const [revision, setRevision] = useState(0);
   const previousScope = useRef(scope);
   const effectiveDayStart = filterState.scope === scope ? dayStart : localDayStart(initialSelection.day);
-  const activeTab = filterState.scope === scope ? tab : 'overview';
+  const activeTab = filter.tab;
   const day = useMemo(() => new Date(effectiveDayStart), [effectiveDayStart]);
   const rangeDay = filter.period === 'custom' ? 0 : effectiveDayStart;
   const range = useMemo(() => terminalSalesPeriodBounds(filter.period, new Date(rangeDay || effectiveDayStart), filter.customRange ?? undefined), [filter.period, filter.customRange, rangeDay]);
@@ -47,7 +48,6 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
     previousScope.current = scope;
     setFilterState(initialFilter(scope, initialSelection));
     setDayStart(localDayStart(initialSelection.day));
-    setTab('overview');
   }, [scope]);
 
   useEffect(() => {
@@ -77,23 +77,30 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
       setFilterState({ ...filter, draft: filter.customRange ? { ...filter.customRange } : { startDate: today, endDate: today } });
       return;
     }
-    setFilterState({ scope, period, customRange: filter.customRange, draft: null });
+    setFilterState({ ...filter, period, draft: null });
   };
   const applyCustom = () => {
     if (!filter.draft || filter.draft.startDate > filter.draft.endDate) return;
-    setFilterState({ scope, period: 'custom', customRange: { ...filter.draft }, draft: null });
+    setFilterState({ ...filter, period: 'custom', customRange: { ...filter.draft }, draft: null });
   };
 
+  const preset: TerminalReportPreset = { period: filter.period, ...(filter.period === 'custom' && filter.customRange ? { customRange: filter.customRange } : {}), tab: activeTab, unit: activeTab === 'items' ? filter.unit : null, sort: activeTab === 'items' ? filter.sort : 'quantity' };
+  const applyPreset = (value: TerminalReportPreset) => {
+    if (!visible) return;
+    setDayStart(localDayStart(Date.now()));
+    setFilterState({ scope, period: value.period, customRange: value.customRange ?? null, draft: null, tab: value.tab, unit: value.unit, sort: value.sort });
+  };
   const reportHeader = <>
       <TerminalSalesPeriodControls period={filter.period} customRange={filter.customRange} draft={filter.draft} day={day} onSelect={selectPeriod} onDraftChange={draft => setFilterState({ ...filter, draft })} onApply={applyCustom} onCancel={() => setFilterState({ ...filter, draft: null })} disabled={!visible} />
       <View style={styles.reportTabs}>
-        <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Overview reports" accessibilityState={{ selected: activeTab === 'overview', disabled: !visible }} disabled={!visible} onPress={() => setTab('overview')} style={[styles.reportTab, activeTab === 'overview' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'overview' && styles.activeText]}>Overview</Text></TouchableOpacity>
-        <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Item reports" accessibilityState={{ selected: activeTab === 'items', disabled: !visible }} disabled={!visible} onPress={() => setTab('items')} style={[styles.reportTab, activeTab === 'items' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'items' && styles.activeText]}>Items</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Overview reports" accessibilityState={{ selected: activeTab === 'overview', disabled: !visible }} disabled={!visible} onPress={() => setFilterState({ ...filter, tab: 'overview' })} style={[styles.reportTab, activeTab === 'overview' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'overview' && styles.activeText]}>Overview</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Item reports" accessibilityState={{ selected: activeTab === 'items', disabled: !visible }} disabled={!visible} onPress={() => setFilterState({ ...filter, tab: 'items' })} style={[styles.reportTab, activeTab === 'items' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'items' && styles.activeText]}>Items</Text></TouchableOpacity>
       </View>
+      <TerminalSavedReports key={scope} walletId={walletId} network={network} current={preset} visible={visible} onApply={applyPreset} />
   </>;
   return <View style={styles.root}>
     {activeTab !== 'items' ? <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} /> : null}
-    {activeTab === 'items' ? <TerminalItemsReport walletId={walletId} network={network} scope={scope} range={range} visible={visible} revision={revision} listHeader={reportHeader} exportSelection={{ period: filter.period, day, customRange: filter.customRange ?? undefined }} renderSheetHeader={leading => <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} leading={leading} />} />
+    {activeTab === 'items' ? <TerminalItemsReport walletId={walletId} network={network} scope={scope} range={range} visible={visible} revision={revision} listHeader={reportHeader} selection={{ unit: filter.unit, sort: filter.sort }} onSelectionChange={value => setFilterState({ ...filter, ...value })} exportSelection={{ period: filter.period, day, customRange: filter.customRange ?? undefined }} renderSheetHeader={leading => <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} leading={leading} />} />
       : <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }} showsVerticalScrollIndicator={false}>
         {reportHeader}
         {visible ? <ReportsOverview walletId={walletId} network={network} scope={scope} period={filter.period} customRange={filter.customRange} day={day} range={range} revision={revision} /> : null}

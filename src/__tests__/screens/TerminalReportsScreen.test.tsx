@@ -5,6 +5,8 @@ import { getTerminalSalesSummary, listTerminalSalesPage } from '../../services/t
 import { getTerminalRefundTotal } from '../../services/terminalRefunds';
 import { createTerminalItemPerformanceSnapshot, readTerminalItemPerformancePage } from '../../services/terminalItemPerformance';
 
+jest.mock('../../services/terminalReportPresets', () => ({ ...jest.requireActual('../../services/terminalReportPresets'), listTerminalReportPresets: jest.fn(async () => []), saveTerminalReportPreset: jest.fn(async () => []) }));
+
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -33,6 +35,7 @@ const summary = (receivedCount: number) => ({ activityCount: receivedCount, rece
 
 beforeEach(() => {
   jest.clearAllMocks();
+  require('../../services/terminalReportPresets').listTerminalReportPresets.mockResolvedValue([]);
   (getTerminalSalesSummary as jest.Mock).mockResolvedValue(summary(2));
   (getTerminalRefundTotal as jest.Mock).mockResolvedValue(0n);
   (createTerminalItemPerformanceSnapshot as jest.Mock).mockResolvedValue({ token: 'items-token', totalCount: 0, paidWithoutItems: 0 });
@@ -122,4 +125,43 @@ it('rolls relative report filters and the custom calendar cap at local midnight'
   } finally {
     jest.useRealTimers();
   }
+});
+
+
+it('applies saved period, tab, currency and sorting together and retains item filters across tabs', async () => {
+  const preset = { period: 'week', tab: 'items', unit: 'USD', sort: 'gross' };
+  require('../../services/terminalReportPresets').listTerminalReportPresets.mockResolvedValue([preset]);
+  const view = render(<TerminalReportsScreen walletId="wallet-a" network="mainnet" initialSelection={initialSelection} onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByText('Saved reports · 1')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Saved reports'));
+  fireEvent.press(view.getByLabelText('Open saved report 7 days · Items · USD · Sales amount'));
+  await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(1));
+  const day = new Date(); day.setHours(0, 0, 0, 0);
+  const end = new Date(day); end.setDate(end.getDate() + 1);
+  const start = new Date(day); start.setDate(start.getDate() - 6);
+  expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', { start: start.getTime(), end: end.getTime() }, { unit: 'USD', sort: 'gross' });
+  expect(getTerminalSalesSummary).toHaveBeenCalledTimes(1);
+  expect(view.getByLabelText('Item currency USD')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Overview reports'));
+  fireEvent.press(view.getByLabelText('Item reports'));
+  await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(2));
+  expect(view.getByLabelText('Sort items by sales amount').props.accessibilityState.selected).toBe(true);
+});
+
+
+it('saves applied filters rather than an unfinished date draft and applies fixed custom dates', async () => {
+  const service = require('../../services/terminalReportPresets');
+  const fixed = { period: 'custom', customRange: { startDate: '2020-01-01', endDate: '2020-01-02' }, tab: 'overview', unit: null, sort: 'quantity' };
+  service.listTerminalReportPresets.mockResolvedValue([fixed]);
+  const view = render(<TerminalReportsScreen walletId="wallet-a" network="mainnet" initialSelection={initialSelection} onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByText('Saved reports · 1')).toBeTruthy());
+  service.saveTerminalReportPreset.mockResolvedValueOnce([fixed]);
+  fireEvent.press(view.getByLabelText('Custom sales range'));
+  fireEvent.press(view.getByLabelText('Save current report'));
+  expect(service.saveTerminalReportPreset).toHaveBeenCalledWith('wallet-a', 'mainnet', { period: 'today', tab: 'overview', unit: null, sort: 'quantity' }, expect.any(Function));
+  service.listTerminalReportPresets.mockResolvedValue([fixed]);
+  fireEvent.press(view.getByLabelText('Saved reports'));
+  fireEvent.press(view.getByLabelText(/Open saved report Jan 1, 2020/));
+  await waitFor(() => expect(getTerminalSalesSummary).toHaveBeenLastCalledWith('wallet-a', 'mainnet', { start: new Date(2020, 0, 1).getTime(), end: new Date(2020, 0, 3).getTime() }));
+  expect(view.queryByLabelText('Apply custom date range')).toBeNull();
 });

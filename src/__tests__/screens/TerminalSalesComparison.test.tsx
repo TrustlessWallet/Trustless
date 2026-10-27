@@ -68,7 +68,7 @@ it('mounts item performance only after selecting the Items report', async () => 
   const view = render(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   fireEvent.press(view.getByLabelText('Item reports'));
   await waitFor(() => expect(view.getByLabelText('Paid latte snapshot, quantity 4, gross USD 2000')).toBeTruthy());
-  expect(view.getByText('ITEM PERFORMANCE')).toBeTruthy();
+  expect(view.getByText('Sort by')).toBeTruthy();
   expect(view.queryByText('TODAY’S ACTIVITY')).toBeNull();
 });
 

@@ -41,25 +41,29 @@ it('pages all item rows in batches and retries a failed page without losing rows
   fireEvent.press(view.getByLabelText('Retry loading more items'));
   await waitFor(() => expect(view.UNSAFE_getByType(FlatList).props.data).toHaveLength(25));
   expect(readTerminalItemPerformancePage).toHaveBeenLastCalledWith('paged-token', 20, 20);
-  expect(view.getByText('2 paid sales without item details excluded.')).toBeTruthy();
+  expect(view.queryByText(/paid sales without item details/)).toBeNull();
+  fireEvent.press(view.getByLabelText('About item reports'));
+  expect(view.getByText('2 paid sales without item details are excluded across all currencies in this period.')).toBeTruthy();
 });
 
 it('requires a currency for gross sorting and returning to All restores quantity sorting', async () => {
   const view = render(<TerminalItemsReport {...props} />);
   await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledWith('wallet-a', 'mainnet', props.range, { sort: 'quantity', unit: null }));
   const allList = view.getByTestId('terminal-items-report');
-  const gross = view.getByLabelText('Sort items by gross');
-  expect(gross.props.accessibilityState.disabled).toBe(true);
-  expect(gross.props.accessibilityHint).toBe('Choose a currency to sort by gross sales');
-  fireEvent.press(view.getByLabelText('Item currency All'));
+  const gross = view.getByLabelText('Sort items by sales amount');
+  expect(gross.props.accessibilityState.disabled).toBe(false);
+  expect(gross.props.accessibilityHint).toBe('Choose a currency first');
+  fireEvent.press(gross);
+  expect(view.getByText('Choose a currency to compare sales amounts.')).toBeTruthy();
+  expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(1);
   fireEvent.press(view.getByLabelText('Item currency option USD'));
-  await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', props.range, { sort: 'quantity', unit: 'USD' }));
+  await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', props.range, { sort: 'gross', unit: 'USD' }));
   expect(view.getByTestId('terminal-items-report')).not.toBe(allList);
-  expect(view.getByText('0 results · USD')).toBeTruthy();
-  fireEvent.press(view.getByLabelText('Sort items by gross'));
+  expect(view.getByText('0 results')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Sort items by sales amount'));
   await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', props.range, { sort: 'gross', unit: 'USD' }));
   fireEvent.press(view.getByLabelText('Item currency USD'));
-  fireEvent.press(view.getByLabelText('Item currency option All'));
+  fireEvent.press(view.getByLabelText('Item currency option All currencies'));
   await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', props.range, { sort: 'quantity', unit: null }));
 });
 
@@ -68,11 +72,11 @@ it('removes every late snapshot across an A-B-A filter sequence and after unmoun
   (createTerminalItemPerformanceSnapshot as jest.Mock).mockImplementation(() => new Promise(resolve => finishes.push(resolve)));
   const view = render(<TerminalItemsReport {...props} />);
   await waitFor(() => expect(finishes).toHaveLength(1));
-  fireEvent.press(view.getByLabelText('Item currency All'));
+  fireEvent.press(view.getByLabelText('Item currency All currencies'));
   fireEvent.press(view.getByLabelText('Item currency option EUR'));
   await waitFor(() => expect(finishes).toHaveLength(2));
   fireEvent.press(view.getByLabelText('Item currency EUR'));
-  fireEvent.press(view.getByLabelText('Item currency option All'));
+  fireEvent.press(view.getByLabelText('Item currency option All currencies'));
   await waitFor(() => expect(finishes).toHaveLength(3));
   await act(async () => { finishes[2]({ token: 'current-a', totalCount: 0, paidWithoutItems: 0 }); });
   await waitFor(() => expect(readTerminalItemPerformancePage).toHaveBeenCalledWith('current-a', 0, 20));
@@ -118,9 +122,9 @@ it('exports the applied currency and sort, blocks duplicate taps and cancels whe
   const selection = { period: 'custom' as const, day: new Date(2026, 9, 27), customRange: { startDate: '2026-10-01', endDate: '2026-10-20' } };
   const header = (button: React.ReactNode) => <>{button}</>;
   const view = render(<TerminalItemsReport {...props} exportSelection={selection} renderSheetHeader={header} />);
-  fireEvent.press(view.getByLabelText('Item currency All'));
+  fireEvent.press(view.getByLabelText('Item currency All currencies'));
   fireEvent.press(view.getByLabelText('Item currency option EUR'));
-  fireEvent.press(view.getByLabelText('Sort items by gross'));
+  fireEvent.press(view.getByLabelText('Sort items by sales amount'));
   fireEvent.press(view.getByLabelText('Export item report'));
   fireEvent.press(view.getByLabelText('Export item report'));
   expect(exportTerminalItemsCsv).toHaveBeenCalledTimes(1);
@@ -160,4 +164,19 @@ it('invalidates hidden exports even after reopening and lets the new selection e
   view.unmount();
   expect(current.isCurrent()).toBe(false);
   await act(async () => { finishes[1](); });
+});
+
+it('keeps explanations optional and cancels sales sorting when Quantity is chosen instead', async () => {
+  const view = render(<TerminalItemsReport {...props} />);
+  await waitFor(() => expect(view.getByText('0 results')).toBeTruthy());
+  expect(view.queryByText(/Quantities and amounts are before refunds/)).toBeNull();
+  fireEvent.press(view.getByLabelText('About item reports'));
+  expect(view.getByText(/Quantities and amounts are before refunds/)).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Sort items by sales amount'));
+  expect(view.queryByText(/Quantities and amounts are before refunds/)).toBeNull();
+  fireEvent.press(view.getByLabelText('Sort items by quantity'));
+  expect(view.queryByText('Choose a currency to compare sales amounts.')).toBeNull();
+  fireEvent.press(view.getByLabelText('Item currency All currencies'));
+  fireEvent.press(view.getByLabelText('Item currency option EUR'));
+  await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', props.range, { sort: 'quantity', unit: 'EUR' }));
 });

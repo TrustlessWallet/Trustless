@@ -22,7 +22,7 @@ export type Props = {
 const periods: { value: SalesPeriod; title: string; label: string }[] = [
   { value: 'today', title: 'Today', label: 'Today sales' },
   { value: 'week', title: '7 days', label: 'Last 7 days sales' },
-  { value: 'month', title: 'This month', label: 'This month sales' },
+  { value: 'month', title: 'Month', label: 'This month sales' },
   { value: 'all', title: 'All', label: 'All sales' },
   { value: 'custom', title: 'Custom', label: 'Custom sales range' },
 ];
@@ -36,11 +36,11 @@ export default function TerminalSalesPeriodControls({ period, customRange, draft
 
   return <>
     <View style={styles.tabs}>
-      {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole={item.value === 'custom' ? 'button' : 'tab'} accessibilityState={{ selected: period === item.value, disabled, ...(item.value === 'custom' ? { expanded: !!draft } : {}) }} accessibilityLabel={item.label} disabled={disabled} onPress={() => onSelect(item.value)} style={[styles.tab, item.value === 'month' && styles.monthTab, item.value === 'custom' && styles.customTab, item.value !== 'custom' && period === item.value && styles.activeTab]}>
+      {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole={item.value === 'custom' ? 'button' : 'tab'} accessibilityState={{ selected: period === item.value, disabled, ...(item.value === 'custom' ? { expanded: !!draft } : {}) }} accessibilityLabel={item.label} disabled={disabled} onPress={() => onSelect(item.value)} style={[styles.tab, item.value === 'custom' && styles.customTab, item.value !== 'custom' && period === item.value && styles.activeTab]}>
         {item.value === 'custom' ? <View style={[styles.customControl, (period === 'custom' || !!draft) && styles.customControlActive]}>
           <Feather name="calendar" size={13} color={period === 'custom' || draft ? theme.colors.primary : theme.colors.muted} />
           <Text style={[styles.customText, (period === 'custom' || !!draft) && styles.activeText]}>{item.title}</Text>
-        </View> : <Text style={[styles.tabText, item.value === 'month' && styles.monthText, period === item.value && styles.activeText]}>{item.title}</Text>}
+        </View> : <Text style={[styles.tabText, period === item.value && styles.activeText]}>{item.title}</Text>}
       </TouchableOpacity>)}
     </View>
     {detailCaption ? <View style={styles.caption}><Text style={styles.captionText}>{detailCaption}</Text></View> : draft ? <TerminalDateRangePicker value={{ ...draft }} today={day} onChange={onDraftChange} onApply={onApply} onCancel={onCancel} />
@@ -53,13 +53,11 @@ function makeStyles(colors: { primary: string; border: string; muted: string; bi
   return StyleSheet.create({
     tabs: { flexDirection: 'row', marginHorizontal: 24, marginTop: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     tab: { flex: 1, minWidth: 0, minHeight: 44, paddingHorizontal: 2, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-    monthTab: { flex: 1.4 },
     customTab: { flex: 1.35, paddingVertical: 5 },
     customControl: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
     customControlActive: { borderColor: colors.bitcoin },
     customText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 11 },
     tabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
-    monthText: { fontSize: 11 },
     activeTab: { borderBottomColor: colors.bitcoin },
     activeText: { color: colors.primary },
     caption: { paddingHorizontal: 24, paddingTop: 16 },
