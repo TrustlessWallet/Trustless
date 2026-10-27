@@ -1,0 +1,74 @@
+import React from 'react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import TerminalSavedReports from '../../components/TerminalSavedReports';
+import { listTerminalReportPresets, saveTerminalReportPreset, removeTerminalReportPreset, TerminalReportPreset } from '../../services/terminalReportPresets';
+
+jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { primary: '#000', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
+jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
+jest.mock('../../services/terminalReportPresets', () => ({ listTerminalReportPresets: jest.fn(), saveTerminalReportPreset: jest.fn(), removeTerminalReportPreset: jest.fn(), reportPresetKey: (value: unknown) => JSON.stringify(value) }));
+const current: TerminalReportPreset = { period: 'week', tab: 'items', unit: 'USD', sort: 'gross' };
+const props = { walletId: 'wallet-a', network: 'mainnet' as const, current, visible: true, onApply: jest.fn() };
+beforeEach(() => {
+  jest.resetAllMocks();
+  (listTerminalReportPresets as jest.Mock).mockResolvedValue([]);
+  (saveTerminalReportPreset as jest.Mock).mockResolvedValue([current]);
+  (removeTerminalReportPreset as jest.Mock).mockResolvedValue([]);
+});
+it('saves only after persistence, deduplicates and applies a complete configuration', async () => {
+  let finish!: (value: unknown) => void;
+  (saveTerminalReportPreset as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const view = render(<TerminalSavedReports {...props} />);
+  await waitFor(() => expect(view.getByLabelText('Save current report').props.accessibilityState.disabled).toBe(false));
+  fireEvent.press(view.getByLabelText('Save current report'));
+  fireEvent.press(view.getByLabelText('Save current report'));
+  expect(saveTerminalReportPreset).toHaveBeenCalledTimes(1);
+  expect(view.queryByText('Saved')).toBeNull();
+  await act(async () => finish([current]));
+  expect(view.getByLabelText('Report saved').props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(view.getByLabelText('Saved reports'));
+  fireEvent.press(view.getByLabelText('Open saved report 7 days · Items · USD · Gross'));
+  expect(props.onApply).toHaveBeenCalledWith(current);
+  expect(view.queryByLabelText('Open saved report 7 days · Items · USD · Gross')).toBeNull();
+});
+it('retains entries after failed removal and allows retry without changing the report', async () => {
+  (listTerminalReportPresets as jest.Mock).mockResolvedValue([current]);
+  (removeTerminalReportPreset as jest.Mock).mockRejectedValueOnce(new Error('disk failed'));
+  const view = render(<TerminalSavedReports {...props} />);
+  await waitFor(() => expect(view.getByText('Saved reports · 1')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Saved reports'));
+  fireEvent.press(view.getByLabelText('Remove saved report 7 days · Items · USD · Gross'));
+  await waitFor(() => expect(view.getByText('Couldn’t remove report. Try again.')).toBeTruthy());
+  expect(view.getByLabelText('Open saved report 7 days · Items · USD · Gross')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Remove saved report 7 days · Items · USD · Gross'));
+  await waitFor(() => expect(view.queryByText('Saved reports · 1')).toBeNull());
+  expect(props.onApply).not.toHaveBeenCalled();
+});
+it('does not overwrite unavailable saved data and explains the limit without adding a new screen', async () => {
+  (listTerminalReportPresets as jest.Mock).mockRejectedValueOnce(new Error('bad storage'));
+  const view = render(<TerminalSavedReports {...props} />);
+  await waitFor(() => expect(view.getByText('Saved reports unavailable.')).toBeTruthy());
+  expect(view.getByLabelText('Save current report').props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(view.getByLabelText('Retry saved reports'));
+  await waitFor(() => expect(view.getByLabelText('Save current report').props.accessibilityState.disabled).toBe(false));
+  (saveTerminalReportPreset as jest.Mock).mockRejectedValueOnce(new Error('Report preset limit reached.'));
+  fireEvent.press(view.getByLabelText('Save current report'));
+  await waitFor(() => expect(view.getByText('Save up to 10 reports. Remove one to save another.')).toBeTruthy());
+});
+it('hides old scope entries and ignores late reads and writes after leaving', async () => {
+  let oldRead!: (value: unknown) => void;
+  (listTerminalReportPresets as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { oldRead = resolve; }));
+  const view = render(<TerminalSavedReports {...props} />);
+  view.rerender(<TerminalSavedReports {...props} walletId="wallet-b" />);
+  await act(async () => oldRead([current]));
+  expect(view.queryByText('Saved reports · 1')).toBeNull();
+  await waitFor(() => expect(view.getByLabelText('Save current report').props.accessibilityState.disabled).toBe(false));
+  let finish!: (value: unknown) => void;
+  (saveTerminalReportPreset as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  fireEvent.press(view.getByLabelText('Save current report'));
+  const guard = (saveTerminalReportPreset as jest.Mock).mock.calls[0][3];
+  expect(guard()).toBe(true);
+  view.rerender(<TerminalSavedReports {...props} walletId="wallet-b" visible={false} />);
+  expect(guard()).toBe(false);
+  await act(async () => finish([current]));
+  expect(view.queryByText('Saved reports · 1')).toBeNull();
+});

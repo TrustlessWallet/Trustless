@@ -14,7 +14,7 @@ import {
   readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot, TerminalItemPerformanceRow,
 } from '../services/terminalItemPerformance';
 
-type Props = { walletId: string; network: TerminalNetwork; scope: string; range: TerminalRange; visible: boolean; revision: number; listHeader: React.ReactNode; exportSelection?: { period: SalesPeriod; day: Date; customRange?: CustomSalesDateRange }; renderSheetHeader?: (exportButton: React.ReactNode) => React.ReactNode };
+type Props = { walletId: string; network: TerminalNetwork; scope: string; range: TerminalRange; visible: boolean; revision: number; listHeader: React.ReactNode; selection?: { unit: ItemUnit | null; sort: ItemSort }; onSelectionChange?: (value: { unit: ItemUnit | null; sort: ItemSort }) => void; exportSelection?: { period: SalesPeriod; day: Date; customRange?: CustomSalesDateRange }; renderSheetHeader?: (exportButton: React.ReactNode) => React.ReactNode };
 type State = {
   identity: string; reportKey: string; items: TerminalItemPerformanceRow[]; nextSeq: number | null;
   totalCount: number; paidWithoutItems: number; loading: boolean; refreshing: boolean; error: boolean; pageLoading: boolean; pageError: boolean;
@@ -22,12 +22,13 @@ type State = {
 const units: { value: ItemUnit | null; title: string }[] = [{ value: null, title: 'All' }, { value: 'USD', title: 'USD' }, { value: 'EUR', title: 'EUR' }, { value: 'CHF', title: 'CHF' }, { value: 'sats', title: 'sats' }];
 const quantityText = (value: bigint) => value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
-export default function TerminalItemsReport({ walletId, network, scope, range, visible, revision, listHeader, exportSelection, renderSheetHeader }: Props) {
+export default function TerminalItemsReport({ walletId, network, scope, range, visible, revision, listHeader, exportSelection, renderSheetHeader, selection, onSelectionChange }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const insets = useSafeAreaInsets();
-  const [unit, setUnit] = useState<ItemUnit | null>(null);
-  const [sort, setSort] = useState<ItemSort>('quantity');
+  const [localSelection, setLocalSelection] = useState<{ unit: ItemUnit | null; sort: ItemSort }>({ unit: null, sort: 'quantity' });
+  const { unit, sort } = selection ?? localSelection;
+  const select = onSelectionChange ?? setLocalSelection;
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
   const reportKey = `${scope}:${rangeKey}:${unit ?? 'all'}:${sort}`;
@@ -146,10 +147,10 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
     <View style={styles.controls}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Item currency ${selectedUnit}`} accessibilityState={{ expanded: currencyOpen }} onPress={() => setCurrencyOpen(open => !open)} style={styles.currencyButton}><Text style={styles.controlText}>{selectedUnit}</Text><Text style={styles.chevron}>⌄</Text></TouchableOpacity>
       <View style={styles.sortControl}>
-        {(['quantity', 'gross'] as const).map(value => { const disabled = value === 'gross' && unit === null; return <TouchableOpacity key={value} accessibilityRole="button" accessibilityLabel={`Sort items by ${value}`} accessibilityHint={disabled ? 'Choose a currency to sort by gross sales' : undefined} accessibilityState={{ selected: sort === value, disabled }} disabled={disabled} onPress={() => setSort(value)} style={[styles.sortButton, sort === value && styles.sortSelected, disabled && styles.disabled]}><Text style={[styles.controlText, sort === value && styles.selectedText]}>{value === 'quantity' ? 'Quantity' : 'Gross'}</Text></TouchableOpacity>; })}
+        {(['quantity', 'gross'] as const).map(value => { const disabled = value === 'gross' && unit === null; return <TouchableOpacity key={value} accessibilityRole="button" accessibilityLabel={`Sort items by ${value}`} accessibilityHint={disabled ? 'Choose a currency to sort by gross sales' : undefined} accessibilityState={{ selected: sort === value, disabled }} disabled={disabled} onPress={() => select({ unit, sort: value })} style={[styles.sortButton, sort === value && styles.sortSelected, disabled && styles.disabled]}><Text style={[styles.controlText, sort === value && styles.selectedText]}>{value === 'quantity' ? 'Quantity' : 'Gross'}</Text></TouchableOpacity>; })}
       </View>
     </View>
-    {currencyOpen ? <View style={styles.currencyOptions}>{units.map(option => <TouchableOpacity key={option.title} accessibilityRole="button" accessibilityLabel={`Item currency option ${option.title}`} accessibilityState={{ selected: unit === option.value }} onPress={() => { setUnit(option.value); if (option.value === null) setSort('quantity'); setCurrencyOpen(false); }} style={[styles.currencyOption, unit === option.value && styles.currencySelected]}><Text style={[styles.optionText, unit === option.value && styles.selectedText]}>{option.title}</Text></TouchableOpacity>)}</View> : null}
+    {currencyOpen ? <View style={styles.currencyOptions}>{units.map(option => <TouchableOpacity key={option.title} accessibilityRole="button" accessibilityLabel={`Item currency option ${option.title}`} accessibilityState={{ selected: unit === option.value }} onPress={() => { select({ unit: option.value, sort: option.value === null ? 'quantity' : sort }); setCurrencyOpen(false); }} style={[styles.currencyOption, unit === option.value && styles.currencySelected]}><Text style={[styles.optionText, unit === option.value && styles.selectedText]}>{option.title}</Text></TouchableOpacity>)}</View> : null}
     <View style={styles.coverageHeading}><View><Text style={styles.heading}>ITEM PERFORMANCE</Text><Text style={styles.caption}>{current.loading ? '' : `${current.totalCount} ${current.totalCount === 1 ? 'result' : 'results'}${unit ? ` · ${unit}` : ''}`}</Text></View>{current.loading || current.refreshing ? <ActivityIndicator accessibilityLabel="Loading item report" size="small" color={theme.colors.bitcoin} /> : null}</View>
     <Text style={styles.note}>Gross sales before refunds. Refunds aren’t assigned to items.</Text>
     {current.paidWithoutItems > 0 ? <Text style={styles.note}>{unit ? 'All currencies: ' : ''}{quantityText(BigInt(current.paidWithoutItems))} paid {current.paidWithoutItems === 1 ? 'sale' : 'sales'} without item details excluded.</Text> : null}
