@@ -4,6 +4,9 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import TerminalItemsReport from '../../components/TerminalItemsReport';
 import { createTerminalItemPerformanceSnapshot, readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot } from '../../services/terminalItemPerformance';
 
+jest.mock('../../services/terminalItemsExport', () => ({ exportTerminalItemsCsv: jest.fn() }));
+jest.mock('../../components/GlassIconButton', () => { const React = require('react'); const { TouchableOpacity } = require('react-native'); return ({ children, ...props }: any) => <TouchableOpacity {...props}>{children}</TouchableOpacity>; });
+
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('../../services/terminalItemPerformance', () => ({
@@ -106,4 +109,55 @@ it('keeps loaded rows when a background revision refresh fails and retries the c
   fireEvent.press(view.getByLabelText('Retry item report'));
   await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(3));
   expect(view.getByText('Readable item 1')).toBeTruthy();
+});
+
+it('exports the applied currency and sort, blocks duplicate taps and cancels when selection changes', async () => {
+  let finish!: () => void;
+  const { exportTerminalItemsCsv } = require('../../services/terminalItemsExport');
+  exportTerminalItemsCsv.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+  const selection = { period: 'custom' as const, day: new Date(2026, 9, 27), customRange: { startDate: '2026-10-01', endDate: '2026-10-20' } };
+  const header = (button: React.ReactNode) => <>{button}</>;
+  const view = render(<TerminalItemsReport {...props} exportSelection={selection} renderSheetHeader={header} />);
+  fireEvent.press(view.getByLabelText('Item currency All'));
+  fireEvent.press(view.getByLabelText('Item currency option EUR'));
+  fireEvent.press(view.getByLabelText('Sort items by gross'));
+  fireEvent.press(view.getByLabelText('Export item report'));
+  fireEvent.press(view.getByLabelText('Export item report'));
+  expect(exportTerminalItemsCsv).toHaveBeenCalledTimes(1);
+  const captured = exportTerminalItemsCsv.mock.calls[0][0];
+  expect(captured).toEqual(expect.objectContaining({ walletId: 'wallet-a', network: 'mainnet', ...selection, unit: 'EUR', sort: 'gross' }));
+  expect(captured.isCurrent()).toBe(true);
+  fireEvent.press(view.getByLabelText('Item currency EUR'));
+  fireEvent.press(view.getByLabelText('Item currency option USD'));
+  expect(captured.isCurrent()).toBe(false);
+  await act(async () => { finish(); });
+  exportTerminalItemsCsv.mockRejectedValueOnce(new Error('disk failed'));
+  fireEvent.press(view.getByLabelText('Export item report'));
+  await waitFor(() => expect(view.getByText('Couldn’t export items. Try again.')).toBeTruthy());
+  view.rerender(<TerminalItemsReport {...props} visible={false} exportSelection={selection} renderSheetHeader={header} />);
+  expect(view.queryByText('Couldn’t export items. Try again.')).toBeNull();
+});
+
+it('invalidates hidden exports even after reopening and lets the new selection export immediately', async () => {
+  const { exportTerminalItemsCsv } = require('../../services/terminalItemsExport');
+  const finishes: Array<() => void> = [];
+  exportTerminalItemsCsv.mockImplementation(() => new Promise<void>(resolve => finishes.push(resolve)));
+  const extra = { exportSelection: { period: 'all' as const, day: new Date(2026, 9, 27) }, renderSheetHeader: (button: React.ReactNode) => <>{button}</> };
+  const view = render(<TerminalItemsReport {...props} {...extra} />);
+  fireEvent.press(view.getByLabelText('Export item report'));
+  const old = exportTerminalItemsCsv.mock.calls[0][0];
+  view.rerender(<TerminalItemsReport {...props} {...extra} visible={false} />);
+  expect(old.isCurrent()).toBe(false);
+  view.rerender(<TerminalItemsReport {...props} {...extra} />);
+  expect(old.isCurrent()).toBe(false);
+  fireEvent.press(view.getByLabelText('Export item report'));
+  expect(finishes).toHaveLength(2);
+  const current = exportTerminalItemsCsv.mock.calls[1][0];
+  expect(current.isCurrent()).toBe(true);
+  await act(async () => { finishes[0](); });
+  fireEvent.press(view.getByLabelText('Export item report'));
+  expect(finishes).toHaveLength(2);
+  view.unmount();
+  expect(current.isCurrent()).toBe(false);
+  await act(async () => { finishes[1](); });
 });
