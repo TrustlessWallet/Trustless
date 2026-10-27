@@ -24,7 +24,7 @@ class NodeSQLiteDatabase {
   async execAsync(sql: string): Promise<void> { this.database.exec(sql); }
 
   async runAsync(sql: string, ...input: unknown[]): Promise<{ changes: number; lastInsertRowId: number }> {
-    if (nextWriteError && /^\s*(?:INSERT|UPDATE|DELETE|REPLACE)/i.test(sql)) {
+    if (nextWriteError && (/^\s*(?:INSERT|UPDATE|DELETE|REPLACE)/i.test(sql) || /^\s*WITH\b[\s\S]*?\)\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql))) {
       const error = nextWriteError;
       nextWriteError = null;
       throw error;

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { resetTerminalSqlite } from '../helpers/terminalSqlite';
+import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
 import { getTerminalDatabase } from '../../services/terminalDatabase';
-import { getTerminalItemPerformance } from '../../services/terminalItemPerformance';
+import { getTerminalItemPerformance, createTerminalItemPerformanceSnapshot, readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot } from '../../services/terminalItemPerformance';
 import { recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 import { reserveTerminalRefund, updateTerminalRefund } from '../../services/terminalRefunds';
 import { saveTerminalItem, deleteTerminalItem } from '../../services/terminalItems';
@@ -95,4 +95,54 @@ it('rejects corrupt basket details instead of inventing quantities or gross reve
   const db = await getTerminalDatabase();
   await db.runAsync("UPDATE terminal_sales SET payload=json_set(payload,'$.request.basket.lines[0].total',1) WHERE id='corrupt'");
   await expect(getTerminalItemPerformance('wallet-a', 'mainnet', null)).rejects.toThrow('invalid');
+});
+
+it('pages every item once in a stable snapshot despite later journal changes', async () => {
+  for (let i = 0; i < 45; i++) await updateTerminalSalePayment(request(`page${i}`, [line(`item${String(i).padStart(2, '0')}`, `Item ${i}`, i === 0 ? 12 : i % 3 + 1)]), { status: 'received' }, 3000);
+  const snapshot = await createTerminalItemPerformanceSnapshot('wallet-a', 'mainnet', null, { sort: 'quantity', unit: null });
+  expect(snapshot.totalCount).toBe(45);
+  const first = await readTerminalItemPerformancePage(snapshot.token);
+  expect(first.items).toHaveLength(20);
+  await updateTerminalSalePayment(request('late', [line('late', 'Late', 99)]), { status: 'received' }, 4000);
+  const second = await readTerminalItemPerformancePage(snapshot.token, first.nextSeq!);
+  const third = await readTerminalItemPerformancePage(snapshot.token, second.nextSeq!);
+  expect(second.items).toHaveLength(20);
+  expect(third.items).toHaveLength(5);
+  expect(third.nextSeq).toBeNull();
+  const ids = [...first.items, ...second.items, ...third.items].map(item => item.itemId);
+  expect(new Set(ids).size).toBe(45);
+  expect(ids).not.toContain('late');
+  expect(first.items[0].quantity).toBe(12n);
+  await removeTerminalItemPerformanceSnapshot(snapshot.token);
+  expect((await readTerminalItemPerformancePage(snapshot.token)).items).toEqual([]);
+});
+
+it('sorts gross numerically after normalizing carry and requires a single denomination', async () => {
+  // a: 2*900m = 1.8b despite raw hi=0; b: 1.1b with raw hi=1.
+  for (const id of ['carryone', 'carrytwo']) await updateTerminalSalePayment(request(id, [line('a', 'Carry', 1, 900000000)]), { status: 'received' }, 3000);
+  await updateTerminalSalePayment(request('high', [line('b', 'High', 1, 1100000000)]), { status: 'received' }, 3000);
+  await updateTerminalSalePayment(request('ten', [line('ten', 'Ten', 1, 10)]), { status: 'received' }, 3000);
+  await updateTerminalSalePayment(request('nine', [line('nine', 'Nine', 1, 9)]), { status: 'received' }, 3000);
+  await updateTerminalSalePayment(request('usd', [line('usd', 'USD', 99)], 'USD'), { status: 'received' }, 3000);
+  await expect(createTerminalItemPerformanceSnapshot('wallet-a', 'mainnet', null, { sort: 'gross', unit: null })).rejects.toThrow('currency');
+  const snapshot = await createTerminalItemPerformanceSnapshot('wallet-a', 'mainnet', null, { sort: 'gross', unit: 'sats' });
+  const page = await readTerminalItemPerformancePage(snapshot.token);
+  expect(page.items.map(item => item.itemId)).toEqual(['a', 'b', 'ten', 'nine']);
+  expect(page.items[0].gross).toBe(1800000000n);
+  expect(page.items.every(item => item.unit === 'sats')).toBe(true);
+  await removeTerminalItemPerformanceSnapshot(snapshot.token);
+});
+
+
+it('rolls back a failed snapshot build and can retry without changing sales', async () => {
+  await updateTerminalSalePayment(request('atomic', [line()]), { status: 'received' }, 3000);
+  failNextTerminalSqliteWrite();
+  await expect(createTerminalItemPerformanceSnapshot('wallet-a', 'mainnet', null, { sort: 'quantity', unit: null })).rejects.toThrow();
+  const db = await getTerminalDatabase();
+  expect((await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM terminal_item_report_rows'))?.count).toBe(0);
+  const snapshot = await createTerminalItemPerformanceSnapshot('wallet-a', 'mainnet', null, { sort: 'quantity', unit: null });
+  expect(snapshot.totalCount).toBe(1);
+  expect((await readTerminalItemPerformancePage(snapshot.token)).items[0].itemId).toBe('tea');
+  expect((await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM terminal_sales'))?.count).toBe(1);
+  await removeTerminalItemPerformanceSnapshot(snapshot.token);
 });

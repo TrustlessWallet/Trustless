@@ -4,7 +4,7 @@ import TerminalReportsScreen from '../../screens/TerminalReportsScreen';
 import { getTerminalSalesSummary, listTerminalSalesPage } from '../../services/terminalSales';
 import { getTerminalRefundTotal } from '../../services/terminalRefunds';
 import { getTerminalSalesComparison } from '../../services/terminalSalesComparison';
-import { getTerminalItemPerformance } from '../../services/terminalItemPerformance';
+import { createTerminalItemPerformanceSnapshot } from '../../services/terminalItemPerformance';
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: () => ({ activeWallet: { id: 'wallet-a' }, isLightningInitialized: true, validateTerminalInvoice: jest.fn(), verifyTerminalInvoice: jest.fn() }) }));
@@ -13,7 +13,12 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'comparison-test-id' }));
 jest.mock('../../services/terminalSalesExport', () => ({ exportTerminalSalesCsv: jest.fn(async () => true) }));
-jest.mock('../../services/terminalItemPerformance', () => ({ getTerminalItemPerformance: jest.fn(() => new Promise(() => undefined)), formatTerminalItemGross: (gross: bigint, unit: string) => `${unit} ${gross}` }));
+jest.mock('../../services/terminalItemPerformance', () => ({
+  createTerminalItemPerformanceSnapshot: jest.fn(),
+  readTerminalItemPerformancePage: jest.fn(),
+  removeTerminalItemPerformanceSnapshot: jest.fn(async () => undefined),
+  formatTerminalItemGross: (gross: bigint, unit: string) => `${unit} ${gross}`,
+}));
 jest.mock('../../services/terminalSales', () => ({
   listTerminalSalesPage: jest.fn(async () => ({ items: [], nextCursor: null })),
   getTerminalSalesSummary: jest.fn(),
@@ -41,6 +46,8 @@ beforeEach(() => {
   (getTerminalSalesSummary as jest.Mock).mockResolvedValue(summary(3, 200n, { USD: 1000n }));
   (getTerminalRefundTotal as jest.Mock).mockResolvedValue(100n);
   (getTerminalSalesComparison as jest.Mock).mockResolvedValue({ summary: summary(1, 100n, { EUR: 500n }), refundedSats: 50n });
+  (createTerminalItemPerformanceSnapshot as jest.Mock).mockResolvedValue({ token: 'comparison-items', totalCount: 0, paidWithoutItems: 0 });
+  (require('../../services/terminalItemPerformance').readTerminalItemPerformancePage as jest.Mock).mockResolvedValue({ items: [], nextSeq: null });
 });
 
 it('shows exact previous values and signed absolute changes for currency, sats, and refunds', async () => {
@@ -56,11 +63,12 @@ it('shows exact previous values and signed absolute changes for currency, sats, 
 });
 
 it('mounts item performance only after selecting the Items report', async () => {
-  (getTerminalItemPerformance as jest.Mock).mockResolvedValueOnce({ items: [{ itemId: 'latte', name: 'Paid latte snapshot', unit: 'USD', quantity: 4n, gross: 2000n }], hasMore: false, paidWithoutItems: 0 });
+  (createTerminalItemPerformanceSnapshot as jest.Mock).mockResolvedValueOnce({ token: 'latte-items', totalCount: 1, paidWithoutItems: 0 });
+  (require('../../services/terminalItemPerformance').readTerminalItemPerformancePage as jest.Mock).mockResolvedValueOnce({ items: [{ itemId: 'latte', name: 'Paid latte snapshot', unit: 'USD', quantity: 4n, gross: 2000n }], nextSeq: null });
   const view = render(<TerminalReportsScreen initialSelection={{ period: 'today', day: Date.now() }} walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   fireEvent.press(view.getByLabelText('Item reports'));
   await waitFor(() => expect(view.getByLabelText('Paid latte snapshot, quantity 4, gross USD 2000')).toBeTruthy());
-  expect(view.getByText('TOP ITEMS')).toBeTruthy();
+  expect(view.getByText('ITEM PERFORMANCE')).toBeTruthy();
   expect(view.queryByText('TODAY’S ACTIVITY')).toBeNull();
 });
 

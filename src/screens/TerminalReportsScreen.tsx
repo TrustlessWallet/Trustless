@@ -3,7 +3,7 @@ import { ActivityIndicator, AppState, ScrollView, StyleSheet, TouchableOpacity, 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import TerminalSalesPeriodControls from '../components/TerminalSalesPeriodControls';
-import TerminalItemPerformance from '../components/TerminalItemPerformance';
+import TerminalItemsReport from '../components/TerminalItemsReport';
 import TerminalPeriodComparison from '../components/TerminalPeriodComparison';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
@@ -84,17 +84,20 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
     setFilterState({ scope, period: 'custom', customRange: { ...filter.draft }, draft: null });
   };
 
-  return <View style={styles.root}>
-    <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} />
-    <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }} showsVerticalScrollIndicator={false}>
+  const reportHeader = <>
       <TerminalSalesPeriodControls period={filter.period} customRange={filter.customRange} draft={filter.draft} day={day} onSelect={selectPeriod} onDraftChange={draft => setFilterState({ ...filter, draft })} onApply={applyCustom} onCancel={() => setFilterState({ ...filter, draft: null })} disabled={!visible} />
       <View style={styles.reportTabs}>
         <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Overview reports" accessibilityState={{ selected: activeTab === 'overview', disabled: !visible }} disabled={!visible} onPress={() => setTab('overview')} style={[styles.reportTab, activeTab === 'overview' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'overview' && styles.activeText]}>Overview</Text></TouchableOpacity>
         <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Item reports" accessibilityState={{ selected: activeTab === 'items', disabled: !visible }} disabled={!visible} onPress={() => setTab('items')} style={[styles.reportTab, activeTab === 'items' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'items' && styles.activeText]}>Items</Text></TouchableOpacity>
       </View>
-      {visible && activeTab === 'overview' ? <ReportsOverview walletId={walletId} network={network} scope={scope} period={filter.period} customRange={filter.customRange} day={day} range={range} revision={revision} /> : null}
-      {visible && activeTab === 'items' ? <TerminalItemPerformance walletId={walletId} network={network} scope={scope} range={range} visible revision={revision} showRefundNote /> : null}
-    </ScrollView>
+  </>;
+  return <View style={styles.root}>
+    <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} />
+    {activeTab === 'items' ? <TerminalItemsReport walletId={walletId} network={network} scope={scope} range={range} visible={visible} revision={revision} listHeader={reportHeader} />
+      : <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }} showsVerticalScrollIndicator={false}>
+        {reportHeader}
+        {visible ? <ReportsOverview walletId={walletId} network={network} scope={scope} period={filter.period} customRange={filter.customRange} day={day} range={range} revision={revision} /> : null}
+      </ScrollView>}
   </View>;
 }
 
@@ -158,20 +161,20 @@ function makeStyles(colors: { background: string; primary: string; surface: stri
     reportTabs: { flexDirection: 'row', marginHorizontal: 24, marginTop: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
     reportTab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
     activeTab: { borderBottomColor: colors.bitcoin },
-    reportTabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
+    reportTabText: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     activeText: { color: colors.primary },
     overview: { marginHorizontal: 24, marginTop: 24, padding: 22, borderRadius: 18, backgroundColor: colors.surface },
     blockHeading: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    blockTitle: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
+    blockTitle: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 12, letterSpacing: 1.3 },
     paidCount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 48, marginTop: 3 },
     rule: { height: 1, backgroundColor: colors.border, marginTop: 10, marginBottom: 12 },
     totalRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingVertical: 4, gap: 12 },
-    totalLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 11 },
-    totalAmount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 16, flexShrink: 1, textAlign: 'right' },
+    totalLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
+    totalAmount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 17, flexShrink: 1, textAlign: 'right' },
     refundedRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, marginTop: 12, paddingTop: 12, gap: 12 },
     errorRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-    smallNote: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 10 },
+    smallNote: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12 },
     retry: { minHeight: 44, paddingHorizontal: 10, justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
-    retryText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 10 },
+    retryText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 11 },
   });
 }
