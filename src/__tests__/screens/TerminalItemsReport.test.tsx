@@ -54,7 +54,7 @@ it('requires a currency for gross sorting and returning to All restores quantity
   expect(gross.props.accessibilityState.disabled).toBe(false);
   expect(gross.props.accessibilityHint).toBe('Choose a currency first');
   fireEvent.press(gross);
-  expect(view.getByText('Choose a currency to compare sales amounts.')).toBeTruthy();
+  expect(view.getByText('Choose currency')).toBeTruthy();
   expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(1);
   fireEvent.press(view.getByLabelText('Item currency option USD'));
   await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', props.range, { sort: 'gross', unit: 'USD' }));
@@ -175,8 +175,37 @@ it('keeps explanations optional and cancels sales sorting when Quantity is chose
   fireEvent.press(view.getByLabelText('Sort items by sales amount'));
   expect(view.queryByText(/Quantities and amounts are before refunds/)).toBeNull();
   fireEvent.press(view.getByLabelText('Sort items by quantity'));
-  expect(view.queryByText('Choose a currency to compare sales amounts.')).toBeNull();
+  expect(view.queryByText('Choose currency')).toBeNull();
   fireEvent.press(view.getByLabelText('Item currency All currencies'));
   fireEvent.press(view.getByLabelText('Item currency option EUR'));
   await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', props.range, { sort: 'quantity', unit: 'EUR' }));
+});
+
+
+it('makes All-currency sales sorting an explicit cancellable chooser without querying invalid mixed totals', async () => {
+  const view = render(<TerminalItemsReport {...props} />);
+  await waitFor(() => expect(view.getByText('0 results')).toBeTruthy());
+  const queryCount = (createTerminalItemPerformanceSnapshot as jest.Mock).mock.calls.length;
+  fireEvent.press(view.getByLabelText('Sort items by sales amount'));
+  expect(view.getByLabelText('Sort items by sales amount').props.accessibilityState.expanded).toBe(true);
+  expect(view.getByLabelText('Sort items by quantity').props.accessibilityState.selected).toBe(true);
+  expect(view.queryByLabelText('Item currency option All currencies')).toBeNull();
+  expect(view.getByLabelText('Item currency option CHF')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Sort items by sales amount'));
+  expect(view.queryByText('Choose currency')).toBeNull();
+  fireEvent.press(view.getByLabelText('Sort items by sales amount'));
+  // Switching to the ordinary currency filter works on its first tap.
+  fireEvent.press(view.getByLabelText('Item currency All currencies'));
+  expect(view.queryByText('Choose currency')).toBeNull();
+  expect(view.getByLabelText('Item currency option All currencies')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Item currency option CHF'));
+  await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenLastCalledWith('wallet-a', 'mainnet', props.range, { sort: 'quantity', unit: 'CHF' }));
+  expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(queryCount + 1);
+  fireEvent.press(view.getByLabelText('Item currency CHF'));
+  fireEvent.press(view.getByLabelText('Item currency option All currencies'));
+  fireEvent.press(view.getByLabelText('Sort items by sales amount'));
+  view.rerender(<TerminalItemsReport {...props} visible={false} />);
+  view.rerender(<TerminalItemsReport {...props} />);
+  await waitFor(() => expect(view.getByText('0 results')).toBeTruthy());
+  expect(view.queryByText('Choose currency')).toBeNull();
 });

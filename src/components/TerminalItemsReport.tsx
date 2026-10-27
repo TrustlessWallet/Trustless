@@ -29,13 +29,13 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
   const [localSelection, setLocalSelection] = useState<{ unit: ItemUnit | null; sort: ItemSort }>({ unit: null, sort: 'quantity' });
   const { unit, sort } = selection ?? localSelection;
   const select = onSelectionChange ?? setLocalSelection;
-  const [currencyOpen, setCurrencyOpen] = useState(false);
-  const [choosingSalesCurrency, setChoosingSalesCurrency] = useState(false);
+  const [currencyChooser, setCurrencyChooser] = useState<'filter' | 'sales' | null>(null);
+  const choosingSalesCurrency = currencyChooser === 'sales';
   const [infoOpen, setInfoOpen] = useState(false);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
   const reportKey = `${scope}:${rangeKey}:${unit ?? 'all'}:${sort}`;
   const identity = `${reportKey}:${revision}`;
-  useEffect(() => { setCurrencyOpen(false); setChoosingSalesCurrency(false); setInfoOpen(false); }, [reportKey]);
+  useEffect(() => { setCurrencyChooser(null); setInfoOpen(false); }, [reportKey, visible]);
   const [state, setState] = useState<State>({ identity, reportKey, items: [], nextSeq: null, totalCount: 0, paidWithoutItems: 0, loading: true, refreshing: false, error: false, pageLoading: false, pageError: false });
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -146,16 +146,14 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
     ? { ...state, identity, refreshing: true, error: false, pageLoading: false, pageError: false }
     : { identity, reportKey, items: [], nextSeq: null, totalCount: 0, paidWithoutItems: 0, loading: true, refreshing: false, error: false, pageLoading: false, pageError: false };
   const selectedUnit = units.find(option => option.value === unit)!.title;
+  const currencyChoices = <View style={styles.currencyOptions}>{(choosingSalesCurrency ? units.filter(option => option.value !== null) : units).map(option => <TouchableOpacity key={option.title} accessibilityRole="button" accessibilityLabel={`Item currency option ${option.title}`} accessibilityState={{ selected: unit === option.value, disabled: !visible }} disabled={!visible} onPress={() => { select({ unit: option.value, sort: option.value === null ? 'quantity' : choosingSalesCurrency ? 'gross' : sort }); setCurrencyChooser(null); }} style={[styles.currencyOption, unit === option.value && styles.currencySelected]}><Text style={[styles.optionText, unit === option.value && styles.selectedText]}>{option.title}</Text></TouchableOpacity>)}</View>;
   const controls = <>
     <View style={styles.controls}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Item currency ${selectedUnit}`} accessibilityState={{ expanded: currencyOpen, disabled: !visible }} disabled={!visible} onPress={() => { setCurrencyOpen(open => !open); setChoosingSalesCurrency(false); setInfoOpen(false); }} style={styles.currencyButton}><Text style={styles.controlText}>{selectedUnit}</Text><Feather name="chevron-down" size={14} color={theme.colors.muted} /></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Item currency ${selectedUnit}`} accessibilityState={{ expanded: currencyChooser === 'filter', disabled: !visible }} disabled={!visible} onPress={() => { setCurrencyChooser(mode => mode === 'filter' ? null : 'filter'); setInfoOpen(false); }} style={styles.currencyButton}><Text style={styles.controlText}>{selectedUnit}</Text><Feather name={currencyChooser === 'filter' ? 'chevron-up' : 'chevron-down'} size={14} color={theme.colors.muted} /></TouchableOpacity>
       <View style={styles.resultCount}><Text style={styles.caption}>{current.loading || (current.error && !current.items.length) ? '' : `${current.totalCount} ${current.totalCount === 1 ? 'result' : 'results'}`}</Text>{current.loading || current.refreshing ? <ActivityIndicator accessibilityLabel="Loading item report" size="small" color={theme.colors.bitcoin} /> : null}</View>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="About item reports" accessibilityState={{ expanded: infoOpen, disabled: !visible }} disabled={!visible} onPress={() => { setInfoOpen(open => !open); setCurrencyOpen(false); setChoosingSalesCurrency(false); }} style={styles.infoButton}><Feather name="info" size={18} color={theme.colors.muted} /></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="About item reports" accessibilityState={{ expanded: infoOpen, disabled: !visible }} disabled={!visible} onPress={() => { setInfoOpen(open => !open); setCurrencyChooser(null); }} style={styles.infoButton}><Feather name="info" size={18} color={theme.colors.muted} /></TouchableOpacity>
     </View>
-    {currencyOpen ? <View style={styles.currencyPicker}>
-      {choosingSalesCurrency ? <Text style={styles.pickerNote}>Choose a currency to compare sales amounts.</Text> : null}
-      <View style={styles.currencyOptions}>{units.map(option => <TouchableOpacity key={option.title} accessibilityRole="button" accessibilityLabel={`Item currency option ${option.title}`} accessibilityState={{ selected: unit === option.value, disabled: !visible }} disabled={!visible} onPress={() => { select({ unit: option.value, sort: option.value === null ? 'quantity' : choosingSalesCurrency ? 'gross' : sort }); setCurrencyOpen(false); setChoosingSalesCurrency(false); }} style={[styles.currencyOption, unit === option.value && styles.currencySelected]}><Text style={[styles.optionText, unit === option.value && styles.selectedText]}>{option.title}</Text></TouchableOpacity>)}</View>
-    </View> : null}
+    {currencyChooser === 'filter' ? <View style={styles.currencyPicker}>{currencyChoices}</View> : null}
     {infoOpen ? <View style={styles.infoDetails}>
       <Text style={styles.pickerNote}>Paid sales with item details only. Quantities and amounts are before refunds; refunds aren’t assigned to individual items.</Text>
       {!current.loading && current.paidWithoutItems > 0 ? <Text style={styles.pickerNote}>{quantityText(BigInt(current.paidWithoutItems))} paid {current.paidWithoutItems === 1 ? 'sale without item details is' : 'sales without item details are'} excluded across all currencies in this period.</Text> : null}
@@ -163,8 +161,9 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
     <View style={styles.sortSection}>
       <Text style={styles.sortLabel}>Sort by</Text>
       <View style={styles.sortControl}>
-        {(['quantity', 'gross'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityLabel={`Sort items by ${value === 'gross' ? 'sales amount' : 'quantity'}`} accessibilityHint={value === 'gross' && unit === null ? 'Choose a currency first' : undefined} accessibilityState={{ selected: sort === value, disabled: !visible }} disabled={!visible} onPress={() => { if (value === 'gross' && unit === null) { setCurrencyOpen(true); setChoosingSalesCurrency(true); setInfoOpen(false); } else { setCurrencyOpen(false); setChoosingSalesCurrency(false); select({ unit, sort: value }); } }} style={[styles.sortButton, sort === value && styles.sortSelected]}><Text style={[styles.controlText, sort === value && styles.selectedText]}>{value === 'quantity' ? 'Quantity' : 'Sales amount'}</Text></TouchableOpacity>)}
+        {(['quantity', 'gross'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityLabel={`Sort items by ${value === 'gross' ? 'sales amount' : 'quantity'}`} accessibilityHint={value === 'gross' && unit === null ? 'Choose a currency first' : undefined} accessibilityState={{ selected: sort === value, disabled: !visible, ...(value === 'gross' && unit === null ? { expanded: choosingSalesCurrency } : {}) }} disabled={!visible} onPress={() => { if (value === 'gross' && unit === null) { setCurrencyChooser(mode => mode === 'sales' ? null : 'sales'); setInfoOpen(false); } else { setCurrencyChooser(null); select({ unit, sort: value }); } }} style={[styles.sortButton, sort === value && styles.sortSelected]}><Text style={[styles.controlText, sort === value && styles.selectedText]}>{value === 'quantity' ? 'Quantity' : 'Sales amount'}</Text>{value === 'gross' && unit === null ? <Feather name={choosingSalesCurrency ? 'chevron-up' : 'chevron-down'} size={12} color={theme.colors.primary} /> : null}</TouchableOpacity>)}
       </View>
+      {choosingSalesCurrency ? <View style={styles.salesCurrencyChoices}><Text style={styles.pickerNote}>Choose currency</Text>{currencyChoices}</View> : null}
     </View>
     {exportError ? <Text accessibilityRole="alert" style={styles.note}>{exportError}</Text> : null}
     {current.error ? <View style={styles.errorRow}><Text style={[styles.note, styles.inlineNote]}>{current.items.length ? 'Couldn’t refresh item report' : 'Item report unavailable'}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry item report" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
@@ -204,7 +203,8 @@ function makeStyles(colors: { background: string; primary: string; surface: stri
     sortLabel: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12 },
     currencyButton: { minHeight: 44,  paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
     sortControl: { minHeight: 50, flexDirection: 'row', padding: 3, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
-    sortButton: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
+    sortButton: { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
+    salesCurrencyChoices: { paddingTop: 5, gap: 8 },
     sortSelected: { backgroundColor: colors.primary },
     controlText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
     selectedText: { color: colors.background },
