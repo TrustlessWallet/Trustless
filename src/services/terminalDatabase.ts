@@ -56,6 +56,17 @@ CREATE INDEX IF NOT EXISTS terminal_refunds_sale
 CREATE UNIQUE INDEX IF NOT EXISTS terminal_refunds_one_unresolved
   ON terminal_refunds(wallet_id, network, sale_id)
   WHERE status IN ('unknown','pending');
+CREATE TABLE IF NOT EXISTS terminal_item_report_rows (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  quantity TEXT NOT NULL,
+  gross_hi TEXT NOT NULL,
+  gross_lo TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS terminal_item_report_page ON terminal_item_report_rows(snapshot_id,seq);
 CREATE TABLE IF NOT EXISTS terminal_export_rows (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   export_id TEXT NOT NULL,
@@ -72,6 +83,7 @@ async function openDatabase(): Promise<SQLiteDatabase> {
     // Snapshots are deliberately ephemeral; a process that did not remove one
     // cannot have a consumer left that can resume it.
     await db.runAsync('DELETE FROM terminal_export_rows');
+    await db.runAsync('DELETE FROM terminal_item_report_rows');
     return db;
   } catch (error) {
     await db.closeAsync().catch(() => undefined);
@@ -181,6 +193,7 @@ export function resetTerminalDatabaseForTests(): Promise<void> {
     await transaction.execAsync(`DELETE FROM terminal_refunds;
       DELETE FROM terminal_sales;
       DELETE FROM terminal_export_rows;
+      DELETE FROM terminal_item_report_rows;
       DELETE FROM sqlite_sequence WHERE name='terminal_export_rows';`);
   }));
 }

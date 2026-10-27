@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import TerminalReportsScreen, { TerminalReportSelection } from '../../screens/TerminalReportsScreen';
 import { getTerminalSalesSummary, listTerminalSalesPage } from '../../services/terminalSales';
 import { getTerminalRefundTotal } from '../../services/terminalRefunds';
-import { getTerminalItemPerformance } from '../../services/terminalItemPerformance';
+import { createTerminalItemPerformanceSnapshot, readTerminalItemPerformancePage } from '../../services/terminalItemPerformance';
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
@@ -20,7 +20,9 @@ jest.mock('../../services/terminalRefunds', () => ({
   subscribeTerminalRefunds: jest.fn(() => () => undefined),
 }));
 jest.mock('../../services/terminalItemPerformance', () => ({
-  getTerminalItemPerformance: jest.fn(),
+  createTerminalItemPerformanceSnapshot: jest.fn(),
+  readTerminalItemPerformancePage: jest.fn(),
+  removeTerminalItemPerformanceSnapshot: jest.fn(async () => undefined),
   formatTerminalItemGross: (gross: bigint, unit: string) => `${unit} ${gross}`,
 }));
 
@@ -33,16 +35,17 @@ beforeEach(() => {
   jest.clearAllMocks();
   (getTerminalSalesSummary as jest.Mock).mockResolvedValue(summary(2));
   (getTerminalRefundTotal as jest.Mock).mockResolvedValue(0n);
-  (getTerminalItemPerformance as jest.Mock).mockResolvedValue({ items: [], hasMore: false, paidWithoutItems: 0 });
+  (createTerminalItemPerformanceSnapshot as jest.Mock).mockResolvedValue({ token: 'items-token', totalCount: 0, paidWithoutItems: 0 });
+  (readTerminalItemPerformancePage as jest.Mock).mockResolvedValue({ items: [], nextSeq: null });
 });
 
 it('mounts and queries only the active report tab', async () => {
   const view = render(<TerminalReportsScreen walletId="wallet-a" network="mainnet" initialSelection={initialSelection} onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('2')).toBeTruthy());
   expect(getTerminalSalesSummary).toHaveBeenCalledTimes(1);
-  expect(getTerminalItemPerformance).not.toHaveBeenCalled();
+  expect(createTerminalItemPerformanceSnapshot).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Item reports'));
-  await waitFor(() => expect(getTerminalItemPerformance).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledTimes(1));
   expect(view.queryByLabelText('Reports overview')).toBeNull();
   expect(listTerminalSalesPage).not.toHaveBeenCalled();
 });
@@ -95,11 +98,11 @@ it('retries overview and item failures without crossing report queries', async (
   (getTerminalSalesSummary as jest.Mock).mockResolvedValueOnce(summary(4));
   fireEvent.press(view.getByLabelText('Retry reports overview'));
   await waitFor(() => expect(view.getByText('4')).toBeTruthy());
-  (getTerminalItemPerformance as jest.Mock).mockRejectedValueOnce(new Error('items failed'));
+  (createTerminalItemPerformanceSnapshot as jest.Mock).mockRejectedValueOnce(new Error('items failed'));
   fireEvent.press(view.getByLabelText('Item reports'));
-  await waitFor(() => expect(view.getByText('Item performance unavailable')).toBeTruthy());
-  (getTerminalItemPerformance as jest.Mock).mockResolvedValueOnce({ items: [], hasMore: false, paidWithoutItems: 0 });
-  fireEvent.press(view.getByLabelText('Retry top items'));
+  await waitFor(() => expect(view.getByText('Item report unavailable')).toBeTruthy());
+  (createTerminalItemPerformanceSnapshot as jest.Mock).mockResolvedValueOnce({ token: 'retry-token', totalCount: 0, paidWithoutItems: 0 });
+  fireEvent.press(view.getByLabelText('Retry item report'));
   await waitFor(() => expect(view.getByText('No item sales in this period')).toBeTruthy());
   expect(listTerminalSalesPage).not.toHaveBeenCalled();
 });
