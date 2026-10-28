@@ -5,7 +5,7 @@ import { serializeTerminalDatabase, transactTerminalDatabase } from './terminalD
 
 export type TerminalSalePaymentStatus = 'unknown' | 'pending' | 'received';
 export type TerminalSale = Readonly<{ request: TerminalRequest; status: TerminalSalePaymentStatus; paymentId?: string;
-  receivedAt?: number; updatedAt: number }>;
+  receivedAt?: number; updatedAt: number; restored?: true }>;
 export type TerminalSalesCursor = { at: number; id: string };
 export type TerminalRange = { start: number; end: number } | null;
 export type TerminalSalesSummary = { activityCount: number; receivedCount: number; sats: bigint; bitcoinSats: bigint;
@@ -43,7 +43,7 @@ function timestamp(value: unknown): value is number {
 export function isTerminalSale(value: unknown, walletId: string, network: TerminalNetwork): value is TerminalSale {
   if (!value || typeof value !== 'object') return false;
   const sale = value as Record<string, unknown>;
-  return isTerminalRequest(sale.request) && sale.request.walletId === walletId && sale.request.network === network &&
+  return (sale.restored === undefined || sale.restored === true) && isTerminalRequest(sale.request) && sale.request.walletId === walletId && sale.request.network === network &&
     (sale.status === 'unknown' || sale.status === 'pending' || sale.status === 'received') &&
     (sale.paymentId === undefined || (typeof sale.paymentId === 'string' && !!sale.paymentId)) && timestamp(sale.updatedAt) &&
     (sale.receivedAt === undefined || timestamp(sale.receivedAt)) &&
@@ -72,7 +72,7 @@ export async function getTerminalSaleInDatabase(db: SQLiteDatabase, walletId: st
   return row ? decodeSale(row, walletId, network) : null;
 }
 
-async function insertSale(db: SQLiteDatabase, sale: TerminalSale): Promise<void> {
+export async function insertTerminalSaleInDatabase(db: SQLiteDatabase, sale: TerminalSale): Promise<void> {
   const [amountHi, amountLo] = limbs(sale.request.amountSats), fiat = sale.request.fiat;
   const [fiatHi, fiatLo] = fiat ? limbs(fiat.amountMinor) : [null, null];
   await db.runAsync(`INSERT INTO terminal_sales
@@ -90,7 +90,7 @@ async function replaceSale(db: SQLiteDatabase, sale: TerminalSale): Promise<void
   if (result.changes !== 1) throw new Error('Terminal sale update lost its target.');
 }
 
-function notify(walletId: string, network: TerminalNetwork): void {
+export function notifyTerminalSales(walletId: string, network: TerminalNetwork): void {
   for (const listener of listeners) try { listener(walletId, network); } catch { /* committed */ }
 }
 
@@ -142,7 +142,7 @@ export function removeTerminalSales(walletId: string, network: string): Promise<
   const identity = terminalScope(walletId, network); let changed = false;
   return transactTerminalDatabase(async db => { changed = (await db.runAsync(
     'DELETE FROM terminal_sales WHERE wallet_id=? AND network=?', [identity.walletId, identity.network])).changes > 0;
-  }).then(() => { if (changed) notify(identity.walletId, identity.network); });
+  }).then(() => { if (changed) notifyTerminalSales(identity.walletId, identity.network); });
 }
 
 export function recordTerminalSale(request: TerminalRequest): Promise<TerminalSale> {
@@ -154,8 +154,8 @@ export function recordTerminalSale(request: TerminalRequest): Promise<TerminalSa
       return existing;
     }
     const sale: TerminalSale = { request: immutable, status: 'unknown', updatedAt: Date.now() };
-    await insertSale(db, sale); changed = true; return copySale(sale);
-  }).then(value => { if (changed) notify(immutable.walletId, immutable.network); return value; });
+    await insertTerminalSaleInDatabase(db, sale); changed = true; return copySale(sale);
+  }).then(value => { if (changed) notifyTerminalSales(immutable.walletId, immutable.network); return value; });
 }
 
 export function updateTerminalSalePayment(request: TerminalRequest,
@@ -173,11 +173,11 @@ export function updateTerminalSalePayment(request: TerminalRequest,
     if (current.status === 'received' || (current.status === 'pending' && payment.status === 'unknown')) return current;
     const paymentId = payment.paymentId ?? current.paymentId;
     if (existing && payment.status === current.status && paymentId === current.paymentId) return current;
-    const next: TerminalSale = { request: current.request, status: payment.status, ...(paymentId ? { paymentId } : {}),
+    const next: TerminalSale = { ...(current.restored ? { restored: true as const } : {}), request: current.request, status: payment.status, ...(paymentId ? { paymentId } : {}),
       ...(payment.status === 'received' ? { receivedAt: observedAt } : {}), updatedAt: observedAt };
-    if (existing) await replaceSale(db, next); else await insertSale(db, next);
+    if (existing) await replaceSale(db, next); else await insertTerminalSaleInDatabase(db, next);
     changed = true; return copySale(next);
-  }).then(value => { if (changed) notify(immutable.walletId, immutable.network); return value; });
+  }).then(value => { if (changed) notifyTerminalSales(immutable.walletId, immutable.network); return value; });
 }
 
 export function reconcileTerminalSales(walletId: string, network: string,
@@ -206,7 +206,7 @@ export function reconcileTerminalSales(walletId: string, network: string,
       }
     }
     return changed;
-  }).then(value => { if (value) notify(identity.walletId, identity.network); return value; });
+  }).then(value => { if (value) notifyTerminalSales(identity.walletId, identity.network); return value; });
 }
 
 function exact(row: { hi: string | null; lo: string | null }): bigint {

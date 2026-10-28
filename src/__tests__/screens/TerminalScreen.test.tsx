@@ -9,8 +9,10 @@ import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen'
 import { GlassView } from '../../components/GlassView';
 import { useActiveWallet, useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
+import { listTerminalItems } from '../../services/terminalItems';
 import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 
+jest.mock('crypto', () => require('node:crypto'));
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn(), useActiveWallet: jest.fn() }));
 const mockSetMode = jest.fn();
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ setMode: mockSetMode, changing: false, cashierState: 'off', cashierBusy: false, consumeCashierTerminalDraft: () => null }) }));
@@ -106,8 +108,7 @@ it('accepts a single decimal comma for item price and rejects mixed or excess pr
   fireEvent.changeText(view.getByLabelText('Item price'), ' 1,25 ');
   fireEvent.press(view.getByLabelText('Save item'));
   await waitFor(() => expect(view.getByText('Tea')).toBeTruthy());
-  const catalog = JSON.parse((await AsyncStorage.getItem('@terminalItems:v1:mainnet:wallet-a')) || '{}');
-  expect(catalog.items[0].unitPrice).toBe(125);
+  expect((await listTerminalItems('wallet-a', 'mainnet'))[0].unitPrice).toBe(125);
 });
 
 it('opens currency choices from Settings and dismisses them outside or with the system back action', async () => {
@@ -469,9 +470,10 @@ it('blocks duplicate presses and reveals the QR only after storage succeeds', as
 
 it('does not show a QR if persisting the invoice fails', async () => {
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
-  failNextTerminalSqliteWrite(new Error('storage full'));
   const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  await listTerminalItems('wallet-a', 'mainnet');
+  failNextTerminalSqliteWrite(new Error('storage full'));
   fireEvent.press(view.getByText('1'));
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(view.getByText('storage full')).toBeTruthy());
