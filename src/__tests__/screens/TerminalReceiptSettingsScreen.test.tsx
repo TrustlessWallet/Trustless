@@ -4,6 +4,8 @@ import TerminalReceiptSettingsScreen from '../../screens/TerminalReceiptSettings
 import { useActiveWallet } from '../../contexts/WalletContext';
 import { useWalletMode } from '../../contexts/WalletModeContext';
 import { loadTerminalReceiptBranding, saveTerminalReceiptBranding } from '../../services/terminalReceiptBranding';
+import * as DocumentPicker from 'expo-document-picker';
+import { receiptLogoFromBytes } from '../../services/terminalReceiptLogo';
 
 const mockOptions = jest.fn();
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true, useNavigation: () => ({ setOptions: mockOptions }) }));
@@ -14,6 +16,9 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('../../components/StyledInput', () => ({ StyledInput: require('react-native').TextInput }));
 jest.mock('../../services/terminalReceiptBranding', () => ({ DEFAULT_TERMINAL_RECEIPT_BRANDING: { name: '', contact: '', footer: '' }, loadTerminalReceiptBranding: jest.fn(), saveTerminalReceiptBranding: jest.fn() }));
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
+jest.mock('expo-file-system', () => ({ File: jest.fn().mockImplementation(() => ({ size: 4, arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer })) }));
+jest.mock('../../services/terminalReceiptLogo', () => ({ MAX_TERMINAL_RECEIPT_LOGO_BYTES: 204800, receiptLogoFromBytes: jest.fn() }));
 const branding = { name: 'Corner café', contact: 'shop@example.com', footer: 'Thank you' };
 const props = { walletId: 'wallet-a', network: 'mainnet' as const, onClose: jest.fn() };
 beforeEach(() => {
@@ -22,6 +27,42 @@ beforeEach(() => {
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off' });
   (loadTerminalReceiptBranding as jest.Mock).mockResolvedValue(branding);
   (saveTerminalReceiptBranding as jest.Mock).mockResolvedValue(branding);
+  (receiptLogoFromBytes as jest.Mock).mockReturnValue({ mimeType: 'image/png', base64: 'AQIDBA==' });
+});
+it('keeps selection canceled, previews a chosen logo, and saves removal as a dirty edit', async () => {
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValueOnce({ canceled: true });
+  await act(async () => fireEvent.press(view.getByLabelText('Choose receipt logo')));
+  expect(view.getByLabelText('Save receipt settings').props.accessibilityState.disabled).toBe(true);
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///logo.png' }] });
+  await act(async () => fireEvent.press(view.getByLabelText('Choose receipt logo')));
+  expect(view.getByLabelText('Receipt logo in preview')).toBeTruthy();
+  expect(view.getByLabelText('Save receipt settings').props.accessibilityState.disabled).toBe(false);
+  fireEvent.press(view.getByLabelText('Remove receipt logo'));
+  expect(view.queryByLabelText('Receipt logo in preview')).toBeNull();
+  expect(view.getByLabelText('Save receipt settings').props.accessibilityState.disabled).toBe(true);
+});
+it('ignores a selected logo after owner access changes', async () => {
+  let finish!: (value: any) => void;
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Choose receipt logo'));
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-b', type: 'standard' });
+  view.rerender(<TerminalReceiptSettingsScreen {...props} />);
+  await act(async () => finish({ canceled: false, assets: [{ uri: 'file:///logo.png' }] }));
+  expect(receiptLogoFromBytes).not.toHaveBeenCalled();
+  expect(view.queryByLabelText('Receipt logo in preview')).toBeNull();
+});
+it('saves removal of an existing logo', async () => {
+  (loadTerminalReceiptBranding as jest.Mock).mockResolvedValueOnce({ ...branding, logo: { mimeType: 'image/png', base64: 'AQIDBA==' } });
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByLabelText('Receipt logo in preview')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Remove receipt logo'));
+  fireEvent.press(view.getByLabelText('Save receipt settings'));
+  await waitFor(() => expect(saveTerminalReceiptBranding).toHaveBeenCalledTimes(1));
+  expect((saveTerminalReceiptBranding as jest.Mock).mock.calls[0][2]).toEqual(branding);
 });
 it('loads scoped values, previews edits and saves once before closing', async () => {
   let finish!: () => void;

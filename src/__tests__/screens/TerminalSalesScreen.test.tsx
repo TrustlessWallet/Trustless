@@ -1,6 +1,7 @@
 import { resetTerminalSqlite } from '../helpers/terminalSqlite';
 import * as salesStore from '../../services/terminalSales';
 import * as receiptService from '../../services/terminalReceipt';
+import * as pdfReceiptService from '../../services/terminalReceiptPdfShare';
 import * as refundStore from '../../services/terminalRefunds';
 import React from 'react';
 import { RefreshControl } from 'react-native';
@@ -128,7 +129,7 @@ it('checks one selected sale only on request and records a verified payment', as
   await waitFor(() => expect(verifyTerminalInvoice).toHaveBeenCalledWith(sale.invoice, sale.createdAt, undefined, true));
   await waitFor(() => expect(view.getByText('Paid')).toBeTruthy());
   expect(view.getByText('VERIFIED')).toBeTruthy();
-  await waitFor(() => expect(view.getByLabelText('Share receipt')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('Share text receipt')).toBeTruthy());
   expect(view.getByLabelText('Refund sale')).toBeTruthy();
 });
 
@@ -155,7 +156,7 @@ it('keeps paid details open but blocks refund actions for inconsistent refund to
   await act(async () => { fireEvent.press(view.getByLabelText(/1 200 sats, Paid/)); });
   await waitFor(() => expect(view.getByText('Refund records need attention. Refund and receipt are unavailable.')).toBeTruthy());
   expect(view.queryByLabelText('Refund sale')).toBeNull();
-  expect(view.queryByLabelText('Share receipt')).toBeNull();
+  expect(view.queryByLabelText('Share text receipt')).toBeNull();
 });
 
 
@@ -288,22 +289,42 @@ it('keeps Sales minimal and passes a copied selection to Reports without loading
 });
 
 
-it('shares a paid receipt once and invalidates the branding read when the detail is hidden', async () => {
+it('blocks both receipt formats during sharing and invalidates the request when hidden', async () => {
   const sale = request('branded');
   await recordTerminalSale(sale);
   await updateTerminalSalePayment(sale, { status: 'received', paymentId: 'paid' });
   let finish!: () => void;
+  const pdfShare = jest.spyOn(pdfReceiptService, 'shareTerminalPdfReceipt').mockResolvedValue(undefined);
   const share = jest.spyOn(receiptService, 'shareTerminalReceipt').mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
   fireEvent.press(view.getByLabelText(/1 200 sats, Paid/));
-  await waitFor(() => expect(view.getByLabelText('Share receipt')).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Share receipt'));
-  fireEvent.press(view.getByLabelText('Share receipt'));
+  await waitFor(() => expect(view.getByLabelText('Share text receipt')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Share text receipt'));
+  fireEvent.press(view.getByLabelText('Share text receipt'));
+  fireEvent.press(view.getByLabelText('Share PDF receipt'));
   expect(share).toHaveBeenCalledTimes(1);
+  expect(pdfShare).not.toHaveBeenCalled();
   const guard = share.mock.calls[0][2]!;
   expect(guard()).toBe(true);
   view.rerender(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} visible={false} />);
   expect(guard()).toBe(false);
   await act(async () => finish());
+});
+
+ it('opens PDF sharing by default and keeps text sharing available after a PDF error', async () => {
+  const sale = request('pdf');
+  await recordTerminalSale(sale);
+  await updateTerminalSalePayment(sale, { status: 'received', paymentId: 'paid' });
+  const pdfShare = jest.spyOn(pdfReceiptService, 'shareTerminalPdfReceipt').mockRejectedValue(new Error('unsupported font'));
+  const textShare = jest.spyOn(receiptService, 'shareTerminalReceipt').mockResolvedValue(undefined);
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
+  fireEvent.press(view.getByLabelText(/1 200 sats, Paid/));
+  await waitFor(() => expect(view.getByLabelText('Share PDF receipt')).toBeTruthy());
+  await act(async () => fireEvent.press(view.getByLabelText('Share PDF receipt')));
+  expect(pdfShare).toHaveBeenCalledTimes(1);
+  expect(view.getByText('Couldn’t create the PDF. Try again or share the text receipt.')).toBeTruthy();
+  await act(async () => fireEvent.press(view.getByLabelText('Share text receipt')));
+  expect(textShare).toHaveBeenCalledTimes(1);
 });
