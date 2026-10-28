@@ -7,6 +7,8 @@ import {
 } from '../../services/terminalReceiptBranding';
 import { TerminalSale } from '../../services/terminalSales';
 import { TerminalRefundAttempt } from '../../services/terminalRefunds';
+import { deflateSync } from 'zlib';
+import { normalizeTerminalReceiptLogo, receiptLogoFromBytes } from '../../services/terminalReceiptLogo';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: jest.fn(), setItem: jest.fn() } }));
 const storage = new Map<string, string>();
@@ -47,6 +49,59 @@ it('rejects injection controls, newlines, bidi overrides, separators, and excess
 it('rejects a serialized write above the readable bound without overwriting storage', async () => {
   const longWallet = `wallet-${'x'.repeat(950)}`;
   await expect(saveTerminalReceiptBranding(longWallet, 'mainnet', branding, () => true)).rejects.toThrow('too large');
+  expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+});
+
+function pngChunk(type: string, data: Buffer) {
+  const crc = (bytes: Buffer) => {
+    let value = 0xffffffff;
+    for (const byte of bytes) { value ^= byte; for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0); }
+    return (value ^ 0xffffffff) >>> 0;
+  };
+  const body = Buffer.concat([Buffer.from(type), data]);
+  const header = Buffer.alloc(4); header.writeUInt32BE(data.length);
+  const tail = Buffer.alloc(4); tail.writeUInt32BE(crc(body));
+  return Buffer.concat([header, body, tail]);
+}
+function png(width = 1, height = 1, pixels = Buffer.from([0, 255, 0, 0, 255])) {
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk('IHDR', ihdr), pngChunk('IDAT', deflateSync(pixels)), pngChunk('IEND', Buffer.alloc(0))]);
+}
+
+it('stores an optional validated logo and keeps legacy profiles unchanged', async () => {
+  const logo = receiptLogoFromBytes(png());
+  expect(normalizeTerminalReceiptLogo(logo)).toEqual(logo);
+  await saveTerminalReceiptBranding('wallet-a', 'mainnet', { ...branding, logo }, () => true);
+  expect(await loadTerminalReceiptBranding('wallet-a', 'mainnet')).toEqual({ ...branding, logo });
+  expect(JSON.parse(storage.get(key)!).branding.logo).toEqual(logo);
+  await saveTerminalReceiptBranding('wallet-a', 'mainnet', branding, () => true);
+  expect(JSON.parse(storage.get(key)!).branding).toEqual(branding);
+});
+
+it('removes malformed PNG text metadata before it can reach the PDF decoder', async () => {
+  const clean = png();
+  const malformedText = Buffer.concat([
+    clean.subarray(0, 33),
+    pngChunk('tEXt', Buffer.from('missing separator')),
+    pngChunk('iTXt', Buffer.from([1, 2, 3])),
+    clean.subarray(33),
+  ]);
+  const logo = receiptLogoFromBytes(malformedText);
+  expect(Buffer.from(logo.base64, 'base64')).toEqual(clean);
+  await saveTerminalReceiptBranding('wallet-a', 'mainnet', { ...branding, logo }, () => true);
+  expect((await loadTerminalReceiptBranding('wallet-a', 'mainnet')).logo).toEqual(logo);
+  const unsafeStoredLogo = { mimeType: 'image/png' as const, base64: malformedText.toString('base64') };
+  await expect(saveTerminalReceiptBranding('wallet-a', 'mainnet', { ...branding, logo: unsafeStoredLogo }, () => true)).rejects.toThrow('Invalid receipt logo');
+});
+
+it('rejects oversized dimensions, corrupt chunks, decompression bombs, and malformed base64', async () => {
+  const good = png();
+  expect(() => receiptLogoFromBytes(png(1025))).toThrow('Invalid receipt logo');
+  expect(() => receiptLogoFromBytes(png(1, 1, Buffer.alloc(200)))).toThrow('Invalid receipt logo');
+  const corrupted = Buffer.from(good); corrupted[30] ^= 1;
+  expect(() => receiptLogoFromBytes(corrupted)).toThrow('Invalid receipt logo');
+  const logo = receiptLogoFromBytes(good);
+  await expect(saveTerminalReceiptBranding('wallet-a', 'mainnet', { ...branding, logo: { ...logo, base64: `${logo.base64}junk` } }, () => true)).rejects.toThrow('Invalid receipt logo');
   expect(AsyncStorage.setItem).not.toHaveBeenCalled();
 });
 
