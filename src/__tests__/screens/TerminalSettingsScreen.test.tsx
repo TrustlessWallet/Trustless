@@ -32,3 +32,15 @@ it('does not offer cashier mode for a watch-only wallet', () => {
   const view = render(<TerminalSettingsScreen unit="sats" onSelectUnit={jest.fn()} onClose={jest.fn()} />);
   expect(view.queryByLabelText('Cashier mode')).toBeNull();
 });
+
+it('opens receipt settings only for the owner outside cashier mode', () => {
+  const open = jest.fn();
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'shop', type: 'standard' });
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierBusy: false });
+  const view = render(<TerminalSettingsScreen unit="sats" onSelectUnit={jest.fn()} onClose={jest.fn()} onOpenReceipts={open} />);
+  fireEvent.press(view.getByLabelText('Receipt settings'));
+  expect(open).toHaveBeenCalledTimes(1);
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'locked', cashierBusy: false });
+  view.rerender(<TerminalSettingsScreen unit="sats" onSelectUnit={jest.fn()} onClose={jest.fn()} onOpenReceipts={open} />);
+  expect(view.queryByLabelText('Receipt settings')).toBeNull();
+});

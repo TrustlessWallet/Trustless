@@ -13,6 +13,7 @@ import { formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, form
 import { getTerminalSale, getTerminalSalesSummary, listTerminalSalesPage, subscribeTerminalSales, terminalSaleDisplayStatus, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
 import { getTerminalRefundTotal, listTerminalRefundsForSale, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
+import { shareTerminalPdfReceipt } from '../services/terminalReceiptPdfShare';
 import { exportTerminalSalesCsv } from '../services/terminalSalesExport';
 import { CustomSalesDateRange, localSalesDateKey, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 import TerminalRefundScreen from './TerminalRefundScreen';
@@ -111,6 +112,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const [refundState, setRefundState] = useState<{ scope: string; attempts: TerminalRefundAttempt[]; loading: boolean; error: boolean }>({ scope: '', attempts: [], loading: true, error: false });
   const [detailState, setDetailState] = useState<{ key: string; sale: TerminalSale | null }>({ key: '', sale: null });
   const [receiptError, setReceiptError] = useState('');
+  const [sharingReceipt, setSharingReceipt] = useState(false);
+  const receiptBusy = useRef<number | null>(null);
   const [exportError, setExportError] = useState('');
   const [exporting, setExporting] = useState(false);
   const exportBusy = useRef(false);
@@ -220,7 +223,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     return () => { ++loadGeneration.current; pageBusy.current = false; refreshInFlight.current = 0; unsubscribe(); };
   }, [refresh]);
 
-  useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; }, [scope, selected?.id, visible]);
+  useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; setSharingReceipt(false); }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
   useEffect(() => { setSelected(null); setPeriodState({ scope, value: 'today' }); setCustomRangeState({ scope, value: null }); setCustomEditor(null); }, [scope]);
   useEffect(() => { setExportError(''); setExporting(false); }, [exportIdentity]);
@@ -321,13 +324,20 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       if (stillCurrent()) { checkBusy.current = false; setChecking(false); }
     }
   };
-  const shareReceipt = async () => {
-    if (!detail || !isPaid(detail) || !refundsReady) return;
+  const shareReceipt = async (format: 'pdf' | 'text') => {
+    if (!detail || !isPaid(detail) || !refundsReady || !visibleRef.current) return;
+    const epoch = checkEpoch.current;
+    if (receiptBusy.current === epoch) return;
     const capturedScope = scope;
     const capturedSelection = `${scope}:${detail.request.id}`;
-    setReceiptError('');
-    try { await shareTerminalReceipt(detail, refunds); }
-    catch { if (mounted.current && visibleRef.current && capturedScope === currentScope.current && capturedSelection === selectedKey.current) setReceiptError('Couldn’t share the receipt. Please try again.'); }
+    const isCurrent = () => mounted.current && visibleRef.current && capturedScope === currentScope.current && capturedSelection === selectedKey.current && epoch === checkEpoch.current;
+    receiptBusy.current = epoch; setSharingReceipt(true); setReceiptError('');
+    try { await (format === 'pdf' ? shareTerminalPdfReceipt : shareTerminalReceipt)(detail, refunds, isCurrent); }
+    catch { if (isCurrent()) setReceiptError(format === 'pdf' ? 'Couldn’t create the PDF. Try again or share the text receipt.' : 'Couldn’t share the receipt. Please try again.'); }
+    finally {
+      if (receiptBusy.current === epoch) receiptBusy.current = null;
+      if (isCurrent()) setSharingReceipt(false);
+    }
   };
 
   const exportSales = async () => {
@@ -429,7 +439,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {refundsReady ? <>
           {refunds.length ? <View style={styles.refundSummary}><Text style={styles.fieldLabel}>REFUNDS</Text>{refunds.map(attempt => <Text key={attempt.id} style={styles.refundSummaryLine}>{formatTerminalSats(attempt.amountSats)} sats · {attempt.status === 'complete' ? 'Sent' : attempt.status === 'failed' ? 'Failed' : attempt.status === 'pending' ? 'Pending' : 'Outcome uncertain'}</Text>)}<Text style={styles.refundRemaining}>Refunded: {formatBigSats(completedRefund)}</Text>{reservedRefund > 0n ? <Text style={styles.refundRemaining}>Reserved: {formatBigSats(reservedRefund)}</Text> : null}<Text style={styles.refundRemaining}>Remaining: {formatTerminalSats(refundRemaining)} sats</Text></View> : null}
           {receiptError ? <Text style={styles.checkError}>{receiptError}</Text> : null}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share receipt" onPress={() => { void shareReceipt(); }} style={styles.checkButton}><Text style={styles.checkText}>Share receipt</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share PDF receipt" accessibilityState={{ disabled: sharingReceipt || !visible, busy: sharingReceipt }} disabled={sharingReceipt || !visible} onPress={() => { void shareReceipt('pdf'); }} style={styles.checkButton}>{sharingReceipt ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.checkText}>Share PDF receipt</Text>}</TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share text receipt" disabled={sharingReceipt || !visible} accessibilityState={{ disabled: sharingReceipt || !visible }} onPress={() => { void shareReceipt('text'); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Share text receipt</Text></TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Refund sale" onPress={() => setRefundOpen(true)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Refund</Text></TouchableOpacity>
         </> : refundState.scope !== scope || refundState.loading ? <Text style={styles.checkError}>Loading refund records…</Text> : null}
       </View> : null}

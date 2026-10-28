@@ -21,6 +21,7 @@ import TerminalSalesScreen from './TerminalSalesScreen';
 import TerminalReportsScreen, { TerminalReportSelection } from './TerminalReportsScreen';
 import TerminalSettingsScreen from './TerminalSettingsScreen';
 import TerminalItemsScreen from './TerminalItemsScreen';
+import TerminalReceiptSettingsScreen from './TerminalReceiptSettingsScreen';
 import TerminalItemEditorScreen from './TerminalItemEditorScreen';
 import TerminalSheetHeader, { TerminalSheetInteractionContext } from './TerminalSheetHeader';
 import TerminalQuickItemsScreen from './TerminalQuickItemsScreen';
@@ -31,7 +32,7 @@ const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
 const isFiat = (unit: TerminalUnit): unit is FiatCurrency => FIAT_UNITS.includes(unit as FiatCurrency);
 export const isTerminalPollDue = (lastAttempt: number, intervalMs: number, now = Date.now()) => now < lastAttempt || now - lastAttempt >= intervalMs;
 
-type TerminalStackParams = { Checkout: undefined; Settings: undefined; Sales: undefined; Reports: { walletId: string; network: ReturnType<typeof terminalNetwork>; selection: TerminalReportSelection }; Items: undefined; QuickItems: undefined; ItemEditor: { item?: TerminalItem } | undefined; Invoice: undefined };
+type TerminalStackParams = { Checkout: undefined; Settings: undefined; ReceiptSettings: undefined; Sales: undefined; Reports: { walletId: string; network: ReturnType<typeof terminalNetwork>; selection: TerminalReportSelection }; Items: undefined; QuickItems: undefined; ItemEditor: { item?: TerminalItem } | undefined; Invoice: undefined };
 const TerminalStack = createNativeStackNavigator<TerminalStackParams>();
 type CheckoutNavigation = NativeStackNavigationProp<TerminalStackParams, 'Checkout'>;
 type InvoiceNavigation = NativeStackNavigationProp<TerminalStackParams, 'Invoice'>;
@@ -634,7 +635,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       }}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Settings" options={sheetOptions}>
-      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} getTerminalDraft={getTerminalDraft} onOpenItems={() => navigation.navigate('Items')} onClose={() => navigation.goBack()} />}
+      {({ navigation }) => <TerminalSettingsScreen unit={unit} onSelectUnit={selectUnit} getTerminalDraft={getTerminalDraft} onOpenItems={() => navigation.navigate('Items')} onOpenReceipts={() => navigation.navigate('ReceiptSettings')} onClose={() => navigation.goBack()} />}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Sales" options={sheetOptions}>
       {({ navigation }) => activeWallet ? <SalesRoute walletId={activeWallet.id} network={network} rootVisible={visible} onClose={() => navigation.goBack()} onOpenReports={selection => navigation.navigate('Reports', { walletId: activeWallet.id, network, selection })} /> : null}
@@ -650,6 +651,9 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     </TerminalStack.Screen>
     <TerminalStack.Screen name="ItemEditor" options={sheetOptions}>
       {({ navigation, route }) => activeWallet ? <TerminalItemEditorScreen walletId={activeWallet.id} network={network} preferredUnit={unit} initialItem={route.params?.item} onClose={() => navigation.goBack()} /> : null}
+    </TerminalStack.Screen>
+    <TerminalStack.Screen name="ReceiptSettings" options={sheetOptions}>
+      {({ navigation }) => activeWallet ? <TerminalReceiptSettingsScreen walletId={activeWallet.id} network={network} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Invoice" options={sheetOptions}>
       {() => <InvoiceRoute request={request} scope={scope} onClose={endRequest} onCanReplay={() => mounted.current && scopeRef.current === scope && requestRef.current === null} onCloseError={() => { if (mounted.current && scopeRef.current === scope) setError('Could not end the saved request. Please retry.'); }} onFocusChange={setInvoiceFocused}>{renderInvoice}</InvoiceRoute>}
