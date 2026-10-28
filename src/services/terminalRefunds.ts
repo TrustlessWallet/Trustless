@@ -55,7 +55,7 @@ async function findIdentity(db: SQLiteDatabase, walletId: string, network: Termi
   return row ? decodeAttempt(row, walletId, network) : null;
 }
 
-async function insertAttempt(db: SQLiteDatabase, attempt: TerminalRefundAttempt): Promise<void> {
+export async function insertTerminalRefundInDatabase(db: SQLiteDatabase, attempt: TerminalRefundAttempt): Promise<void> {
   const [hi, lo] = limbs(attempt.amountSats);
   await db.runAsync(`INSERT INTO terminal_refunds
     (wallet_id,network,id,sale_id,normalized_invoice,status,payment_id,amount_hi,amount_lo,created_at,updated_at,payload)
@@ -69,7 +69,7 @@ async function replaceAttempt(db: SQLiteDatabase, attempt: TerminalRefundAttempt
   if (result.changes !== 1) throw new Error('Terminal refund update lost its target.');
 }
 
-function notify(walletId: string, network: TerminalNetwork): void {
+export function notifyTerminalRefunds(walletId: string, network: TerminalNetwork): void {
   for (const listener of listeners) try { listener(walletId, network); } catch { /* committed */ }
 }
 export function subscribeTerminalRefunds(listener: (walletId: string, network: TerminalNetwork) => void): () => void {
@@ -143,6 +143,8 @@ export function reserveTerminalRefund(sale: TerminalSale, reservation: TerminalR
     createdAt: now, status: 'unknown', updatedAt: now };
   let changed = false;
   return transactTerminalDatabase(async db => {
+    const paidSale = await getTerminalSaleInDatabase(db, identity.walletId, identity.network, sale.request.id);
+    if (paidSale?.restored) throw new Error('Restored sales cannot be refunded here because a backup may omit later refunds.');
     const existing = await findIdentity(db, identity.walletId, identity.network, attempt.id, attempt.invoice);
     if (existing) {
       if (existing.id !== attempt.id || existing.saleId !== attempt.saleId || existing.invoice !== attempt.invoice ||
@@ -151,7 +153,6 @@ export function reserveTerminalRefund(sale: TerminalSale, reservation: TerminalR
       }
       return existing;
     }
-    const paidSale = await getTerminalSaleInDatabase(db, identity.walletId, identity.network, sale.request.id);
     if (!paidSale || paidSale.request.invoice !== sale.request.invoice || paidSale.status !== 'received') throw new Error('Terminal sale is not verified as received.');
     const rows = await db.getAllAsync<RefundRow>('SELECT payload FROM terminal_refunds WHERE wallet_id=? AND network=? AND sale_id=?',
       [identity.walletId, identity.network, attempt.saleId]);
@@ -159,8 +160,8 @@ export function reserveTerminalRefund(sale: TerminalSale, reservation: TerminalR
     if (attempts.some(item => item.status === 'unknown' || item.status === 'pending')) throw new Error('A Terminal refund for this sale is still unresolved.');
     if (attempt.amountSats > remainingTerminalRefundSats(paidSale, attempts)) throw new Error('Refund exceeds the remaining sale amount.');
     if (attempt.quoteExpiresAt <= Date.now()) throw new Error('Terminal refund quote expired.');
-    await insertAttempt(db, attempt); changed = true; return copyAttempt(attempt);
-  }).then(value => { if (changed) notify(identity.walletId, identity.network); return value; });
+    await insertTerminalRefundInDatabase(db, attempt); changed = true; return copyAttempt(attempt);
+  }).then(value => { if (changed) notifyTerminalRefunds(identity.walletId, identity.network); return value; });
 }
 
 function immutableFields(attempt: TerminalRefundAttempt): string {
@@ -187,7 +188,7 @@ export function updateTerminalRefund(attempt: TerminalRefundAttempt,
     if (existing.status === payment.status && existing.paymentId === paymentId) return existing;
     const updated = { ...existing, status: payment.status, ...(paymentId ? { paymentId } : {}), updatedAt: observedAt } as TerminalRefundAttempt;
     await replaceAttempt(db, updated); changed = true; return copyAttempt(updated);
-  }).then(value => { if (changed) notify(identity.walletId, identity.network); return value; });
+  }).then(value => { if (changed) notifyTerminalRefunds(identity.walletId, identity.network); return value; });
 }
 
 export function reconcileTerminalRefunds(walletId: string, network: string,
@@ -217,14 +218,14 @@ export function reconcileTerminalRefunds(walletId: string, network: string,
       }
     }
     return changed;
-  }).then(value => { if (value) notify(identity.walletId, identity.network); return value; });
+  }).then(value => { if (value) notifyTerminalRefunds(identity.walletId, identity.network); return value; });
 }
 
 export function removeTerminalRefunds(walletId: string, network: string): Promise<void> {
   const identity = terminalScope(walletId, network); let changed = false;
   return transactTerminalDatabase(async db => { changed = (await db.runAsync(
     'DELETE FROM terminal_refunds WHERE wallet_id=? AND network=?', [identity.walletId, identity.network])).changes > 0;
-  }).then(() => { if (changed) notify(identity.walletId, identity.network); });
+  }).then(() => { if (changed) notifyTerminalRefunds(identity.walletId, identity.network); });
 }
 
 export function getTerminalRefundTotal(walletId: string, network: string, range: TerminalRange): Promise<bigint> {

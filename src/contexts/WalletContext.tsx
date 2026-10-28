@@ -41,6 +41,7 @@ import {
 } from '../services/database';
 import { InteractionManager } from 'react-native';
 import { matchTerminalPayment, normalizeInvoice } from '../services/terminal';
+import { removeTerminalItems } from '../services/terminalItems';
 import { reconcileTerminalSales, removeTerminalSales } from '../services/terminalSales';
 import { getTerminalRefund, findTerminalRefundByInvoice, listTerminalRefundsForInvoices, reconcileTerminalRefunds, removeTerminalRefunds, updateTerminalRefund } from '../services/terminalRefunds';
 import { checkedRefundInvoice, checkedRefundQuote, matchRefundPayment, preflightRefund, TerminalRefundQuote, TerminalRefundResult } from '../services/terminalRefundPayment';
@@ -1798,6 +1799,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await assertNoActiveExit(walletId);
         await removeTerminalRefunds(walletId, NETWORK_NAME);
         await removeTerminalSales(walletId, NETWORK_NAME);
+        await removeTerminalItems(walletId, NETWORK_NAME);
         if (activeWalletIdRef.current === walletId) {
             ++walletGenerationRef.current;
             activeWalletIdRef.current = null;
@@ -1850,6 +1852,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         for (const w of d) {
             await removeTerminalRefunds(w.id, NETWORK_NAME);
             await removeTerminalSales(w.id, NETWORK_NAME);
+            await removeTerminalItems(w.id, NETWORK_NAME);
             await deleteWalletMnemonic(w.id);
             await dbDeleteWallet(w.id);
         }

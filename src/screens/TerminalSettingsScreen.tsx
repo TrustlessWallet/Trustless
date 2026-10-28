@@ -12,10 +12,10 @@ import { CashierTerminalDraft, useWalletMode } from '../contexts/WalletModeConte
 import TerminalSheetHeader from './TerminalSheetHeader';
 import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 
-type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; onOpenReceipts?: () => void; getTerminalDraft?: () => CashierTerminalDraft | null };
+type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; onOpenReceipts?: () => void; onOpenBackup?: () => void; getTerminalDraft?: () => CashierTerminalDraft | null };
 const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 
-export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, onOpenReceipts, getTerminalDraft }: Props) {
+export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, onOpenReceipts, onOpenBackup, getTerminalDraft }: Props) {
   const { theme } = useTheme();
   const activeWallet = useActiveWallet();
   const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
@@ -69,6 +69,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
             <Text style={styles.rowLabel}>Receipts</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} />
           </TouchableOpacity>
         </View> : null}
+        {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' && onOpenBackup ? <View style={styles.rowWrapper}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Terminal backup" onPress={onOpenBackup} style={styles.row}><Text style={styles.rowLabel}>Backup</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></TouchableOpacity></View> : null}
         {activeWallet && activeWallet.type !== 'watch-only' ? <View style={styles.rowWrapper}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cashier mode" accessibilityState={{ disabled: cashierBusy }} disabled={cashierBusy} onPress={() => { void cashierPress(); }} style={styles.row}>
             <Text style={styles.rowLabel}>Cashier mode</Text>
