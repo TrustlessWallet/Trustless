@@ -328,3 +328,38 @@ it('blocks both receipt formats during sharing and invalidates the request when 
   await act(async () => fireEvent.press(view.getByLabelText('Share text receipt')));
   expect(textShare).toHaveBeenCalledTimes(1);
 });
+
+it('opens sale details through navigation without replacing the Sales list or changing its period', async () => {
+  const sale = request('separatesheet');
+  await recordTerminalSale(sale);
+  await updateTerminalSalePayment(sale, { status: 'received', paymentId: 'paid' });
+  const onOpenSale = jest.fn();
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onOpenSale={onOpenSale} onClose={jest.fn()} />);
+  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
+  fireEvent.press(view.getByLabelText(/1 200 sats, Paid/));
+  expect(onOpenSale).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ id: 'separatesheet' }) }));
+  expect(view.queryByText('Sale details')).toBeNull();
+  expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
+  expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy();
+});
+
+it('shows a dedicated scoped detail sheet without period filters or list queries', async () => {
+  const requested = request('detailsheet');
+  const sale = { request: requested, status: 'received' as const, receivedAt: now, updatedAt: now, paymentId: 'paid' };
+  await recordTerminalSale(requested);
+  await updateTerminalSalePayment(requested, { status: 'received', paymentId: 'paid' });
+  const list = jest.spyOn(salesStore, 'listTerminalSalesPage');
+  let refundChanged!: (walletId: string, network: 'mainnet' | 'testnet') => void;
+  jest.spyOn(refundStore, 'subscribeTerminalRefunds').mockImplementation(listener => { refundChanged = listener; return () => undefined; });
+  const close = jest.fn();
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" detailSale={sale} onClose={close} />);
+  expect(view.getByText('Sale details')).toBeTruthy();
+  expect(view.queryByLabelText('Today sales')).toBeNull();
+  await waitFor(() => expect(view.getByLabelText('Share PDF receipt')).toBeTruthy());
+  expect(list).not.toHaveBeenCalled();
+  await act(async () => refundChanged('wallet-a', 'mainnet'));
+  expect(list).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Close sale details'));
+  expect(close).toHaveBeenCalledTimes(1);
+});

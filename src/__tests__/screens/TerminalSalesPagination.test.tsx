@@ -136,3 +136,54 @@ it('stops loading when a failed notification refresh supersedes the initial requ
   expect(view.getByText('Sales unavailable')).toBeTruthy();
   expect(view.queryByText('1 200 sats')).toBeNull();
 });
+
+it('keeps summary geometry while rapid period loads hide old and stale totals', async () => {
+  let finishWeekPage!: (value: unknown) => void, finishMonthPage!: (value: unknown) => void;
+  let finishWeekSummary!: (value: unknown) => void, finishMonthSummary!: (value: unknown) => void;
+  let finishWeekRefund!: (value: unknown) => void, finishMonthRefund!: (value: unknown) => void;
+  (listTerminalSalesPage as jest.Mock)
+    .mockResolvedValueOnce({ items: [], nextCursor: null })
+    .mockImplementationOnce(() => new Promise(resolve => { finishWeekPage = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishMonthPage = resolve; }));
+  (getTerminalSalesSummary as jest.Mock)
+    .mockResolvedValueOnce({ activityCount: 8, receivedCount: 7, sats: 0n, bitcoinSats: 0n, fiatMinor: { USD: 1234n } })
+    .mockImplementationOnce(() => new Promise(resolve => { finishWeekSummary = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishMonthSummary = resolve; }));
+  (getTerminalRefundTotal as jest.Mock)
+    .mockResolvedValueOnce(55n)
+    .mockImplementationOnce(() => new Promise(resolve => { finishWeekRefund = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishMonthRefund = resolve; }));
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByLabelText('Sales summary')).toBeTruthy());
+  expect(view.getByText('$12.34')).toBeTruthy();
+  expect(view.getByText('55 sats')).toBeTruthy();
+
+  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await waitFor(() => expect(view.getByLabelText('Loading sales summary')).toBeTruthy());
+  expect(view.queryByText('$12.34')).toBeNull();
+  expect(view.queryByText('55 sats')).toBeNull();
+  expect(view.getByText('LAST 7 DAYS’ ACTIVITY')).toBeTruthy();
+  expect(view.getByLabelText('Loading activity count')).toBeTruthy();
+
+  fireEvent.press(view.getByLabelText('This month sales'));
+  await waitFor(() => expect(getTerminalSalesSummary).toHaveBeenCalledTimes(3));
+  await act(async () => {
+    finishMonthPage({ items: [], nextCursor: null });
+    finishMonthSummary({ activityCount: 4, receivedCount: 3, sats: 0n, bitcoinSats: 0n, fiatMinor: { EUR: 500n } });
+    finishMonthRefund(9n);
+  });
+  await waitFor(() => expect(view.getByLabelText('Sales summary')).toBeTruthy());
+  expect(view.getByText('€5.00')).toBeTruthy();
+  expect(view.getByText('9 sats')).toBeTruthy();
+  expect(view.getByText('THIS MONTH’S ACTIVITY')).toBeTruthy();
+
+  await act(async () => {
+    finishWeekPage({ items: [sale('stale-week', 9900)], nextCursor: null });
+    finishWeekSummary({ activityCount: 99, receivedCount: 99, sats: 9900n, bitcoinSats: 9900n, fiatMinor: { USD: 9900n } });
+    finishWeekRefund(99n);
+  });
+  expect(view.getByText('€5.00')).toBeTruthy();
+  expect(view.queryByText('$99.00')).toBeNull();
+  expect(view.queryByText('99 sats')).toBeNull();
+  expect(view.queryByLabelText(/9 900 sats, Paid/)).toBeNull();
+});

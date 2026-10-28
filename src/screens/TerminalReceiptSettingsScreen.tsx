@@ -1,7 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, Alert, Image, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyledInput } from '../components/StyledInput';
@@ -11,14 +10,14 @@ import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { TerminalNetwork } from '../services/terminal';
 import { DEFAULT_TERMINAL_RECEIPT_BRANDING, loadTerminalReceiptBranding, saveTerminalReceiptBranding, TerminalReceiptBranding } from '../services/terminalReceiptBranding';
-import { MAX_TERMINAL_RECEIPT_LOGO_BYTES, receiptLogoFromBytes } from '../services/terminalReceiptLogo';
+import { importTerminalReceiptLogo } from '../services/terminalReceiptLogoImport';
 import TerminalSheetHeader from './TerminalSheetHeader';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void };
 const fields = [{ key: 'name', label: 'Business name', max: 80 }, { key: 'contact', label: 'Contact', max: 120 }, { key: 'footer', label: 'Footer', max: 160 }] as const;
 
 export default function TerminalReceiptSettingsScreen({ walletId, network, onClose }: Props) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const activeWallet = useActiveWallet();
   const { cashierState } = useWalletMode();
   const focused = useIsFocused();
@@ -34,6 +33,7 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
   const busyRef = useRef(false);
   const pickingRef = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [preparingLogo, setPreparingLogo] = useState(false);
   const [state, setState] = useState<{ scope: string; ready: boolean; loading: boolean; error: boolean; saved: TerminalReceiptBranding }>({ scope, ready: false, loading: true, error: false, saved: DEFAULT_TERMINAL_RECEIPT_BRANDING });
   const [draft, setDraft] = useState<TerminalReceiptBranding>(DEFAULT_TERMINAL_RECEIPT_BRANDING);
   const [error, setError] = useState('');
@@ -63,15 +63,31 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
     const isCurrent = () => mounted.current && context.current.owner && context.current.epoch === epoch;
     pickingRef.current = true; setError('');
     try {
-      const picked = await DocumentPicker.getDocumentAsync({ type: ['image/png', 'image/jpeg'], copyToCacheDirectory: true, multiple: false });
+      Keyboard.dismiss();
+      const source = await new Promise<'photos' | 'files' | null>(resolve => {
+        if (Platform.OS === 'ios') {
+          ActionSheetIOS.showActionSheetWithOptions({ options: ['Choose from Photos', 'Choose from Files', 'Cancel'], cancelButtonIndex: 2, userInterfaceStyle: isDark ? 'dark' : 'light', tintColor: theme.colors.primary }, index => resolve(index === 0 ? 'photos' : index === 1 ? 'files' : null));
+        } else {
+          Alert.alert('Choose logo', undefined, [
+            { text: 'Choose from Photos', onPress: () => resolve('photos') },
+            { text: 'Choose from Files', onPress: () => resolve('files') },
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+          ], { cancelable: true, onDismiss: () => resolve(null) });
+        }
+      });
+      if (!source || !isCurrent()) return;
+      // Resolve new native capabilities only when used, so an older development binary still opens safely.
+      const imagePicker = source === 'photos' ? require('expo-image-picker') as typeof import('expo-image-picker') : null;
+      const picked = imagePicker
+        ? await imagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, allowsMultipleSelection: false, quality: 1, exif: false, base64: false, preferredAssetRepresentationMode: imagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible })
+        : await DocumentPicker.getDocumentAsync({ type: ['image/png', 'image/jpeg'], copyToCacheDirectory: true, multiple: false });
       if (picked.canceled || !isCurrent()) return;
-      const file = new File(picked.assets[0].uri);
-      if (file.size > MAX_TERMINAL_RECEIPT_LOGO_BYTES) throw new Error('Invalid receipt logo.');
-      const logo = receiptLogoFromBytes(new Uint8Array(await file.arrayBuffer()));
-      if (isCurrent()) setDraft(previous => ({ ...previous, logo }));
+      setPreparingLogo(true);
+      const logo = await importTerminalReceiptLogo(picked.assets[0].uri, isCurrent);
+      if (logo && isCurrent()) setDraft(previous => ({ ...previous, logo }));
     } catch {
-      if (isCurrent()) setError('Choose a PNG or JPEG up to 200 KB and 1024 pixels per side.');
-    } finally { pickingRef.current = false; }
+      if (isCurrent()) setError('Couldn’t prepare this logo. Choose a PNG or JPEG up to 20 MB and 32 megapixels.');
+    } finally { pickingRef.current = false; if (mounted.current) setPreparingLogo(false); }
   };
   const save = async () => {
     if (!owner || !ready || busyRef.current || pickingRef.current || !dirty) return;
@@ -92,8 +108,8 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
         <Text style={styles.label}>Logo</Text>
         {draft.logo ? <Image accessibilityLabel="Receipt logo preview" source={{ uri: `data:${draft.logo.mimeType};base64,${draft.logo.base64}` }} resizeMode="contain" style={styles.logo} /> : null}
         <View style={styles.logoActions}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Choose receipt logo" disabled={busy} onPress={() => { void chooseLogo(); }} style={styles.logoButton}><Text style={styles.logoButtonText}>{draft.logo ? 'Change logo' : 'Choose logo'}</Text></TouchableOpacity>
-          {draft.logo ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove receipt logo" disabled={busy} onPress={() => { setDraft(previous => { const { logo: _logo, ...rest } = previous; return rest; }); setError(''); }} style={styles.logoButton}><Text style={styles.logoButtonText}>Remove</Text></TouchableOpacity> : null}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Choose receipt logo" accessibilityState={{ disabled: busy || preparingLogo, busy: preparingLogo }} disabled={busy || preparingLogo} onPress={() => { void chooseLogo(); }} style={styles.logoButton}><Text style={[styles.logoButtonText, preparingLogo && { opacity: 0 }]}>{draft.logo ? 'Change logo' : 'Choose logo'}</Text>{preparingLogo ? <View style={styles.logoProgress}><ActivityIndicator size="small" color={theme.colors.bitcoin} /></View> : null}</TouchableOpacity>
+          {draft.logo ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove receipt logo" disabled={busy || preparingLogo} onPress={() => { setDraft(previous => { const { logo: _logo, ...rest } = previous; return rest; }); setError(''); }} style={styles.logoButton}><Text style={styles.logoButtonText}>Remove</Text></TouchableOpacity> : null}
         </View>
       </View>
       {fields.map(field => <View key={field.key} style={styles.field}>
@@ -110,7 +126,7 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
         {draft.footer.trim() ? <Text style={styles.contact}>{draft.footer.trim()}</Text> : null}
       </View>
       {error ? <Text accessibilityRole="alert" style={styles.message}>{error}</Text> : null}
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save receipt settings" accessibilityState={{ disabled: busy || !dirty, busy }} disabled={busy || !dirty} onPress={() => { void save(); }} style={[styles.save, !dirty && styles.disabled]}>{busy ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.saveText}>Save</Text>}</TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save receipt settings" accessibilityState={{ disabled: busy || preparingLogo || !dirty, busy }} disabled={busy || preparingLogo || !dirty} onPress={() => { void save(); }} style={[styles.save, !dirty && styles.disabled]}>{busy ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.saveText}>Save</Text>}</TouchableOpacity>
     </ScrollView>}
   </View>;
 }
@@ -119,6 +135,7 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     root: { flex: 1, backgroundColor: colors.background }, scroll: { flex: 1, minHeight: 0 }, content: { paddingHorizontal: 24, paddingTop: 20 },
     field: { marginBottom: 18 }, label: { color: colors.muted, fontSize: 12, marginBottom: 8 },
     logo: { width: 120, height: 80, alignSelf: 'flex-start', marginBottom: 8 },
+    logoProgress: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
     logoActions: { flexDirection: 'row', gap: 12 }, logoButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border }, logoButtonText: { color: colors.primary, fontSize: 12 },
     previewLabel: { color: colors.muted, fontSize: 12, marginTop: 4, marginBottom: 10 },
     preview: { backgroundColor: colors.surface, borderRadius: 8, borderWidth: 1, borderColor: colors.border, padding: 18, gap: 8 },

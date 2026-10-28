@@ -21,7 +21,7 @@ import { TerminalDateRangeDraft } from '../components/TerminalDateRangePicker';
 import TerminalSalesPeriodControls from '../components/TerminalSalesPeriodControls';
 import type { TerminalReportSelection } from './TerminalReportsScreen';
 
-type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean; onOpenReports?: (selection: TerminalReportSelection) => void };
+type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean; onOpenReports?: (selection: TerminalReportSelection) => void; onOpenSale?: (sale: TerminalSale) => void; detailSale?: TerminalSale };
 type Cursor = { at: number; id: string };
 type SalesSummary = Awaited<ReturnType<typeof getTerminalSalesSummary>>;
 type LoadState = {
@@ -84,7 +84,7 @@ function statusFor(sale: TerminalSale, now: number): { label: string; tone: 'pai
   }
 }
 
-export default function TerminalSalesScreen({ walletId, network, onClose, visible = true, onOpenReports }: Props) {
+export default function TerminalSalesScreen({ walletId, network, onClose, visible = true, onOpenReports, onOpenSale, detailSale }: Props) {
   const { theme } = useTheme();
   const focused = useIsFocused();
   const headerEnabled = useContext(TerminalSheetInteractionContext) && focused;
@@ -98,7 +98,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const customRange = customRangeState.scope === scope ? customRangeState.value : null;
   const [customEditor, setCustomEditor] = useState<{ scope: string; draft: TerminalDateRangeDraft } | null>(null);
   const editingCustom = customEditor?.scope === scope ? customEditor : null;
-  const [selected, setSelected] = useState<{ scope: string; id: string } | null>(null);
+  const [selected, setSelected] = useState<{ scope: string; id: string } | null>(() => detailSale?.request.walletId === walletId && detailSale.request.network === network ? { scope, id: detailSale.request.id } : null);
   const [now, setNow] = useState(Date.now());
   const day = new Date(now);
   const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
@@ -110,7 +110,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const [checkError, setCheckError] = useState('');
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundState, setRefundState] = useState<{ scope: string; attempts: TerminalRefundAttempt[]; loading: boolean; error: boolean }>({ scope: '', attempts: [], loading: true, error: false });
-  const [detailState, setDetailState] = useState<{ key: string; sale: TerminalSale | null }>({ key: '', sale: null });
+  const [detailState, setDetailState] = useState<{ key: string; sale: TerminalSale | null }>(() => detailSale?.request.walletId === walletId && detailSale.request.network === network ? { key: `${scope}:${detailSale.request.id}`, sale: detailSale } : { key: '', sale: null });
   const [receiptError, setReceiptError] = useState('');
   const [sharingReceipt, setSharingReceipt] = useState(false);
   const receiptBusy = useRef<number | null>(null);
@@ -214,6 +214,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   }, []);
 
   useEffect(() => {
+    if (detailSale) return;
     // Preloaded sales stay current through local storage notifications without
     // starting payment checks or visible refresh indicators.
     void refresh();
@@ -221,11 +222,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       if (changedWallet === walletId && changedNetwork === network) void refresh(false);
     });
     return () => { ++loadGeneration.current; pageBusy.current = false; refreshInFlight.current = 0; unsubscribe(); };
-  }, [refresh]);
+  }, [refresh, !!detailSale]);
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; setSharingReceipt(false); }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
-  useEffect(() => { setSelected(null); setPeriodState({ scope, value: 'today' }); setCustomRangeState({ scope, value: null }); setCustomEditor(null); }, [scope]);
+  useEffect(() => { setSelected(detailSale?.request.walletId === walletId && detailSale.request.network === network ? { scope, id: detailSale.request.id } : null); setPeriodState({ scope, value: 'today' }); setCustomRangeState({ scope, value: null }); setCustomEditor(null); }, [scope, detailSale?.request.id]);
   useEffect(() => { setExportError(''); setExporting(false); }, [exportIdentity]);
 
   const refreshDetail = useCallback(async () => {
@@ -269,11 +270,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     const unsubscribe = subscribeTerminalRefunds((changedWallet, changedNetwork) => {
       if (changedWallet === walletId && changedNetwork === network) {
         void refreshRefunds(false);
-        void refresh(false);
+        if (!detailSale) void refresh(false);
       }
     });
     return () => { ++refundGeneration.current; unsubscribe(); };
-  }, [scope, walletId, network, selected?.id, refreshRefunds, refresh]);
+  }, [scope, walletId, network, selected?.id, refreshRefunds, refresh, !!detailSale]);
 
   useEffect(() => {
     if (!visible) return;
@@ -298,6 +299,10 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const completedRefund = refunds.reduce((total, attempt) => attempt.status === 'complete' ? total + BigInt(attempt.amountSats) : total, 0n);
   const reservedRefund = refunds.reduce((total, attempt) => attempt.status === 'unknown' || attempt.status === 'pending' ? total + BigInt(attempt.amountSats) : total, 0n);
   const refundedSats = state.identity === loadIdentity ? state.refundedSats : null;
+  const summaryShape = useRef<{ scope: string; totalRows: number }>({ scope, totalRows: 1 });
+  if (summaryShape.current.scope !== scope) summaryShape.current = { scope, totalRows: 1 };
+  if (summary) summaryShape.current = { scope, totalRows: Math.max(1, totals.length) };
+  const summarySkeleton = !summary;
   const close = () => { ++checkEpoch.current; checkBusy.current = false; onClose(); };
   const checkPayment = async () => {
     if (!detail || checkBusy.current) return;
@@ -380,7 +385,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     setCustomEditor(null);
   };
 
-  const header = <>
+  const header = detailSale ? null : <>
     <TerminalSalesPeriodControls period={period} customRange={customRange} draft={editingCustom?.draft ?? null} day={day} disabled={!visible || !headerEnabled}
       detailCaption={detail ? formatLongDate(saleTime(detail)) : undefined}
       onSelect={value => {
@@ -389,26 +394,30 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       }} onDraftChange={draft => setCustomEditor({ scope, draft })} onApply={applyCustomRange} onCancel={() => setCustomEditor(null)} />
     {!detail ? <>
       {exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}
-      {!error && (!loading || sales.length > 0) ? <View style={styles.summary}>
+      <View style={styles.summary} accessibilityLabel={summarySkeleton ? loading ? 'Loading sales summary' : 'Sales summary unavailable' : 'Sales summary'}>
         <Text style={styles.summaryLabel}>PAID SALES</Text>
-        <Text style={styles.paidCount}>{paidCount}</Text>
+        {summarySkeleton ? <View style={styles.skeletonCount} /> : <Text style={styles.paidCount}>{paidCount}</Text>}
         <View style={styles.summaryRule} />
-        {totals.length ? totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.amount}</Text></View>) : <Text style={styles.noTotals}>No paid sales {period === 'today' ? 'today' : period === 'all' ? 'yet' : 'in this period'}</Text>}
-        {refundedSats !== null ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View> : null}
+        {summarySkeleton ? Array.from({ length: summaryShape.current.totalRows }, (_, index) => <View key={index} style={styles.totalRow}><View style={styles.skeletonLabel} /><View style={styles.skeletonAmount} /></View>)
+          : totals.length ? totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.amount}</Text></View>) : <Text style={styles.noTotals}>No paid sales {period === 'today' ? 'today' : period === 'all' ? 'yet' : 'in this period'}</Text>}
+        {summarySkeleton ? <View style={styles.refundedRow}><View style={styles.skeletonLabel} /><View style={styles.skeletonAmount} /></View>
+          : refundedSats !== null ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View> : null}
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
-      </View> : null}
+      </View>
       {onOpenReports ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => onOpenReports({ period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now })} style={styles.reportsRow}>
         <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text><Feather name="chevron-right" size={18} color={theme.colors.muted} />
       </TouchableOpacity> : null}
-      {!error && (!loading || sales.length > 0) ? <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text><Text style={styles.sectionCount}>{summary?.activityCount ?? shown.length}</Text></View> : null}
+      <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
     </> : null}
   </>;
 
   if (refundOpen && detail && isPaid(detail) && refundsReady) return <TerminalRefundScreen sale={detail} attempts={refundState.attempts} onClose={() => setRefundOpen(false)} visible={visible} />;
 
+  if (detailSale && !detail) return <View style={styles.root}><TerminalSheetHeader title="Sale details" closeLabel="Close sale details" onClose={close} /><View style={styles.empty}><Text style={styles.emptyTitle}>Sale unavailable</Text><Text style={styles.emptyBody}>Close this sheet and try opening the sale again.</Text></View></View>;
+
   return <View style={styles.root}>
 
-    <TerminalSheetHeader title={detail ? 'Sale details' : 'Sales'} closeLabel="Close sales" onClose={close} leading={!detail ? <GlassIconButton accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} disabled={exporting || !visible || !headerEnabled} busy={exporting} onPress={() => { void exportSales(); }} visualSize={40} align="flex-start">
+    <TerminalSheetHeader title={detail ? 'Sale details' : 'Sales'} closeLabel={detailSale ? "Close sale details" : "Close sales"} onClose={close} leading={!detail ? <GlassIconButton accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} disabled={exporting || !visible || !headerEnabled} busy={exporting} onPress={() => { void exportSales(); }} visualSize={40} align="flex-start">
         {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
     </GlassIconButton> : undefined} />
     {detail ? <ScrollView style={styles.scroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
@@ -463,7 +472,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       onEndReachedThreshold={0.35}
       renderItem={({ item }) => {
         const status = statusFor(item, now);
-        return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { ++checkEpoch.current; checkBusy.current = false; setDetailState({ key: `${scope}:${item.request.id}`, sale: item }); setSelected({ scope, id: item.request.id }); }}>
+        return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { if (onOpenSale) { onOpenSale(item); return; } ++checkEpoch.current; checkBusy.current = false; setDetailState({ key: `${scope}:${item.request.id}`, sale: item }); setSelected({ scope, id: item.request.id }); }}>
           <View style={[styles.rowIcon, status.tone === 'paid' && styles.paidRowIcon]}><Feather name={status.tone === 'paid' ? 'check' : 'clock'} size={18} color={status.tone === 'paid' ? theme.colors.bitcoin : theme.colors.muted} /></View>
           <View style={styles.rowMiddle}><Text style={styles.rowAmount} numberOfLines={1}>{displayAmount(item.request)}</Text><Text style={styles.rowMeta}>{period === 'today' ? formatTime(saleTime(item)) : `${formatDate(saleTime(item))} · ${formatTime(saleTime(item))}`}</Text></View>
           <View style={styles.rowEnd}><Text style={[styles.rowStatus, status.tone === 'paid' && styles.paidText]}>{status.label}</Text><Feather name="chevron-right" size={17} color={theme.colors.muted} /></View>
@@ -495,16 +504,20 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     exportError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginHorizontal: 24, marginTop: 12 },
     reportsRow: { minHeight: 52, marginHorizontal: 24, marginTop: 16, paddingHorizontal: 16, gap: 12, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
     reportsText: { flex: 1, color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
-    summary: { marginHorizontal: 24, marginTop: 26, padding: 22, borderRadius: 18, backgroundColor: colors.surface },
+    summary: { minHeight: 216, marginHorizontal: 24, marginTop: 26, padding: 22, borderRadius: 18, backgroundColor: colors.surface },
     summaryLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
-    paidCount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 48, marginTop: 3 },
+    paidCount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 48, lineHeight: 64, marginTop: 3 },
     summaryRule: { height: 1, backgroundColor: colors.border, marginTop: 10, marginBottom: 12 },
     totalRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingVertical: 4, gap: 12 },
-    totalLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 11 },
-    totalAmount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 16, flexShrink: 1, textAlign: 'right' },
+    totalLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 11, lineHeight: 18 },
+    totalAmount: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 16, lineHeight: 24, flexShrink: 1, textAlign: 'right' },
     refundedRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, marginTop: 12, paddingTop: 12, gap: 12 },
-    noTotals: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12 },
+    noTotals: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, lineHeight: 24, paddingVertical: 4 },
     summaryNote: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 10, marginTop: 12 },
+    skeletonCount: { width: 82, height: 64, borderRadius: 8, backgroundColor: colors.muted, opacity: 0.18, marginTop: 3 },
+    skeletonLabel: { width: 48, height: 18, borderRadius: 5, backgroundColor: colors.muted, opacity: 0.18 },
+    skeletonAmount: { width: 88, height: 24, borderRadius: 6, backgroundColor: colors.muted, opacity: 0.18 },
+    skeletonSectionCount: { width: 24, height: 11, borderRadius: 5, backgroundColor: colors.muted, opacity: 0.18 },
     sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 24, marginTop: 35, marginBottom: 9 },
     sectionTitle: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
     sectionCount: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 11 },
