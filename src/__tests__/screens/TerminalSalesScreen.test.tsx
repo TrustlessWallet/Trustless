@@ -1,5 +1,6 @@
 import { resetTerminalSqlite } from '../helpers/terminalSqlite';
 import * as salesStore from '../../services/terminalSales';
+import * as receiptService from '../../services/terminalReceipt';
 import * as refundStore from '../../services/terminalRefunds';
 import React from 'react';
 import { RefreshControl } from 'react-native';
@@ -284,4 +285,25 @@ it('keeps Sales minimal and passes a copied selection to Reports without loading
   fireEvent.press(view.getByLabelText('Open reports'));
   expect(onOpenReports).toHaveBeenCalledWith(expect.objectContaining({ period: 'week', day: expect.any(Number) }));
   expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
+});
+
+
+it('shares a paid receipt once and invalidates the branding read when the detail is hidden', async () => {
+  const sale = request('branded');
+  await recordTerminalSale(sale);
+  await updateTerminalSalePayment(sale, { status: 'received', paymentId: 'paid' });
+  let finish!: () => void;
+  const share = jest.spyOn(receiptService, 'shareTerminalReceipt').mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
+  fireEvent.press(view.getByLabelText(/1 200 sats, Paid/));
+  await waitFor(() => expect(view.getByLabelText('Share receipt')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Share receipt'));
+  fireEvent.press(view.getByLabelText('Share receipt'));
+  expect(share).toHaveBeenCalledTimes(1);
+  const guard = share.mock.calls[0][2]!;
+  expect(guard()).toBe(true);
+  view.rerender(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} visible={false} />);
+  expect(guard()).toBe(false);
+  await act(async () => finish());
 });
