@@ -1,11 +1,13 @@
 import React from 'react';
+import { ActionSheetIOS } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import TerminalReceiptSettingsScreen from '../../screens/TerminalReceiptSettingsScreen';
 import { useActiveWallet } from '../../contexts/WalletContext';
 import { useWalletMode } from '../../contexts/WalletModeContext';
 import { loadTerminalReceiptBranding, saveTerminalReceiptBranding } from '../../services/terminalReceiptBranding';
 import * as DocumentPicker from 'expo-document-picker';
-import { receiptLogoFromBytes } from '../../services/terminalReceiptLogo';
+import { importTerminalReceiptLogo } from '../../services/terminalReceiptLogoImport';
 
 const mockOptions = jest.fn();
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true, useNavigation: () => ({ setOptions: mockOptions }) }));
@@ -17,17 +19,18 @@ jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('../../components/StyledInput', () => ({ StyledInput: require('react-native').TextInput }));
 jest.mock('../../services/terminalReceiptBranding', () => ({ DEFAULT_TERMINAL_RECEIPT_BRANDING: { name: '', contact: '', footer: '' }, loadTerminalReceiptBranding: jest.fn(), saveTerminalReceiptBranding: jest.fn() }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
-jest.mock('expo-file-system', () => ({ File: jest.fn().mockImplementation(() => ({ size: 4, arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer })) }));
-jest.mock('../../services/terminalReceiptLogo', () => ({ MAX_TERMINAL_RECEIPT_LOGO_BYTES: 204800, receiptLogoFromBytes: jest.fn() }));
+jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn(), UIImagePickerPreferredAssetRepresentationMode: { Compatible: 'compatible' } }), { virtual: true });
+jest.mock('../../services/terminalReceiptLogoImport', () => ({ importTerminalReceiptLogo: jest.fn() }));
 const branding = { name: 'Corner café', contact: 'shop@example.com', footer: 'Thank you' };
 const props = { walletId: 'wallet-a', network: 'mainnet' as const, onClose: jest.fn() };
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(1));
   (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-a', type: 'standard' });
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off' });
   (loadTerminalReceiptBranding as jest.Mock).mockResolvedValue(branding);
   (saveTerminalReceiptBranding as jest.Mock).mockResolvedValue(branding);
-  (receiptLogoFromBytes as jest.Mock).mockReturnValue({ mimeType: 'image/png', base64: 'AQIDBA==' });
+  (importTerminalReceiptLogo as jest.Mock).mockResolvedValue({ mimeType: 'image/png', base64: 'AQIDBA==' });
 });
 it('keeps selection canceled, previews a chosen logo, and saves removal as a dirty edit', async () => {
   const view = render(<TerminalReceiptSettingsScreen {...props} />);
@@ -49,10 +52,11 @@ it('ignores a selected logo after owner access changes', async () => {
   const view = render(<TerminalReceiptSettingsScreen {...props} />);
   await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Choose receipt logo'));
+  await waitFor(() => expect(DocumentPicker.getDocumentAsync).toHaveBeenCalled());
   (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-b', type: 'standard' });
   view.rerender(<TerminalReceiptSettingsScreen {...props} />);
   await act(async () => finish({ canceled: false, assets: [{ uri: 'file:///logo.png' }] }));
-  expect(receiptLogoFromBytes).not.toHaveBeenCalled();
+  expect(importTerminalReceiptLogo).not.toHaveBeenCalled();
   expect(view.queryByLabelText('Receipt logo in preview')).toBeNull();
 });
 it('saves removal of an existing logo', async () => {
@@ -113,4 +117,45 @@ it('blocks cashier and watch-only editing and ignores a save after owner scope c
   expect(guard()).toBe(false);
   await act(async () => finish());
   expect(props.onClose).not.toHaveBeenCalled();
+});
+
+it('offers native Photos, Files and Cancel choices without opening either picker on cancel', async () => {
+  const chooser = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(2));
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByLabelText('Choose receipt logo')).toBeTruthy());
+  await act(async () => fireEvent.press(view.getByLabelText('Choose receipt logo')));
+  expect(chooser).toHaveBeenCalledWith(expect.objectContaining({ options: ['Choose from Photos', 'Choose from Files', 'Cancel'], cancelButtonIndex: 2 }), expect.any(Function));
+  expect(ImagePicker.launchImageLibraryAsync).not.toHaveBeenCalled();
+  expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
+  expect(view.getByLabelText('Save receipt settings').props.accessibilityState.disabled).toBe(true);
+});
+
+it('uses the same validated logo draft for Photos, and keeps it unchanged on photo cancellation', async () => {
+  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(0));
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({ canceled: true });
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  await act(async () => fireEvent.press(view.getByLabelText('Choose receipt logo')));
+  expect(view.getByLabelText('Save receipt settings').props.accessibilityState.disabled).toBe(true);
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///photo.png' }] });
+  await act(async () => fireEvent.press(view.getByLabelText('Choose receipt logo')));
+  expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(expect.objectContaining({ mediaTypes: ['images'], allowsEditing: false, exif: false }));
+  expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
+  expect(importTerminalReceiptLogo).toHaveBeenCalledWith('file:///photo.png', expect.any(Function));
+  expect(view.getByLabelText('Receipt logo in preview')).toBeTruthy();
+});
+
+it('does not stack source menus or open a picker after owner access changes', async () => {
+  let choose!: (index: number) => void;
+  const menu = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => { choose = callback; });
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Choose receipt logo'));
+  fireEvent.press(view.getByLabelText('Choose receipt logo'));
+  expect(menu).toHaveBeenCalledTimes(1);
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-b', type: 'standard' });
+  view.rerender(<TerminalReceiptSettingsScreen {...props} />);
+  await act(async () => choose(0));
+  expect(ImagePicker.launchImageLibraryAsync).not.toHaveBeenCalled();
+  expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
 });
