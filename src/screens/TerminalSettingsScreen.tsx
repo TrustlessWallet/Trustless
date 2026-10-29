@@ -1,5 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Modal, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +19,13 @@ const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, onOpenItems, onOpenReceipts, onOpenBackup, getTerminalDraft }: Props) {
   const { theme } = useTheme();
   const activeWallet = useActiveWallet();
+  const focused = useIsFocused();
+  const mounted = useRef(true);
+  const currencyContext = useRef({ walletId: activeWallet?.id, focused, revision: 0 });
+  if (currencyContext.current.walletId !== activeWallet?.id || currencyContext.current.focused !== focused) {
+    currencyContext.current = { walletId: activeWallet?.id, focused, revision: currencyContext.current.revision + 1 };
+  }
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
   const [cashierError, setCashierError] = useState('');
   const cashierPress = async () => {
@@ -32,8 +40,14 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
   const rowRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ top: insets.top + 8, left: 24 });
+  const dismissCurrency = () => { ++currencyContext.current.revision; setCurrencyOpen(false); };
+  useEffect(() => { ++currencyContext.current.revision; setCurrencyOpen(false); }, [focused, activeWallet?.id]);
   const openCurrency = () => {
+    if (!focused) return;
+    const revision = ++currencyContext.current.revision;
     rowRef.current?.measureInWindow((x, y, width, height) => {
+      // Native measurements can finish after another sheet has taken focus.
+      if (!mounted.current || !currencyContext.current.focused || currencyContext.current.revision !== revision) return;
       const below = y + height + 8;
       const top = below + 140 <= screenHeight - insets.bottom - 8 ? below : y - 148;
       setPopoverPosition({
@@ -46,7 +60,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeOpacity = scrollY.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' });
   const styles = makeStyles(theme.colors);
-  return <View style={styles.root}>
+  return <View pointerEvents={focused ? 'auto' : 'none'} style={styles.root}>
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}>
       <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
     </Animated.View>
@@ -79,13 +93,13 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
         {cashierError ? <Text style={styles.settingError}>{cashierError}</Text> : null}
       </View>
     </Animated.ScrollView>
-    <Modal visible={currencyOpen} transparent animationType="none" onRequestClose={() => setCurrencyOpen(false)}>
+    <Modal visible={focused && currencyOpen} transparent animationType="none" onRequestClose={dismissCurrency}>
       <View style={styles.popoverBackdrop}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Dismiss currencies" style={styles.popoverOverlay} onPress={() => setCurrencyOpen(false)} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Dismiss currencies" style={styles.popoverOverlay} onPress={dismissCurrency} />
         <View style={[styles.popoverPosition, popoverPosition]}>
           <GlassView width={204} height={140} borderRadius={24} shape="roundedRectangle" interactive style={styles.glass}>
             <View style={styles.currencyGrid}>{units.map(choice =>
-              <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={styles.currencyOption} onPress={() => { onSelectUnit(choice); setCurrencyOpen(false); }}>
+              <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={styles.currencyOption} onPress={() => { if (!currencyContext.current.focused) return; onSelectUnit(choice); dismissCurrency(); }}>
                 <Text style={[styles.currencyText, choice === unit && styles.currencyTextSelected]}>{choice}</Text>
               </TouchableOpacity>)}</View>
           </GlassView>

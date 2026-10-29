@@ -33,7 +33,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
       <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={styles.list}>
         {catalog.map(item => {
           const selected = lines.find(line => line.itemId === item.id);
-          const unavailable = !!basketUnit && item.unit !== basketUnit;
+          const unavailable = !selected && !!basketUnit && item.unit !== basketUnit;
           return <View key={item.id} style={[styles.row, { borderBottomColor: theme.colors.border }]}>
             <View style={styles.info}>
               <Text style={[styles.name, { color: unavailable ? theme.colors.muted : theme.colors.primary }]} numberOfLines={1}>{selected?.name ?? item.name}</Text>
@@ -42,7 +42,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
             {selected ? <>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove one ${selected.name}`} disabled={busy} style={styles.control} onPress={() => onRemoveOne(selected)}><Text style={[styles.symbol, { color: theme.colors.primary }]}>−</Text></TouchableOpacity>
               <Text style={[styles.quantity, { color: theme.colors.primary }]}>{selected.quantity}</Text>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${selected.name}`} disabled={busy} style={styles.control} onPress={() => onAdd(item)}><Feather name="plus" size={20} color={theme.colors.primary} /></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${selected.name}`} disabled={busy} style={styles.control} onPress={() => onAdd({ id: selected.itemId, name: selected.name, unit, unitPrice: selected.unitPrice })}><Feather name="plus" size={20} color={theme.colors.primary} /></TouchableOpacity>
             </> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add ${item.name}`} accessibilityState={{ disabled: unavailable || busy }} disabled={unavailable || busy} style={styles.control} onPress={() => onAdd(item)}><Feather name="plus" size={20} color={unavailable ? theme.colors.muted : theme.colors.primary} /></TouchableOpacity>}
           </View>;
         })}
