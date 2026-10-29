@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActionSheetIOS } from 'react-native';
+import { ActionSheetIOS, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import TerminalReceiptSettingsScreen from '../../screens/TerminalReceiptSettingsScreen';
@@ -7,6 +7,7 @@ import { useActiveWallet } from '../../contexts/WalletContext';
 import { useWalletMode } from '../../contexts/WalletModeContext';
 import { loadTerminalReceiptBranding, saveTerminalReceiptBranding } from '../../services/terminalReceiptBranding';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Templates from '../../services/terminalReceiptTemplates';
 import { importTerminalReceiptLogo } from '../../services/terminalReceiptLogoImport';
 
 const mockOptions = jest.fn();
@@ -17,7 +18,8 @@ jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { co
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('../../components/StyledInput', () => ({ StyledInput: require('react-native').TextInput }));
-jest.mock('../../services/terminalReceiptBranding', () => ({ DEFAULT_TERMINAL_RECEIPT_BRANDING: { name: '', contact: '', footer: '' }, loadTerminalReceiptBranding: jest.fn(), saveTerminalReceiptBranding: jest.fn() }));
+jest.mock('../../services/terminalReceiptBranding', () => ({ DEFAULT_TERMINAL_RECEIPT_BRANDING: { name: '', contact: '', footer: '' }, normalizeTerminalReceiptBranding: jest.requireActual('../../services/terminalReceiptBranding').normalizeTerminalReceiptBranding, loadTerminalReceiptBranding: jest.fn(), saveTerminalReceiptBranding: jest.fn() }));
+jest.mock('../../services/terminalReceiptTemplates', () => ({ loadTerminalReceiptTemplates: jest.fn(), createTerminalReceiptTemplate: jest.fn(), replaceTerminalReceiptTemplate: jest.fn(), removeTerminalReceiptTemplate: jest.fn() }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn(), UIImagePickerPreferredAssetRepresentationMode: { Compatible: 'compatible' } }), { virtual: true });
 jest.mock('../../services/terminalReceiptLogoImport', () => ({ importTerminalReceiptLogo: jest.fn() }));
@@ -29,6 +31,7 @@ beforeEach(() => {
   (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-a', type: 'standard' });
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off' });
   (loadTerminalReceiptBranding as jest.Mock).mockResolvedValue(branding);
+  (Templates.loadTerminalReceiptTemplates as jest.Mock).mockResolvedValue([]);
   (saveTerminalReceiptBranding as jest.Mock).mockResolvedValue(branding);
   (importTerminalReceiptLogo as jest.Mock).mockResolvedValue({ mimeType: 'image/png', base64: 'AQIDBA==' });
 });
@@ -158,4 +161,67 @@ it('does not stack source menus or open a picker after owner access changes', as
   await act(async () => choose(0));
   expect(ImagePicker.launchImageLibraryAsync).not.toHaveBeenCalled();
   expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
+});
+
+const savedTemplate = { id: 'template-one', name: 'Weekend', branding: { name: 'Market stall', contact: 'market@example.com', footer: 'See you next week' } };
+it('saves a named copy without applying receipt settings, then applies only through Save', async () => {
+  (Templates.createTerminalReceiptTemplate as jest.Mock).mockResolvedValue([savedTemplate]);
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false));
+  fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Weekend footer');
+  fireEvent.press(view.getByLabelText('Save as receipt template'));
+  expect(view.getByLabelText('Save receipt settings').props.accessibilityState.disabled).toBe(true);
+  fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Weekend');
+  fireEvent.press(view.getByLabelText('Save receipt template')); fireEvent.press(view.getByLabelText('Save receipt template'));
+  await waitFor(() => expect(view.queryByLabelText('Receipt template name')).toBeNull());
+  expect(Templates.createTerminalReceiptTemplate).toHaveBeenCalledTimes(1);
+  expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Save receipt settings'));
+  await waitFor(() => expect(saveTerminalReceiptBranding).toHaveBeenCalledWith('wallet-a', 'mainnet', expect.objectContaining({ footer: 'Weekend footer' }), expect.any(Function)));
+});
+it('loads a template into the draft, explicitly replaces it, and deleting preserves that draft', async () => {
+  (Templates.loadTerminalReceiptTemplates as jest.Mock).mockResolvedValue([savedTemplate]);
+  (Templates.replaceTerminalReceiptTemplate as jest.Mock).mockImplementation(async (_wallet, _network, _id, draft) => [{ ...savedTemplate, branding: draft }]);
+  (Templates.removeTerminalReceiptTemplate as jest.Mock).mockResolvedValue([]);
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Load receipt template'));
+  await waitFor(() => expect(view.getByLabelText('Load template Weekend')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Load template Weekend'));
+  expect(view.getByDisplayValue('Market stall')).toBeTruthy(); expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
+  fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Updated weekend footer');
+  fireEvent.press(view.getByLabelText('Replace receipt template Weekend'));
+  await waitFor(() => expect(Templates.replaceTerminalReceiptTemplate).toHaveBeenCalledWith('wallet-a', 'mainnet', savedTemplate.id, expect.objectContaining({ footer: 'Updated weekend footer' }), expect.any(Function)));
+  await waitFor(() => expect(view.queryByLabelText('Replace receipt template Weekend')).toBeNull());
+  fireEvent.press(view.getByLabelText('Load receipt template')); fireEvent.press(view.getByLabelText('Delete template Weekend'));
+  await act(async () => { (alert.mock.calls[0][2] as any[]).find(button => button.text === 'Delete').onPress(); });
+  expect(view.getByDisplayValue('Updated weekend footer')).toBeTruthy(); expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
+  expect(view.queryByLabelText('Load template Weekend')).toBeNull();
+  fireEvent.press(view.getByLabelText('Load standard receipt'));
+  expect(view.getByLabelText('Receipt business name').props.value).toBe('');
+  expect(view.queryByLabelText('Receipt logo in preview')).toBeNull(); alert.mockRestore();
+});
+it('keeps normal receipt editing available after a template-library read failure and retry preserves the draft', async () => {
+  (Templates.loadTerminalReceiptTemplates as jest.Mock).mockRejectedValueOnce(new Error('unreadable')).mockResolvedValue([]);
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Keep my draft'); fireEvent.press(view.getByLabelText('Load receipt template'));
+  await waitFor(() => expect(view.getByLabelText('Retry receipt templates')).toBeTruthy());
+  expect(view.getByLabelText('Save receipt settings').props.accessibilityState.disabled).toBe(false);
+  fireEvent.press(view.getByLabelText('Retry receipt templates'));
+  await waitFor(() => expect(view.getByLabelText('Load standard receipt')).toBeTruthy());
+  expect(view.getByDisplayValue('Keep my draft')).toBeTruthy();
+});
+it('ignores late template writes and stale delete confirmations after wallet changes', async () => {
+  let finish!: (value: unknown) => void;
+  (Templates.loadTerminalReceiptTemplates as jest.Mock).mockResolvedValue([savedTemplate]);
+  (Templates.createTerminalReceiptTemplate as jest.Mock).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false));
+  fireEvent.press(view.getByLabelText('Save as receipt template')); fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Late'); fireEvent.press(view.getByLabelText('Save receipt template'));
+  (useActiveWallet as jest.Mock).mockReturnValue({ id: 'other', type: 'standard' }); view.rerender(<TerminalReceiptSettingsScreen {...props} />);
+  expect((Templates.createTerminalReceiptTemplate as jest.Mock).mock.calls[0][4]()).toBe(false);
+  await act(async () => finish([savedTemplate]));
+  expect(view.queryByLabelText('Load template Weekend')).toBeNull(); expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
 });

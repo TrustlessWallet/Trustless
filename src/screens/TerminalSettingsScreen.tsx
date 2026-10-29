@@ -23,7 +23,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
   const cashierPress = async () => {
     setCashierError('');
     try {
-      if (cashierState === 'off') await enableCashier();
+      if (cashierState === 'off') await enableCashier(getTerminalDraft);
       else await unlockCashier('terminal', getTerminalDraft);
     } catch { setCashierError('Couldn’t save cashier mode. Please retry.'); }
   };

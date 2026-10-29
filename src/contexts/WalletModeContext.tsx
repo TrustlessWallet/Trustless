@@ -21,7 +21,7 @@ type ModeContext = {
   cashierBusy: boolean;
   cashierUnlockRevision: number;
   cashierUnlockDestination: WalletMode | null;
-  enableCashier: () => Promise<boolean>;
+  enableCashier: (getDraft?: () => CashierTerminalDraft | null) => Promise<boolean>;
   unlockCashier: (destination?: WalletMode, getDraft?: () => CashierTerminalDraft | null) => Promise<boolean>;
   consumeCashierTerminalDraft: (walletId: string, network: TerminalNetwork) => CashierTerminalDraft | null;
   retryCashierLoad: () => Promise<void>;
@@ -98,7 +98,7 @@ export function WalletModeProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
-  const enableCashier = async (): Promise<boolean> => {
+  const enableCashier = async (getDraft?: () => CashierTerminalDraft | null): Promise<boolean> => {
     if (cashierMutation.current || cashierLockRef.current !== null || !activeWallet || activeWallet.type === 'watch-only' || modeRef.current !== 'terminal') return false;
     cashierMutation.current = true;
     terminalDraft.current = null;
@@ -109,6 +109,9 @@ export function WalletModeProvider({ children }: { children: React.ReactNode }) 
       if (!await authenticate_terminal_cashier('Enable cashier mode')) return false;
       await queue.current;
       if (!mounted.current || epoch !== cashierEpoch.current || capturedScope !== walletScopeRef.current || modeRef.current !== 'terminal') return false;
+      const draft = getDraft ? getDraft() : null;
+      if (getDraft && !draft) throw new Error('Finish the current invoice before enabling cashier mode.');
+      if (draft && (draft.walletId !== activeWallet.id || draft.network !== network)) return false;
       const lock: CashierLockRecord = { version: 1, walletId: activeWallet.id, network };
       // A scope change while this write is pending still leaves the restricted
       // surface visible once the durable lock has committed.
@@ -120,6 +123,7 @@ export function WalletModeProvider({ children }: { children: React.ReactNode }) 
         if (mounted.current) publishCashierLock(undefined);
         throw error;
       }
+      terminalDraft.current = draft ? { ...draft, basketLines: draft.basketLines.map(line => ({ ...line })) } : null;
       cashierLockRef.current = lock;
       if (mounted.current) publishCashierLock(lock);
       return true;

@@ -169,3 +169,19 @@ An immutable SQLite snapshot is exported in 100-row pages; file encryption/decry
 Every imported sale retains a restored-record marker, including after subsequent payment reconciliation and re-export. A backup can omit a refund made after its creation, so restored sales are available for history, reports and receipts but cannot initiate new refunds. The restriction is checked against the persisted sale inside refund reservation, not just in the UI. Existing unresolved refund records remain historical records; restoring never submits them. This is a local portability feature, not automatic cloud backup, synchronization, subscription access or a claim that old payment/refund statuses have been freshly verified.
 
 Password derivation uses the approved, pinned existing @noble/hashes JavaScript library with asynchronous work slices. This adds no native module or build requirement. Export serializes only named journal/catalog fields; unrelated properties cannot enter an archive.
+
+
+### Reusable receipt templates
+
+Receipts settings includes a compact Templates disclosure. Standard or a saved name loads a copy into the current draft and preview; the existing Save button remains the only action that applies branding to shared receipts. Financial details and receipt layout stay fixed. Save as template reveals a name input without another navigation layer; saving stores a named copy, and Cancel keeps the receipt draft. A loaded template can be explicitly replaced after edits. Delete requires confirmation and preserves the current draft and active branding. Names are limited to 40 characters, compared case-insensitively after Unicode normalization, and Standard is reserved for the default receipt.
+
+Up to five templates live in a validated, versioned collection per wallet/network, separate from the active receipt profile. Each owns its normalized logo bytes, so changing an active logo or deleting another template cannot break it. Mutations are serialized, input snapshots are copied before queuing, malformed libraries cannot be overwritten, and stale owner scopes cannot update the UI. A library loading error offers its own retry without blocking ordinary receipt editing or resetting a draft. The library is loaded only in Receipts settings, not during checkout or sharing.
+
+Templates remain local preferences and are outside the current sales/refunds/items backup format. This adds no paywall, billing, native changes, dependencies, custom financial fields or new theme colors.
+
+
+### Merchant-flow review
+
+The receipt-template increment also closes four concrete transition/feedback gaps found while reviewing the Terminal. Item-picker validation now appears in a reserved feedback area inside its sheet, rather than behind it on checkout, and clears after a valid edit. Unresolved-refund checks show unknown/offline/error feedback outside the hidden new-refund form, with Bitcoin-colored progress spinners. Enabling Cashier now captures and copies the scoped checkout draft before the navigator changes, matching the existing unlock handoff. Wallet removal and reset clear receipt branding, report presets and template libraries; serialized deletion guards prevent queued edits from recreating removed metadata.
+
+Regression coverage includes checkout, invoice/payment state, currencies, baskets, refunds, reports/exports, receipts and backup services, plus cashier-provider transitions. Simulator fixtures exercise actual screens, SQLite/file APIs and native sheets with synthetic SDK outcomes and authentication. Live Lightning settlement, physical-device biometrics and sustained-device performance are separate checks; coordinate-based swipe/hold gestures were unavailable to automation in this run.
