@@ -1,5 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SQLiteDatabase } from 'expo-sqlite';
 import { terminalNetwork, TerminalNetwork } from './terminal';
+import { transactTerminalDatabase } from './terminalDatabase';
+import { clearTerminalPreferenceInDatabase, readTerminalPreferenceInDatabase, writeTerminalPreferenceInDatabase } from './terminalPreferences';
 import { normalizeTerminalReceiptLogo, TerminalReceiptLogo } from './terminalReceiptLogo';
 
 export const TERMINAL_RECEIPT_BRANDING_KEY = '@terminalReceiptBranding:v1';
@@ -40,8 +42,7 @@ export function normalizeTerminalReceiptBranding(value: unknown): TerminalReceip
   return result;
 }
 
-async function read(walletId: string, network: TerminalNetwork): Promise<TerminalReceiptBranding> {
-  const raw = await AsyncStorage.getItem(keyFor(walletId, network));
+function parse(raw: string | null, walletId: string, network: TerminalNetwork): TerminalReceiptBranding {
   if (raw === null) return { ...DEFAULT_TERMINAL_RECEIPT_BRANDING };
   if (raw.length > MAX_RAW_LENGTH) throw new Error('Saved receipt branding is invalid.');
   let parsed: unknown;
@@ -54,35 +55,49 @@ async function read(walletId: string, network: TerminalNetwork): Promise<Termina
   return branding;
 }
 
+export function readTerminalReceiptBrandingInDatabase(db: SQLiteDatabase, walletId: string, network: string): Promise<TerminalReceiptBranding> {
+  const identity = scope(walletId, network);
+  return readTerminalPreferenceInDatabase(db, identity.walletId, identity.network, 'receipt',
+    keyFor(identity.walletId, identity.network), raw => parse(raw, identity.walletId, identity.network));
+}
+
+export async function writeTerminalReceiptBrandingInDatabase(db: SQLiteDatabase, walletId: string, network: string,
+  branding: TerminalReceiptBranding): Promise<void> {
+  const identity = scope(walletId, network);
+  assertNotDeleted(identity.walletId, identity.network);
+  const frozen = normalizeTerminalReceiptBranding(branding);
+  const raw = JSON.stringify({ version: 1, walletId: identity.walletId, network: identity.network, branding: frozen });
+  if (raw.length > (frozen.logo ? MAX_RAW_LENGTH : 1_024)) throw new Error('Saved receipt branding is too large.');
+  await writeTerminalPreferenceInDatabase(db, identity.walletId, identity.network, 'receipt', raw);
+}
+
 export function loadTerminalReceiptBranding(walletId: string, network: string): Promise<TerminalReceiptBranding> {
   const identity = scope(walletId, network);
-  return serial(() => read(identity.walletId, identity.network));
+  return serial(() => transactTerminalDatabase(db => readTerminalReceiptBrandingInDatabase(db, identity.walletId, identity.network)));
 }
 
 export function saveTerminalReceiptBranding(walletId: string, network: string, branding: TerminalReceiptBranding, isCurrent: () => boolean): Promise<TerminalReceiptBranding> {
   const identity = scope(walletId, network);
   let frozen: TerminalReceiptBranding;
   try { frozen = normalizeTerminalReceiptBranding(branding); } catch (error) { return Promise.reject(error); }
-  return serial(async () => {
+  return serial(() => transactTerminalDatabase(async db => {
     assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal receipt scope is required.');
-    await read(identity.walletId, identity.network);
+    await readTerminalReceiptBrandingInDatabase(db, identity.walletId, identity.network);
     assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal receipt scope is required.');
-    const raw = JSON.stringify({ version: 1, walletId: identity.walletId, network: identity.network, branding: frozen });
-    if (raw.length > (frozen.logo ? MAX_RAW_LENGTH : 1_024)) throw new Error('Saved receipt branding is too large.');
-    assertNotDeleted(identity.walletId, identity.network);
-    await AsyncStorage.setItem(keyFor(identity.walletId, identity.network), raw);
+    await writeTerminalReceiptBrandingInDatabase(db, identity.walletId, identity.network, frozen);
     if (!isCurrent()) throw new Error('Current Terminal receipt scope is required.');
     return frozen;
-  });
+  }));
 }
 
 export function clearTerminalReceiptBranding(walletId: string, network: string): Promise<void> {
   const identity = scope(walletId, network);
   const key = keyFor(identity.walletId, identity.network);
   deletedScopes.add(key);
-  return serial(() => AsyncStorage.removeItem(key)).catch(error => {
+  return serial(() => transactTerminalDatabase(db => clearTerminalPreferenceInDatabase(db,
+    identity.walletId, identity.network, 'receipt', key))).catch(error => {
     deletedScopes.delete(key);
     throw error;
   });

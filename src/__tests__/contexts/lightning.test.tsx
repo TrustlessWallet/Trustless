@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WalletProvider, useWallet, useActiveWallet } from '../../contexts/WalletContext';
 import { WalletModeProvider, useWalletMode } from '../../contexts/WalletModeContext';
 import * as Keychain from 'react-native-keychain';
-import { dbSaveAddress, dbDeleteWallet, dbGetWallets } from '../../services/database';
+import { dbSaveAddress, dbDeleteWallet, dbGetWallets, dbGetDerivedAddresses } from '../../services/database';
+import { fetchAddressInfoBatch } from '../../services/bitcoin';
 import * as sdkModule from '@breeztech/breez-sdk-spark-react-native';
 import * as refundJournal from '../../services/terminalRefunds';
 
@@ -150,6 +151,30 @@ it('connects the active wallet and explicitly synchronizes its balance', async (
     expect(result.current.lightningBalance).toBe(100);
     expect(a.syncWallet).toHaveBeenCalledTimes(1);
     expect(result.current.lightningLastSyncedAt).not.toBeNull();
+});
+
+it('starts Lightning restoration while first-import address discovery is still waiting on the network', async () => {
+    const discovery = deferred<any[]>();
+    (dbGetDerivedAddresses as jest.Mock).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    (fetchAddressInfoBatch as jest.Mock).mockReturnValueOnce(discovery.promise);
+    const { result } = renderHook(() => useWallet(), { wrapper });
+    await waitFor(() => expect(result.current.isLightningInitialized).toBe(true));
+    expect(result.current.activeWallet).toBeNull();
+    await act(async () => { discovery.resolve([]); });
+    await waitFor(() => expect(result.current.activeWallet?.id).toBe('a'));
+});
+
+it('opens the on-chain wallet after a quick Lightning failure during address discovery', async () => {
+    const discovery = deferred<any[]>();
+    (dbGetDerivedAddresses as jest.Mock).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    (fetchAddressInfoBatch as jest.Mock).mockReturnValueOnce(discovery.promise);
+    (sdkModule.connect as jest.Mock).mockRejectedValueOnce(new Error('Offline'));
+    const { result } = renderHook(() => useWallet(), { wrapper });
+    await waitFor(() => expect(result.current.lightningInitError).toBe('Offline'));
+    expect(result.current.activeWallet).toBeNull();
+    await act(async () => { discovery.resolve([]); });
+    await waitFor(() => expect(result.current.activeWallet?.id).toBe('a'));
+    expect(result.current.isLightningInitialized).toBe(false);
 });
 
 it('keeps active-wallet readers still through Lightning-only updates and delivers real wallet switches', async () => {
@@ -436,6 +461,55 @@ it('continues disconnect even when listener removal is stuck', async () => {
     await waitFor(() => expect(result.current.lightningBalance).toBe(900));
     expect(a.disconnect).toHaveBeenCalledTimes(1);
     await act(async () => { removal.resolve(true); });
+});
+
+it('retries a rejected native teardown before connecting the next wallet', async () => {
+    const { result } = await connected();
+    a.disconnect.mockRejectedValueOnce(new Error('Native disconnect failed'));
+    await act(async () => { await result.current.switchWallet('b'); });
+    await waitFor(() => expect(result.current.isLightningInitialized).toBe(true));
+    expect(result.current.activeWallet?.id).toBe('b');
+    expect(result.current.lightningInitAttempted).toBe(true);
+    expect(a.disconnect).toHaveBeenCalledTimes(2);
+    expect(b.getInfo).toHaveBeenCalled();
+});
+
+it('starts the next wallet init while a timed-out native disconnect remains serialized', async () => {
+    const { result } = await connected();
+    const teardown = deferred<void>();
+    a.disconnect.mockReturnValue(teardown.promise);
+    const connectionCount = (sdkModule.connect as jest.Mock).mock.calls.length;
+    jest.useFakeTimers();
+    try {
+        await act(async () => { await result.current.switchWallet('b'); });
+        await act(async () => { await jest.advanceTimersByTimeAsync(15_001); });
+        expect(result.current.activeWallet?.id).toBe('b');
+        expect(result.current.lightningInitAttempted).toBe(true);
+        expect(result.current.lightningInitError).toBeNull();
+        expect((sdkModule.connect as jest.Mock).mock.calls).toHaveLength(connectionCount);
+    } finally {
+        await act(async () => { teardown.resolve(); await jest.advanceTimersByTimeAsync(1); });
+    }
+    jest.useRealTimers();
+    await waitFor(() => expect(result.current.isLightningInitialized).toBe(true));
+    expect((sdkModule.connect as jest.Mock).mock.calls).toHaveLength(connectionCount + 1);
+});
+
+it('keeps native teardown serialized across provider remounts', async () => {
+    const first = await connected();
+    const teardown = deferred<void>();
+    a.disconnect.mockReturnValue(teardown.promise);
+    const connectionCount = (sdkModule.connect as jest.Mock).mock.calls.length;
+    first.unmount();
+    const second = renderHook(() => useWallet(), { wrapper });
+    try {
+        await waitFor(() => expect(second.result.current.lightningInitAttempted).toBe(true));
+        expect((sdkModule.connect as jest.Mock).mock.calls).toHaveLength(connectionCount);
+    } finally {
+        await act(async () => { teardown.resolve(); });
+    }
+    await waitFor(() => expect(second.result.current.isLightningInitialized).toBe(true));
+    expect((sdkModule.connect as jest.Mock).mock.calls).toHaveLength(connectionCount + 1);
 });
 
 it('coalesces concurrent retry requests into one replacement connection', async () => {

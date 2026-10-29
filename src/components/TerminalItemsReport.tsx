@@ -14,7 +14,8 @@ import {
   readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot, TerminalItemPerformanceRow,
 } from '../services/terminalItemPerformance';
 
-type Props = { walletId: string; network: TerminalNetwork; scope: string; range: TerminalRange; visible: boolean; revision: number; listHeader: React.ReactNode; selection?: { unit: ItemUnit | null; sort: ItemSort }; onSelectionChange?: (value: { unit: ItemUnit | null; sort: ItemSort }) => void; exportSelection?: { period: SalesPeriod; day: Date; customRange?: CustomSalesDateRange }; renderSheetHeader?: (exportButton: React.ReactNode) => React.ReactNode };
+export type PreparedItemReport = { identity: string; reportKey: string; token: string; items: TerminalItemPerformanceRow[]; nextSeq: number | null; totalCount: number; paidWithoutItems: number };
+type Props = { walletId: string; network: TerminalNetwork; scope: string; range: TerminalRange; visible: boolean; revision: number; listHeader: React.ReactNode; selection?: { unit: ItemUnit | null; sort: ItemSort }; onSelectionChange?: (value: { unit: ItemUnit | null; sort: ItemSort }) => void; exportSelection?: { period: SalesPeriod; day: Date; customRange?: CustomSalesDateRange }; renderSheetHeader?: (exportButton: React.ReactNode) => React.ReactNode; prepared?: PreparedItemReport | null; onPreparedConsumed?: () => void };
 type State = {
   identity: string; reportKey: string; items: TerminalItemPerformanceRow[]; nextSeq: number | null;
   totalCount: number; paidWithoutItems: number; loading: boolean; refreshing: boolean; error: boolean; pageLoading: boolean; pageError: boolean;
@@ -22,7 +23,7 @@ type State = {
 const units: { value: ItemUnit | null; title: string }[] = [{ value: null, title: 'All currencies' }, { value: 'USD', title: 'USD' }, { value: 'EUR', title: 'EUR' }, { value: 'CHF', title: 'CHF' }, { value: 'sats', title: 'sats' }];
 const quantityText = (value: bigint) => value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
-export default function TerminalItemsReport({ walletId, network, scope, range, visible, revision, listHeader, exportSelection, renderSheetHeader, selection, onSelectionChange }: Props) {
+export default function TerminalItemsReport({ walletId, network, scope, range, visible, revision, listHeader, exportSelection, renderSheetHeader, selection, onSelectionChange, prepared, onPreparedConsumed }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const insets = useSafeAreaInsets();
@@ -43,6 +44,7 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
   const generation = useRef(0);
   const pageBusy = useRef(false);
   const ownedToken = useRef<string | null>(null);
+  const adoptedIdentity = useRef<string | null>(null);
   const exportKey = `${reportKey}:${exportSelection?.period ?? ''}:${exportSelection?.day.getTime() ?? ''}`;
   const exportContext = useRef({ key: exportKey, visible, epoch: 0 });
   if (exportContext.current.key !== exportKey || exportContext.current.visible !== visible) {
@@ -118,10 +120,18 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
   }, [visible, identity, reportKey, walletId, network, range, sort, unit, removeToken]);
 
   useEffect(() => {
-    if (visible) void load();
-    else removeToken(ownedToken.current);
+    if (!visible) removeToken(ownedToken.current);
+    else if (prepared?.identity === identity && (adoptedIdentity.current !== identity || ownedToken.current !== prepared.token)) {
+      ++generation.current;
+      const replaced = ownedToken.current;
+      ownedToken.current = prepared.token;
+      adoptedIdentity.current = identity;
+      if (replaced && replaced !== prepared.token) removeToken(replaced);
+      setState({ identity, reportKey, items: prepared.items, nextSeq: prepared.nextSeq, totalCount: prepared.totalCount, paidWithoutItems: prepared.paidWithoutItems, loading: false, refreshing: false, error: false, pageLoading: false, pageError: false });
+      onPreparedConsumed?.();
+    } else if (!(stateRef.current.identity === identity && !stateRef.current.loading && !stateRef.current.error && ownedToken.current)) void load();
     return () => { ++generation.current; pageBusy.current = false; };
-  }, [visible, load, removeToken]);
+  }, [visible, load, removeToken, prepared, identity, reportKey, onPreparedConsumed]);
 
   const loadNext = useCallback(async () => {
     const current = stateRef.current;
@@ -142,9 +152,10 @@ export default function TerminalItemsReport({ walletId, network, scope, range, v
     }
   }, [visible, identity]);
 
-  const current = state.identity === identity ? state : state.reportKey === reportKey
+  const preparedState: State | null = prepared?.identity === identity ? { identity, reportKey, items: prepared.items, nextSeq: prepared.nextSeq, totalCount: prepared.totalCount, paidWithoutItems: prepared.paidWithoutItems, loading: false, refreshing: false, error: false, pageLoading: false, pageError: false } : null;
+  const current = preparedState ?? (state.identity === identity ? state : state.reportKey === reportKey
     ? { ...state, identity, refreshing: true, error: false, pageLoading: false, pageError: false }
-    : { identity, reportKey, items: [], nextSeq: null, totalCount: 0, paidWithoutItems: 0, loading: true, refreshing: false, error: false, pageLoading: false, pageError: false };
+    : { identity, reportKey, items: [], nextSeq: null, totalCount: 0, paidWithoutItems: 0, loading: true, refreshing: false, error: false, pageLoading: false, pageError: false });
   const selectedUnit = units.find(option => option.value === unit)!.title;
   const currencyChoices = <View style={styles.currencyOptions}>{(choosingSalesCurrency ? units.filter(option => option.value !== null) : units).map(option => <TouchableOpacity key={option.title} accessibilityRole="button" accessibilityLabel={`Item currency option ${option.title}`} accessibilityState={{ selected: unit === option.value, disabled: !visible }} disabled={!visible} onPress={() => { select({ unit: option.value, sort: option.value === null ? 'quantity' : choosingSalesCurrency ? 'gross' : sort }); setCurrencyChooser(null); }} style={[styles.currencyOption, unit === option.value && styles.currencySelected]}><Text style={[styles.optionText, unit === option.value && styles.selectedText]}>{option.title}</Text></TouchableOpacity>)}</View>;
   const controls = <>

@@ -124,6 +124,10 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const [state, setState] = useState<LoadState>({ identity: loadIdentity, sales: [], nextCursor: null, summary: null, refundedSats: null, loading: true, refreshing: false, error: false, pageLoading: false, pageError: false });
   const stateRef = useRef(state);
   stateRef.current = state;
+  const periodCache = useRef(new Map<string, LoadState>());
+  const pendingPeriodGeneration = useRef(0);
+  const [pendingPeriod, setPendingPeriod] = useState<SalesPeriod | null>(null);
+  const [periodError, setPeriodError] = useState(false);
   const loadGeneration = useRef(0);
   const pageBusy = useRef(false);
   const refreshInFlight = useRef(0);
@@ -175,7 +179,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         for (const sale of page.items) if (!ids.has(sale.request.id)) { ids.add(sale.request.id); sales.push(sale); }
         nextCursor = page.nextCursor;
       }
-      setState({ identity, sales, nextCursor, summary, refundedSats, loading: false, refreshing: false, error: false, pageLoading: false, pageError: false });
+      const loaded = { identity, sales, nextCursor, summary, refundedSats, loading: false, refreshing: false, error: false, pageLoading: false, pageError: false };
+      periodCache.current.delete(identity);
+      periodCache.current.set(identity, loaded);
+      if (periodCache.current.size > 6) periodCache.current.delete(periodCache.current.keys().next().value!);
+      setState(loaded);
     } catch {
       if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
       setState(previous => !showLoading && previous.identity === identity && previous.summary !== null
@@ -210,23 +218,23 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; ++checkEpoch.current; };
+    return () => { mounted.current = false; ++checkEpoch.current; ++pendingPeriodGeneration.current; };
   }, []);
 
   useEffect(() => {
     if (detailSale) return;
     // Preloaded sales stay current through local storage notifications without
     // starting payment checks or visible refresh indicators.
-    void refresh();
+    if (stateRef.current.identity !== loadIdentity || stateRef.current.loading || !stateRef.current.summary) void refresh();
     const unsubscribe = subscribeTerminalSales((changedWallet, changedNetwork) => {
-      if (changedWallet === walletId && changedNetwork === network) void refresh(false);
+      if (changedWallet === walletId && changedNetwork === network) { periodCache.current.clear(); ++pendingPeriodGeneration.current; setPendingPeriod(null); void refresh(false); }
     });
     return () => { ++loadGeneration.current; pageBusy.current = false; refreshInFlight.current = 0; unsubscribe(); };
   }, [refresh, !!detailSale]);
 
   useEffect(() => { ++checkEpoch.current; setChecking(false); setCheckError(''); checkBusy.current = false; setSharingReceipt(false); }, [scope, selected?.id, visible]);
   useEffect(() => { setRefundOpen(false); setReceiptError(''); }, [scope, selected?.id]);
-  useEffect(() => { setSelected(detailSale?.request.walletId === walletId && detailSale.request.network === network ? { scope, id: detailSale.request.id } : null); setPeriodState({ scope, value: 'today' }); setCustomRangeState({ scope, value: null }); setCustomEditor(null); }, [scope, detailSale?.request.id]);
+  useEffect(() => { ++pendingPeriodGeneration.current; periodCache.current.clear(); setPendingPeriod(null); setPeriodError(false); setSelected(detailSale?.request.walletId === walletId && detailSale.request.network === network ? { scope, id: detailSale.request.id } : null); setPeriodState({ scope, value: 'today' }); setCustomRangeState({ scope, value: null }); setCustomEditor(null); }, [scope, detailSale?.request.id]);
   useEffect(() => { setExportError(''); setExporting(false); }, [exportIdentity]);
 
   const refreshDetail = useCallback(async () => {
@@ -269,6 +277,9 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     void refreshRefunds();
     const unsubscribe = subscribeTerminalRefunds((changedWallet, changedNetwork) => {
       if (changedWallet === walletId && changedNetwork === network) {
+        periodCache.current.clear();
+        ++pendingPeriodGeneration.current;
+        setPendingPeriod(null);
         void refreshRefunds(false);
         if (!detailSale) void refresh(false);
       }
@@ -370,6 +381,53 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   const sectionTitle = period === 'today' ? 'TODAY’S ACTIVITY' : period === 'week' ? 'LAST 7 DAYS’ ACTIVITY' : period === 'month' ? 'THIS MONTH’S ACTIVITY' : period === 'custom' ? 'CUSTOM ACTIVITY' : 'ALL ACTIVITY';
 
+  const selectLoadedPeriod = (nextPeriod: SalesPeriod, nextCustomRange: CustomSalesDateRange | null = customRange) => {
+    const generation = ++pendingPeriodGeneration.current;
+    ++exportRevision.current.value;
+    exportBusy.current = false;
+    setExporting(false);
+    setExportError('');
+    const nextRange = terminalSalesPeriodBounds(nextPeriod, periodDay, nextCustomRange ?? undefined);
+    const nextRangeKey = nextRange ? `${nextRange.start}:${nextRange.end}` : 'all';
+    const identity = `${scope}:${nextPeriod}:${nextRangeKey}`;
+    setPeriodError(false);
+    if (identity === loadIdentity) { setPendingPeriod(null); return; }
+    const prior = stateRef.current;
+    if (prior.identity === loadIdentity && prior.summary && !prior.loading && !prior.error && !refreshInFlight.current) {
+      periodCache.current.delete(loadIdentity);
+      periodCache.current.set(loadIdentity, { ...prior, pageLoading: false, pageError: false });
+      if (periodCache.current.size > 6) periodCache.current.delete(periodCache.current.keys().next().value!);
+    }
+    const commit = (loaded: LoadState) => {
+      if (!mounted.current || generation !== pendingPeriodGeneration.current || scope !== currentScope.current) return;
+      ++loadGeneration.current;
+      refreshInFlight.current = 0;
+      pageBusy.current = false;
+      currentLoadIdentity.current = identity;
+      setState(loaded);
+      setCustomRangeState({ scope, value: nextCustomRange });
+      setPeriodState({ scope, value: nextPeriod });
+      setPendingPeriod(null);
+    };
+    const cached = periodCache.current.get(identity);
+    if (cached) { commit(cached); return; }
+    setPendingPeriod(nextPeriod);
+    void Promise.all([
+      listTerminalSalesPage(walletId, network, { range: nextRange, limit: 50 }),
+      getTerminalSalesSummary(walletId, network, nextRange),
+      getTerminalRefundTotal(walletId, network, nextRange),
+    ]).then(([firstPage, summary, refundedSats]) => {
+      if (!mounted.current || generation !== pendingPeriodGeneration.current || scope !== currentScope.current) return;
+      const loaded: LoadState = { identity, sales: firstPage.items, nextCursor: firstPage.nextCursor, summary, refundedSats, loading: false, refreshing: false, error: false, pageLoading: false, pageError: false };
+      periodCache.current.delete(identity);
+      periodCache.current.set(identity, loaded);
+      if (periodCache.current.size > 6) periodCache.current.delete(periodCache.current.keys().next().value!);
+      commit(loaded);
+    }).catch(() => {
+      if (mounted.current && generation === pendingPeriodGeneration.current && scope === currentScope.current) { setPendingPeriod(null); setPeriodError(true); }
+    });
+  };
+
   const openCustomEditor = () => {
     ++checkEpoch.current;
     checkBusy.current = false;
@@ -380,19 +438,19 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const applyCustomRange = () => {
     if (!editingCustom || editingCustom.draft.startDate > editingCustom.draft.endDate) return;
     const applied = { ...editingCustom.draft };
-    setCustomRangeState({ scope, value: applied });
-    setPeriodState({ scope, value: 'custom' });
     setCustomEditor(null);
+    selectLoadedPeriod('custom', applied);
   };
 
   const header = detailSale ? null : <>
-    <TerminalSalesPeriodControls period={period} customRange={customRange} draft={editingCustom?.draft ?? null} day={day} disabled={!visible || !headerEnabled}
+    <TerminalSalesPeriodControls period={period} pendingPeriod={pendingPeriod} customRange={customRange} draft={editingCustom?.draft ?? null} day={day} disabled={!visible || !headerEnabled}
       detailCaption={detail ? formatLongDate(saleTime(detail)) : undefined}
       onSelect={value => {
         if (value === 'custom') { openCustomEditor(); return; }
-        ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); setPeriodState({ scope, value });
+        ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); selectLoadedPeriod(value);
       }} onDraftChange={draft => setCustomEditor({ scope, draft })} onApply={applyCustomRange} onCancel={() => setCustomEditor(null)} />
     {!detail ? <>
+      {periodError ? <Text accessibilityRole="alert" style={styles.exportError}>Couldn’t open that period. Try again.</Text> : null}
       {exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}
       <View style={styles.summary} accessibilityLabel={summarySkeleton ? loading ? 'Loading sales summary' : 'Sales summary unavailable' : 'Sales summary'}>
         <Text style={styles.summaryLabel}>PAID SALES</Text>
@@ -467,7 +525,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       contentInsetAdjustmentBehavior="never"
       automaticallyAdjustContentInsets={false}
       contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 28 }]}
-      refreshControl={<RefreshControl refreshing={state.identity === loadIdentity && state.refreshing} onRefresh={() => { void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={SHEET_HEADER_HEIGHT} />}
+      refreshControl={<RefreshControl refreshing={state.identity === loadIdentity && state.refreshing} onRefresh={() => { ++pendingPeriodGeneration.current; setPendingPeriod(null); periodCache.current.clear(); void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={SHEET_HEADER_HEIGHT} />}
       onEndReached={() => { void loadNextPage(); }}
       onEndReachedThreshold={0.35}
       renderItem={({ item }) => {

@@ -59,6 +59,13 @@ CREATE TABLE IF NOT EXISTS terminal_catalog (
   payload TEXT NOT NULL,
   PRIMARY KEY(wallet_id, network)
 );
+CREATE TABLE IF NOT EXISTS terminal_preferences (
+  wallet_id TEXT NOT NULL,
+  network TEXT NOT NULL CHECK(network IN ('mainnet','testnet')),
+  kind TEXT NOT NULL CHECK(kind IN ('receipt','templates','reports')),
+  payload TEXT,
+  PRIMARY KEY(wallet_id, network, kind)
+);
 CREATE UNIQUE INDEX IF NOT EXISTS terminal_refunds_one_unresolved
   ON terminal_refunds(wallet_id, network, sale_id)
   WHERE status IN ('unknown','pending');
@@ -199,6 +206,7 @@ export function resetTerminalDatabaseForTests(): Promise<void> {
     await transaction.execAsync(`DELETE FROM terminal_refunds;
       DELETE FROM terminal_sales;
       DELETE FROM terminal_catalog;
+      DELETE FROM terminal_preferences;
       DELETE FROM terminal_export_rows;
       DELETE FROM terminal_item_report_rows;
       DELETE FROM sqlite_sequence WHERE name='terminal_export_rows';`);

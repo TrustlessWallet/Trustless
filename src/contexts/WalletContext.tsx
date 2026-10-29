@@ -75,6 +75,9 @@ const traceLightningStep = async <T,>(
 ): Promise<T> => operation();
 
 type LightningSdk = Awaited<ReturnType<typeof breezSdk.connect>>;
+// The native SDK is process-wide. Keep its connect/disconnect queue alive across
+// provider remounts so a late native teardown cannot overlap a new connection.
+const lightningLifecycle = new LightningLifecycle<LightningSdk>();
 const HISTORY_PAGE_SIZE = 50;
 
 const reconcileSalesPayments = (walletId: string, payments: breezSdk.Payment[]) => {
@@ -281,7 +284,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const readyRef = useRef(false);
     const sdkWalletIdRef = useRef<string | null>(null);
     const activeWalletIdRef = useRef<string | null>(null);
-    const lifecycleRef = useRef(new LightningLifecycle<LightningSdk>());
+    const lifecycleRef = useRef(lightningLifecycle);
     const flightsRef = useRef(new SingleFlight());
     const historyLimitRef = useRef(HISTORY_PAGE_SIZE);
     const historyRevisionRef = useRef(0);
@@ -576,7 +579,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             void withDeadline(sdk.removeEventListener(listenerId), 'Removing Lightning listener', 5000)
                 .catch(() => {});
         }
-        await traceLightningStep(lightningTraceContext(), 'lifecycle.dispose', () => withDeadline(lifecycleRef.current.dispose(sdk || undefined), 'Disconnecting Lightning', 15000));
+        // A null local handle means a previous connect has not been handed to
+        // this provider. Its replace() call owns any late result and cleanup.
+        if (sdk) await traceLightningStep(lightningTraceContext(), 'lifecycle.dispose', () => withDeadline(lifecycleRef.current.dispose(sdk), 'Disconnecting Lightning', 15000));
     };
 
     const initLightningNode = (mnemonic: string, walletId: string, initVersion: number, forceRecovery = false): Promise<void> => {
@@ -658,11 +663,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 // Invalidate a late connect before allowing retry; lifecycle keeps
                 // teardown serialized even if the native call is still pending.
                 ++lightningInitVersionRef.current;
-                sdkRef.current = null;
-                sdkWalletIdRef.current = null;
                 setIsLightningInitialized(false);
                 setLightningInitError(error instanceof Error ? error.message : formatLightningInitError(error));
-                void lifecycleRef.current.dispose().catch(e => console.warn('Lightning cleanup failed:', e));
+                void disposeActiveLightningNode().catch(() => {});
                 throw error;
             }
         })();
@@ -1388,10 +1391,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setLightningAddress('');
         setDefaultLightningInvoice('');
         // Loading the on-chain wallet must not wait for native Lightning teardown.
-        const teardown = disposeActiveLightningNode();
-        void teardown.catch(error => {
-            if (initVersion === lightningInitVersionRef.current) setLightningInitError(String(error?.message || error));
-        });
+        // The lifecycle queue retains native teardown even if this UI wait
+        // times out. A rejected wait must not skip the next init attempt:
+        // replace() retries a failed disconnect before calling connect().
+        void disposeActiveLightningNode().catch(() => {});
         activeWalletIdRef.current = null;
         setActiveWallet(null);
         let wallet = await buildActiveWallet(walletId);
@@ -1404,6 +1407,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const is_watch_only = wallet.type === 'watch-only';
             const script_type = wallet.scriptType || 'p2wpkh';
             let derived_new = false;
+
+            // The local wallet and credentials are ready. Restore Lightning
+            // alongside address discovery, which may take two network waits on
+            // a first import. The wallet UI still receives the completed
+            // address set below.
+            activeWalletIdRef.current = walletId;
+            if (!is_watch_only) {
+                scheduleDeferred(() => {
+                    void (async () => {
+                        if (initVersion !== lightningInitVersionRef.current) return;
+                        const credentials = await traceLightningStep({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'credentials.lookup', () => readWalletCredentials(walletId), value => ({ found: !!value }));
+                        if (!credentials) throw new Error('Mnemonic not found for this wallet.');
+                        await initLightningNode(credentials.password, walletId, initVersion);
+                    })().catch(error => {
+                        if (activeWalletIdRef.current === walletId && (initVersion === lightningInitVersionRef.current || !sdkRef.current)) setLightningInitError(String(error?.message || error));
+                    });
+                }, 0);
+            }
 
             const cacheMap = new Map();
             wallet.derivedAddressInfoCache.forEach(c => cacheMap.set(c.address, c.tx_count));
@@ -1537,34 +1558,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
 
             if (wallet) {
-                if (!current() || initVersion !== lightningInitVersionRef.current) return false;
+                if (!current()) return false;
                 lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'wallet.discovery.finished', { elapsedMs: Date.now() - loadStarted });
-                activeWalletIdRef.current = walletId;
                 setActiveWallet(wallet);
-                if (!is_watch_only) {
-                    scheduleDeferred(() => {
-                        void (async () => {
-                            lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'init.waitForTeardown');
-                            await teardown;
-                            lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'init.teardownReady');
-                            if (initVersion !== lightningInitVersionRef.current) return;
-                            const credentials = await traceLightningStep({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'credentials.lookup', () => readWalletCredentials(walletId), value => ({ found: !!value }));
-                            if (!credentials) throw new Error('Mnemonic not found for this wallet.');
-                            await initLightningNode(credentials.password, walletId, initVersion);
-                        })().catch(error => {
-                            if (activeWalletIdRef.current === walletId && (initVersion === lightningInitVersionRef.current || !sdkRef.current)) setLightningInitError(String(error?.message || error));
-                        });
-                    }, 0);
-                }
                 return true;
+            }
+            if (current()) {
+                ++lightningInitVersionRef.current;
+                activeWalletIdRef.current = null;
+                void disposeActiveLightningNode().catch(() => {});
             }
             return false;
         } catch (e) {
             console.warn(`Failed to load wallet ${wallet?.name}:`, e);
-            if (initVersion === lightningInitVersionRef.current) {
+            if (current()) {
                 ++lightningInitVersionRef.current;
                 activeWalletIdRef.current = null;
                 setActiveWallet(null);
+                void disposeActiveLightningNode().catch(() => {});
             }
             return false;
         }
@@ -1825,7 +1836,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 ++walletGenerationRef.current;
                 ++lightningInitVersionRef.current;
                 resetLightningState();
-                await disposeActiveLightningNode();
+                void disposeActiveLightningNode().catch(() => {});
                 setIsLightningInitialized(false);
                 setLightningInitAttempted(false);
                 setLightningInitError(null);
@@ -1853,7 +1864,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         ++walletGenerationRef.current;
         ++lightningInitVersionRef.current;
         resetLightningState();
-        await disposeActiveLightningNode();
+        void disposeActiveLightningNode().catch(() => {});
         const d = await dbGetWallets(NETWORK_NAME);
         for (const w of d) {
             await removeTerminalRefunds(w.id, NETWORK_NAME);

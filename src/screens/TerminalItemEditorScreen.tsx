@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyledInput } from '../components/StyledInput';
 import { Text } from '../components/StyledText';
@@ -27,7 +28,7 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
   const activeWallet = useActiveWallet();
   const { cashierState } = useWalletMode();
   const focused = useIsFocused();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<{ ItemEditor: undefined }>>();
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const insets = useSafeAreaInsets();
@@ -37,8 +38,15 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
   const [unit, setUnit] = useState<TerminalUnit>(initialItem?.unit ?? preferredUnit);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [nameFocusReady, setNameFocusReady] = useState(false);
   const busyRef = useRef(false);
   useLayoutEffect(() => { navigation.setOptions({ gestureEnabled: !busy }); }, [navigation, busy]);
+  useEffect(() => {
+    if (initialItem) return;
+    return navigation.addListener('transitionEnd', event => {
+      if (!event.data.closing) setNameFocusReady(true);
+    });
+  }, [initialItem, navigation]);
   const ownerRef = useRef(false);
   const scopeRef = useRef(`${network}:${walletId}`);
   scopeRef.current = `${network}:${walletId}`;
@@ -69,7 +77,7 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
     <TerminalSheetHeader title={initialItem ? 'Edit item' : 'Add item'} closeLabel="Close item editor" disabled={busy} onClose={() => { if (!busyRef.current) onClose(); }} />
     {ownerAllowed ? <ScrollView ref={scrollViewRef} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom }]}>
       <Text style={[styles.fieldLabel, { color: theme.colors.muted }]}>Name</Text>
-      <StyledInput accessibilityLabel="Item name" value={name} onChangeText={setName} maxLength={60} onFocus={handleInputFocus} autoCapitalize="sentences" />
+      <StyledInput key={nameFocusReady ? 'ready' : 'opening'} accessibilityLabel="Item name" value={name} onChangeText={setName} maxLength={60} autoFocus={!initialItem && nameFocusReady} autoCapitalize="sentences" />
       <Text style={[styles.fieldLabel, { color: theme.colors.muted }]}>Price</Text>
       <StyledInput accessibilityLabel="Item price" value={price} onChangeText={setPrice} keyboardType="decimal-pad" onFocus={handleInputFocus} />
       <View style={styles.units}>{units.map(choice => <TouchableOpacity key={choice} accessibilityRole="button" accessibilityLabel={`Price in ${choice}`} accessibilityState={{ selected: unit === choice }} onPress={() => { if (choice !== unit) { setUnit(choice); setPrice(''); } }} style={[styles.unit, { borderColor: unit === choice ? theme.colors.bitcoin : theme.colors.border }]}><Text style={{ color: theme.colors.primary }}>{choice}</Text></TouchableOpacity>)}</View>

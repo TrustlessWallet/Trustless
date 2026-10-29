@@ -3,13 +3,20 @@ import {
   clearTerminalReportPresets, listTerminalReportPresets, removeTerminalReportPreset, reportPresetKey, saveTerminalReportPreset,
   TERMINAL_REPORT_PRESETS_KEY, TerminalReportPresetConfig,
 } from '../../services/terminalReportPresets';
+import { getTerminalDatabase } from '../../services/terminalDatabase';
+import { failNextTerminalSqliteWrite, resetTerminalSqlite } from '../helpers/terminalSqlite';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() } }));
 const storage = new Map<string, string>();
 const key = `${TERMINAL_REPORT_PRESETS_KEY}:mainnet:wallet-a`;
 const itemConfig: TerminalReportPresetConfig = { period: 'week', tab: 'items', unit: 'USD', sort: 'gross' };
 
-beforeEach(() => {
+async function stored(wallet = 'wallet-a', network = 'mainnet') {
+  return (await (await getTerminalDatabase()).getFirstAsync<{ payload: string | null }>(
+    "SELECT payload FROM terminal_preferences WHERE wallet_id=? AND network=? AND kind='reports'", [wallet, network]))?.payload;
+}
+beforeEach(async () => {
+  await resetTerminalSqlite();
   storage.clear(); jest.clearAllMocks();
   (AsyncStorage.getItem as jest.Mock).mockImplementation(async name => storage.get(name) ?? null);
   (AsyncStorage.setItem as jest.Mock).mockImplementation(async (name, value) => { storage.set(name, value); });
@@ -22,6 +29,9 @@ it('clears the selected report scope and rejects queued writes after cleanup beg
   const testnetKey = `${TERMINAL_REPORT_PRESETS_KEY}:testnet:${wallet}`;
   await saveTerminalReportPreset(wallet, 'mainnet', itemConfig, () => true);
   await saveTerminalReportPreset(wallet, 'testnet', itemConfig, () => true);
+  storage.set(mainnetKey, (await stored(wallet))!);
+  await (await getTerminalDatabase()).runAsync(
+    "DELETE FROM terminal_preferences WHERE wallet_id=? AND network='mainnet' AND kind='reports'", [wallet]);
   let release!: () => void;
   let started!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -33,8 +43,8 @@ it('clears the selected report scope and rejects queued writes after cleanup beg
   release();
   await expect(save).rejects.toThrow('removed');
   await cleanup;
-  expect(storage.has(mainnetKey)).toBe(false);
-  expect(storage.has(testnetKey)).toBe(true);
+  expect(await stored(wallet, 'mainnet')).toBeNull();
+  expect(await stored(wallet, 'testnet')).not.toBeNull();
   expect(await listTerminalReportPresets(wallet, 'mainnet')).toEqual([]);
   await expect(removeTerminalReportPreset(wallet, 'mainnet', itemConfig, () => true)).rejects.toThrow('removed');
 });
@@ -47,7 +57,7 @@ it('stores versioned wallet/network scopes and canonicalizes equivalent overview
   expect(await listTerminalReportPresets('wallet-b', 'mainnet')).toEqual([]);
   expect(await listTerminalReportPresets('wallet-a', 'testnet')).toEqual([]);
   expect(first[0]).toEqual({ period: 'today', tab: 'overview', unit: null, sort: 'quantity' });
-  expect(reportPresetKey(first[0])).toBe(JSON.parse(storage.get(key)!).presets[0].key);
+  expect(reportPresetKey(first[0])).toBe(JSON.parse((await stored())!).presets[0].key);
 });
 
 it('copies mutable custom input before queued work and rejects reversed, future, or gross-All configs', async () => {
@@ -66,12 +76,14 @@ it('fails closed on malformed, oversized, wrong-scope, duplicate, and invalid st
     JSON.stringify({ version: 1, walletId: 'wallet-b', network: 'mainnet', presets: [] }),
     JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', presets: [{ key: 'wrong', config: itemConfig }] }),
   ]) {
+    await resetTerminalSqlite();
     storage.set(key, raw);
     await expect(listTerminalReportPresets('wallet-a', 'mainnet')).rejects.toThrow();
     await expect(saveTerminalReportPreset('wallet-a', 'mainnet', itemConfig, () => true)).rejects.toThrow();
     expect(storage.get(key)).toBe(raw);
   }
   const preset = { key: reportPresetKey(itemConfig), config: itemConfig };
+  await resetTerminalSqlite();
   storage.set(key, JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', presets: [preset, preset] }));
   await expect(listTerminalReportPresets('wallet-a', 'mainnet')).rejects.toThrow('invalid');
 });
@@ -82,7 +94,7 @@ it('serializes concurrent equivalent saves, enforces ten presets, and recovers a
   for (let index = 0; index < 9; index++) await saveTerminalReportPreset('wallet-a', 'mainnet', { period: 'custom', customRange: { startDate: `2020-01-${String(index + 1).padStart(2, '0')}`, endDate: `2020-01-${String(index + 1).padStart(2, '0')}` }, tab: 'items', unit: 'sats', sort: 'quantity' }, () => true);
   await expect(saveTerminalReportPreset('wallet-a', 'mainnet', { ...itemConfig, unit: 'EUR' }, () => true)).rejects.toThrow('limit');
   await removeTerminalReportPreset('wallet-a', 'mainnet', itemConfig, () => true);
-  (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk failed'));
+  failNextTerminalSqliteWrite(new Error('disk failed'));
   await expect(saveTerminalReportPreset('wallet-a', 'mainnet', { ...itemConfig, unit: 'EUR' }, () => true)).rejects.toThrow('disk failed');
   await saveTerminalReportPreset('wallet-a', 'mainnet', { ...itemConfig, unit: 'EUR' }, () => true);
   expect(await listTerminalReportPresets('wallet-a', 'mainnet')).toHaveLength(10);

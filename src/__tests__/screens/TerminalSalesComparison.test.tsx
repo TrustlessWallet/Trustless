@@ -77,6 +77,7 @@ it('hides comparison for All without starting a previous-period request', async 
   await waitFor(() => expect(view.getByLabelText('Period comparison')).toBeTruthy());
   (getTerminalSalesComparison as jest.Mock).mockClear();
   fireEvent.press(view.getByLabelText('All sales'));
+  await waitFor(() => expect(view.getByLabelText('All sales').props.accessibilityState.selected).toBe(true));
   await waitFor(() => expect(view.queryByLabelText('Period comparison')).toBeNull());
   expect(getTerminalSalesComparison).not.toHaveBeenCalled();
 });

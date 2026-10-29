@@ -16,6 +16,7 @@ type Props = {
   previousRange: Range;
   currentSummary: TerminalSalesSummary;
   currentRefunds: bigint;
+  prepared?: Awaited<ReturnType<typeof getTerminalSalesComparison>>;
 };
 
 type State =
@@ -24,7 +25,7 @@ type State =
 
 const formatDate = (timestamp: number) => new Date(timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 
-export default function TerminalPeriodComparison({ walletId, network, scope, periodDay, currentRange, previousRange, currentSummary, currentRefunds }: Props) {
+export default function TerminalPeriodComparison({ walletId, network, scope, periodDay, currentRange, previousRange, currentSummary, currentRefunds, prepared }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const generation = useRef(0);
@@ -51,10 +52,10 @@ export default function TerminalPeriodComparison({ walletId, network, scope, per
     }
   }, [identity, walletId, network, previousRange, currentSummary, currentRefunds]);
 
-  useEffect(() => { void load(); return () => { ++generation.current; }; }, [load]);
+  useEffect(() => { if (prepared) setState({ identity, status: 'ready', result: prepared }); else void load(); return () => { ++generation.current; }; }, [load, prepared, identity]);
 
-  const result = state.identity === identity && state.status === 'ready' ? state.result : null;
-  const loading = state.identity !== identity || state.status === 'loading';
+  const result = prepared ?? (state.identity === identity && state.status === 'ready' ? state.result : null);
+  const loading = !prepared && (state.identity !== identity || state.status === 'loading');
   const rows = result ? terminalComparisonRows(currentSummary, currentRefunds, result.summary, result.refundedSats) : [];
   const nextDay = new Date(periodDay.getFullYear(), periodDay.getMonth(), periodDay.getDate() + 1).getTime();
   const inProgress = currentRange.end === nextDay;
@@ -64,7 +65,7 @@ export default function TerminalPeriodComparison({ walletId, network, scope, per
       <Text style={styles.heading}>Compared with {formatDate(previousRange.start)}{formatDate(previousRange.start) !== formatDate(previousRange.end - 1) ? ` – ${formatDate(previousRange.end - 1)}` : ''}</Text>
       {loading ? <ActivityIndicator accessibilityLabel="Loading period comparison" size="small" color={theme.colors.bitcoin} /> : null}
     </View>
-    {state.identity === identity && state.status === 'error' ? <View style={styles.errorRow}>
+    {!prepared && state.identity === identity && state.status === 'error' ? <View style={styles.errorRow}>
       <Text style={styles.errorText}>Comparison unavailable</Text>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry period comparison" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity>
     </View> : null}

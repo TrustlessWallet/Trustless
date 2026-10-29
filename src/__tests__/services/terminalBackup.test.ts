@@ -6,6 +6,7 @@ import { getTerminalSale, listTerminalSalesPage, reconcileTerminalSales, updateT
 import { listTerminalRefundsForSale, reserveTerminalRefund, updateTerminalRefund } from '../../services/terminalRefunds';
 import { createTerminalBackup, disposeTerminalBackup, inspectTerminalBackup, restoreTerminalBackup } from '../../services/terminalBackup';
 
+jest.mock('uuid', () => ({ v4: () => require('node:crypto').randomUUID() }));
 jest.mock('crypto', () => require('node:crypto'));
 jest.mock('expo-file-system', () => {
   const { Buffer } = require('buffer');
@@ -32,7 +33,7 @@ const target = { ...scope, walletId: 'restored' };
 const request = (id = 'one') => ({ id, walletId: scope.walletId, network: scope.network, invoice: `lnbc${id}abc`, amountSats: 1000, createdAt: 1000, expiresAt: 2000 });
 const check = () => true;
 const quote = { id: 'refund', invoice: 'lnbcrefundabc', amountSats: 100, feeSats: 1, quoteExpiresAt: Date.now() + 60_000 };
-beforeEach(async () => { await resetTerminalSqlite(); files.clear(); });
+beforeEach(async () => { await resetTerminalSqlite(); await (await getTerminalDatabase()).execAsync('DROP TRIGGER IF EXISTS reject_restored_reports'); files.clear(); });
 async function backupWithRefund() {
   const sale = await updateTerminalSalePayment(request(), { status: 'received', paymentId: 'received' }, 3000);
   const refund = await reserveTerminalRefund(sale, quote);
@@ -161,4 +162,116 @@ it('exports only journal fields and interoperates with standard PBKDF2 and AES-G
   expect(plaintext).not.toContain('privateKey');
   expect(plaintext).not.toContain(scope.xpub);
   key.fill(0);
+});
+
+const branding = { name: 'Corner shop', contact: 'hello@example.com', footer: 'Thank you' };
+async function savePreferences() {
+  const { saveTerminalReceiptBranding } = require('../../services/terminalReceiptBranding');
+  const { createTerminalReceiptTemplate } = require('../../services/terminalReceiptTemplates');
+  const { saveTerminalReportPreset } = require('../../services/terminalReportPresets');
+  await saveTerminalReceiptBranding(scope.walletId, scope.network, branding, check);
+  await createTerminalReceiptTemplate(scope.walletId, scope.network, 'Shop', branding, check);
+  await saveTerminalReportPreset(scope.walletId, scope.network, { period: 'week', tab: 'items', unit: 'CHF', sort: 'gross' }, check);
+}
+async function readPreferencesFor(wallet = target) {
+  const { loadTerminalReceiptBranding } = require('../../services/terminalReceiptBranding');
+  const { loadTerminalReceiptTemplates } = require('../../services/terminalReceiptTemplates');
+  const { listTerminalReportPresets } = require('../../services/terminalReportPresets');
+  return { branding: await loadTerminalReceiptBranding(wallet.walletId, wallet.network), templates: await loadTerminalReceiptTemplates(wallet.walletId, wallet.network), presets: await listTerminalReportPresets(wallet.walletId, wallet.network) };
+}
+function rewriteBackup(uri: string, transform: (records: any[]) => any[], legacy = false) {
+  const crypto = require('node:crypto');
+  const bytes = files.get(uri)!;
+  const boundary = bytes.indexOf(10), oldHeader = bytes.subarray(0, boundary + 1), metadata = JSON.parse(oldHeader.toString('utf8'));
+  const key = crypto.pbkdf2Sync(password, Buffer.from(metadata.salt, 'hex'), 210000, 32, 'sha256');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(metadata.iv, 'hex'));
+  decipher.setAAD(oldHeader); decipher.setAuthTag(bytes.subarray(-16));
+  const records = Buffer.concat([decipher.update(bytes.subarray(boundary + 1, -16)), decipher.final()]).toString('utf8').trim().split('\n').map(line => JSON.parse(line));
+  if (legacy) metadata.format = 'trustless-terminal-records-1';
+  const header = Buffer.from(JSON.stringify(metadata) + '\n');
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, Buffer.from(metadata.iv, 'hex')); cipher.setAAD(header);
+  const plaintext = Buffer.from(transform(records).map(record => JSON.stringify(record)).join('\n') + '\n');
+  files.set(uri, Buffer.concat([header, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()])); key.fill(0);
+}
+it('restores receipt settings, templates and report presets even without sales or items', async () => {
+  await savePreferences();
+  // Reading default settings creates empty storage rows, which must not prevent restore.
+  await readPreferencesFor();
+  const backup = await createTerminalBackup(scope, password, check);
+  const preview = await inspectTerminalBackup(backup.uri, target, password, check);
+  expect(preview).toMatchObject({ preferences: true, templates: 1, reportPresets: 1, sales: 0, items: 0 });
+  await restoreTerminalBackup(preview, target, check);
+  expect(await readPreferencesFor()).toEqual(await readPreferencesFor(scope));
+});
+it('preserves existing settings when restoring an older journal-only backup', async () => {
+  const { saveTerminalReceiptBranding } = require('../../services/terminalReceiptBranding');
+  await saveTerminalReceiptBranding(target.walletId, target.network, branding, check);
+  const backup = await backupWithRefund();
+  rewriteBackup(backup.uri, records => records.filter(record => record.type !== 'preferences'), true);
+  const preview = await inspectTerminalBackup(backup.uri, target, password, check);
+  expect(preview.preferences).toBe(false);
+  await restoreTerminalBackup(preview, target, check);
+  expect((await readPreferencesFor()).branding).toEqual(branding);
+});
+it('never overwrites receipt settings or restores financial records when the target has preferences', async () => {
+  const { saveTerminalReceiptBranding } = require('../../services/terminalReceiptBranding');
+  await saveTerminalReceiptBranding(target.walletId, target.network, branding, check);
+  const backup = await backupWithRefund();
+  await expect(restoreTerminalBackup(await inspectTerminalBackup(backup.uri, target, password, check), target, check)).rejects.toThrow('empty receipt settings');
+  expect(await getTerminalSale(target.walletId, target.network, 'one')).toBeNull();
+  expect((await readPreferencesFor()).branding).toEqual(branding);
+});
+it.each(['missing', 'duplicate', 'late', 'invalid', 'oversized'])('rejects %s preferences without changing live settings', async kind => {
+  await savePreferences();
+  const backup = await backupWithRefund();
+  rewriteBackup(backup.uri, records => {
+    const settings = records.find(record => record.type === 'preferences');
+    if (kind === 'missing') return records.filter(record => record !== settings);
+    if (kind === 'duplicate') return [records[0], settings, ...records.slice(1)];
+    if (kind === 'late') return [records[0], ...records.slice(2, -1), settings, records[records.length - 1]];
+    if (kind === 'invalid') settings.value.templates[0].branding.logo = { mimeType: 'image/png', base64: 'not-an-image', width: 1, height: 1 };
+    if (kind === 'oversized') settings.value.receiptSettings.footer = 'é'.repeat(1024 * 1024);
+    return records;
+  });
+  await expect(inspectTerminalBackup(backup.uri, target, password, check)).rejects.toThrow('damaged');
+  expect((await readPreferencesFor()).branding.name).toBe('');
+  expect(await stagedCount()).toBe(0);
+});
+it('rolls back preferences and journals together if the final preference write fails', async () => {
+  await savePreferences();
+  const backup = await backupWithRefund();
+  const preview = await inspectTerminalBackup(backup.uri, target, password, check);
+  const db = await getTerminalDatabase();
+  await db.execAsync("CREATE TRIGGER reject_restored_reports BEFORE INSERT ON terminal_preferences WHEN NEW.wallet_id='restored' AND NEW.kind='reports' AND NEW.payload IS NOT NULL BEGIN SELECT RAISE(ABORT, 'forced preference failure'); END;");
+  await expect(restoreTerminalBackup(preview, target, check)).rejects.toThrow('forced preference failure');
+  expect(await getTerminalSale(target.walletId, target.network, 'one')).toBeNull();
+  expect((await readPreferencesFor()).branding.name).toBe('');
+});
+
+function largeLogo() {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    let crc = 0xffffffff;
+    for (const byte of body) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
+    const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+    const checksum = Buffer.alloc(4); checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, body, checksum]);
+  };
+  const ihdr = Buffer.from([0, 0, 0, 128, 0, 0, 0, 128, 8, 6, 0, 0, 0]);
+  const pixels = require('node:crypto').randomBytes(128 * 513);
+  for (let y = 0; y < 128; y++) pixels[y * 513] = 0;
+  const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr),
+    chunk('IDAT', require('node:zlib').deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]);
+  return require('../../services/terminalReceiptLogo').receiptLogoFromBytes(png);
+}
+it('streams a validated logo library larger than a financial record through multiple chunks', async () => {
+  const { saveTerminalReceiptBranding } = require('../../services/terminalReceiptBranding');
+  const { createTerminalReceiptTemplate } = require('../../services/terminalReceiptTemplates');
+  const branded = { ...branding, logo: largeLogo() };
+  expect(Buffer.byteLength(JSON.stringify(branded))).toBeGreaterThan(64 * 1024);
+  await saveTerminalReceiptBranding(scope.walletId, scope.network, branded, check);
+  await createTerminalReceiptTemplate(scope.walletId, scope.network, 'Logo', branded, check);
+  const backup = await createTerminalBackup(scope, password, check);
+  await restoreTerminalBackup(await inspectTerminalBackup(backup.uri, target, password, check), target, check);
+  expect(await readPreferencesFor()).toEqual(await readPreferencesFor(scope));
 });

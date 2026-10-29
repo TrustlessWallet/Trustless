@@ -5,6 +5,8 @@ import { DEFAULT_TERMINAL_RECEIPT_BRANDING, TerminalReceiptBranding } from '../.
 import { clearTerminalReceiptTemplates, createTerminalReceiptTemplate, loadTerminalReceiptTemplates, removeTerminalReceiptTemplate,
   replaceTerminalReceiptTemplate, TERMINAL_RECEIPT_TEMPLATES_KEY } from '../../services/terminalReceiptTemplates';
 import { deflateSync } from 'zlib';
+import { getTerminalDatabase } from '../../services/terminalDatabase';
+import { failNextTerminalSqliteWrite, resetTerminalSqlite } from '../helpers/terminalSqlite';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() } }));
 jest.mock('uuid', () => ({ v4: jest.fn() }));
@@ -26,7 +28,12 @@ function logo() {
     chunk('IDAT', deflateSync(Buffer.from([0, 1, 2, 3, 255]))), chunk('IEND', Buffer.alloc(0))]);
   return receiptLogoFromBytes(png);
 }
-beforeEach(() => {
+async function stored(wallet = 'wallet-a', network = 'mainnet') {
+  return (await (await getTerminalDatabase()).getFirstAsync<{ payload: string | null }>(
+    "SELECT payload FROM terminal_preferences WHERE wallet_id=? AND network=? AND kind='templates'", [wallet, network]))?.payload;
+}
+beforeEach(async () => {
+  await resetTerminalSqlite();
   storage.clear(); jest.clearAllMocks();
   (AsyncStorage.getItem as jest.Mock).mockImplementation(async name => storage.get(name) ?? null);
   (AsyncStorage.setItem as jest.Mock).mockImplementation(async (name, value) => { storage.set(name, value); });
@@ -41,6 +48,9 @@ it('clears only the selected template library and blocks pending and future edit
   const testnetKey = `${TERMINAL_RECEIPT_TEMPLATES_KEY}:testnet:${wallet}`;
   const existing = await createTerminalReceiptTemplate(wallet, 'mainnet', 'Cafe', branding, () => true);
   await createTerminalReceiptTemplate(wallet, 'testnet', 'Cafe', branding, () => true);
+  storage.set(mainnetKey, (await stored(wallet))!);
+  await (await getTerminalDatabase()).runAsync(
+    "DELETE FROM terminal_preferences WHERE wallet_id=? AND network='mainnet' AND kind='templates'", [wallet]);
   let release!: () => void;
   let started!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -52,8 +62,8 @@ it('clears only the selected template library and blocks pending and future edit
   release();
   await expect(replace).rejects.toThrow('removed');
   await cleanup;
-  expect(storage.has(mainnetKey)).toBe(false);
-  expect(storage.has(testnetKey)).toBe(true);
+  expect(await stored(wallet, 'mainnet')).toBeNull();
+  expect(await stored(wallet, 'testnet')).not.toBeNull();
   expect(await loadTerminalReceiptTemplates(wallet, 'mainnet')).toEqual([]);
   await expect(createTerminalReceiptTemplate(wallet, 'mainnet', 'New', branding, () => true)).rejects.toThrow('removed');
   await expect(removeTerminalReceiptTemplate(wallet, 'mainnet', existing[0].id, () => true)).rejects.toThrow('removed');
@@ -66,7 +76,7 @@ it('creates scoped templates and leaves active branding untouched', async () => 
   expect(await loadTerminalReceiptTemplates('wallet-a', 'mainnet')).toEqual(list);
   expect(await loadTerminalReceiptTemplates('wallet-b', 'mainnet')).toEqual([]);
   expect(await loadTerminalReceiptTemplates('wallet-a', 'testnet')).toEqual([]);
-  expect(JSON.parse(storage.get(key)!)).toEqual({ version: 1, walletId: 'wallet-a', network: 'mainnet', templates: list });
+  expect(JSON.parse((await stored())!)).toEqual({ version: 1, walletId: 'wallet-a', network: 'mainnet', templates: list });
   expect(storage.has('@terminalReceiptBranding:v1:mainnet:wallet-a')).toBe(false);
 });
 
@@ -97,6 +107,7 @@ it('rejects duplicate names, unsafe names and a sixth template', async () => {
 it('fails closed on malformed storage and does not overwrite it', async () => {
   for (const raw of ['{bad', 'x'.repeat(1_400_001), JSON.stringify({ version: 1, walletId: 'wallet-b', network: 'mainnet', templates: [] }),
     JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', templates: [{ id: id(1), name: 'Cafe', branding: { ...branding, footer: 'bad\nfooter' } }] })]) {
+    await resetTerminalSqlite();
     storage.set(key, raw);
     await expect(loadTerminalReceiptTemplates('wallet-a', 'mainnet')).rejects.toThrow();
     await expect(createTerminalReceiptTemplate('wallet-a', 'mainnet', 'Fresh', branding, () => true)).rejects.toThrow();
@@ -110,7 +121,7 @@ it('rejects queued stale scope and recovers after storage failure', async () => 
   await expect(createTerminalReceiptTemplate('wallet-a', 'mainnet', 'Cafe', branding, () => current)).rejects.toThrow('Current');
   expect(storage.has(key)).toBe(false);
   current = true;
-  (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+  failNextTerminalSqliteWrite(new Error('disk full'));
   await expect(createTerminalReceiptTemplate('wallet-a', 'mainnet', 'Cafe', branding, () => current)).rejects.toThrow('disk full');
   expect(await createTerminalReceiptTemplate('wallet-a', 'mainnet', 'Cafe', branding, () => current)).toHaveLength(1);
 });

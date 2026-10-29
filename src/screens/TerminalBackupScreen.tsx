@@ -90,7 +90,7 @@ export default function TerminalBackupScreen({ walletId, network, onClose }: Pro
     <TerminalSheetHeader title="Backup" closeLabel="Close terminal backup" disabled={busy} onClose={() => { if (!busyRef.current) onClose(); }} />
     {!owner ? <Text style={styles.note}>Owner access is required.</Text> : <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
       <View style={styles.tabs}>{(['create', 'restore'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityLabel={value === 'create' ? 'Create backup tab' : 'Restore backup tab'} accessibilityState={{ selected: mode === value, disabled: busy }} disabled={busy} onPress={() => selectMode(value)} style={[styles.tab, mode === value && styles.selected]}><Text style={[styles.tabText, mode === value && styles.selectedText]}>{value === 'create' ? 'Create' : 'Restore'}</Text></TouchableOpacity>)}</View>
-      <Text style={styles.note}>Sales, refunds and saved items. No wallet recovery material is included.</Text>
+      <Text style={styles.note}>Sales, refunds, items, receipt settings, templates and saved reports. No wallet recovery material is included.</Text>
       {mode === 'create' ? <>
         <View style={styles.field}><Text style={styles.label}>Password</Text><StyledInput accessibilityLabel="Backup password" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} maxLength={1024} editable={!busy} style={styles.input} /></View>
         <View style={styles.field}><Text style={styles.label}>Confirm password</Text><StyledInput accessibilityLabel="Confirm backup password" value={confirmation} onChangeText={setConfirmation} secureTextEntry autoCapitalize="none" autoCorrect={false} maxLength={1024} editable={!busy} style={styles.input} /></View>
@@ -101,8 +101,9 @@ export default function TerminalBackupScreen({ walletId, network, onClose }: Pro
         {fileName ? <Text style={styles.fileName} numberOfLines={2}>{fileName}</Text> : null}
         {preview ? <>
           <View style={styles.summary}><Text style={styles.date}>{new Date(preview.createdAt).toLocaleString()}</Text><Text style={styles.summaryText}>{count(preview.sales, 'sale')} · {count(preview.refunds, 'refund')} · {count(preview.items, 'item')}</Text></View>
-          <Text style={styles.note}>Requires an empty history and item catalog. Refunds from restored sales stay disabled: a backup may omit later refunds.</Text>
-          {action('Restore backup', preview.sales + preview.refunds + preview.items === 0, () => { void restore(); })}
+          {preview.preferences ? <Text style={styles.summaryText}>Receipt settings · {count(preview.templates, 'template')} · {count(preview.reportPresets, 'saved report')}</Text> : <Text style={styles.note}>Older backup: receipt settings, templates and saved reports are not included and will stay unchanged.</Text>}
+          <Text style={styles.note}>Requires an empty history and item catalog{preview.preferences ? ', with no saved receipt settings, templates or reports' : ''}. Refunds from restored sales stay disabled: a backup may omit later refunds.</Text>
+          {action('Restore backup', !preview.preferences && preview.sales + preview.refunds + preview.items === 0, () => { void restore(); })}
         </> : fileName ? <>
           <View style={styles.field}><Text style={styles.label}>Password</Text><StyledInput accessibilityLabel="Restore backup password" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} maxLength={1024} editable={!busy} style={styles.input} /></View>
           {action('Unlock backup', password.length < 12, () => { void unlock(); })}

@@ -9,6 +9,8 @@ import { TerminalSale } from '../../services/terminalSales';
 import { TerminalRefundAttempt } from '../../services/terminalRefunds';
 import { deflateSync } from 'zlib';
 import { normalizeTerminalReceiptLogo, receiptLogoFromBytes } from '../../services/terminalReceiptLogo';
+import { getTerminalDatabase } from '../../services/terminalDatabase';
+import { failNextTerminalSqliteWrite, resetTerminalSqlite } from '../helpers/terminalSqlite';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() } }));
 const storage = new Map<string, string>();
@@ -17,7 +19,12 @@ const branding: TerminalReceiptBranding = { name: 'Trustless Coffee', contact: '
 const sale: TerminalSale = { request: { id: 'sale-1', walletId: 'wallet-a', network: 'mainnet', invoice: 'lnbc', amountSats: 500, createdAt: 100, expiresAt: 200 }, status: 'received', receivedAt: 150, updatedAt: 150, paymentId: 'payment-1' };
 const refund: TerminalRefundAttempt = { id: 'refund-1', walletId: 'wallet-a', network: 'mainnet', saleId: 'sale-1', saleInvoice: 'lnbc', invoice: 'refund', amountSats: 100, feeSats: 1, quoteExpiresAt: 300, createdAt: 200, updatedAt: 250, status: 'complete', paymentId: 'refund-payment' };
 
-beforeEach(() => {
+async function stored(wallet = 'wallet-a', network = 'mainnet') {
+  return (await (await getTerminalDatabase()).getFirstAsync<{ payload: string | null }>(
+    "SELECT payload FROM terminal_preferences WHERE wallet_id=? AND network=? AND kind='receipt'", [wallet, network]))?.payload;
+}
+beforeEach(async () => {
+  await resetTerminalSqlite();
   storage.clear(); jest.restoreAllMocks();
   (AsyncStorage.getItem as jest.Mock).mockReset().mockImplementation(async name => storage.get(name) ?? null);
   (AsyncStorage.setItem as jest.Mock).mockReset().mockImplementation(async (name, value) => { storage.set(name, value); });
@@ -31,6 +38,9 @@ it('clears only the requested branding scope and blocks an in-flight save from r
   const testnetKey = `${TERMINAL_RECEIPT_BRANDING_KEY}:testnet:${wallet}`;
   await saveTerminalReceiptBranding(wallet, 'mainnet', branding, () => true);
   await saveTerminalReceiptBranding(wallet, 'testnet', branding, () => true);
+  storage.set(mainnetKey, (await stored(wallet))!);
+  await (await getTerminalDatabase()).runAsync(
+    "DELETE FROM terminal_preferences WHERE wallet_id=? AND network='mainnet' AND kind='receipt'", [wallet]);
   let release!: () => void;
   let started!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -42,8 +52,8 @@ it('clears only the requested branding scope and blocks an in-flight save from r
   release();
   await expect(save).rejects.toThrow('removed');
   await cleanup;
-  expect(storage.has(mainnetKey)).toBe(false);
-  expect(storage.has(testnetKey)).toBe(true);
+  expect(await stored(wallet, 'mainnet')).toBeNull();
+  expect(await stored(wallet, 'testnet')).not.toBeNull();
   expect(await loadTerminalReceiptBranding(wallet, 'mainnet')).toEqual(DEFAULT_TERMINAL_RECEIPT_BRANDING);
   await expect(saveTerminalReceiptBranding(wallet, 'mainnet', branding, () => true)).rejects.toThrow('removed');
 });
@@ -54,10 +64,10 @@ it('allows cleanup to be retried after storage removal fails', async () => {
   await saveTerminalReceiptBranding(wallet, 'mainnet', branding, () => true);
   (AsyncStorage.removeItem as jest.Mock).mockRejectedValueOnce(new Error('disk unavailable'));
   await expect(clearTerminalReceiptBranding(wallet, 'mainnet')).rejects.toThrow('disk unavailable');
-  expect(storage.has(scopedKey)).toBe(true);
+  expect(await stored(wallet)).not.toBeNull();
   await saveTerminalReceiptBranding(wallet, 'mainnet', { ...branding, footer: 'Updated' }, () => true);
   await clearTerminalReceiptBranding(wallet, 'mainnet');
-  expect(storage.has(scopedKey)).toBe(false);
+  expect(await stored(wallet)).toBeNull();
 });
 
 it('loads empty defaults per scope and saves a trimmed immutable snapshot', async () => {
@@ -68,7 +78,7 @@ it('loads empty defaults per scope and saves a trimmed immutable snapshot', asyn
   expect(await pending).toEqual({ name: 'Trustless Coffee', contact: 'hello@example.com', footer: 'Thanks.' });
   expect(await loadTerminalReceiptBranding('wallet-b', 'mainnet')).toEqual(DEFAULT_TERMINAL_RECEIPT_BRANDING);
   expect(await loadTerminalReceiptBranding('wallet-a', 'testnet')).toEqual(DEFAULT_TERMINAL_RECEIPT_BRANDING);
-  expect(JSON.parse(storage.get(key)!)).toEqual({ version: 1, walletId: 'wallet-a', network: 'mainnet', branding: { name: 'Trustless Coffee', contact: 'hello@example.com', footer: 'Thanks.' } });
+  expect(JSON.parse((await stored())!)).toEqual({ version: 1, walletId: 'wallet-a', network: 'mainnet', branding: { name: 'Trustless Coffee', contact: 'hello@example.com', footer: 'Thanks.' } });
   await saveTerminalReceiptBranding('wallet-a', 'mainnet', DEFAULT_TERMINAL_RECEIPT_BRANDING, () => true);
   expect(await loadTerminalReceiptBranding('wallet-a', 'mainnet')).toEqual(DEFAULT_TERMINAL_RECEIPT_BRANDING);
 });
@@ -109,9 +119,9 @@ it('stores an optional validated logo and keeps legacy profiles unchanged', asyn
   expect(normalizeTerminalReceiptLogo(logo)).toEqual(logo);
   await saveTerminalReceiptBranding('wallet-a', 'mainnet', { ...branding, logo }, () => true);
   expect(await loadTerminalReceiptBranding('wallet-a', 'mainnet')).toEqual({ ...branding, logo });
-  expect(JSON.parse(storage.get(key)!).branding.logo).toEqual(logo);
+  expect(JSON.parse((await stored())!).branding.logo).toEqual(logo);
   await saveTerminalReceiptBranding('wallet-a', 'mainnet', branding, () => true);
-  expect(JSON.parse(storage.get(key)!).branding).toEqual(branding);
+  expect(JSON.parse((await stored())!).branding).toEqual(branding);
 });
 
 it('removes malformed PNG text metadata before it can reach the PDF decoder', async () => {
@@ -143,6 +153,7 @@ it('rejects oversized dimensions, corrupt chunks, decompression bombs, and malfo
 
 it('fails closed on corrupt or wrong-scope storage without overwriting it', async () => {
   for (const raw of ['{bad', 'x'.repeat(1_025), JSON.stringify({ version: 1, walletId: 'wallet-b', network: 'mainnet', branding })]) {
+    await resetTerminalSqlite();
     storage.set(key, raw);
     await expect(loadTerminalReceiptBranding('wallet-a', 'mainnet')).rejects.toThrow();
     await expect(saveTerminalReceiptBranding('wallet-a', 'mainnet', branding, () => true)).rejects.toThrow();
@@ -156,7 +167,7 @@ it('serializes writes, rejects a queued stale scope, and recovers after storage 
   await expect(saveTerminalReceiptBranding('wallet-a', 'mainnet', branding, () => current)).rejects.toThrow('Current');
   expect(storage.has(key)).toBe(false);
   current = true;
-  (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk failed'));
+  failNextTerminalSqliteWrite(new Error('disk failed'));
   await expect(saveTerminalReceiptBranding('wallet-a', 'mainnet', branding, () => current)).rejects.toThrow('disk failed');
   expect(await saveTerminalReceiptBranding('wallet-a', 'mainnet', branding, () => current)).toEqual(branding);
 });
@@ -185,9 +196,11 @@ it('validates payment before loading branding and cancels stale shares before an
   await shareTerminalReceipt(sale, [], () => current);
   expect(Share.share).not.toHaveBeenCalled();
   current = true;
+  await resetTerminalSqlite();
   storage.set(key, JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', branding }));
   await shareTerminalReceipt(sale, [refund], () => current);
   expect(Share.share).toHaveBeenCalledWith({ message: formatTerminalReceipt(sale, [refund], branding) });
+  await resetTerminalSqlite();
   storage.set(key, '{corrupt');
   await expect(shareTerminalReceipt(sale)).rejects.toThrow('unreadable');
   expect(Share.share).toHaveBeenCalledTimes(1);

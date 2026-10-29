@@ -393,7 +393,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       await saveTerminalRequest(next);
       if (!mounted.current || captured !== generation.current || capturedScope !== scopeRef.current) return;
       setRequest(next);
-      basketRef.current = []; basketUnitRef.current = null; setBasketLines([]);
+      basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError('');
       lastCheck.current = 0;
       lastUnfilteredCheck.current = Date.now();
       setValidated(true);
@@ -426,7 +426,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       busy.current = false;
       requestRef.current = null;
       setRequest(null); setStage('entry'); setAmount(''); setUnit(preferredUnit.current); setError('');
-      basketRef.current = []; basketUnitRef.current = null; setBasketLines([]);
+      basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError('');
       setValidated(false);
       return true;
     } catch {
@@ -509,13 +509,6 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     if (!next.length) basketUnitRef.current = null;
     basketRef.current = next; setBasketLines(next); setBasketError(''); setError('');
   };
-  const removeBasketLine = (line: TerminalBasketLine) => {
-    if (busy.current) return;
-    const next = basketRef.current.filter(entry => entry.itemId !== line.itemId);
-    basketRef.current = next; if (!next.length) basketUnitRef.current = null;
-    setBasketLines(next); setBasketError(''); setError('');
-  };
-
   const hasRequest = !!request;
   const basketTotal = basketLines.reduce((total, line) => total + line.total, 0);
   const entryAmount = basketLines.length ? (isFiat(unit) ? formatFiatMinor(basketTotal) : formatTerminalAmount(basketTotal, unit)) : amount;
@@ -629,6 +622,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   </View>;
 
   const sheetOptions = Platform.OS === 'android' ? { presentation: 'formSheet' as const, sheetAllowedDetents: [0.95], sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const } : { presentation: 'modal' as const, animation: 'slide_from_bottom' as const };
+  const quickItemsSheetOptions = { presentation: 'formSheet' as const, sheetAllowedDetents: [0.5], sheetInitialDetentIndex: 0, sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const };
   return <TerminalSheetInteractionContext.Provider value={!transitioning}><TerminalStack.Navigator key={scope} screenListeners={{ transitionStart: () => setTransitioning(true), transitionEnd: () => setTransitioning(false), gestureCancel: () => setTransitioning(false) }} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
@@ -651,8 +645,8 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     <TerminalStack.Screen name="Items" options={sheetOptions}>
       {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onEdit={item => navigation.navigate('ItemEditor', { item })} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
-    <TerminalStack.Screen name="QuickItems" options={sheetOptions}>
-      {({ navigation }) => <TerminalQuickItemsScreen error={basketError} catalog={catalog} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onRemove={removeBasketLine} onClose={() => navigation.goBack()} />}
+    <TerminalStack.Screen name="QuickItems" options={quickItemsSheetOptions}>
+      {({ navigation }) => <TerminalQuickItemsScreen error={basketError} catalog={catalog} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onClose={() => navigation.goBack()} />}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="ItemEditor" options={sheetOptions}>
       {({ navigation, route }) => activeWallet ? <TerminalItemEditorScreen walletId={activeWallet.id} network={network} preferredUnit={unit} initialItem={route.params?.item} onClose={() => navigation.goBack()} /> : null}
