@@ -12,7 +12,7 @@ import TerminalQuickItemsScreen from '../../screens/TerminalQuickItemsScreen';
 import { GlassView } from '../../components/GlassView';
 import { useActiveWallet, useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
-import { listTerminalItems } from '../../services/terminalItems';
+import { saveTerminalItem, listTerminalItems } from '../../services/terminalItems';
 import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 
 jest.mock('crypto', () => require('node:crypto'));
@@ -881,4 +881,28 @@ it('clears a stale basket warning after generating and closing an invoice', asyn
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Items'));
   expect(view.queryByText('Maximum quantity is 99.')).toBeNull();
+});
+
+
+it('keeps an order snapshot adjustable after its catalog name, price and currency change', async () => {
+  await saveTerminalItem('wallet-a', 'mainnet', { id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 250 }, () => true);
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items'));
+  fireEvent.press(view.getByLabelText('Add Tea'));
+  fireEvent.press(view.getByLabelText('Close item picker'));
+  await saveTerminalItem('wallet-a', 'mainnet', { id: 'tea', name: 'Premium tea', unit: 'USD', unitPrice: 500 }, () => true);
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  fireEvent.press(view.getByLabelText('Close terminal settings'));
+  await act(async () => { await listTerminalItems('wallet-a', 'mainnet'); });
+  fireEvent.press(view.getByLabelText('Items'));
+  await waitFor(() => expect(view.getByText('250 sats · 250 sats')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Add one Tea'));
+  expect(view.getByText('250 sats · 500 sats')).toBeTruthy();
+  expect(view.queryByText('Clear the basket to choose another currency.')).toBeNull();
+  fireEvent.press(view.getByLabelText('Remove one Tea'));
+  fireEvent.press(view.getByLabelText('Remove one Tea'));
+  expect(view.getByLabelText('Add Premium tea')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Add Premium tea'));
+  expect(view.getByText('USD 5.00 · USD 5.00')).toBeTruthy();
 });
