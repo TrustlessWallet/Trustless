@@ -112,17 +112,31 @@ export async function createTerminalReceiptPdf(
     page.drawImage(logo, { x: MARGIN, y: y - height, width, height });
     y -= height + 10;
   }
-  if (safeBranding.name) drawWrapped(safeBranding.name, bold, 16, 21, 2);
-  if (safeBranding.contact) drawWrapped(safeBranding.contact, regular, 9, 13, 9);
+  if (safeBranding.name) drawWrapped(safeBranding.name, bold, 18, 25, 4);
+  if (safeBranding.contact) drawWrapped(safeBranding.contact, regular, 9, 14, 6);
+  if (safeBranding.name || safeBranding.contact || logo) y -= 14;
 
-  for (const paragraph of canonical.split('\n')) {
+  const paragraphs = canonical.split('\n');
+  for (let index = 0; index < paragraphs.length; index++) {
+    const paragraph = paragraphs[index];
+    const title = paragraph === 'Payment receipt';
     const prominent = paragraph.startsWith('Amount:') || paragraph.startsWith('Original price:');
-    const heading = paragraph === 'Payment receipt' || paragraph === 'Items:';
-    drawWrapped(paragraph, prominent || heading ? bold : regular, prominent ? 15 : heading ? 12 : 9, prominent ? 20 : heading ? 17 : 13, heading ? 3 : 1);
+    const items = paragraph === 'Items:';
+    const payment = paragraph.startsWith('Payment first verified locally:');
+    const refund = paragraph.startsWith('Refund ') && !paragraph.startsWith('Refund payment reference:');
+    // Reserve space for each section heading and its first lines before a page break.
+    const gapBefore = prominent && !paragraphs[index - 1]?.startsWith('Amount:') ? 14 : items || payment || refund ? 16 : 0;
+    if (gapBefore) { ensure(gapBefore + 44); y -= gapBefore; }
+    if (title) ensure(64);
+    if (items) ensure(46);
+    drawWrapped(paragraph, prominent || title || items ? bold : regular,
+      prominent ? 15 : title ? 12 : items ? 10 : 9,
+      prominent ? 22 : title ? 18 : 15,
+      title ? 8 : items ? 6 : paragraph.startsWith('Items total:') ? 4 : 2);
   }
   if (safeBranding.footer) {
-    ensure(24); y -= 8;
-    drawWrapped(safeBranding.footer, regular, 9, 13);
+    ensure(42); y -= 18;
+    drawWrapped(safeBranding.footer, regular, 9, 15);
   }
 
   const pages = document.getPages();

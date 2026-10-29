@@ -283,6 +283,7 @@ it('keeps Sales minimal and passes a copied selection to Reports without loading
   expect(comparisons).not.toHaveBeenCalled();
   expect(items).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await waitFor(() => expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true));
   fireEvent.press(view.getByLabelText('Open reports'));
   expect(onOpenReports).toHaveBeenCalledWith(expect.objectContaining({ period: 'week', day: expect.any(Number) }));
   expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);

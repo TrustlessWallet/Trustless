@@ -3,20 +3,23 @@ import { ActivityIndicator, AppState, ScrollView, StyleSheet, TouchableOpacity, 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import TerminalSalesPeriodControls from '../components/TerminalSalesPeriodControls';
-import TerminalItemsReport from '../components/TerminalItemsReport';
+import TerminalItemsReport, { PreparedItemReport } from '../components/TerminalItemsReport';
 import TerminalSavedReports from '../components/TerminalSavedReports';
 import { TerminalReportPreset } from '../services/terminalReportPresets';
+import { getTerminalSalesComparison } from '../services/terminalSalesComparison';
 import TerminalPeriodComparison from '../components/TerminalPeriodComparison';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { TerminalNetwork } from '../services/terminal';
 import { getTerminalSalesSummary, subscribeTerminalSales, TerminalRange, TerminalSalesSummary } from '../services/terminalSales';
 import { getTerminalRefundTotal, subscribeTerminalRefunds } from '../services/terminalRefunds';
+import { createTerminalItemPerformanceSnapshot, readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot } from '../services/terminalItemPerformance';
 import { CustomSalesDateRange, localSalesDateKey, previousTerminalSalesPeriodBounds, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 
 export type TerminalReportSelection = { period: SalesPeriod; customRange?: CustomSalesDateRange; day: number };
 type Props = { walletId: string; network: TerminalNetwork; initialSelection: TerminalReportSelection; onClose: () => void; visible?: boolean };
 type FilterState = { scope: string; period: SalesPeriod; customRange: CustomSalesDateRange | null; draft: CustomSalesDateRange | null; tab: 'overview' | 'items'; unit: 'USD' | 'EUR' | 'CHF' | 'sats' | null; sort: 'quantity' | 'gross' };
+type PreparedOverview = { identity: string; summary: TerminalSalesSummary; refunds: bigint; comparison?: Awaited<ReturnType<typeof getTerminalSalesComparison>> };
 
 const localDayStart = (value: number) => {
   const date = new Date(value);
@@ -36,6 +39,19 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
   const filter = filterState.scope === scope ? filterState : initialFilter(scope, initialSelection);
   const [dayStart, setDayStart] = useState(() => localDayStart(initialSelection.day));
   const [revision, setRevision] = useState(0);
+  const pendingGeneration = useRef(0);
+  const pendingToken = useRef<string | null>(null);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const currentDayStart = useRef(dayStart);
+  currentDayStart.current = dayStart;
+  const currentRevision = useRef(revision);
+  currentRevision.current = revision;
+  const overviewCache = useRef(new Map<string, PreparedOverview>());
+  const [preparedOverview, setPreparedOverview] = useState<PreparedOverview | null>(null);
+  const [preparedItems, setPreparedItems] = useState<PreparedItemReport | null>(null);
+  const [pendingPeriod, setPendingPeriod] = useState<SalesPeriod | null>(null);
+  const [periodError, setPeriodError] = useState(false);
   const previousScope = useRef(scope);
   const effectiveDayStart = filterState.scope === scope ? dayStart : localDayStart(initialSelection.day);
   const activeTab = filter.tab;
@@ -46,13 +62,34 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
   useEffect(() => {
     if (previousScope.current === scope) return;
     previousScope.current = scope;
+    ++pendingGeneration.current;
+    if (pendingToken.current) { void removeTerminalItemPerformanceSnapshot(pendingToken.current).catch(() => undefined); pendingToken.current = null; }
+    overviewCache.current.clear();
+    setPreparedOverview(null);
+    setPreparedItems(null);
+    setPendingPeriod(null);
+    setPeriodError(false);
     setFilterState(initialFilter(scope, initialSelection));
     setDayStart(localDayStart(initialSelection.day));
   }, [scope]);
 
   useEffect(() => {
+    return () => { ++pendingGeneration.current; if (pendingToken.current) void removeTerminalItemPerformanceSnapshot(pendingToken.current).catch(() => undefined); };
+  }, []);
+
+  useEffect(() => {
     if (!visible) return;
-    const sync = () => setDayStart(localDayStart(Date.now()));
+    const sync = () => {
+      const nextDay = localDayStart(Date.now());
+      if (nextDay !== dayStart) {
+        ++pendingGeneration.current;
+        if (pendingToken.current) { void removeTerminalItemPerformanceSnapshot(pendingToken.current).catch(() => undefined); pendingToken.current = null; }
+        setPreparedItems(null);
+        setPendingPeriod(null);
+        overviewCache.current.clear();
+        setDayStart(nextDay);
+      }
+    };
     sync();
     const now = new Date();
     const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
@@ -62,77 +99,148 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
   }, [visible, dayStart]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (visible) return;
+    ++pendingGeneration.current;
+    if (pendingToken.current) { void removeTerminalItemPerformanceSnapshot(pendingToken.current).catch(() => undefined); pendingToken.current = null; }
+    setPreparedItems(null);
+    setPendingPeriod(null);
+  }, [visible]);
+
+  useEffect(() => {
     const changed = (changedWallet: string, changedNetwork: TerminalNetwork) => {
-      if (changedWallet === walletId && changedNetwork === network) setRevision(value => value + 1);
+      if (changedWallet === walletId && changedNetwork === network) { ++pendingGeneration.current; if (pendingToken.current) { void removeTerminalItemPerformanceSnapshot(pendingToken.current).catch(() => undefined); pendingToken.current = null; } setPreparedItems(null); setPendingPeriod(null); overviewCache.current.clear(); setRevision(value => value + 1); }
     };
     const unsubscribeSales = subscribeTerminalSales(changed);
     const unsubscribeRefunds = subscribeTerminalRefunds(changed);
     return () => { unsubscribeSales(); unsubscribeRefunds(); };
-  }, [visible, walletId, network]);
+  }, [walletId, network]);
 
+  const cancelPending = () => {
+    ++pendingGeneration.current;
+    if (pendingToken.current) { void removeTerminalItemPerformanceSnapshot(pendingToken.current).catch(() => undefined); pendingToken.current = null; }
+    setPreparedItems(null);
+    setPendingPeriod(null);
+  };
+  const stageFilter = (next: FilterState, nextDayStart = effectiveDayStart) => {
+    cancelPending();
+    setPeriodError(false);
+    if (filter.draft) setFilterState(previous => ({ ...previous, draft: null }));
+    const request = pendingGeneration.current;
+    const nextDay = new Date(nextDayStart);
+    const nextRange = terminalSalesPeriodBounds(next.period, nextDay, next.customRange ?? undefined);
+    const rangeKey = nextRange ? `${nextRange.start}:${nextRange.end}` : 'all';
+    const identity = `${scope}:${next.period}:${rangeKey}:${revision}`;
+    if (next.period === filter.period && JSON.stringify(next.customRange) === JSON.stringify(filter.customRange) && next.tab === filter.tab && next.unit === filter.unit && next.sort === filter.sort && nextDayStart === effectiveDayStart) return;
+    const sourceDayStart = effectiveDayStart;
+    const valid = () => request === pendingGeneration.current && scope === currentScope.current && revision === currentRevision.current && sourceDayStart === currentDayStart.current;
+    const commit = () => { if (!valid()) return false; setDayStart(nextDayStart); setFilterState(next); setPendingPeriod(null); return true; };
+    setPendingPeriod(next.period);
+    if (next.tab === 'overview') {
+      const cached = overviewCache.current.get(identity);
+      if (cached) { setPreparedOverview(cached); commit(); return; }
+      const previousRange = previousTerminalSalesPeriodBounds(next.period, nextDay, next.customRange ?? undefined);
+      void Promise.all([getTerminalSalesSummary(walletId, network, nextRange), getTerminalRefundTotal(walletId, network, nextRange), previousRange ? getTerminalSalesComparison(walletId, network, previousRange) : Promise.resolve(undefined)])
+        .then(([summary, refunds, comparison]) => {
+          if (!valid()) return;
+          const prepared = { identity, summary, refunds, comparison };
+          overviewCache.current.set(identity, prepared);
+          if (overviewCache.current.size > 6) overviewCache.current.delete(overviewCache.current.keys().next().value!);
+          setPreparedOverview(prepared);
+          commit();
+        }).catch(() => { if (valid()) { setPendingPeriod(null); setPeriodError(true); } });
+      return;
+    }
+    void (async () => {
+      let token: string | null = null;
+      try {
+        const snapshot = await createTerminalItemPerformanceSnapshot(walletId, network, nextRange, { unit: next.unit, sort: next.sort });
+        token = snapshot.token;
+        if (!valid()) return;
+        pendingToken.current = token;
+        const page = await readTerminalItemPerformancePage(token, 0, 20);
+        if (!valid()) return;
+        const reportKey = `${scope}:${rangeKey}:${next.unit ?? 'all'}:${next.sort}`;
+        setPreparedItems({ identity: `${reportKey}:${revision}`, reportKey, token, items: page.items, nextSeq: page.nextSeq, totalCount: snapshot.totalCount, paidWithoutItems: snapshot.paidWithoutItems });
+        token = null;
+        commit();
+      } catch { if (valid()) { setPendingPeriod(null); setPeriodError(true); } }
+      finally { if (token) { if (pendingToken.current === token) pendingToken.current = null; void removeTerminalItemPerformanceSnapshot(token).catch(() => undefined); } }
+    })();
+  };
   const selectPeriod = (period: SalesPeriod) => {
     if (period === 'custom') {
       const today = localSalesDateKey(day);
       setFilterState({ ...filter, draft: filter.customRange ? { ...filter.customRange } : { startDate: today, endDate: today } });
       return;
     }
-    setFilterState({ ...filter, period, draft: null });
+    stageFilter({ ...filter, period, draft: null });
   };
   const applyCustom = () => {
     if (!filter.draft || filter.draft.startDate > filter.draft.endDate) return;
-    setFilterState({ ...filter, period: 'custom', customRange: { ...filter.draft }, draft: null });
+    stageFilter({ ...filter, period: 'custom', customRange: { ...filter.draft }, draft: null });
   };
 
   const preset: TerminalReportPreset = { period: filter.period, ...(filter.period === 'custom' && filter.customRange ? { customRange: filter.customRange } : {}), tab: activeTab, unit: activeTab === 'items' ? filter.unit : null, sort: activeTab === 'items' ? filter.sort : 'quantity' };
   const applyPreset = (value: TerminalReportPreset) => {
     if (!visible) return;
-    setDayStart(localDayStart(Date.now()));
-    setFilterState({ scope, period: value.period, customRange: value.customRange ?? null, draft: null, tab: value.tab, unit: value.unit, sort: value.sort });
+    const presetDay = localDayStart(Date.now());
+    stageFilter({ scope, period: value.period, customRange: value.customRange ?? null, draft: null, tab: value.tab, unit: value.unit, sort: value.sort }, presetDay);
   };
+  const consumePreparedItems = useCallback(() => { pendingToken.current = null; setPreparedItems(null); }, []);
   const reportHeader = <>
-      <TerminalSalesPeriodControls period={filter.period} customRange={filter.customRange} draft={filter.draft} day={day} onSelect={selectPeriod} onDraftChange={draft => setFilterState({ ...filter, draft })} onApply={applyCustom} onCancel={() => setFilterState({ ...filter, draft: null })} disabled={!visible} />
+      <TerminalSalesPeriodControls period={filter.period} pendingPeriod={pendingPeriod} customRange={filter.customRange} draft={filter.draft} day={day} onSelect={selectPeriod} onDraftChange={draft => setFilterState({ ...filter, draft })} onApply={applyCustom} onCancel={() => setFilterState({ ...filter, draft: null })} disabled={!visible} />
+      {periodError ? <Text accessibilityRole="alert" style={styles.smallNote}>Couldn’t open that period. Try again.</Text> : null}
       <View style={styles.reportTabs}>
-        <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Overview reports" accessibilityState={{ selected: activeTab === 'overview', disabled: !visible }} disabled={!visible} onPress={() => setFilterState({ ...filter, tab: 'overview' })} style={[styles.reportTab, activeTab === 'overview' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'overview' && styles.activeText]}>Overview</Text></TouchableOpacity>
-        <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Item reports" accessibilityState={{ selected: activeTab === 'items', disabled: !visible }} disabled={!visible} onPress={() => setFilterState({ ...filter, tab: 'items' })} style={[styles.reportTab, activeTab === 'items' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'items' && styles.activeText]}>Items</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Overview reports" accessibilityState={{ selected: activeTab === 'overview', disabled: !visible }} disabled={!visible} onPress={() => { cancelPending(); setFilterState({ ...filter, tab: 'overview' }); }} style={[styles.reportTab, activeTab === 'overview' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'overview' && styles.activeText]}>Overview</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="tab" accessibilityLabel="Item reports" accessibilityState={{ selected: activeTab === 'items', disabled: !visible }} disabled={!visible} onPress={() => { cancelPending(); setFilterState({ ...filter, tab: 'items' }); }} style={[styles.reportTab, activeTab === 'items' && styles.activeTab]}><Text style={[styles.reportTabText, activeTab === 'items' && styles.activeText]}>Items</Text></TouchableOpacity>
       </View>
       <TerminalSavedReports key={scope} walletId={walletId} network={network} current={preset} visible={visible} onApply={applyPreset} />
   </>;
   return <View style={styles.root}>
     {activeTab !== 'items' ? <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} /> : null}
-    {activeTab === 'items' ? <TerminalItemsReport walletId={walletId} network={network} scope={scope} range={range} visible={visible} revision={revision} listHeader={reportHeader} selection={{ unit: filter.unit, sort: filter.sort }} onSelectionChange={value => setFilterState({ ...filter, ...value })} exportSelection={{ period: filter.period, day, customRange: filter.customRange ?? undefined }} renderSheetHeader={leading => <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} leading={leading} />} />
+    {activeTab === 'items' ? <TerminalItemsReport walletId={walletId} network={network} scope={scope} range={range} visible={visible} revision={revision} listHeader={reportHeader} selection={{ unit: filter.unit, sort: filter.sort }} onSelectionChange={value => { cancelPending(); setFilterState({ ...filter, ...value }); }} exportSelection={{ period: filter.period, day, customRange: filter.customRange ?? undefined }} prepared={preparedItems} onPreparedConsumed={consumePreparedItems} renderSheetHeader={leading => <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} disabled={!visible} leading={leading} />} />
       : <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }} showsVerticalScrollIndicator={false}>
         {reportHeader}
-        {visible ? <ReportsOverview walletId={walletId} network={network} scope={scope} period={filter.period} customRange={filter.customRange} day={day} range={range} revision={revision} /> : null}
+        {visible ? <ReportsOverview walletId={walletId} network={network} scope={scope} period={filter.period} customRange={filter.customRange} day={day} range={range} revision={revision} prepared={preparedOverview} /> : null}
       </ScrollView>}
   </View>;
 }
 
-type OverviewProps = { walletId: string; network: TerminalNetwork; scope: string; period: SalesPeriod; customRange: CustomSalesDateRange | null; day: Date; range: TerminalRange; revision: number };
+type OverviewProps = { walletId: string; network: TerminalNetwork; scope: string; period: SalesPeriod; customRange: CustomSalesDateRange | null; day: Date; range: TerminalRange; revision: number; prepared?: PreparedOverview | null };
 type OverviewState = { identity: string; loading: boolean; error: boolean; summary: TerminalSalesSummary | null; refunds: bigint | null };
 
-function ReportsOverview({ walletId, network, scope, period, customRange, day, range, revision }: OverviewProps) {
+function ReportsOverview({ walletId, network, scope, period, customRange, day, range, revision, prepared }: OverviewProps) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const mounted = useRef(true);
   const generation = useRef(0);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
-  const identity = `${scope}:${period}:${rangeKey}:${revision}`;
-  const [state, setState] = useState<OverviewState>({ identity, loading: true, error: false, summary: null, refunds: null });
+  const displayIdentity = `${scope}:${period}:${rangeKey}:`;
+  const identity = `${displayIdentity}${revision}`;
+  const retained = prepared?.identity.startsWith(displayIdentity) ? prepared : null;
+  const [state, setState] = useState<OverviewState>({ identity, loading: true, error: false, summary: retained?.summary ?? null, refunds: retained?.refunds ?? null });
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; ++generation.current; }; }, []);
   const load = useCallback(async () => {
     const request = ++generation.current;
-    setState(previous => previous.identity === identity && previous.loading ? previous : { identity, loading: true, error: false, summary: null, refunds: null });
+    setState(previous => previous.identity === identity && previous.loading ? previous : { identity, loading: true, error: false,
+      summary: previous.identity.startsWith(displayIdentity) ? previous.summary : retained?.summary ?? null,
+      refunds: previous.identity.startsWith(displayIdentity) ? previous.refunds : retained?.refunds ?? null });
     try {
       const [summary, refunds] = await Promise.all([getTerminalSalesSummary(walletId, network, range), getTerminalRefundTotal(walletId, network, range)]);
       if (mounted.current && request === generation.current) setState({ identity, loading: false, error: false, summary, refunds });
     } catch {
       if (mounted.current && request === generation.current) setState({ identity, loading: false, error: true, summary: null, refunds: null });
     }
-  }, [identity, walletId, network, range]);
-  useEffect(() => { void load(); return () => { ++generation.current; }; }, [load]);
+  }, [identity, displayIdentity, walletId, network, range, retained]);
+  useEffect(() => {
+    if (prepared?.identity === identity) setState({ identity, loading: false, error: false, summary: prepared.summary, refunds: prepared.refunds });
+    else void load();
+    return () => { ++generation.current; };
+  }, [load, prepared, identity]);
 
-  const current = state.identity === identity ? state : { identity, loading: true, error: false, summary: null, refunds: null };
+  const current = prepared?.identity === identity ? { identity, loading: false, error: false, summary: prepared.summary, refunds: prepared.refunds }
+    : state.identity === identity ? state : state.identity.startsWith(displayIdentity) ? { ...state, identity, loading: true, error: false }
+      : { identity, loading: true, error: false, summary: null, refunds: null };
   const previous = useMemo(() => previousTerminalSalesPeriodBounds(period, day, customRange ?? undefined), [period, day, customRange]);
   return <View style={styles.overview} accessibilityLabel="Reports overview">
     <View style={styles.blockHeading}><Text style={styles.blockTitle}>PAID SALES</Text>{current.loading ? <ActivityIndicator accessibilityLabel="Loading reports overview" size="small" color={theme.colors.bitcoin} /> : null}</View>
@@ -142,7 +250,7 @@ function ReportsOverview({ walletId, network, scope, period, customRange, day, r
       <View style={styles.rule} />
       {overviewTotals(current.summary).map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.value}</Text></View>)}
       <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatSats(current.refunds)}</Text></View>
-      {range && previous ? <TerminalPeriodComparison walletId={walletId} network={network} scope={scope} periodDay={day} currentRange={range} previousRange={previous} currentSummary={current.summary} currentRefunds={current.refunds} /> : null}
+      {range && previous ? <TerminalPeriodComparison walletId={walletId} network={network} scope={scope} periodDay={day} currentRange={range} previousRange={previous} currentSummary={current.summary} currentRefunds={current.refunds} prepared={prepared?.identity === identity ? prepared.comparison : undefined} /> : null}
     </> : null}
   </View>;
 }

@@ -137,7 +137,7 @@ it('stops loading when a failed notification refresh supersedes the initial requ
   expect(view.queryByText('1 200 sats')).toBeNull();
 });
 
-it('keeps summary geometry while rapid period loads hide old and stale totals', async () => {
+it('keeps the selected period and its totals until a rapid period change is fully loaded', async () => {
   let finishWeekPage!: (value: unknown) => void, finishMonthPage!: (value: unknown) => void;
   let finishWeekSummary!: (value: unknown) => void, finishMonthSummary!: (value: unknown) => void;
   let finishWeekRefund!: (value: unknown) => void, finishMonthRefund!: (value: unknown) => void;
@@ -159,14 +159,16 @@ it('keeps summary geometry while rapid period loads hide old and stale totals', 
   expect(view.getByText('55 sats')).toBeTruthy();
 
   fireEvent.press(view.getByLabelText('Last 7 days sales'));
-  await waitFor(() => expect(view.getByLabelText('Loading sales summary')).toBeTruthy());
-  expect(view.queryByText('$12.34')).toBeNull();
-  expect(view.queryByText('55 sats')).toBeNull();
-  expect(view.getByText('LAST 7 DAYS’ ACTIVITY')).toBeTruthy();
-  expect(view.getByLabelText('Loading activity count')).toBeTruthy();
+  expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.busy).toBe(true);
+  expect(view.getByLabelText('Today sales').props.accessibilityState.selected).toBe(true);
+  expect(view.getByText('$12.34')).toBeTruthy();
+  expect(view.getByText('55 sats')).toBeTruthy();
+  expect(view.getByText('TODAY’S ACTIVITY')).toBeTruthy();
 
   fireEvent.press(view.getByLabelText('This month sales'));
   await waitFor(() => expect(getTerminalSalesSummary).toHaveBeenCalledTimes(3));
+  expect(view.getByLabelText('This month sales').props.accessibilityState.busy).toBe(true);
+  expect(view.getByText('$12.34')).toBeTruthy();
   await act(async () => {
     finishMonthPage({ items: [], nextCursor: null });
     finishMonthSummary({ activityCount: 4, receivedCount: 3, sats: 0n, bitcoinSats: 0n, fiatMinor: { EUR: 500n } });
@@ -186,4 +188,39 @@ it('keeps summary geometry while rapid period loads hide old and stale totals', 
   expect(view.queryByText('$99.00')).toBeNull();
   expect(view.queryByText('99 sats')).toBeNull();
   expect(view.queryByLabelText(/9 900 sats, Paid/)).toBeNull();
+});
+
+it('does not restore a stale cached period after a sale notification cancels its pending read', async () => {
+  let finishOldWeek!: (value: unknown) => void;
+  (listTerminalSalesPage as jest.Mock)
+    .mockResolvedValueOnce({ items: [], nextCursor: null })
+    .mockImplementationOnce(() => new Promise(resolve => { finishOldWeek = resolve; }))
+    .mockResolvedValue({ items: [], nextCursor: null });
+  (getTerminalSalesSummary as jest.Mock)
+    .mockResolvedValueOnce(summary(2, 2, 200n))
+    .mockResolvedValueOnce(summary(9, 9, 900n))
+    .mockResolvedValueOnce(summary(3, 3, 300n))
+    .mockResolvedValueOnce(summary(4, 4, 400n));
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByText('200 sats')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  act(() => { mockSalesListeners.forEach(listener => listener('wallet-a', 'mainnet')); });
+  await waitFor(() => expect(view.getByText('300 sats')).toBeTruthy());
+  await act(async () => { finishOldWeek({ items: [], nextCursor: null }); });
+  expect(view.getByLabelText('Today sales').props.accessibilityState.selected).toBe(true);
+  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await waitFor(() => expect(view.getByText('400 sats')).toBeTruthy());
+  expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
+  expect(getTerminalSalesSummary).toHaveBeenCalledTimes(4);
+});
+
+it('keeps the current Sales period and totals when the next period fails to load', async () => {
+  (listTerminalSalesPage as jest.Mock).mockResolvedValue({ items: [], nextCursor: null });
+  (getTerminalSalesSummary as jest.Mock).mockResolvedValueOnce(summary(2, 2, 200n)).mockRejectedValueOnce(new Error('failed'));
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByText('200 sats')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await waitFor(() => expect(view.getByText('Couldn’t open that period. Try again.')).toBeTruthy());
+  expect(view.getByLabelText('Today sales').props.accessibilityState.selected).toBe(true);
+  expect(view.getByText('200 sats')).toBeTruthy();
 });

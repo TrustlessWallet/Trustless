@@ -3,9 +3,12 @@ import { getTerminalDatabase } from '../../services/terminalDatabase';
 import React from 'react';
 import { Alert, Modal } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Feather } from '@expo/vector-icons';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TerminalScreen, { isTerminalPollDue } from '../../screens/TerminalScreen';
+import TerminalQuickItemsScreen from '../../screens/TerminalQuickItemsScreen';
 import { GlassView } from '../../components/GlassView';
 import { useActiveWallet, useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
@@ -19,7 +22,7 @@ jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ s
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' }, LAYOUT: { radius: 8, inputHeight: 48 } } }) }));
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
-jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
+jest.mock('@expo/vector-icons', () => ({ Feather: (props: any) => require('react').createElement('Feather', props) }));
 jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn(() => Promise.resolve()), notificationAsync: jest.fn(() => Promise.resolve()), NotificationFeedbackType: { Success: 'success' } }));
 jest.mock('uuid', () => ({ v4: () => 'refund-test-id' }));
 
@@ -46,6 +49,12 @@ const visibleScreen = (node: any): boolean => {
     if (parent.type === 'RNSScreen' || parent.type === 'RNSModalScreen') return parent.props['aria-hidden'] === false;
   }
   return false;
+};
+const nativeScreen = (node: any): any => {
+  for (let parent = node; parent; parent = parent.parent) {
+    if (parent.type === 'RNSScreen' || parent.type === 'RNSModalScreen') return parent;
+  }
+  throw new Error('No native screen found');
 };
 
 const openCurrency = async (view: ReturnType<typeof render>) => {
@@ -88,6 +97,25 @@ it('lets the owner save an item from Terminal Settings and use it at checkout', 
   await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Items'));
   expect(view.getByLabelText('Add Tea')).toBeTruthy();
+});
+
+it('focuses the new item name after the sheet opens and leaves editing unfocused', async () => {
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Terminal settings'));
+  fireEvent.press(view.getByLabelText('Manage items'));
+  await waitFor(() => expect(view.getByLabelText('Add item')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Add item'));
+  const name = view.getByLabelText('Item name');
+  expect(name.props.autoFocus).toBe(false);
+  fireEvent(nativeScreen(name), 'onAppear');
+  expect(view.getByLabelText('Item name').props.autoFocus).toBe(true);
+  fireEvent.changeText(view.getByLabelText('Item name'), 'Tea');
+  fireEvent.changeText(view.getByLabelText('Item price'), '250');
+  fireEvent.press(view.getByLabelText('Save item'));
+  await waitFor(() => expect(view.getByText('Tea')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Edit Tea'));
+  expect(view.getByLabelText('Item name').props.autoFocus).toBe(false);
 });
 
 it('accepts a single decimal comma for item price and rejects mixed or excess precision', async () => {
@@ -256,7 +284,7 @@ it('keeps manual entry on dismissal and returns to zero after removing the last 
   expect(createTerminalInvoice).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Items'));
   fireEvent.press(view.getByLabelText('Add Tea'));
-  fireEvent.press(view.getByLabelText('Remove Tea'));
+  fireEvent.press(view.getByLabelText('Remove one Tea'));
   fireEvent.press(view.getByLabelText('Close item picker'));
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(createTerminalInvoice).not.toHaveBeenCalled();
@@ -264,6 +292,36 @@ it('keeps manual entry on dismissal and returns to zero after removing the last 
   expect(view.queryByLabelText('Return to manual amount')).toBeNull();
   fireEvent.press(view.getByLabelText('Close item picker'));
   expect(view.getByTestId('terminal-amount').props.children).toBe('0');
+});
+
+it('opens Quick items as a scrollable half-height sheet with matching plus controls', async () => {
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 250 }] }));
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items'));
+  const picker = nativeScreen(view.getByLabelText('Close item picker'));
+  expect(picker.props.stackPresentation).toBe('formSheet');
+  expect(picker.props.sheetAllowedDetents).toEqual([0.5]);
+  expect(view.getByLabelText('Add Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
+  fireEvent.press(view.getByLabelText('Add Tea'));
+  expect(view.getByLabelText('Add one Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
+  expect(view.queryByLabelText('Remove Tea')).toBeNull();
+  fireEvent.press(view.getByLabelText('Remove one Tea'));
+  expect(view.getByLabelText('Add Tea')).toBeTruthy();
+});
+
+it('keeps a deleted catalog item adjustable with only one-item controls', () => {
+  const onAdd = jest.fn();
+  const onRemoveOne = jest.fn();
+  const line = { itemId: 'deleted', name: 'Old item', unitPrice: 25, quantity: 2, total: 50 };
+  const Stack = createNativeStackNavigator();
+  const view = render(<NavigationContainer><Stack.Navigator><Stack.Screen name="Picker">{() => <TerminalQuickItemsScreen catalog={[]} lines={[line]} unit="sats" busy={false} onAdd={onAdd} onRemoveOne={onRemoveOne} onClose={jest.fn()} />}</Stack.Screen></Stack.Navigator></NavigationContainer>);
+  expect(view.queryByLabelText('Remove Old item')).toBeNull();
+  fireEvent.press(view.getByLabelText('Remove one Old item'));
+  fireEvent.press(view.getByLabelText('Add one Old item'));
+  expect(onRemoveOne).toHaveBeenCalledWith(line);
+  expect(onAdd).toHaveBeenCalledWith({ id: 'deleted', name: 'Old item', unit: 'sats', unitPrice: 25 });
+  expect(view.getByLabelText('Add one Old item').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
 });
 
 it('requires an available rate before charging in fiat', async () => {
@@ -778,13 +836,14 @@ it('opens Reports as its own sheet and preserves the Sales filter on return', as
   fireEvent.press(view.getByLabelText('Sales'));
   await waitFor(() => expect(view.getByLabelText('Close sales')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await waitFor(() => expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true));
   fireEvent.press(view.getByLabelText('Open reports'));
   await waitFor(() => expect(view.getByLabelText('Close reports')).toBeTruthy());
   expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
   const hiddenSalesClose = view.getByLabelText('Close sales', { includeHiddenElements: true });
   expect(hiddenSalesClose.props.accessibilityState.disabled).toBe(true);
   fireEvent.press(view.getByLabelText('All sales'));
-  expect(view.getByLabelText('All sales').props.accessibilityState.selected).toBe(true);
+  await waitFor(() => expect(view.getByLabelText('All sales').props.accessibilityState.selected).toBe(true));
   fireEvent.press(view.getByLabelText('Close reports'));
   await waitFor(() => expect(view.getByLabelText('Close sales')).toBeTruthy());
   expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
@@ -803,4 +862,23 @@ it('shows a basket quantity limit inside the item sheet and clears it after a va
   fireEvent.press(view.getByLabelText('Remove one Tea'));
   expect(view.queryByText('Maximum quantity is 99.')).toBeNull();
   expect(createTerminalInvoice).not.toHaveBeenCalled();
+});
+
+it('clears a stale basket warning after generating and closing an invoice', async () => {
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 1 }] }));
+  createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items'));
+  fireEvent.press(view.getByLabelText('Add Tea'));
+  for (let quantity = 2; quantity <= 99; quantity++) fireEvent.press(view.getByLabelText('Add one Tea'));
+  fireEvent.press(view.getByLabelText('Add one Tea'));
+  expect(view.getByText('Maximum quantity is 99.')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Close item picker'));
+  fireEvent.press(view.getByTestId('terminal-request'));
+  await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Close invoice'));
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items'));
+  expect(view.queryByText('Maximum quantity is 99.')).toBeNull();
 });

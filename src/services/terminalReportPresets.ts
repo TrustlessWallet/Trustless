@@ -1,5 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SQLiteDatabase } from 'expo-sqlite';
 import { terminalNetwork, TerminalNetwork } from './terminal';
+import { transactTerminalDatabase } from './terminalDatabase';
+import { clearTerminalPreferenceInDatabase, readTerminalPreferenceInDatabase, writeTerminalPreferenceInDatabase } from './terminalPreferences';
 import { ItemSort, ItemUnit } from './terminalItemPerformance';
 import { CustomSalesDateRange, localSalesDateKey, parseSalesDate, SalesPeriod } from './terminalSalesPeriod';
 
@@ -62,8 +64,18 @@ export function reportPresetKey(config: TerminalReportPreset): string {
   return JSON.stringify(canonicalConfig(config, false));
 }
 
-async function read(walletId: string, network: TerminalNetwork): Promise<StoredPreset[]> {
-  const raw = await AsyncStorage.getItem(keyFor(walletId, network));
+export function normalizeTerminalReportPresets(value: unknown): TerminalReportPreset[] {
+  if (!Array.isArray(value) || value.length > MAX_PRESETS) throw new Error('Saved report presets are invalid.');
+  const presets = value.map(entry => {
+    const config = canonicalConfig(entry, false);
+    if (JSON.stringify(entry) !== JSON.stringify(config)) throw new Error('Saved report presets are invalid.');
+    return config;
+  });
+  if (new Set(presets.map(reportPresetKey)).size !== presets.length) throw new Error('Saved report presets are invalid.');
+  return presets;
+}
+
+function parse(raw: string | null, walletId: string, network: TerminalNetwork): StoredPreset[] {
   if (raw === null) return [];
   if (raw.length > MAX_RAW_LENGTH) throw new Error('Saved report presets are invalid.');
   let parsed: unknown;
@@ -83,10 +95,26 @@ async function read(walletId: string, network: TerminalNetwork): Promise<StoredP
   return presets;
 }
 
+export function readTerminalReportPresetsInDatabase(db: SQLiteDatabase, walletId: string, network: string): Promise<TerminalReportPreset[]> {
+  const identity = scope(walletId, network);
+  return readTerminalPreferenceInDatabase(db, identity.walletId, identity.network, 'reports',
+    keyFor(identity.walletId, identity.network), raw => parse(raw, identity.walletId, identity.network).map(entry => entry.config));
+}
+
+export async function writeTerminalReportPresetsInDatabase(db: SQLiteDatabase, walletId: string, network: string,
+  configs: readonly TerminalReportPreset[]): Promise<void> {
+  const identity = scope(walletId, network);
+  assertNotDeleted(identity.walletId, identity.network);
+  const validated = normalizeTerminalReportPresets(configs);
+  const presets = validated.map(config => ({ key: JSON.stringify(config), config }));
+  const raw = JSON.stringify({ version: 1, walletId: identity.walletId, network: identity.network, presets });
+  if (raw.length > MAX_RAW_LENGTH) throw new Error('Saved report presets are invalid.');
+  await writeTerminalPreferenceInDatabase(db, identity.walletId, identity.network, 'reports', raw);
+}
+
 export async function listTerminalReportPresets(walletId: string, network: string): Promise<TerminalReportPreset[]> {
   const identity = scope(walletId, network);
-  const presets = await serial(() => read(identity.walletId, identity.network));
-  return presets.map(preset => preset.config);
+  return serial(() => transactTerminalDatabase(db => readTerminalReportPresetsInDatabase(db, identity.walletId, identity.network)));
 }
 
 export function saveTerminalReportPreset(walletId: string, network: string, config: TerminalReportPreset, isCurrent: () => boolean): Promise<TerminalReportPreset[]> {
@@ -94,48 +122,49 @@ export function saveTerminalReportPreset(walletId: string, network: string, conf
   let frozen: TerminalReportPreset;
   try { frozen = canonicalConfig(config, true); } catch (error) { return Promise.reject(error); }
   const preset: StoredPreset = { key: JSON.stringify(frozen), config: frozen };
-  return serial(async () => {
+  return serial(() => transactTerminalDatabase(async db => {
     assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
-    const presets = await read(identity.walletId, identity.network);
+    const presets = await readTerminalReportPresetsInDatabase(db, identity.walletId, identity.network);
     assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
-    if (presets.some(entry => entry.key === preset.key)) return presets.map(entry => entry.config);
+    if (presets.some(entry => reportPresetKey(entry) === preset.key)) return presets;
     if (presets.length >= MAX_PRESETS) throw new Error('Report preset limit reached.');
-    const next = [...presets, preset];
+    const next = [...presets, frozen];
     assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
-    await AsyncStorage.setItem(keyFor(identity.walletId, identity.network), JSON.stringify({ version: 1, walletId: identity.walletId, network: identity.network, presets: next }));
+    await writeTerminalReportPresetsInDatabase(db, identity.walletId, identity.network, next);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
-    return next.map(entry => entry.config);
-  });
+    return next;
+  }));
 }
 
 export function removeTerminalReportPreset(walletId: string, network: string, config: TerminalReportPreset, isCurrent: () => boolean): Promise<TerminalReportPreset[]> {
   const identity = scope(walletId, network);
   let presetKey: string;
   try { presetKey = reportPresetKey(config); } catch (error) { return Promise.reject(error); }
-  return serial(async () => {
+  return serial(() => transactTerminalDatabase(async db => {
     assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
-    const presets = await read(identity.walletId, identity.network);
+    const presets = await readTerminalReportPresetsInDatabase(db, identity.walletId, identity.network);
     assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
-    const next = presets.filter(entry => entry.key !== presetKey);
-    if (next.length === presets.length) return presets.map(entry => entry.config);
+    const next = presets.filter(entry => reportPresetKey(entry) !== presetKey);
+    if (next.length === presets.length) return presets;
     assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
-    await AsyncStorage.setItem(keyFor(identity.walletId, identity.network), JSON.stringify({ version: 1, walletId: identity.walletId, network: identity.network, presets: next }));
+    await writeTerminalReportPresetsInDatabase(db, identity.walletId, identity.network, next);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
-    return next.map(entry => entry.config);
-  });
+    return next;
+  }));
 }
 
 export function clearTerminalReportPresets(walletId: string, network: string): Promise<void> {
   const identity = scope(walletId, network);
   const key = keyFor(identity.walletId, identity.network);
   deletedScopes.add(key);
-  return serial(() => AsyncStorage.removeItem(key)).catch(error => {
+  return serial(() => transactTerminalDatabase(db => clearTerminalPreferenceInDatabase(db,
+    identity.walletId, identity.network, 'reports', key))).catch(error => {
     deletedScopes.delete(key);
     throw error;
   });

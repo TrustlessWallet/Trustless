@@ -8,6 +8,7 @@ import TerminalDateRangePicker from './TerminalDateRangePicker';
 
 export type Props = {
   period: SalesPeriod;
+  pendingPeriod?: SalesPeriod | null;
   customRange: CustomSalesDateRange | null;
   draft: CustomSalesDateRange | null;
   day: Date;
@@ -28,7 +29,7 @@ const periods: { value: SalesPeriod; title: string; label: string }[] = [
 ];
 const formatDate = (timestamp: number) => new Date(timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 
-export default function TerminalSalesPeriodControls({ period, customRange, draft, day, onSelect, onDraftChange, onApply, onCancel, disabled = false, detailCaption }: Props) {
+export default function TerminalSalesPeriodControls({ period, pendingPeriod, customRange, draft, day, onSelect, onDraftChange, onApply, onCancel, disabled = false, detailCaption }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const bounds = terminalSalesPeriodBounds(period, day, customRange ?? undefined);
@@ -36,7 +37,7 @@ export default function TerminalSalesPeriodControls({ period, customRange, draft
 
   return <>
     <View style={styles.tabs}>
-      {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole={item.value === 'custom' ? 'button' : 'tab'} accessibilityState={{ selected: period === item.value, disabled, ...(item.value === 'custom' ? { expanded: !!draft } : {}) }} accessibilityLabel={item.label} disabled={disabled} onPress={() => onSelect(item.value)} style={[styles.tab, item.value === 'custom' && styles.customTab, item.value !== 'custom' && period === item.value && styles.activeTab]}>
+      {periods.map(item => <TouchableOpacity key={item.value} accessibilityRole={item.value === 'custom' ? 'button' : 'tab'} accessibilityState={{ selected: period === item.value, disabled, ...(pendingPeriod === item.value ? { busy: true } : {}), ...(item.value === 'custom' ? { expanded: !!draft } : {}) }} accessibilityLabel={item.label} disabled={disabled} onPress={() => onSelect(item.value)} style={[styles.tab, item.value === 'custom' && styles.customTab, item.value !== 'custom' && period === item.value && styles.activeTab]}>
         {item.value === 'custom' ? <View style={[styles.customControl, (period === 'custom' || !!draft) && styles.customControlActive]}>
           <Feather name="calendar" size={13} color={period === 'custom' || draft ? theme.colors.primary : theme.colors.muted} />
           <Text style={[styles.customText, (period === 'custom' || !!draft) && styles.activeText]}>{item.title}</Text>
