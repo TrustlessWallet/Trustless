@@ -10,6 +10,7 @@ const MAX_RAW_LENGTH = 280_000;
 const limits = { name: 80, contact: 120, footer: 160 } as const;
 const unsafe = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/u;
 let queue: Promise<unknown> = Promise.resolve();
+const deletedScopes = new Set<string>();
 const serial = <T,>(operation: () => Promise<T>): Promise<T> => {
   const task = queue.then(operation);
   queue = task.catch(() => undefined);
@@ -21,6 +22,9 @@ function scope(walletId: string, network: string) {
   return { walletId, network: terminalNetwork(network) };
 }
 const keyFor = (walletId: string, network: TerminalNetwork) => `${TERMINAL_RECEIPT_BRANDING_KEY}:${network}:${walletId}`;
+function assertNotDeleted(walletId: string, network: TerminalNetwork): void {
+  if (deletedScopes.has(keyFor(walletId, network))) throw new Error('Terminal receipt wallet was removed.');
+}
 
 export function normalizeTerminalReceiptBranding(value: unknown): TerminalReceiptBranding {
   if (!value || typeof value !== 'object') throw new Error('Invalid receipt branding.');
@@ -60,13 +64,26 @@ export function saveTerminalReceiptBranding(walletId: string, network: string, b
   let frozen: TerminalReceiptBranding;
   try { frozen = normalizeTerminalReceiptBranding(branding); } catch (error) { return Promise.reject(error); }
   return serial(async () => {
+    assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal receipt scope is required.');
     await read(identity.walletId, identity.network);
+    assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal receipt scope is required.');
     const raw = JSON.stringify({ version: 1, walletId: identity.walletId, network: identity.network, branding: frozen });
     if (raw.length > (frozen.logo ? MAX_RAW_LENGTH : 1_024)) throw new Error('Saved receipt branding is too large.');
+    assertNotDeleted(identity.walletId, identity.network);
     await AsyncStorage.setItem(keyFor(identity.walletId, identity.network), raw);
     if (!isCurrent()) throw new Error('Current Terminal receipt scope is required.');
     return frozen;
+  });
+}
+
+export function clearTerminalReceiptBranding(walletId: string, network: string): Promise<void> {
+  const identity = scope(walletId, network);
+  const key = keyFor(identity.walletId, identity.network);
+  deletedScopes.add(key);
+  return serial(() => AsyncStorage.removeItem(key)).catch(error => {
+    deletedScopes.delete(key);
+    throw error;
   });
 }

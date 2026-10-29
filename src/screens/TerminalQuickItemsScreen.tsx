@@ -1,5 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
@@ -8,6 +9,7 @@ import { TerminalItem } from '../services/terminalItems';
 import TerminalSheetHeader from './TerminalSheetHeader';
 
 type Props = {
+  error?: string;
   catalog: TerminalItem[];
   lines: TerminalBasketLine[];
   unit: TerminalUnit;
@@ -18,8 +20,9 @@ type Props = {
   onClose: () => void;
 };
 
-export default function TerminalQuickItemsScreen({ catalog, lines, unit, busy, onAdd, onRemoveOne, onRemove, onClose }: Props) {
+export default function TerminalQuickItemsScreen({ error = '', catalog, lines, unit, busy, onAdd, onRemoveOne, onRemove, onClose }: Props) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const basketUnit = lines.length ? unit : null;
   return <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
     <TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={onClose} />
@@ -48,11 +51,13 @@ export default function TerminalQuickItemsScreen({ catalog, lines, unit, busy, o
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${line.name}`} disabled={busy} style={styles.control} onPress={() => onAdd({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice })}><Text style={[styles.symbol, { color: theme.colors.primary }]}>+</Text></TouchableOpacity>
       </View>)}
     </ScrollView>
+    <View style={[styles.feedback, { paddingBottom: insets.bottom, height: Math.max(56, insets.bottom + 40) }]}>{error ? <Text accessibilityRole="alert" style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text> : null}</View>
   </View>;
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  feedback: { paddingHorizontal: 24, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },
   scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }, row: { height: 64, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   info: { flex: 1 }, name: { fontSize: 14 }, price: { fontSize: 11, marginTop: 5 }, control: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   symbol: { fontSize: 19 }, quantity: { fontSize: 15, minWidth: 20, textAlign: 'center' },

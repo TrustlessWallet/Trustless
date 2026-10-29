@@ -253,3 +253,23 @@ it('lets an authenticated owner-device unlock finish if the wallet changes durin
   expect(result.current.cashierState).toBe('off');
   expect(result.current.mode).toBe('wallet');
 });
+
+it('preserves a scoped checkout draft when enabling cashier remounts the terminal', async () => {
+  const { result } = renderHook(() => useWalletMode(), { wrapper });
+  await waitFor(() => expect(result.current.cashierState).toBe('off'));
+  await act(async () => { await result.current.setMode('terminal'); });
+  const draft = { walletId: 'wallet-a', network: 'mainnet' as const, unit: 'CHF' as const, manualAmount: '', basketLines: [{ itemId: 'coffee', name: 'Coffee', unitPrice: 350, quantity: 2, total: 700 }] };
+  await act(async () => { expect(await result.current.enableCashier(() => draft)).toBe(true); });
+  draft.basketLines[0].name = 'Mutated after lock';
+  expect(result.current.cashierState).toBe('locked');
+  expect(result.current.consumeCashierTerminalDraft('wallet-a', 'mainnet')?.basketLines[0]).toMatchObject({ name: 'Coffee', total: 700 });
+  expect(result.current.consumeCashierTerminalDraft('wallet-a', 'mainnet')).toBeNull();
+});
+it('does not enable cashier when checkout cannot provide a safe scoped draft', async () => {
+  const { result } = renderHook(() => useWalletMode(), { wrapper });
+  await waitFor(() => expect(result.current.cashierState).toBe('off'));
+  await act(async () => { await result.current.setMode('terminal'); });
+  await act(async () => { await expect(result.current.enableCashier(() => null)).rejects.toThrow('Finish the current invoice'); });
+  expect(result.current.cashierState).toBe('off');
+  expect(result.current.consumeCashierTerminalDraft('wallet-a', 'mainnet')).toBeNull();
+});

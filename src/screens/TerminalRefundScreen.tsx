@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { v4 as uuidv4 } from 'uuid';
@@ -151,7 +151,7 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
         <Text style={styles.sectionLabel}>REFUNDS</Text>
         {saleAttempts.map(attempt => <View key={attempt.id} style={styles.attemptRow}>
           <View style={styles.attemptInfo}><Text style={styles.attemptAmount}>{sats(attempt.amountSats)}</Text><Text style={styles.attemptStatus}>{statusLabel(attempt.status)}</Text></View>
-          {(attempt.status === 'unknown' || attempt.status === 'pending') ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Check refund ${attempt.id}`} disabled={checkingId !== null} onPress={() => { void checkAttempt(attempt); }} style={styles.smallButton}><Text style={styles.smallButtonText}>{checkingId === attempt.id ? 'Checking…' : 'Check'}</Text></TouchableOpacity> : null}
+          {(attempt.status === 'unknown' || attempt.status === 'pending') ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Check refund ${attempt.id}`} disabled={checkingId !== null} onPress={() => { void checkAttempt(attempt); }} style={styles.smallButton}>{checkingId === attempt.id ? <ActivityIndicator accessibilityLabel="Checking refund" size="small" color={theme.colors.bitcoin} /> : <Text style={styles.smallButtonText}>Check</Text>}</TouchableOpacity> : null}
         </View>)}
       </View> : null}
       {remaining > 0 && !unresolved.length ? quote && phase !== 'form' && phase !== 'preparing' ? <View style={styles.form}>
@@ -163,17 +163,16 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
           <View style={styles.reviewRow}><Text style={styles.reviewTotal}>Total debited</Text><Text style={styles.reviewTotal}>{sats(BigInt(quote.amountSats) + BigInt(quote.feeSats))}</Text></View>
         </View>
         <Text style={styles.destinationLabel}>CUSTOMER INVOICE</Text><Text style={styles.destination} selectable>{quote.invoice}</Text>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Authorize refund" disabled={phase !== 'review'} style={[styles.primaryButton, phase !== 'review' && styles.disabled]} onPress={() => { void authorize(); }}><Text style={styles.primaryText}>{phase === 'authorizing' ? 'Authorizing…' : phase === 'sending' ? 'Sending…' : 'Authorize refund'}</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Authorize refund" disabled={phase !== 'review'} style={styles.primaryButton} onPress={() => { void authorize(); }}>{phase === 'authorizing' || phase === 'sending' ? <ActivityIndicator accessibilityLabel="Submitting refund" size="small" color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Authorize refund</Text>}</TouchableOpacity>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit refund" disabled={phase !== 'review'} style={styles.secondaryButton} onPress={() => { setQuote(null); setPhase('form'); }}><Text style={styles.secondaryText}>Edit details</Text></TouchableOpacity>
       </View> : <View style={styles.form}>
         <Text style={styles.fieldLabel}>CUSTOMER LIGHTNING INVOICE</Text>
         <StyledInput accessibilityLabel="Customer Lightning invoice" value={invoice} onChangeText={value => { setInvoice(value); setOutcome(''); }} onFocus={handleInputFocus} placeholder="BOLT11 invoice" autoCapitalize="none" autoCorrect={false} spellCheck={false} editable={phase === 'form'} rightElement={<TouchableOpacity accessibilityRole="button" accessibilityLabel="Paste invoice" onPress={() => { const captured = scope; void Clipboard.getStringAsync().then(value => { if (value && current(captured)) setInvoice(value.trim()); }).catch(() => { if (current(captured)) setError('Couldn’t paste the invoice.'); }); }}><Feather name="clipboard" size={19} color={theme.colors.primary} /></TouchableOpacity>} />
         <Text style={styles.fieldLabel}>AMOUNT</Text>
         <StyledInput accessibilityLabel="Refund amount in sats" value={amount} onChangeText={setAmount} onFocus={handleInputFocus} keyboardType="number-pad" editable={phase === 'form'} rightElement={<Text style={styles.unit}>sats</Text>} />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Review refund" disabled={phase !== 'form'} style={[styles.primaryButton, phase !== 'form' && styles.disabled]} onPress={() => { void review(); }}><Text style={styles.primaryText}>{phase === 'preparing' ? 'Preparing…' : phase === 'authorizing' ? 'Authorizing…' : phase === 'sending' ? 'Sending…' : 'Review refund'}</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Review refund" disabled={phase !== 'form'} style={styles.primaryButton} onPress={() => { void review(); }}>{phase !== 'form' ? <ActivityIndicator accessibilityLabel="Preparing refund" size="small" color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Review refund</Text>}</TouchableOpacity>
       </View> : null}
+      {error ? <Text accessibilityRole="alert" style={[styles.error, { marginHorizontal: 24 }]}>{error}</Text> : null}
       {unresolved.length ? <Text style={styles.notice}>A refund has an unresolved outcome. Check it before starting another refund.</Text> : null}
       {remainingValue === null ? <Text style={styles.notice}>Refund records need attention. New refunds are unavailable.</Text> : null}
       {remainingValue === 0 && !unresolved.length ? <Text style={styles.notice}>This sale has been fully refunded.</Text> : null}

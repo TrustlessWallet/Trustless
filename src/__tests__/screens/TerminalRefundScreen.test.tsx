@@ -7,7 +7,7 @@ import TerminalRefundScreen from '../../screens/TerminalRefundScreen';
 import { useWallet } from '../../contexts/WalletContext';
 import { authenticate_terminal_refund } from '../../services/authState';
 import { recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
-import { listTerminalRefunds } from '../../services/terminalRefunds';
+import { listTerminalRefunds, reserveTerminalRefund } from '../../services/terminalRefunds';
 import { TerminalRequest } from '../../services/terminal';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 
@@ -159,4 +159,18 @@ it('records a completed send even after the refund view closes', async () => {
   view.unmount();
   await act(async () => { finishSend({ status: 'complete', paymentId: 'payment-late' }); });
   await waitFor(async () => expect((await listTerminalRefunds('wallet-a', 'mainnet'))[0].status).toBe('complete'));
+});
+
+it.each(['unknown', 'failure', 'offline'])('shows status-check feedback for an unresolved refund with %s result', async outcome => {
+  const sale = await updateTerminalSalePayment(request, { status: 'received' });
+  const attempt = await reserveTerminalRefund(sale, { id: 'pending-check', invoice: 'lnbcpendingcheckabc', amountSats: 100, feeSats: 1, quoteExpiresAt: Date.now() + 60000 });
+  if (outcome === 'offline') (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'wallet-a' }, isLightningInitialized: false, prepareTerminalRefund, sendTerminalRefund, verifyTerminalRefund });
+  else if (outcome === 'failure') verifyTerminalRefund.mockRejectedValueOnce(new Error('offline'));
+  else verifyTerminalRefund.mockResolvedValueOnce({ status: 'unknown' });
+  const view = render(<TerminalRefundScreen sale={sale} attempts={[attempt]} onClose={jest.fn()} />);
+  expect(view.queryByLabelText('Customer Lightning invoice')).toBeNull();
+  fireEvent.press(view.getByLabelText('Check refund pending-check'));
+  const message = outcome === 'offline' ? 'Open this wallet and connect to Lightning to check the refund.' : outcome === 'failure' ? 'Couldn’t check this refund. Try again later.' : 'No matching refund found yet. Check again later.';
+  await waitFor(() => expect(view.getByText(message)).toBeTruthy());
+  expect(sendTerminalRefund).not.toHaveBeenCalled();
 });

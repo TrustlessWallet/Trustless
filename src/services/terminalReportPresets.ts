@@ -19,6 +19,7 @@ const MAX_RAW_LENGTH = 32_768;
 const periods: SalesPeriod[] = ['today', 'week', 'month', 'all', 'custom'];
 const units: ItemUnit[] = ['USD', 'EUR', 'CHF', 'sats'];
 let queue: Promise<unknown> = Promise.resolve();
+const deletedScopes = new Set<string>();
 const serial = <T,>(operation: () => Promise<T>): Promise<T> => {
   const task = queue.then(operation);
   queue = task.catch(() => undefined);
@@ -30,6 +31,9 @@ function scope(walletId: string, network: string) {
   return { walletId, network: terminalNetwork(network) };
 }
 const keyFor = (walletId: string, network: TerminalNetwork) => `${TERMINAL_REPORT_PRESETS_KEY}:${network}:${walletId}`;
+function assertNotDeleted(walletId: string, network: TerminalNetwork): void {
+  if (deletedScopes.has(keyFor(walletId, network))) throw new Error('Terminal report wallet was removed.');
+}
 
 function canonicalConfig(value: unknown, checkFuture: boolean): TerminalReportPreset {
   if (!value || typeof value !== 'object') throw new Error('Invalid report preset.');
@@ -91,12 +95,15 @@ export function saveTerminalReportPreset(walletId: string, network: string, conf
   try { frozen = canonicalConfig(config, true); } catch (error) { return Promise.reject(error); }
   const preset: StoredPreset = { key: JSON.stringify(frozen), config: frozen };
   return serial(async () => {
+    assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
     const presets = await read(identity.walletId, identity.network);
+    assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
     if (presets.some(entry => entry.key === preset.key)) return presets.map(entry => entry.config);
     if (presets.length >= MAX_PRESETS) throw new Error('Report preset limit reached.');
     const next = [...presets, preset];
+    assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
     await AsyncStorage.setItem(keyFor(identity.walletId, identity.network), JSON.stringify({ version: 1, walletId: identity.walletId, network: identity.network, presets: next }));
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
@@ -109,14 +116,27 @@ export function removeTerminalReportPreset(walletId: string, network: string, co
   let presetKey: string;
   try { presetKey = reportPresetKey(config); } catch (error) { return Promise.reject(error); }
   return serial(async () => {
+    assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
     const presets = await read(identity.walletId, identity.network);
+    assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
     const next = presets.filter(entry => entry.key !== presetKey);
     if (next.length === presets.length) return presets.map(entry => entry.config);
+    assertNotDeleted(identity.walletId, identity.network);
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
     await AsyncStorage.setItem(keyFor(identity.walletId, identity.network), JSON.stringify({ version: 1, walletId: identity.walletId, network: identity.network, presets: next }));
     if (!isCurrent()) throw new Error('Current Terminal report scope is required.');
     return next.map(entry => entry.config);
+  });
+}
+
+export function clearTerminalReportPresets(walletId: string, network: string): Promise<void> {
+  const identity = scope(walletId, network);
+  const key = keyFor(identity.walletId, identity.network);
+  deletedScopes.add(key);
+  return serial(() => AsyncStorage.removeItem(key)).catch(error => {
+    deletedScopes.delete(key);
+    throw error;
   });
 }

@@ -790,3 +790,17 @@ it('opens Reports as its own sheet and preserves the Sales filter on return', as
   expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
   expect(view.queryByLabelText('Close reports')).toBeNull();
 });
+
+it('shows a basket quantity limit inside the item sheet and clears it after a valid edit', async () => {
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 1 }] }));
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Items')); fireEvent.press(view.getByLabelText('Add Tea'));
+  for (let quantity = 2; quantity <= 99; quantity++) fireEvent.press(view.getByLabelText('Add one Tea'));
+  fireEvent.press(view.getByLabelText('Add one Tea'));
+  expect(view.getByText('Maximum quantity is 99.')).toBeTruthy();
+  expect(visibleScreen(view.getByText('Maximum quantity is 99.'))).toBe(true);
+  fireEvent.press(view.getByLabelText('Remove one Tea'));
+  expect(view.queryByText('Maximum quantity is 99.')).toBeNull();
+  expect(createTerminalInvoice).not.toHaveBeenCalled();
+});

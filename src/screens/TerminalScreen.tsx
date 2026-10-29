@@ -111,6 +111,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [stage, setStage] = useState<Stage>('loading');
   const [amount, setAmount] = useState('');
+  const [basketError, setBasketError] = useState('');
   const [basketLines, setBasketLines] = useState<TerminalBasketLine[]>([]);
   const [catalog, setCatalog] = useState<TerminalItem[]>([]);
   const [catalogError, setCatalogError] = useState(false);
@@ -171,7 +172,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
 
   useEffect(() => {
     setEndingRequest(false); setTransitioning(false);
-    basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setCatalog([]); setCatalogError(false);
+    basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setCatalog([]); setCatalogError(false);
     presentedRequestId.current = null;
   }, [scope]);
 
@@ -467,7 +468,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       } else setAmount('');
       userSelectedUnit.current = true;
       preferredUnit.current = next;
-      setUnit(next); setError('');
+      setUnit(next); setError(''); setBasketError('');
       void AsyncStorage.setItem(PREFERRED_UNIT_KEY, next).catch(() => setError('Could not save preferred currency.'));
     };
     apply();
@@ -492,27 +493,27 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     if (busy.current || request) return;
     const current = basketRef.current;
     const basketUnit = basketUnitRef.current;
-    if (current.length && item.unit !== basketUnit) { setError('Clear the basket to choose another currency.'); return; }
+    if (current.length && item.unit !== basketUnit) { setBasketError('Clear the basket to choose another currency.'); return; }
     const index = current.findIndex(line => line.itemId === item.id);
-    if (index < 0 && (delta < 1 || current.length >= 20)) { setError('Basket limit reached.'); return; }
+    if (index < 0 && (delta < 1 || current.length >= 20)) { setBasketError('Basket limit reached.'); return; }
     const existing = current[index];
     const quantity = (existing?.quantity ?? 0) + delta;
-    if (quantity > 99) { setError('Maximum quantity is 99.'); return; }
+    if (quantity > 99) { setBasketError('Maximum quantity is 99.'); return; }
     const next = index < 0 ? [...current, { itemId: item.id, name: item.name, unitPrice: item.unitPrice, quantity: 1, total: item.unitPrice }]
       : quantity < 1 ? current.filter((_, i) => i !== index)
         : current.map((line, i) => i === index ? { ...line, quantity, total: Number(BigInt(line.unitPrice) * BigInt(quantity)) } : line);
     const sum = next.reduce((total, line) => total + BigInt(line.total), 0n);
-    if (sum > BigInt(Number.MAX_SAFE_INTEGER) || next.some(line => !Number.isSafeInteger(line.total))) { setError('Basket total is too large.'); return; }
+    if (sum > BigInt(Number.MAX_SAFE_INTEGER) || next.some(line => !Number.isSafeInteger(line.total))) { setBasketError('Basket total is too large.'); return; }
     userEditedAmount.current = true;
     if (!current.length && next.length) { basketUnitRef.current = item.unit; userSelectedUnit.current = true; preferredUnit.current = item.unit; setUnit(item.unit); setAmount(''); }
     if (!next.length) basketUnitRef.current = null;
-    basketRef.current = next; setBasketLines(next); setError('');
+    basketRef.current = next; setBasketLines(next); setBasketError(''); setError('');
   };
   const removeBasketLine = (line: TerminalBasketLine) => {
     if (busy.current) return;
     const next = basketRef.current.filter(entry => entry.itemId !== line.itemId);
     basketRef.current = next; if (!next.length) basketUnitRef.current = null;
-    setBasketLines(next); setError('');
+    setBasketLines(next); setBasketError(''); setError('');
   };
 
   const hasRequest = !!request;
@@ -651,7 +652,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onEdit={item => navigation.navigate('ItemEditor', { item })} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="QuickItems" options={sheetOptions}>
-      {({ navigation }) => <TerminalQuickItemsScreen catalog={catalog} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onRemove={removeBasketLine} onClose={() => navigation.goBack()} />}
+      {({ navigation }) => <TerminalQuickItemsScreen error={basketError} catalog={catalog} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onRemove={removeBasketLine} onClose={() => navigation.goBack()} />}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="ItemEditor" options={sheetOptions}>
       {({ navigation, route }) => activeWallet ? <TerminalItemEditorScreen walletId={activeWallet.id} network={network} preferredUnit={unit} initialItem={route.params?.item} onClose={() => navigation.goBack()} /> : null}

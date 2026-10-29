@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  listTerminalReportPresets, removeTerminalReportPreset, reportPresetKey, saveTerminalReportPreset,
+  clearTerminalReportPresets, listTerminalReportPresets, removeTerminalReportPreset, reportPresetKey, saveTerminalReportPreset,
   TERMINAL_REPORT_PRESETS_KEY, TerminalReportPresetConfig,
 } from '../../services/terminalReportPresets';
 
-jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: jest.fn(), setItem: jest.fn() } }));
+jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() } }));
 const storage = new Map<string, string>();
 const key = `${TERMINAL_REPORT_PRESETS_KEY}:mainnet:wallet-a`;
 const itemConfig: TerminalReportPresetConfig = { period: 'week', tab: 'items', unit: 'USD', sort: 'gross' };
@@ -13,6 +13,30 @@ beforeEach(() => {
   storage.clear(); jest.clearAllMocks();
   (AsyncStorage.getItem as jest.Mock).mockImplementation(async name => storage.get(name) ?? null);
   (AsyncStorage.setItem as jest.Mock).mockImplementation(async (name, value) => { storage.set(name, value); });
+  (AsyncStorage.removeItem as jest.Mock).mockImplementation(async name => { storage.delete(name); });
+});
+
+it('clears the selected report scope and rejects queued writes after cleanup begins', async () => {
+  const wallet = 'reports-cleanup';
+  const mainnetKey = `${TERMINAL_REPORT_PRESETS_KEY}:mainnet:${wallet}`;
+  const testnetKey = `${TERMINAL_REPORT_PRESETS_KEY}:testnet:${wallet}`;
+  await saveTerminalReportPreset(wallet, 'mainnet', itemConfig, () => true);
+  await saveTerminalReportPreset(wallet, 'testnet', itemConfig, () => true);
+  let release!: () => void;
+  let started!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const reading = new Promise<void>(resolve => { started = resolve; });
+  (AsyncStorage.getItem as jest.Mock).mockImplementationOnce(async name => { started(); await gate; return storage.get(name) ?? null; });
+  const save = saveTerminalReportPreset(wallet, 'Mainnet', { ...itemConfig, unit: 'EUR' }, () => true);
+  await reading;
+  const cleanup = clearTerminalReportPresets(wallet, 'Bitcoin');
+  release();
+  await expect(save).rejects.toThrow('removed');
+  await cleanup;
+  expect(storage.has(mainnetKey)).toBe(false);
+  expect(storage.has(testnetKey)).toBe(true);
+  expect(await listTerminalReportPresets(wallet, 'mainnet')).toEqual([]);
+  await expect(removeTerminalReportPreset(wallet, 'mainnet', itemConfig, () => true)).rejects.toThrow('removed');
 });
 
 it('stores versioned wallet/network scopes and canonicalizes equivalent overview and preset configs', async () => {

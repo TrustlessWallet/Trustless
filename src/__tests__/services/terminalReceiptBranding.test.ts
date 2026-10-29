@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Share } from 'react-native';
 import { formatTerminalReceipt, shareTerminalReceipt } from '../../services/terminalReceipt';
 import {
-  DEFAULT_TERMINAL_RECEIPT_BRANDING, loadTerminalReceiptBranding, saveTerminalReceiptBranding,
+  clearTerminalReceiptBranding, DEFAULT_TERMINAL_RECEIPT_BRANDING, loadTerminalReceiptBranding, saveTerminalReceiptBranding,
   TERMINAL_RECEIPT_BRANDING_KEY, TerminalReceiptBranding,
 } from '../../services/terminalReceiptBranding';
 import { TerminalSale } from '../../services/terminalSales';
@@ -10,7 +10,7 @@ import { TerminalRefundAttempt } from '../../services/terminalRefunds';
 import { deflateSync } from 'zlib';
 import { normalizeTerminalReceiptLogo, receiptLogoFromBytes } from '../../services/terminalReceiptLogo';
 
-jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: jest.fn(), setItem: jest.fn() } }));
+jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() } }));
 const storage = new Map<string, string>();
 const key = `${TERMINAL_RECEIPT_BRANDING_KEY}:mainnet:wallet-a`;
 const branding: TerminalReceiptBranding = { name: 'Trustless Coffee', contact: 'hello@example.com', footer: 'Thanks for visiting.' };
@@ -21,7 +21,43 @@ beforeEach(() => {
   storage.clear(); jest.restoreAllMocks();
   (AsyncStorage.getItem as jest.Mock).mockReset().mockImplementation(async name => storage.get(name) ?? null);
   (AsyncStorage.setItem as jest.Mock).mockReset().mockImplementation(async (name, value) => { storage.set(name, value); });
+  (AsyncStorage.removeItem as jest.Mock).mockReset().mockImplementation(async name => { storage.delete(name); });
   jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
+});
+
+it('clears only the requested branding scope and blocks an in-flight save from restoring it', async () => {
+  const wallet = 'branding-cleanup';
+  const mainnetKey = `${TERMINAL_RECEIPT_BRANDING_KEY}:mainnet:${wallet}`;
+  const testnetKey = `${TERMINAL_RECEIPT_BRANDING_KEY}:testnet:${wallet}`;
+  await saveTerminalReceiptBranding(wallet, 'mainnet', branding, () => true);
+  await saveTerminalReceiptBranding(wallet, 'testnet', branding, () => true);
+  let release!: () => void;
+  let started!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const reading = new Promise<void>(resolve => { started = resolve; });
+  (AsyncStorage.getItem as jest.Mock).mockImplementationOnce(async name => { started(); await gate; return storage.get(name) ?? null; });
+  const save = saveTerminalReceiptBranding(wallet, 'Mainnet', { ...branding, footer: 'Late' }, () => true);
+  await reading;
+  const cleanup = clearTerminalReceiptBranding(wallet, 'Bitcoin');
+  release();
+  await expect(save).rejects.toThrow('removed');
+  await cleanup;
+  expect(storage.has(mainnetKey)).toBe(false);
+  expect(storage.has(testnetKey)).toBe(true);
+  expect(await loadTerminalReceiptBranding(wallet, 'mainnet')).toEqual(DEFAULT_TERMINAL_RECEIPT_BRANDING);
+  await expect(saveTerminalReceiptBranding(wallet, 'mainnet', branding, () => true)).rejects.toThrow('removed');
+});
+
+it('allows cleanup to be retried after storage removal fails', async () => {
+  const wallet = 'branding-cleanup-retry';
+  const scopedKey = `${TERMINAL_RECEIPT_BRANDING_KEY}:mainnet:${wallet}`;
+  await saveTerminalReceiptBranding(wallet, 'mainnet', branding, () => true);
+  (AsyncStorage.removeItem as jest.Mock).mockRejectedValueOnce(new Error('disk unavailable'));
+  await expect(clearTerminalReceiptBranding(wallet, 'mainnet')).rejects.toThrow('disk unavailable');
+  expect(storage.has(scopedKey)).toBe(true);
+  await saveTerminalReceiptBranding(wallet, 'mainnet', { ...branding, footer: 'Updated' }, () => true);
+  await clearTerminalReceiptBranding(wallet, 'mainnet');
+  expect(storage.has(scopedKey)).toBe(false);
 });
 
 it('loads empty defaults per scope and saves a trimmed immutable snapshot', async () => {

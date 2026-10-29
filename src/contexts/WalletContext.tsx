@@ -44,6 +44,9 @@ import { matchTerminalPayment, normalizeInvoice } from '../services/terminal';
 import { removeTerminalItems } from '../services/terminalItems';
 import { reconcileTerminalSales, removeTerminalSales } from '../services/terminalSales';
 import { getTerminalRefund, findTerminalRefundByInvoice, listTerminalRefundsForInvoices, reconcileTerminalRefunds, removeTerminalRefunds, updateTerminalRefund } from '../services/terminalRefunds';
+import { clearTerminalReceiptBranding } from '../services/terminalReceiptBranding';
+import { clearTerminalReportPresets } from '../services/terminalReportPresets';
+import { clearTerminalReceiptTemplates } from '../services/terminalReceiptTemplates';
 import { checkedRefundInvoice, checkedRefundQuote, matchRefundPayment, preflightRefund, TerminalRefundQuote, TerminalRefundResult } from '../services/terminalRefundPayment';
 import { useWalletBalanceSync, useAddressListSync } from '../hooks/useBalance';
 
@@ -1800,6 +1803,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await removeTerminalRefunds(walletId, NETWORK_NAME);
         await removeTerminalSales(walletId, NETWORK_NAME);
         await removeTerminalItems(walletId, NETWORK_NAME);
+        await clearTerminalReceiptBranding(walletId, NETWORK_NAME);
+        await clearTerminalReportPresets(walletId, NETWORK_NAME);
+        await clearTerminalReceiptTemplates(walletId, NETWORK_NAME);
         if (activeWalletIdRef.current === walletId) {
             ++walletGenerationRef.current;
             activeWalletIdRef.current = null;
@@ -1853,6 +1859,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             await removeTerminalRefunds(w.id, NETWORK_NAME);
             await removeTerminalSales(w.id, NETWORK_NAME);
             await removeTerminalItems(w.id, NETWORK_NAME);
+            await clearTerminalReceiptBranding(w.id, NETWORK_NAME);
+            await clearTerminalReportPresets(w.id, NETWORK_NAME);
+            await clearTerminalReceiptTemplates(w.id, NETWORK_NAME);
             await deleteWalletMnemonic(w.id);
             await dbDeleteWallet(w.id);
         }
