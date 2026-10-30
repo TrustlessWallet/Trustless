@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, Alert, Image, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -11,8 +11,10 @@ import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { TerminalNetwork } from '../services/terminal';
 import { DEFAULT_TERMINAL_RECEIPT_BRANDING, loadTerminalReceiptBranding, normalizeTerminalReceiptBranding, saveTerminalReceiptBranding, TerminalReceiptBranding } from '../services/terminalReceiptBranding';
+import { terminalReceiptLogoLayout } from '../services/terminalReceiptLogo';
 import { importTerminalReceiptLogo } from '../services/terminalReceiptLogoImport';
 import { createTerminalReceiptTemplate, loadTerminalReceiptTemplates, removeTerminalReceiptTemplate, replaceTerminalReceiptTemplate, TerminalReceiptTemplate } from '../services/terminalReceiptTemplates';
+import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 import TerminalSheetHeader from './TerminalSheetHeader';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void };
@@ -49,8 +51,9 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
   const [templateError, setTemplateError] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const styles = makeStyles(theme.colors);
+  const logoLayout = useMemo(() => draft.logo ? terminalReceiptLogoLayout(draft.logo) : undefined, [draft.logo]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; ++generation.current; }; }, []);
-  useLayoutEffect(() => { navigation.setOptions({ gestureEnabled: !busy }); }, [navigation, busy]);
+  useLayoutEffect(() => { navigation.setOptions({ gestureEnabled: !busy && !naming }); }, [navigation, busy, naming]);
   const load = async () => {
     if (!owner) return;
     const request = ++generation.current, epoch = context.current.epoch;
@@ -73,6 +76,10 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
   const loadedTemplate = templates.find(item => item.id === loadedTemplateId);
   const equalBranding = (a: TerminalReceiptBranding, b: TerminalReceiptBranding) => fields.every(field => a[field.key].trim() === b[field.key].trim()) && a.logo?.mimeType === b.logo?.mimeType && a.logo?.base64 === b.logo?.base64;
   const canEdit = () => owner && context.current.owner && context.current.scope === scope && ready && !busyRef.current && !pickingRef.current;
+  const cancelNaming = () => {
+    if (!canEdit()) return;
+    setNaming(false); setTemplateName(''); setTemplateError(''); Keyboard.dismiss();
+  };
   const loadTemplates = async () => {
     if (!owner || !context.current.owner) return;
     const request = ++libraryGeneration.current, epoch = context.current.epoch;
@@ -168,8 +175,9 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
     } finally { busyRef.current = false; if (mounted.current) setPendingAction(null); }
   };
   return <View style={styles.root}>
-    <TerminalSheetHeader title="Receipts" closeLabel="Close receipt settings" disabled={busy} onClose={() => { if (!busyRef.current) onClose(); }} />
-    {!allowed ? <Text style={styles.message}>Owner access is required to edit receipts.</Text> : state.loading || state.scope !== scope ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="Loading receipt settings" size="small" color={theme.colors.bitcoin} /></View> : state.error ? <View style={styles.failure}><Text style={styles.message}>Receipt settings unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry receipt settings" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
+    <TerminalSheetHeader title={naming ? 'Save template' : 'Receipts'} closeLabel={naming ? 'Cancel saving template' : 'Close receipt settings'} disabled={busy} onClose={() => { if (!busyRef.current) { if (naming) cancelNaming(); else onClose(); } }} />
+    {!allowed ? <Text style={styles.message}>Owner access is required to edit receipts.</Text> : state.loading || state.scope !== scope ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="Loading receipt settings" size="small" color={theme.colors.bitcoin} /></View> : state.error ? <View style={styles.failure}><Text style={styles.message}>Receipt settings unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry receipt settings" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : <>
+    <ScrollView testID="receipt-settings-editor" pointerEvents={naming ? 'none' : 'auto'} accessibilityElementsHidden={naming} importantForAccessibility={naming ? 'no-hide-descendants' : 'auto'} style={[styles.scroll, naming && styles.hidden]} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
       <View style={styles.templates}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Load receipt template" accessibilityState={{ expanded: templatesOpen, disabled: busy || preparingLogo }} disabled={busy || preparingLogo} onPress={() => { if (canEdit()) { Keyboard.dismiss(); setTemplatesOpen(value => !value); } }} style={styles.templatesRow}>
           <Text style={styles.templatesTitle}>Templates</Text>
@@ -186,19 +194,21 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
       </View>
       <View style={styles.field}>
         <Text style={styles.label}>Logo</Text>
-        {draft.logo ? <Image accessibilityLabel="Receipt logo preview" source={{ uri: `data:${draft.logo.mimeType};base64,${draft.logo.base64}` }} resizeMode="contain" style={styles.logo} /> : null}
-        <View style={styles.logoActions}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Choose receipt logo" accessibilityState={{ disabled: busy || preparingLogo, busy: preparingLogo }} disabled={busy || preparingLogo} onPress={() => { void chooseLogo(); }} style={styles.logoButton}><Text style={[styles.logoButtonText, preparingLogo && { opacity: 0 }]}>{draft.logo ? 'Change logo' : 'Choose logo'}</Text>{preparingLogo ? <View style={styles.logoProgress}><ActivityIndicator size="small" color={theme.colors.bitcoin} /></View> : null}</TouchableOpacity>
-          {draft.logo ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove receipt logo" disabled={busy || preparingLogo} onPress={() => { setDraft(previous => { const { logo: _logo, ...rest } = previous; return rest; }); setError(''); }} style={styles.logoButton}><Text style={styles.logoButtonText}>Remove</Text></TouchableOpacity> : null}
+        <View style={styles.logoEditor}>
+          {draft.logo ? <Image accessibilityLabel="Receipt logo preview" source={{ uri: `data:${draft.logo.mimeType};base64,${draft.logo.base64}` }} resizeMode="contain" style={[styles.logo, styles.logoEditorImage, logoLayout]} /> : null}
+          <View style={styles.logoActions}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Choose receipt logo" accessibilityState={{ disabled: busy || preparingLogo, busy: preparingLogo }} disabled={busy || preparingLogo} onPress={() => { void chooseLogo(); }} style={styles.logoButton}><Text style={[styles.logoButtonText, preparingLogo && { opacity: 0 }]}>{draft.logo ? 'Change logo' : 'Choose logo'}</Text>{preparingLogo ? <View style={styles.logoProgress}><ActivityIndicator size="small" color={theme.colors.bitcoin} /></View> : null}</TouchableOpacity>
+            {draft.logo ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove receipt logo" disabled={busy || preparingLogo} onPress={() => { setDraft(previous => { const { logo: _logo, ...rest } = previous; return rest; }); setError(''); }} style={styles.logoButton}><Text style={styles.logoButtonText}>Remove</Text></TouchableOpacity> : null}
+          </View>
         </View>
       </View>
       {fields.map(field => <View key={field.key} style={styles.field}>
         <Text style={styles.label}>{field.label}</Text>
-        <StyledInput accessibilityLabel={`Receipt ${field.label.toLowerCase()}`} value={draft[field.key]} maxLength={field.max} editable={!busy} autoCorrect={field.key !== 'contact'} autoCapitalize={field.key === 'contact' ? 'none' : 'sentences'} onChangeText={value => { setDraft(previous => ({ ...previous, [field.key]: value })); setError(''); }} />
+        <StyledInput accessibilityLabel={`Receipt ${field.label.toLowerCase()}`} value={draft[field.key]} maxLength={field.max} editable={!busy && !naming} autoCorrect={field.key !== 'contact'} autoCapitalize={field.key === 'contact' ? 'none' : 'sentences'} onChangeText={value => { setDraft(previous => ({ ...previous, [field.key]: value })); setError(''); }} />
       </View>)}
       <Text style={styles.previewLabel}>Preview</Text>
       <View accessibilityLabel="Receipt branding preview" style={styles.preview}>
-        {draft.logo ? <Image accessibilityLabel="Receipt logo in preview" source={{ uri: `data:${draft.logo.mimeType};base64,${draft.logo.base64}` }} resizeMode="contain" style={styles.logo} /> : null}
+        {draft.logo ? <Image accessibilityLabel="Receipt logo in preview" source={{ uri: `data:${draft.logo.mimeType};base64,${draft.logo.base64}` }} resizeMode="contain" style={[styles.logo, logoLayout]} /> : null}
         {draft.name.trim() ? <Text style={styles.business}>{draft.name.trim()}</Text> : null}
         {draft.contact.trim() ? <Text style={styles.contact}>{draft.contact.trim()}</Text> : null}
         <Text style={styles.receiptTitle}>Payment receipt</Text>
@@ -206,33 +216,36 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
         {draft.footer.trim() ? <Text style={styles.contact}>{draft.footer.trim()}</Text> : null}
       </View>
       <View style={styles.templateActions}>
-        {naming ? <>
-          <Text style={styles.label}>Template name</Text>
-          <StyledInput accessibilityLabel="Receipt template name" value={templateName} maxLength={40} autoFocus editable={!busy} autoCorrect={false} returnKeyType="done" onChangeText={value => { setTemplateName(value); setTemplateError(''); }} onSubmitEditing={() => { if (templateName.trim()) void changeTemplate('create'); }} />
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save receipt template" accessibilityState={{ disabled: busy || preparingLogo || !templateName.trim(), busy: pendingAction === 'template' }} disabled={busy || preparingLogo || !templateName.trim()} onPress={() => { void changeTemplate('create'); }} style={[styles.templateButton, !templateName.trim() && styles.disabled]}>{pendingAction === 'template' ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.templateButtonText}>Save template</Text>}</TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel saving template" disabled={busy} onPress={() => { if (canEdit()) { setNaming(false); setTemplateName(''); setTemplateError(''); Keyboard.dismiss(); } }} style={styles.templateCancel}><Text style={styles.templateButtonText}>Cancel</Text></TouchableOpacity>
-        </> : <>
           {loadedTemplate && !equalBranding(loadedTemplate.branding, draft) ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Replace receipt template ${loadedTemplate.name}`} disabled={busy || preparingLogo} onPress={() => { void changeTemplate('replace', loadedTemplate); }} style={styles.templateButton}>{pendingAction === 'template' ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.templateButtonText}>Replace “{loadedTemplate.name}”</Text>}</TouchableOpacity> : null}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save as receipt template" disabled={busy || preparingLogo || !libraryReady || templates.length >= 5} accessibilityState={{ disabled: busy || preparingLogo || !libraryReady || templates.length >= 5 }} onPress={() => { if (canEdit() && libraryReady && templates.length < 5) { setNaming(true); setTemplateName(''); setTemplateError(''); } }} style={[styles.templateButton, (!libraryReady || templates.length >= 5) && styles.disabled]}><Text style={styles.templateButtonText}>Save as template</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save as receipt template" disabled={busy || preparingLogo || !libraryReady || templates.length >= 5} accessibilityState={{ disabled: busy || preparingLogo || !libraryReady || templates.length >= 5 }} onPress={() => { if (canEdit() && libraryReady && templates.length < 5) { Keyboard.dismiss(); setNaming(true); setTemplateName(''); setTemplateError(''); } }} style={[styles.templateButton, (!libraryReady || templates.length >= 5) && styles.disabled]}><Text style={styles.templateButtonText}>Save as template</Text></TouchableOpacity>
           {libraryReady && templates.length >= 5 ? <Text style={styles.message}>Maximum of 5 templates.</Text> : null}
-        </>}
         {templateError ? <Text accessibilityRole="alert" style={styles.message}>{templateError}</Text> : null}
       </View>
       {error ? <Text accessibilityRole="alert" style={styles.message}>{error}</Text> : null}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save receipt settings" accessibilityState={{ disabled: busy || preparingLogo || naming || !dirty, busy }} disabled={busy || preparingLogo || naming || !dirty} onPress={() => { void save(); }} style={[styles.save, !dirty && styles.disabled]}>{pendingAction === 'settings' ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.saveText}>Save</Text>}</TouchableOpacity>
-    </ScrollView>}
+    </ScrollView>
+    {naming ? <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.namingContent, { paddingBottom: insets.bottom + 32 }]}>
+      <Text style={styles.label}>Template name</Text>
+      <StyledInput accessibilityLabel="Receipt template name" value={templateName} maxLength={40} autoFocus editable={!busy} autoCorrect={false} returnKeyType="done" onChangeText={value => { setTemplateName(value); setTemplateError(''); }} onSubmitEditing={() => { if (templateName.trim()) void changeTemplate('create'); }} />
+      {templateError ? <Text accessibilityRole="alert" style={styles.message}>{templateError}</Text> : null}
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save receipt template" accessibilityState={{ disabled: busy || preparingLogo || !templateName.trim(), busy: pendingAction === 'template' }} disabled={busy || preparingLogo || !templateName.trim()} onPress={() => { void changeTemplate('create'); }} style={[styles.save, !templateName.trim() && styles.disabled]}>{pendingAction === 'template' ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.saveText}>Save template</Text>}</TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel template name" disabled={busy} onPress={cancelNaming} style={styles.templateCancel}><Text style={styles.templateButtonText}>Cancel</Text></TouchableOpacity>
+    </ScrollView> : null}
+    </>}
   </View>;
 }
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; muted: string; border: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background }, scroll: { flex: 1, minHeight: 0 }, content: { paddingHorizontal: 24, paddingTop: 20 },
+    hidden: { position: 'absolute', top: SHEET_HEADER_HEIGHT, bottom: 0, left: 0, right: 0, opacity: 0 }, namingContent: { paddingHorizontal: 24, paddingTop: 24 },
     templates: { marginBottom: 20 }, templatesRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.border }, templatesTitle: { color: colors.muted, fontSize: 16 }, templatesEnd: { flexDirection: 'row', alignItems: 'center', gap: 10 }, templateCount: { color: colors.primary, fontSize: 14 },
     templateRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.border }, templateLoad: { flex: 1, minHeight: 48, justifyContent: 'center', paddingVertical: 10 }, templateTitle: { color: colors.primary, fontSize: 14, flexShrink: 1 }, templateDelete: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center' },
     templateActions: { marginTop: 18 }, templateButton: { minHeight: 48, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 10, marginTop: 12 }, templateButtonText: { color: colors.primary, fontSize: 13, fontFamily: 'SpaceMono-Bold', textAlign: 'center' }, templateCancel: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
     field: { marginBottom: 18 }, label: { color: colors.muted, fontSize: 12, marginBottom: 8 },
-    logo: { width: 120, height: 80, alignSelf: 'flex-start', marginBottom: 8 },
+    logo: { alignSelf: 'flex-start', marginBottom: 8 },
     logoProgress: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-    logoActions: { flexDirection: 'row', gap: 12 }, logoButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border }, logoButtonText: { color: colors.primary, fontSize: 12 },
+    logoEditor: { flexDirection: 'row', alignItems: 'center', gap: 16 }, logoEditorImage: { marginBottom: 0 },
+    logoActions: { flexDirection: 'row', flexWrap: 'wrap', flexShrink: 1, gap: 8 }, logoButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border }, logoButtonText: { color: colors.primary, fontSize: 12 },
     previewLabel: { color: colors.muted, fontSize: 12, marginTop: 4, marginBottom: 10 },
     preview: { backgroundColor: colors.surface, borderRadius: 8, borderWidth: 1, borderColor: colors.border, padding: 18, gap: 8 },
     business: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }, contact: { color: colors.muted, fontSize: 12, lineHeight: 19 },

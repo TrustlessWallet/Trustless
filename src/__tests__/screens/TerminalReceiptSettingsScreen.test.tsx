@@ -33,7 +33,7 @@ beforeEach(() => {
   (loadTerminalReceiptBranding as jest.Mock).mockResolvedValue(branding);
   (Templates.loadTerminalReceiptTemplates as jest.Mock).mockResolvedValue([]);
   (saveTerminalReceiptBranding as jest.Mock).mockResolvedValue(branding);
-  (importTerminalReceiptLogo as jest.Mock).mockResolvedValue({ mimeType: 'image/png', base64: 'AQIDBA==' });
+  (importTerminalReceiptLogo as jest.Mock).mockResolvedValue({ mimeType: 'image/png', base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==' });
 });
 it('keeps selection canceled, previews a chosen logo, and saves removal as a dirty edit', async () => {
   const view = render(<TerminalReceiptSettingsScreen {...props} />);
@@ -63,7 +63,7 @@ it('ignores a selected logo after owner access changes', async () => {
   expect(view.queryByLabelText('Receipt logo in preview')).toBeNull();
 });
 it('saves removal of an existing logo', async () => {
-  (loadTerminalReceiptBranding as jest.Mock).mockResolvedValueOnce({ ...branding, logo: { mimeType: 'image/png', base64: 'AQIDBA==' } });
+  (loadTerminalReceiptBranding as jest.Mock).mockResolvedValueOnce({ ...branding, logo: { mimeType: 'image/png', base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==' } });
   const view = render(<TerminalReceiptSettingsScreen {...props} />);
   await waitFor(() => expect(view.getByLabelText('Receipt logo in preview')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Remove receipt logo'));
@@ -170,7 +170,7 @@ it('saves a named copy without applying receipt settings, then applies only thro
   await waitFor(() => expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false));
   fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Weekend footer');
   fireEvent.press(view.getByLabelText('Save as receipt template'));
-  expect(view.getByLabelText('Save receipt settings').props.accessibilityState.disabled).toBe(true);
+  expect(view.queryByLabelText('Save receipt settings')).toBeNull();
   fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Weekend');
   fireEvent.press(view.getByLabelText('Save receipt template')); fireEvent.press(view.getByLabelText('Save receipt template'));
   await waitFor(() => expect(view.queryByLabelText('Receipt template name')).toBeNull());
@@ -224,4 +224,43 @@ it('ignores late template writes and stale delete confirmations after wallet cha
   expect((Templates.createTerminalReceiptTemplate as jest.Mock).mock.calls[0][4]()).toBe(false);
   await act(async () => finish([savedTemplate]));
   expect(view.queryByLabelText('Load template Weekend')).toBeNull(); expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
+});
+
+
+it('keeps template naming compact and returns to the unchanged receipt draft on cancel', async () => {
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false));
+  fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Unsaved footer');
+  fireEvent.press(view.getByLabelText('Save as receipt template'));
+  expect(view.getAllByText('Save template')).toHaveLength(2);
+  expect(view.getByLabelText('Receipt template name').props.autoFocus).toBe(true);
+  expect(view.queryByLabelText('Receipt branding preview')).toBeNull();
+  expect(view.queryByLabelText('Receipt business name')).toBeNull();
+  expect(view.getByLabelText('Receipt business name', { includeHiddenElements: true }).props.editable).toBe(false);
+  fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Unfinished');
+  fireEvent.press(view.getByLabelText('Cancel saving template'));
+  expect(view.getByLabelText('Receipt footer').props.value).toBe('Unsaved footer');
+  expect(view.getByLabelText('Receipt branding preview')).toBeTruthy();
+  expect(Templates.createTerminalReceiptTemplate).not.toHaveBeenCalled();
+  expect(props.onClose).not.toHaveBeenCalled();
+});
+
+
+it('keeps a failed template name editable and retries without applying the receipt profile', async () => {
+  (Templates.createTerminalReceiptTemplate as jest.Mock).mockRejectedValueOnce(new Error('Receipt template name already exists.')).mockResolvedValue([{ ...savedTemplate, name: 'New weekend' }]);
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false));
+  fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Keep this draft');
+  fireEvent.press(view.getByLabelText('Save as receipt template'));
+  fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Weekend');
+  fireEvent.press(view.getByLabelText('Save receipt template'));
+  await waitFor(() => expect(view.getByText('A template with this name already exists.')).toBeTruthy());
+  expect(view.getByLabelText('Receipt template name').props.value).toBe('Weekend');
+  expect(view.getByLabelText('Receipt template name').props.editable).toBe(true);
+  fireEvent.changeText(view.getByLabelText('Receipt template name'), 'New weekend');
+  fireEvent(view.getByLabelText('Receipt template name'), 'submitEditing');
+  expect(Templates.createTerminalReceiptTemplate).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(view.queryByLabelText('Receipt template name')).toBeNull());
+  expect(view.getByLabelText('Receipt footer').props.value).toBe('Keep this draft');
+  expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
 });

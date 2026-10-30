@@ -4,6 +4,8 @@ import pako from 'pako';
 export type TerminalReceiptLogo = Readonly<{ mimeType: 'image/png' | 'image/jpeg'; base64: string }>;
 export const MAX_TERMINAL_RECEIPT_LOGO_BYTES = 200 * 1024;
 const MAX_SIDE = 1024;
+type LogoDimensions = Readonly<{ width: number; height: number }>;
+const dimensions = new WeakMap<TerminalReceiptLogo, LogoDimensions>();
 const invalid = () => new Error('Invalid receipt logo. Choose a PNG or JPEG up to 200 KB and 1024 pixels per side.');
 const u32 = (bytes: Uint8Array, offset: number) => (((bytes[offset] * 0x1000000) + (bytes[offset + 1] << 16) + (bytes[offset + 2] << 8) + bytes[offset + 3]) >>> 0);
 const validSize = (width: number, height: number) => Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 && width <= MAX_SIDE && height <= MAX_SIDE;
@@ -18,7 +20,7 @@ function crc32(bytes: Uint8Array, start: number, end: number): number {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-function sanitizePng(bytes: Uint8Array): Uint8Array {
+function sanitizePng(bytes: Uint8Array): { bytes: Uint8Array; width: number; height: number } {
   if (!isPng(bytes)) throw invalid();
   let offset = 8, seenIHDR = false, seenIDAT = false, seenEnd = false;
   let width = 0, height = 0, channels = 0, bitDepth = 0, color = -1, paletteEntries = 0, seenPalette = false, seenTransparency = false, afterIDAT = false;
@@ -65,9 +67,9 @@ function sanitizePng(bytes: Uint8Array): Uint8Array {
   decoder.onData = chunk => { inflated += chunk.byteLength; if (inflated > expected) throw invalid(); };
   try { decoder.push(compressed, true); } catch { throw invalid(); }
   if (decoder.err || !(decoder as pako.Inflate & { ended: boolean }).ended || inflated !== expected) throw invalid();
-  return Buffer.concat(safeChunks.map(part => Buffer.from(part)));
+  return { bytes: Buffer.concat(safeChunks.map(part => Buffer.from(part))), width, height };
 }
-function sanitizeJpeg(bytes: Uint8Array): Uint8Array {
+function sanitizeJpeg(bytes: Uint8Array): { bytes: Uint8Array; width: number; height: number } {
   if (!isJpeg(bytes) || bytes.length < 6) throw invalid();
   let offset = 2, width = 0, height = 0, sawScan = false;
   const parts: Uint8Array[] = [bytes.subarray(0, 2)];
@@ -94,14 +96,16 @@ function sanitizeJpeg(bytes: Uint8Array): Uint8Array {
     offset += length;
   }
   if (!sawScan || bytes[bytes.length - 2] !== 0xff || bytes[bytes.length - 1] !== 0xd9) throw invalid();
-  return Buffer.concat(parts.map(part => Buffer.from(part)));
+  return { bytes: Buffer.concat(parts.map(part => Buffer.from(part))), width, height };
 }
 export function receiptLogoFromBytes(input: Uint8Array): TerminalReceiptLogo {
   if (!(input instanceof Uint8Array) || input.length === 0 || input.length > MAX_TERMINAL_RECEIPT_LOGO_BYTES) throw invalid();
   const mimeType = isPng(input) ? 'image/png' : isJpeg(input) ? 'image/jpeg' : null;
   if (!mimeType) throw invalid();
-  const bytes = mimeType === 'image/png' ? sanitizePng(input) : sanitizeJpeg(input);
-  return { mimeType, base64: Buffer.from(bytes).toString('base64') };
+  const image = mimeType === 'image/png' ? sanitizePng(input) : sanitizeJpeg(input);
+  const logo: TerminalReceiptLogo = { mimeType, base64: Buffer.from(image.bytes).toString('base64') };
+  dimensions.set(logo, { width: image.width, height: image.height });
+  return logo;
 }
 export function normalizeTerminalReceiptLogo(value: unknown): TerminalReceiptLogo {
   if (!value || typeof value !== 'object') throw invalid();
@@ -112,4 +116,16 @@ export function normalizeTerminalReceiptLogo(value: unknown): TerminalReceiptLog
   const logo = receiptLogoFromBytes(bytes);
   if (logo.mimeType !== input.mimeType || logo.base64 !== input.base64) throw invalid();
   return logo;
+}
+
+/** Match the PDF's proportional fit without adding an invisible image frame or cropping. */
+export function terminalReceiptLogoLayout(logo: TerminalReceiptLogo, maxWidth = 120, maxHeight = 80): LogoDimensions {
+  if (!Number.isFinite(maxWidth) || maxWidth <= 0 || !Number.isFinite(maxHeight) || maxHeight <= 0) throw invalid();
+  let size = dimensions.get(logo);
+  if (!size) {
+    size = dimensions.get(normalizeTerminalReceiptLogo(logo))!;
+    dimensions.set(logo, size);
+  }
+  const scale = Math.min(1, maxWidth / size.width, maxHeight / size.height);
+  return { width: size.width * scale, height: size.height * scale };
 }
