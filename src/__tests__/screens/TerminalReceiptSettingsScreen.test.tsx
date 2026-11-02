@@ -1,3 +1,5 @@
+const mockPro = { status: 'pro', pending: false, plans: [], busy: false, loadingPlans: false, error: null, loadPlans: jest.fn(), refresh: jest.fn().mockResolvedValue(undefined), purchase: jest.fn(), restore: jest.fn(), manage: jest.fn() };
+jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => mockPro }));
 import React from 'react';
 import { ActionSheetIOS, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -26,6 +28,7 @@ jest.mock('../../services/terminalReceiptLogoImport', () => ({ importTerminalRec
 const branding = { name: 'Corner café', contact: 'shop@example.com', footer: 'Thank you' };
 const props = { walletId: 'wallet-a', network: 'mainnet' as const, onClose: jest.fn() };
 beforeEach(() => {
+  mockPro.status = 'pro';
   jest.clearAllMocks();
   jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(1));
   (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-a', type: 'standard' });
@@ -263,4 +266,18 @@ it('keeps a failed template name editable and retries without applying the recei
   await waitFor(() => expect(view.queryByLabelText('Receipt template name')).toBeNull());
   expect(view.getByLabelText('Receipt footer').props.value).toBe('Keep this draft');
   expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
+});
+
+it('keeps a receipt draft on upgrade cancellation and leaves basic Save free', async () => {
+  mockPro.status = 'free';
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  fireEvent.changeText(view.getByLabelText('Receipt business name'), 'Unsaved café');
+  fireEvent.press(view.getByLabelText('Choose receipt logo'));
+  expect(view.getByText('Terminal Pro')).toBeTruthy();
+  expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Close Terminal Pro'));
+  expect(view.getByDisplayValue('Unsaved café')).toBeTruthy();
+  await act(async () => fireEvent.press(view.getByLabelText('Save receipt settings')));
+  expect(saveTerminalReceiptBranding).toHaveBeenCalledWith('wallet-a', 'mainnet', expect.objectContaining({ name: 'Unsaved café' }), expect.any(Function));
 });

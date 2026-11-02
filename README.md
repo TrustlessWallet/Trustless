@@ -99,6 +99,17 @@ Trustless uses [Breez SDK](https://github.com/breez) to handle lightning operati
         ```. 
 To get the API key just fill out the [form](https://breez.technology/request-api-key/#contact-us-form-sdk) on Breez's website. You will receive a key to your email address. This is completely free.
 
+#### Optional Terminal Pro billing
+
+Terminal checkout, Sales, refunds, basic receipts and encrypted backup work without a billing key. Subscription purchases use RevenueCat’s anonymous identity and verified `terminal_pro` entitlement. Configure the platform’s **public SDK key** in `.env`:
+
+```dotenv
+EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=appl_your_public_sdk_key
+EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=goog_your_public_sdk_key
+```
+
+Use a separate RevenueCat project for forks. Never put Apple `.p8` keys or RevenueCat secret keys in the app. Development can explicitly use `EXPO_PUBLIC_REVENUECAT_TEST_API_KEY`; release builds reject Test Store keys. See [Terminal Pro setup](docs/terminal-pro.md) for products, testing and release requirements. The pinned purchases SDK is a native dependency, so its first installation requires building a new binary. Reproducibility builds that exclude `.env` also exclude billing configuration; free Terminal tools remain usable.
+
 ## Reproducible build instructions
 
 <details>

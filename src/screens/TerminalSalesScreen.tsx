@@ -19,6 +19,9 @@ import { CustomSalesDateRange, localSalesDateKey, SalesPeriod, terminalSalesPeri
 import TerminalRefundScreen from './TerminalRefundScreen';
 import { TerminalDateRangeDraft } from '../components/TerminalDateRangePicker';
 import TerminalSalesPeriodControls from '../components/TerminalSalesPeriodControls';
+import { useTerminalProGate } from '../hooks/useTerminalProGate';
+import { useTerminalPro } from '../contexts/TerminalProContext';
+import { useWalletMode } from '../contexts/WalletModeContext';
 import type { TerminalReportSelection } from './TerminalReportsScreen';
 
 type Props = { walletId: string; network: TerminalNetwork; onClose: () => void; visible?: boolean; onOpenReports?: (selection: TerminalReportSelection) => void; onOpenSale?: (sale: TerminalSale) => void; detailSale?: TerminalSale };
@@ -92,6 +95,10 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const scope = `${network}:${walletId}`;
+  const { cashierState } = useWalletMode();
+  const pro = useTerminalPro();
+  const reportOwner = activeWallet?.id === walletId && activeWallet.type !== 'watch-only' && cashierState === 'off';
+  const proGate = useTerminalProGate({ allowed: visible && headerEnabled && reportOwner, scope });
   const [periodState, setPeriodState] = useState<{ scope: string; value: SalesPeriod }>({ scope, value: 'today' });
   const period = periodState.scope === scope ? periodState.value : 'today';
   const [customRangeState, setCustomRangeState] = useState<{ scope: string; value: CustomSalesDateRange | null }>({ scope, value: null });
@@ -462,8 +469,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
           : refundedSats !== null ? <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatBigSats(refundedSats)}</Text></View> : null}
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
       </View>
-      {onOpenReports ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => onOpenReports({ period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now })} style={styles.reportsRow}>
-        <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text><Feather name="chevron-right" size={18} color={theme.colors.muted} />
+      {onOpenReports && reportOwner ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => { const selection = { period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now }; proGate.requirePro(() => onOpenReports(selection)); }} style={styles.reportsRow}>
+        <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text>{pro.status !== 'pro' ? <Text style={{ color: theme.colors.muted, fontSize: 11 }}>Pro</Text> : null}<Feather name="chevron-right" size={18} color={theme.colors.muted} />
       </TouchableOpacity> : null}
       <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
     </> : null}
@@ -473,7 +480,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   if (detailSale && !detail) return <View style={styles.root}><TerminalSheetHeader title="Sale details" closeLabel="Close sale details" onClose={close} /><View style={styles.empty}><Text style={styles.emptyTitle}>Sale unavailable</Text><Text style={styles.emptyBody}>Close this sheet and try opening the sale again.</Text></View></View>;
 
-  return <View style={styles.root}>
+  return <><View pointerEvents={proGate.isOpen ? 'none' : 'auto'} style={styles.root}>
 
     <TerminalSheetHeader title={detail ? 'Sale details' : 'Sales'} closeLabel={detailSale ? "Close sale details" : "Close sales"} onClose={close} leading={!detail ? <GlassIconButton accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} disabled={exporting || !visible || !headerEnabled} busy={exporting} onPress={() => { void exportSales(); }} visualSize={40} align="flex-start">
         {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
@@ -548,7 +555,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
           : null}
       showsVerticalScrollIndicator={false}
     />}
-  </View>;
+  </View>{proGate.proSheet}</>;
 }
 
 function DetailField({ label, value, styles, selectable = false }: { label: string; value: string; styles: ReturnType<typeof makeStyles>; selectable?: boolean }) {

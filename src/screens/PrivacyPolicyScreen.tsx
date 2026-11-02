@@ -8,9 +8,9 @@ const PrivacyPolicyScreen = () => {
   const styles = useMemo(() => getStyles(theme), [theme]);
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} bounces={false}>
-      <Text style={styles.heading}>1. No Data Collection</Text>
+      <Text style={styles.heading}>1. Local Wallet Data</Text>
       <Text style={styles.paragraph}>
-        We do not collect, store, or transmit any personal information. We do not have servers, a backend, or a database. Your wallet's private keys, transaction history, and settings are stored entirely on your local device.
+        Your wallet secrets and Terminal records are stored on your device. Sales, items, receipt settings, and backups are not uploaded for subscription billing. Files you choose to export or share go only to the destination you select.
       </Text>
       <Text style={styles.heading}>2. Private Keys & Security</Text>
       <Text style={styles.paragraph}>
@@ -30,6 +30,8 @@ const PrivacyPolicyScreen = () => {
       <Text style={styles.paragraph}>
         <Text style={styles.bullet}>• Biometrics:</Text> We use your device's local authentication (FaceID/TouchID) to unlock the app. Biometric data remains in your device's Secure Enclave and is never accessible to the app.
       </Text>
+      <Text style={styles.heading}>5. Optional Terminal Pro</Text>
+      <Text style={styles.paragraph}>Terminal Pro uses RevenueCat and your app store to check purchases and subscriptions. RevenueCat receives an anonymous purchase identifier, purchase and subscription records, and technical connection information. We do not send your seed, private keys, wallet addresses, balances, sales records, receipt content, or customer details to RevenueCat. No separate account is required.</Text>
     </ScrollView>
   );
 };

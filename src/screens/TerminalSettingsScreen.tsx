@@ -7,6 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassView } from '../components/GlassView';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTerminalProGate } from '../hooks/useTerminalProGate';
+import { useTerminalPro } from '../contexts/TerminalProContext';
+import { NETWORK_NAME } from '../constants/network';
 import { TerminalUnit } from '../services/terminal';
 import { useActiveWallet } from '../contexts/WalletContext';
 import { CashierTerminalDraft, useWalletMode } from '../contexts/WalletModeContext';
@@ -27,6 +30,8 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
   }
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
+  const pro = useTerminalPro();
+  const proGate = useTerminalProGate({ allowed: focused && cashierState === 'off' && !!activeWallet && activeWallet.type !== 'watch-only', scope: `${NETWORK_NAME}:${activeWallet?.id}` });
   const [cashierError, setCashierError] = useState('');
   const cashierPress = async () => {
     setCashierError('');
@@ -60,13 +65,18 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeOpacity = scrollY.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' });
   const styles = makeStyles(theme.colors);
-  return <View pointerEvents={focused ? 'auto' : 'none'} style={styles.root}>
+  return <><View pointerEvents={focused && !proGate.isOpen ? 'auto' : 'none'} style={styles.root}>
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}>
       <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
     </Animated.View>
     <TerminalSheetHeader title="Settings" closeLabel="Close terminal settings" onClose={onClose} />
     <Animated.ScrollView style={styles.scroll} bounces={false} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: Math.max(24, insets.bottom + 24) }]}>
       <View style={styles.section}>
+        {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' ? <View style={styles.rowWrapper}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Terminal Pro" onPress={proGate.openPro} style={styles.row}>
+            <Text style={styles.rowLabel}>Terminal Pro</Text><View style={styles.rowEnd}>{pro.status === 'pro' ? <Text style={styles.currentUnit}>Active</Text> : null}<Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
+          </TouchableOpacity>
+        </View> : null}
         <View style={styles.rowWrapper}>
           <TouchableOpacity ref={rowRef} accessibilityRole="button" accessibilityLabel="Currency" accessibilityState={{ expanded: currencyOpen }} onPress={openCurrency} style={styles.row}>
             <Text style={styles.rowLabel}>Currency</Text>
@@ -106,7 +116,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
         </View>
       </View>
     </Modal>
-  </View>;
+  </View>{proGate.proSheet}</>;
 }
 
 function makeStyles(colors: { background: string; primary: string; surface: string; muted: string; border: string; bitcoin: string }) {

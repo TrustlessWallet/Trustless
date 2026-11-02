@@ -11,6 +11,8 @@ import { Text } from '../components/StyledText';
 import { GlassView } from '../components/GlassView';
 import { useWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
+import { useTerminalPro } from '../contexts/TerminalProContext';
+import { useTerminalProGate } from '../hooks/useTerminalProGate';
 import { useTheme } from '../contexts/ThemeContext';
 import { NETWORK_NAME } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -98,7 +100,18 @@ function SalesRoute({ walletId, network, rootVisible, onClose, onOpenReports, on
 
 function ReportsRoute({ walletId, network, rootVisible, selection, onClose }: { walletId: string; network: ReturnType<typeof terminalNetwork>; rootVisible: boolean; selection: TerminalReportSelection; onClose: () => void }) {
   const focused = useIsFocused();
-  return <TerminalReportsScreen walletId={walletId} network={network} initialSelection={selection} visible={rootVisible && focused} onClose={onClose} />;
+  const { activeWallet } = useWallet();
+  const { cashierState } = useWalletMode();
+  const { theme } = useTheme();
+  const pro = useTerminalPro();
+  const allowed = rootVisible && focused && activeWallet?.id === walletId && activeWallet.type !== 'watch-only' && cashierState === 'off';
+  const proGate = useTerminalProGate({ allowed, scope: `${network}:${walletId}` });
+  return <><View pointerEvents={proGate.isOpen ? 'none' : 'auto'} style={{ flex: 1, backgroundColor: theme.colors.background }}>
+    {pro.status === 'pro' ? <TerminalReportsScreen walletId={walletId} network={network} initialSelection={selection} visible={allowed} onClose={onClose} /> : <>
+      <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} />
+      <View style={{ padding: 24 }}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Unlock reports" disabled={!allowed} onPress={proGate.openPro} style={{ minHeight: 50, backgroundColor: theme.colors.primary, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: theme.colors.inversePrimary, fontWeight: '700' }}>Terminal Pro</Text></TouchableOpacity></View>
+    </>}
+  </View>{proGate.proSheet}</>;
 }
 
 type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expired' | 'verificationUnavailable' | 'creationFailed' | 'walletChanged';
