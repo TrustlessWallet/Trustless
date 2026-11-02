@@ -26,9 +26,15 @@ RevenueCat project: Trustless (`a7935f45`). The existing entitlement is reused. 
 
 ## Verification and availability
 
-The native SDK is pinned to `react-native-purchases` 11.0.0. Only `VERIFIED` / `VERIFIED_ON_DEVICE` active entitlement information grants Pro. Signed SDK `isActive` remains authoritative during store grace periods. The SDK owns persistent caching and purchase identity; the app does not store an `isPro` flag or tie a purchase to a wallet. Customer updates and foreground refreshes update access without reconnecting the wallet. Older dated SDK responses cannot replace newer entitlement data. Failed billing fetches do not revoke an already verified cached Pro result; failed signatures never newly grant access.
+The native SDK is pinned to `react-native-purchases` 10.16.0 (CocoaPods hybrid 19.17.0). Only `VERIFIED` / `VERIFIED_ON_DEVICE` active entitlement information grants Pro. Signed SDK `isActive` remains authoritative during store grace periods. The SDK owns persistent caching and purchase identity; the app does not store an `isPro` flag or tie a purchase to a wallet. Customer updates and foreground refreshes update access without reconnecting the wallet. Older dated SDK responses cannot replace newer entitlement data. Failed billing fetches do not revoke an already verified cached Pro result; failed signatures never newly grant access.
 
 Subscription state and product-price loading are independent. Missing keys/native modules, failed requests, cancellation, pending approval and unverified purchases fail safely. Pending payments cannot unlock Pro or start another simultaneous purchase. Restore checks the store account explicitly. A verified empty restore clears the local pending UI so a declined request can be retried. Purchasing and restoring never send Bitcoin.
+
+## CocoaPods compatibility
+
+RevenueCat 11.0.0 requires PurchasesHybridCommon 20.1.0, which is not published during the November 1–7, 2026 CocoaPods freeze. RevenueCat explicitly recommends 10.x for Expo during this period. Keep the exact 10.16.0 pin and committed lockfile; its required hybrid 19.17.0 and RevenueCat 5.99.0 specs are published. Do not override the pod version independently of the JavaScript bridge or migrate this Expo project to experimental Swift Package Manager integration to bypass this release gap.
+
+After pulling the corrected package/lockfile, run `npm ci --legacy-peer-deps`, then `cd ios && pod install --repo-update && cd ..`. Run the device build only if pod installation succeeds. The later sandbox/Podfile.lock error is a consequence of the earlier failed installation. No generated native files are changed by the compatibility fix.
 
 ## Release checklist
 
