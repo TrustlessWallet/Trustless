@@ -22,7 +22,7 @@ RevenueCat gets an anonymous purchase ID and store transaction information. The 
 
 App Store Connect: group `Terminal Pro` (`22536941`), monthly Apple ID `6829703247`, annual Apple ID `6829752309`. Both products use service level 1. English US display names/descriptions, 175-territory availability and two-week introductory offers starting November 2, 2026 with no scheduled end were configured. Apple calculates local storefront prices; the app displays the actual store price, without hardcoded currency conversions or trial promises. Products are not submitted for review or released by this change.
 
-RevenueCat project: Trustless (`a7935f45`). The existing entitlement is reused. Offering `terminal_pro` was created with monthly and annual packages using the existing Test Store products (`monthly`, `yearly`). Production connection still requires the Apple In-App Purchase key, live products attached to the same entitlement/packages, and the iOS public SDK key in the build environment. Do not upload private Apple keys into the repository. Google Play configuration is separate and is not provisioned by the iOS setup.
+RevenueCat project: Trustless (`a7935f45`). The existing entitlement is reused. Offering `terminal_pro` was created with monthly and annual packages using the existing Test Store products (`monthly`, `yearly`). The iOS app `app8dc5153849` is connected with a validated, dedicated Apple In-App Purchase key. Official iOS builds include its public SDK identifier, with an environment override for forks. The live products must be attached to the same entitlement/packages. Do not upload private Apple keys into the repository. Google Play configuration is separate and is not provisioned by the iOS setup.
 
 ## Verification and availability
 
@@ -38,7 +38,7 @@ After pulling the corrected package/lockfile, run `npm ci --legacy-peer-deps`, t
 
 ## Release checklist
 
-- Connect a dedicated Apple purchase-validation key in RevenueCat, attach both live products to `terminal_pro`, and configure the production public SDK key. Do not use Test Store credentials in release builds.
+- Confirm the validated Apple purchase key, live `terminal_pro` products/packages and Apple server notifications before release. Do not use Test Store credentials in release builds. The public iOS SDK identifier is included in source; it is safe for client use and grants no administrative access.
 - Complete Apple review metadata/screenshots and publish a matching public privacy policy. Verify App Privacy answers against the installed RevenueCat SDK and actual data use. No legal agreement is accepted automatically.
 - Build a new app binary containing the native purchases SDK. Metro reload alone is insufficient.
 - Use Apple sandbox/TestFlight to verify actual purchase, cancellation, renewal, expiry/grace, pending approval and restore after reinstall using the same store account. Use simulated store responses only for UI/state regression testing; they do not prove StoreKit wiring.

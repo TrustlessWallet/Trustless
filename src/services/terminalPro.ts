@@ -20,6 +20,8 @@ export type TerminalProSnapshot = {
 
 export const TERMINAL_PRO_ENTITLEMENT = 'terminal_pro';
 export const TERMINAL_PRO_OFFERING = 'terminal_pro';
+// Public client SDK identifier, not an Apple .p8 or RevenueCat secret key.
+const TRUSTLESS_IOS_PUBLIC_SDK_KEY = 'appl_hfnhjixkmIKmdbsWNcwwLCYQlNg';
 export const TERMINAL_PRO_PRODUCTS: Record<ProPlanId, string> = {
   monthly: 'com.btc.trustless.terminal.pro.monthly',
   annual: 'com.btc.trustless.terminal.pro.annual',
@@ -350,7 +352,7 @@ export class TerminalProService {
 export function createTerminalProService(): TerminalProService {
   return new TerminalProService({
     platform: Platform.OS,
-    iosKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY,
+    iosKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY ?? TRUSTLESS_IOS_PUBLIC_SDK_KEY,
     androidKey: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
     testKey: process.env.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY,
     isDev: __DEV__,
