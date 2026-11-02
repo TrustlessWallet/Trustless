@@ -13,6 +13,7 @@ import { GlassView } from '../../components/GlassView';
 import { useActiveWallet, useWallet } from '../../contexts/WalletContext';
 import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 import { saveTerminalItem, listTerminalItems } from '../../services/terminalItems';
+import * as terminalItems from '../../services/terminalItems';
 import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
 
 jest.mock('crypto', () => require('node:crypto'));
@@ -119,6 +120,45 @@ it('lets the owner save an item from Terminal Settings and use it at checkout', 
   await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Items'));
   expect(view.getByLabelText('Add Tea')).toBeTruthy();
+});
+
+it('locks the item draft during saving and preserves it for correction and retry after failure', async () => {
+  const saveItem = terminalItems.saveTerminalItem;
+  let failSave!: (error: Error) => void;
+  const saving = jest.spyOn(terminalItems, 'saveTerminalItem').mockImplementationOnce(() => new Promise((_, reject) => { failSave = reject; }));
+  try {
+    const view = renderWithCurrencyMeasurement();
+    await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('Terminal settings'));
+    fireEvent.press(view.getByLabelText('Manage items'));
+    await waitFor(() => expect(view.getByLabelText('Add item')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('Add item'));
+    fireEvent.changeText(view.getByLabelText('Item name'), 'Tea');
+    fireEvent.changeText(view.getByLabelText('Item price'), '250');
+    fireEvent.press(view.getByLabelText('Save item'));
+    expect(view.getByLabelText('Item name').props.editable).toBe(false);
+    expect(view.getByLabelText('Item price').props.editable).toBe(false);
+    expect(view.getByLabelText('Price in BTC').props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(view.getByLabelText('Item name'), 'Unsubmitted edit');
+    fireEvent.changeText(view.getByLabelText('Item price'), '999');
+    fireEvent.press(view.getByLabelText('Price in BTC'));
+    fireEvent.press(view.getByLabelText('Save item'));
+    expect(saving).toHaveBeenCalledTimes(1);
+    await act(async () => { failSave(new Error('Storage temporarily unavailable')); });
+    expect(view.getByText('Storage temporarily unavailable')).toBeTruthy();
+    expect(view.getByLabelText('Item name').props.value).toBe('Tea');
+    expect(view.getByLabelText('Item price').props.value).toBe('250');
+    expect(view.getByLabelText('Price in sats').props.accessibilityState.selected).toBe(true);
+    expect(view.getByLabelText('Item name').props.editable).toBe(true);
+    expect(view.getByLabelText('Item price').props.editable).toBe(true);
+    expect(view.getByLabelText('Price in BTC').props.accessibilityState.disabled).toBe(false);
+    saving.mockImplementation(saveItem);
+    fireEvent.changeText(view.getByLabelText('Item name'), 'Green tea');
+    fireEvent.changeText(view.getByLabelText('Item price'), '300');
+    fireEvent.press(view.getByLabelText('Save item'));
+    await waitFor(() => expect(view.getByLabelText('Edit Green tea')).toBeTruthy());
+    expect(await listTerminalItems('wallet-a', 'mainnet')).toEqual([expect.objectContaining({ name: 'Green tea', unit: 'sats', unitPrice: 300 })]);
+  } finally { saving.mockRestore(); }
 });
 
 it('focuses the new item name after the sheet opens and leaves editing unfocused', async () => {
