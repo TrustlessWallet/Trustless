@@ -21,6 +21,34 @@ export function isTerminalItem(value: unknown): value is TerminalItem {
     isTerminalItemName(item.name) &&
     units.includes(item.unit as TerminalUnit) && typeof item.unitPrice === 'number' && Number.isSafeInteger(item.unitPrice) && item.unitPrice > 0;
 }
+const catalogCache = new Map<string, TerminalItem[]>();
+const catalogFlights = new Map<string, Promise<void>>();
+let catalogRevision = 0;
+const copyItems = (items: readonly TerminalItem[]) => items.map(item => ({ ...item }));
+function invalidateCatalog(walletId: string, network: TerminalNetwork) {
+  ++catalogRevision;
+  catalogCache.delete(keyFor(walletId, network));
+  catalogFlights.delete(keyFor(walletId, network));
+}
+export function getCachedTerminalItems(walletId: string, network: string): TerminalItem[] | null {
+  const identity = scope(walletId, network), items = catalogCache.get(keyFor(identity.walletId, identity.network));
+  return items ? copyItems(items) : null;
+}
+export function warmTerminalItems(walletId: string, network: string): Promise<void> {
+  const identity = scope(walletId, network), key = keyFor(identity.walletId, identity.network);
+  if (catalogCache.has(key)) return Promise.resolve();
+  const existing = catalogFlights.get(key);
+  if (existing) return existing;
+  const task = listTerminalItems(walletId, network).then(() => undefined).finally(() => {
+    if (catalogFlights.get(key) === task) catalogFlights.delete(key);
+  });
+  catalogFlights.set(key, task);
+  return task;
+}
+export function clearTerminalItemCacheForTests() {
+  ++catalogRevision; catalogCache.clear(); catalogFlights.clear();
+}
+
 function validateItems(value: unknown): TerminalItem[] {
   if (!Array.isArray(value) || value.length > MAX_ITEMS || !value.every(isTerminalItem) ||
     new Set((value as TerminalItem[]).map(item => item.id)).size !== value.length) throw new Error('Saved items are invalid.');
@@ -56,6 +84,7 @@ export async function readTerminalItemsInDatabase(db: SQLiteDatabase, walletId: 
 /** Replaces one catalog inside the caller's SQLite transaction. An empty row blocks legacy resurrection. */
 export async function writeTerminalItemsInDatabase(db: SQLiteDatabase, walletId: string, network: string, items: readonly TerminalItem[]): Promise<void> {
   const identity = scope(walletId, network), validated = validateItems(items);
+  invalidateCatalog(identity.walletId, identity.network);
   await db.runAsync(`INSERT INTO terminal_catalog(wallet_id,network,payload) VALUES (?,?,?)
     ON CONFLICT(wallet_id,network) DO UPDATE SET payload=excluded.payload`,
   [identity.walletId, identity.network, JSON.stringify(validated)]);
@@ -63,7 +92,18 @@ export async function writeTerminalItemsInDatabase(db: SQLiteDatabase, walletId:
 
 export function listTerminalItems(walletId: string, network: string): Promise<TerminalItem[]> {
   const identity = scope(walletId, network);
-  return transactTerminalDatabase(db => readTerminalItemsInDatabase(db, identity.walletId, identity.network));
+  const revision = catalogRevision;
+  return transactTerminalDatabase(db => readTerminalItemsInDatabase(db, identity.walletId, identity.network)).then(items => {
+    if (revision === catalogRevision) {
+      const key = keyFor(identity.walletId, identity.network);
+      catalogCache.delete(key); catalogCache.set(key, copyItems(items));
+      if (catalogCache.size > 8) catalogCache.delete(catalogCache.keys().next().value!);
+    }
+    return items;
+  }).catch(error => {
+    if (revision === catalogRevision) invalidateCatalog(identity.walletId, identity.network);
+    throw error;
+  });
 }
 
 export function saveTerminalItem(walletId: string, network: string, item: TerminalItem, isOwnerCurrent: () => boolean): Promise<TerminalItem[]> {
@@ -102,6 +142,7 @@ export function deleteTerminalItem(walletId: string, network: string, id: string
 /** Erases both stores when the owning wallet is removed; no legacy catalog can reappear. */
 export function removeTerminalItems(walletId: string, network: string): Promise<void> {
   const identity = scope(walletId, network);
+  invalidateCatalog(identity.walletId, identity.network);
   return transactTerminalDatabase(async db => {
     await AsyncStorage.removeItem(keyFor(identity.walletId, identity.network));
     await db.runAsync('DELETE FROM terminal_catalog WHERE wallet_id=? AND network=?', [identity.walletId, identity.network]);

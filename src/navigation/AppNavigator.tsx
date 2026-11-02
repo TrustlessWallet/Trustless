@@ -135,20 +135,20 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         prompt_caused_inactive.current = false;
       }
 
+      const resumed = previous_app_state.match(/inactive|background/) && next_app_state === 'active';
+      const checkResume = resumed && (returned_from_background || (!returned_from_prompt && !is_prompt_active && !is_nfc_active));
+
       if (next_app_state.match(/inactive|background/)) {
         set_is_backgrounded(true);
       } else if (next_app_state === 'active') {
-        if (returned_from_background || (!returned_from_prompt && !is_prompt_active && !is_nfc_active)) {
+        if (checkResume) {
           set_is_checking_auth(true);
         }
         set_is_backgrounded(false);
       }
 
-      if (
-        previous_app_state.match(/inactive|background/) &&
-        next_app_state === 'active'
-      ) {
-        if (returned_from_background || (!returned_from_prompt && !is_prompt_active && !is_nfc_active)) {
+      if (resumed) {
+        if (checkResume) {
           try {
             if (returned_from_background) await background_time_write.current;
             await check_auth_needed_ref.current();
