@@ -49,3 +49,19 @@ it('uses selected store plan and unlocks only on confirmed restore', async () =>
   fireEvent.press(view.getByLabelText('Restore purchases'));
   await waitFor(() => expect(verified).toHaveBeenCalledTimes(1));
 });
+
+it('shows a spinner and disables subscription management while it is opening', () => {
+  mockState = { ...mockState, status: 'pro', busy: true };
+  const props = { visible: true, onClose: jest.fn(), onDismiss: jest.fn(), onVerified: jest.fn() };
+  const view = render(<TerminalProSheet {...props} />);
+  const button = view.getByLabelText('Manage subscription');
+  expect(button.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
+  expect(view.queryByText('Manage subscription')).toBeNull();
+  fireEvent.press(button);
+  expect(manage).not.toHaveBeenCalled();
+  mockState = { ...mockState, busy: false };
+  view.rerender(<TerminalProSheet {...props} />);
+  expect(view.getByText('Manage subscription')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Manage subscription'));
+  expect(manage).toHaveBeenCalledTimes(1);
+});

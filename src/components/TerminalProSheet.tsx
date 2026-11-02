@@ -74,7 +74,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
           {status === 'loading' ? <View style={styles.state}><ActivityIndicator color={theme.colors.bitcoin} /></View> : null}
           {status === 'pro' ? <View style={styles.state}>
             <Text style={styles.proActive}>Terminal Pro is active</Text>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Manage subscription" disabled={busy} onPress={() => { void manage(); }} style={styles.primaryButton}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Manage subscription" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => { void manage(); }} style={styles.primaryButton}>
               {busy ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Manage subscription</Text>}
             </TouchableOpacity>
           </View> : null}
