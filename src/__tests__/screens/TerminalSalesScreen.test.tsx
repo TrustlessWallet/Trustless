@@ -1,3 +1,6 @@
+const mockPro = { status: 'pro', pending: false, plans: [], busy: false, loadingPlans: false, error: null, loadPlans: jest.fn(), refresh: jest.fn().mockResolvedValue(undefined), purchase: jest.fn(), restore: jest.fn(), manage: jest.fn() };
+jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => mockPro }));
+jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ cashierState: 'off' }) }));
 import { resetTerminalSqlite } from '../helpers/terminalSqlite';
 import * as salesStore from '../../services/terminalSales';
 import * as receiptService from '../../services/terminalReceipt';
@@ -35,6 +38,7 @@ const request = (id: string, walletId = 'wallet-a', amountSats = 1200): Terminal
 });
 
 beforeEach(async () => {
+  mockPro.status = 'pro';
   await AsyncStorage.clear();
   await resetTerminalSqlite();
   jest.restoreAllMocks();
@@ -363,4 +367,20 @@ it('shows a dedicated scoped detail sheet without period filters or list queries
   expect(list).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Close sale details'));
   expect(close).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the selected sales period and raw CSV free when a Reports upgrade is canceled', async () => {
+  mockPro.status = 'free';
+  const open = jest.fn();
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} onOpenReports={open} />);
+  await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Last 7 days sales'));
+  await waitFor(() => expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true));
+  fireEvent.press(view.getByLabelText('Open reports'));
+  expect(open).not.toHaveBeenCalled();
+  expect(view.getByText('Terminal Pro')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Close Terminal Pro'));
+  expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
+  await act(async () => fireEvent.press(view.getByLabelText('Export last 7 days activity')));
+  expect(exportTerminalSalesCsv).toHaveBeenCalledWith(expect.objectContaining({ period: 'week' }));
 });

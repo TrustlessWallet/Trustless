@@ -32,6 +32,9 @@ const TermsConditionsScreen = () => {
       <Text style={styles.paragraph}>
         This app relies on public APIs (such as Mempool.space and Blockstream) to function. We do not control these services and cannot guarantee their uptime. If these services are unavailable, the app may fail to update balances or send transactions temporarily.
       </Text>
+      <Text style={styles.heading}>7. Optional Terminal Pro</Text>
+      <Text style={styles.paragraph}>Terminal Pro is an optional auto-renewing subscription. The store shows your local price, billing period, and any eligible free trial before purchase. Payment is charged by your app store. Unless canceled in your store’s subscription settings before renewal, the subscription renews at the displayed store price. An eligible trial converts to a paid subscription unless canceled before it ends. You can restore purchases using the same store account.</Text>
+      <Text style={styles.paragraph}>Checkout, sales history, refunds, basic receipts, raw sales CSV export, and encrypted backup remain free. Expiry does not delete your data or remove existing branding from receipts. Store terms apply to purchases; iOS purchases also use Apple’s standard licensed application agreement.</Text>
     </ScrollView>
   );
 };

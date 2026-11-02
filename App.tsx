@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar, LogBox, View, Image, Text, TextInput, Animated } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppNavigator from './src/navigation/AppNavigator';
+import { TerminalProProvider } from './src/contexts/TerminalProContext';
 import { WalletProvider } from './src/contexts/WalletContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { WalletModeProvider } from './src/contexts/WalletModeContext';
@@ -134,6 +135,7 @@ export default function App() {
       {isAppInitialized && (
         <QueryClientProvider client={queryClient}>
           <ThemeProvider initialIsDark={initialIsDark}>
+            <TerminalProProvider>
             {dbReady && networkLoaded ? (
               <WalletProvider key={appKey}>
                 <WalletModeProvider><View style={{ flex: 1 }}>
@@ -146,6 +148,7 @@ export default function App() {
             ) : (
               <View style={{ flex: 1 }}><ThemedStatusBar /></View>
             )}
+          </TerminalProProvider>
           </ThemeProvider>
         </QueryClientProvider>
       )}

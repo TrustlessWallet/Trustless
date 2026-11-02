@@ -1,3 +1,5 @@
+const mockPro = { status: 'pro', pending: false, plans: [], busy: false, loadingPlans: false, error: null, loadPlans: jest.fn(), refresh: jest.fn().mockResolvedValue(undefined), purchase: jest.fn(), restore: jest.fn(), manage: jest.fn() };
+jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => mockPro }));
 import { clearTerminalItemCacheForTests } from '../../services/terminalItems';
 import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
 import { getTerminalDatabase } from '../../services/terminalDatabase';
@@ -34,6 +36,7 @@ const validateTerminalInvoice = jest.fn();
 const verifyTerminalInvoice = jest.fn();
 
 beforeEach(async () => {
+  mockPro.status = 'pro';
   clearTerminalItemCacheForTests();
   await AsyncStorage.clear();
   await resetTerminalSqlite();
@@ -226,7 +229,7 @@ it('opens currency choices from Settings and dismisses them outside or with the 
   fireEvent.press(view.getByLabelText('Dismiss currencies'));
   expect(view.queryByLabelText('USD')).toBeNull();
   await openCurrency(view);
-  fireEvent(view.UNSAFE_getByType(Modal), 'onRequestClose');
+  fireEvent(view.UNSAFE_getAllByType(Modal).find(node => node.props.transparent && node.props.visible)!, 'onRequestClose');
   expect(view.queryByLabelText('USD')).toBeNull();
 });
 

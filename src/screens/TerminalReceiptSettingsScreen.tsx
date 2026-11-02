@@ -6,6 +6,8 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyledInput } from '../components/StyledInput';
 import { Text } from '../components/StyledText';
+import { useTerminalPro } from '../contexts/TerminalProContext';
+import { useTerminalProGate } from '../hooks/useTerminalProGate';
 import { useTheme } from '../contexts/ThemeContext';
 import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
@@ -31,6 +33,8 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
   const context = useRef({ scope, owner: false, epoch: 0 });
   const allowed = activeWallet?.id === walletId && activeWallet.type !== 'watch-only' && cashierState === 'off';
   const owner = allowed && focused;
+  const pro = useTerminalPro();
+  const proGate = useTerminalProGate({ allowed: owner, scope });
   if (context.current.scope !== scope || context.current.owner !== owner) context.current = { scope, owner, epoch: context.current.epoch + 1 };
   const mounted = useRef(true);
   const generation = useRef(0);
@@ -95,13 +99,20 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
     setTemplatesOpen(false); setNaming(false); setTemplateName(''); setLoadedTemplateId(null); setTemplateError('');
     void loadTemplates(); return () => { ++libraryGeneration.current; };
   }, [scope, owner]);
-  const loadTemplate = (template?: TerminalReceiptTemplate) => {
-    if (!canEdit() || !libraryReady) return;
+  const applyTemplate = (template?: TerminalReceiptTemplate) => {
+    if (!canEdit()) return;
     setDraft(normalizeTerminalReceiptBranding(template?.branding ?? DEFAULT_TERMINAL_RECEIPT_BRANDING));
     setLoadedTemplateId(template?.id ?? null); setTemplatesOpen(false); setNaming(false); setTemplateName(''); setError(''); setTemplateError(''); Keyboard.dismiss();
   };
+  const loadTemplate = (template?: TerminalReceiptTemplate) => {
+    if (!canEdit() || !libraryReady) return;
+    Keyboard.dismiss();
+    if (!template) { applyTemplate(); return; }
+    proGate.requirePro(() => applyTemplate(template));
+  };
   const changeTemplate = async (operation: 'create' | 'replace' | 'delete', template?: TerminalReceiptTemplate) => {
     if (!canEdit() || !libraryReady || (operation !== 'create' && !template)) return;
+    if (operation !== 'delete' && pro.status !== 'pro') { Keyboard.dismiss(); proGate.openPro(); return; }
     const epoch = context.current.epoch;
     const isCurrent = () => mounted.current && context.current.owner && context.current.scope === scope && context.current.epoch === epoch;
     busyRef.current = true; setPendingAction(operation === 'delete' ? 'delete' : 'template'); setDeletingId(operation === 'delete' ? template!.id : null); setTemplateError(''); Keyboard.dismiss();
@@ -164,6 +175,8 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
   };
   const save = async () => {
     if (!canEdit() || naming || !dirty) return;
+    const changedLogo = draft.logo && (draft.logo.base64 !== state.saved.logo?.base64 || draft.logo.mimeType !== state.saved.logo?.mimeType);
+    if (changedLogo && pro.status !== 'pro') { Keyboard.dismiss(); proGate.openPro(); return; }
     const epoch = context.current.epoch;
     const isCurrent = () => mounted.current && context.current.owner && context.current.epoch === epoch;
     busyRef.current = true; setPendingAction('settings'); setError('');
@@ -174,7 +187,7 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
       if (isCurrent()) setError(failure instanceof Error && failure.message === 'Invalid receipt branding.' ? 'Use single-line text within the field limits.' : 'Couldn’t save receipt details. Try again.');
     } finally { busyRef.current = false; if (mounted.current) setPendingAction(null); }
   };
-  return <View style={styles.root}>
+  return <><View pointerEvents={proGate.isOpen ? 'none' : 'auto'} style={styles.root}>
     <TerminalSheetHeader title={naming ? 'Save template' : 'Receipts'} closeLabel={naming ? 'Cancel saving template' : 'Close receipt settings'} disabled={busy} onClose={() => { if (!busyRef.current) { if (naming) cancelNaming(); else onClose(); } }} />
     {!allowed ? <Text style={styles.message}>Owner access is required to edit receipts.</Text> : state.loading || state.scope !== scope ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="Loading receipt settings" size="small" color={theme.colors.bitcoin} /></View> : state.error ? <View style={styles.failure}><Text style={styles.message}>Receipt settings unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry receipt settings" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : <>
     <ScrollView testID="receipt-settings-editor" pointerEvents={naming ? 'none' : 'auto'} accessibilityElementsHidden={naming} importantForAccessibility={naming ? 'no-hide-descendants' : 'auto'} style={[styles.scroll, naming && styles.hidden]} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
@@ -197,7 +210,7 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
         <View style={styles.logoEditor}>
           {draft.logo ? <Image accessibilityLabel="Receipt logo preview" source={{ uri: `data:${draft.logo.mimeType};base64,${draft.logo.base64}` }} resizeMode="contain" style={[styles.logo, styles.logoEditorImage, logoLayout]} /> : null}
           <View style={styles.logoActions}>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Choose receipt logo" accessibilityState={{ disabled: busy || preparingLogo, busy: preparingLogo }} disabled={busy || preparingLogo} onPress={() => { void chooseLogo(); }} style={styles.logoButton}><Text style={[styles.logoButtonText, preparingLogo && { opacity: 0 }]}>{draft.logo ? 'Change logo' : 'Choose logo'}</Text>{preparingLogo ? <View style={styles.logoProgress}><ActivityIndicator size="small" color={theme.colors.bitcoin} /></View> : null}</TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Choose receipt logo" accessibilityState={{ disabled: busy || preparingLogo, busy: preparingLogo }} disabled={busy || preparingLogo} onPress={() => { Keyboard.dismiss(); proGate.requirePro(() => { void chooseLogo(); }); }} style={styles.logoButton}><Text style={[styles.logoButtonText, preparingLogo && { opacity: 0 }]}>{draft.logo ? 'Change logo' : 'Choose logo'}</Text>{preparingLogo ? <View style={styles.logoProgress}><ActivityIndicator size="small" color={theme.colors.bitcoin} /></View> : null}</TouchableOpacity>
             {draft.logo ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove receipt logo" disabled={busy || preparingLogo} onPress={() => { setDraft(previous => { const { logo: _logo, ...rest } = previous; return rest; }); setError(''); }} style={styles.logoButton}><Text style={styles.logoButtonText}>Remove</Text></TouchableOpacity> : null}
           </View>
         </View>
@@ -217,7 +230,7 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
       </View>
       <View style={styles.templateActions}>
           {loadedTemplate && !equalBranding(loadedTemplate.branding, draft) ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Replace receipt template ${loadedTemplate.name}`} disabled={busy || preparingLogo} onPress={() => { void changeTemplate('replace', loadedTemplate); }} style={styles.templateButton}>{pendingAction === 'template' ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.templateButtonText}>Replace “{loadedTemplate.name}”</Text>}</TouchableOpacity> : null}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save as receipt template" disabled={busy || preparingLogo || !libraryReady || templates.length >= 5} accessibilityState={{ disabled: busy || preparingLogo || !libraryReady || templates.length >= 5 }} onPress={() => { if (canEdit() && libraryReady && templates.length < 5) { Keyboard.dismiss(); setNaming(true); setTemplateName(''); setTemplateError(''); } }} style={[styles.templateButton, (!libraryReady || templates.length >= 5) && styles.disabled]}><Text style={styles.templateButtonText}>Save as template</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save as receipt template" disabled={busy || preparingLogo || !libraryReady || templates.length >= 5} accessibilityState={{ disabled: busy || preparingLogo || !libraryReady || templates.length >= 5 }} onPress={() => { if (canEdit() && libraryReady && templates.length < 5) { Keyboard.dismiss(); proGate.requirePro(() => { setNaming(true); setTemplateName(''); setTemplateError(''); }); } }} style={[styles.templateButton, (!libraryReady || templates.length >= 5) && styles.disabled]}><Text style={styles.templateButtonText}>Save as template</Text></TouchableOpacity>
           {libraryReady && templates.length >= 5 ? <Text style={styles.message}>Maximum of 5 templates.</Text> : null}
         {templateError ? <Text accessibilityRole="alert" style={styles.message}>{templateError}</Text> : null}
       </View>
@@ -232,7 +245,7 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel template name" disabled={busy} onPress={cancelNaming} style={styles.templateCancel}><Text style={styles.templateButtonText}>Cancel</Text></TouchableOpacity>
     </ScrollView> : null}
     </>}
-  </View>;
+  </View>{proGate.proSheet}</>;
 }
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; muted: string; border: string }) {
   return StyleSheet.create({
