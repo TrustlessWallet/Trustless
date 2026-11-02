@@ -81,6 +81,28 @@ it('preserves the entered amount and wallet mode after visiting Settings', async
   expect(mockSetMode).not.toHaveBeenCalled();
 });
 
+it('starts empty when switching wallets and does not restore another wallet’s manual draft', async () => {
+  const view = renderWithCurrencyMeasurement();
+  await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  fireEvent.press(view.getByText('1'));
+  fireEvent.press(view.getByText('2'));
+  expect(view.getByTestId('terminal-amount').props.children).toBe('12');
+
+  const switchTo = async (id: string) => {
+    (useWallet as jest.Mock).mockReturnValue({ activeWallet: { ...wallet, id }, isLightningInitialized: true, lightningInitAttempted: true, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice });
+    view.rerender(<NavigationContainer><TerminalScreen /></NavigationContainer>);
+    await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+  };
+  await switchTo('wallet-b');
+  expect(view.getByTestId('terminal-amount').props.children).toBe('0');
+  fireEvent.press(view.getByTestId('terminal-request'));
+  expect(createTerminalInvoice).not.toHaveBeenCalled();
+  fireEvent.press(view.getByText('3'));
+  expect(view.getByTestId('terminal-amount').props.children).toBe('3');
+  await switchTo('wallet-a');
+  expect(view.getByTestId('terminal-amount').props.children).toBe('0');
+});
+
 it('lets the owner save an item from Terminal Settings and use it at checkout', async () => {
   const view = renderWithCurrencyMeasurement();
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());

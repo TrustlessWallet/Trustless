@@ -172,6 +172,8 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
 
   useEffect(() => {
     setEndingRequest(false); setTransitioning(false);
+    // Manual checkout amounts belong to the wallet that entered them, like basket lines.
+    setAmount('');
     basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setCatalog([]); setCatalogError(false);
     presentedRequestId.current = null;
   }, [scope]);
