@@ -20,6 +20,7 @@ import { resolveLnurlOrAddress } from '../services/lnurl';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { authenticate_transaction_action } from '../services/authState';
 import { useWalletMode } from '../contexts/WalletModeContext';
+import { useTerminalEntry } from '../hooks/useTerminalEntry';
 
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -74,7 +75,7 @@ const WalletScreen = () => {
 
     const navigation = useNavigation<NavigationProp>();
     const insets = useSafeAreaInsets();
-    const { setMode: setAppMode, changing: terminalChanging, showTerminal } = useWalletMode();
+    const { setMode: setAppMode, changing: modeChanging, showTerminal } = useWalletMode();
 
     const {
         activeWallet,
@@ -601,10 +602,7 @@ const WalletScreen = () => {
         </GlassView>
     );
 
-    const openTerminal = useCallback(() => {
-        if (terminalChanging || activeWallet?.type === 'watch-only') return;
-        void setAppMode('terminal').catch(() => Alert.alert('Could not open terminal', 'Please retry.'));
-    }, [activeWallet?.type, setAppMode, terminalChanging]);
+    const { openTerminal, busy: terminalChanging } = useTerminalEntry(activeWallet, modeChanging, setAppMode, isFocused);
 
     const terminalEntryElement = showTerminal && activeWallet?.type !== 'watch-only' ? (
         <TouchableOpacity

@@ -189,3 +189,23 @@ it('does not treat a transient system biometric inactive event as a full backgro
   expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
   view.unmount(); listener.mockRestore();
 });
+
+it('does not leave a privacy cover behind after duplicate active events following cashier unlock', async () => {
+  let change!: (state: string) => void;
+  const listener = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, callback) => {
+    change = callback as any; return { remove: jest.fn() } as any;
+  });
+  const view = render(<AppNavigator />);
+  try {
+    await waitFor(() => expect(mockRoutes).toEqual(['Terminal', 'PrivacyOverlay']));
+    mockPromptActive = true;
+    await act(async () => { await change('inactive'); });
+    (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 1, cashierUnlockDestination: 'wallet' });
+    await act(async () => { view.rerender(<AppNavigator />); await change('active'); });
+    mockPromptActive = false;
+    mockNavRef.navigate.mockClear();
+    await act(async () => { await change('active'); });
+    expect(mockNavRef.navigate).not.toHaveBeenCalledWith('PrivacyOverlay');
+    expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
+  } finally { view.unmount(); listener.mockRestore(); }
+});

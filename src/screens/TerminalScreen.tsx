@@ -26,7 +26,7 @@ import TerminalBackupScreen from './TerminalBackupScreen';
 import TerminalItemEditorScreen from './TerminalItemEditorScreen';
 import TerminalSheetHeader, { TerminalSheetInteractionContext } from './TerminalSheetHeader';
 import TerminalQuickItemsScreen from './TerminalQuickItemsScreen';
-import { listTerminalItems, TerminalItem } from '../services/terminalItems';
+import { getCachedTerminalItems, listTerminalItems, TerminalItem } from '../services/terminalItems';
 
 const PREFERRED_UNIT_KEY = '@terminalPreferredUnit';
 const FIAT_UNITS: FiatCurrency[] = ['USD', 'EUR', 'CHF'];
@@ -113,7 +113,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const [amount, setAmount] = useState('');
   const [basketError, setBasketError] = useState('');
   const [basketLines, setBasketLines] = useState<TerminalBasketLine[]>([]);
-  const [catalog, setCatalog] = useState<TerminalItem[]>([]);
+  const [catalog, setCatalog] = useState<TerminalItem[]>(() => activeWallet ? getCachedTerminalItems(activeWallet.id, NETWORK_NAME) ?? [] : []);
   const [catalogError, setCatalogError] = useState(false);
   const [catalogRevision, reloadCatalog] = useState(0);
   const [unit, setUnit] = useState<TerminalUnit>('sats');
@@ -174,7 +174,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     setEndingRequest(false); setTransitioning(false);
     // Manual checkout amounts belong to the wallet that entered them, like basket lines.
     setAmount('');
-    basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setCatalog([]); setCatalogError(false);
+    basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setCatalog(activeWallet ? getCachedTerminalItems(activeWallet.id, network) ?? [] : []); setCatalogError(false);
     presentedRequestId.current = null;
   }, [scope]);
 

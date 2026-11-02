@@ -1,3 +1,4 @@
+import { clearTerminalItemCacheForTests } from '../../services/terminalItems';
 import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
 import { getTerminalDatabase } from '../../services/terminalDatabase';
 import React from 'react';
@@ -33,6 +34,7 @@ const validateTerminalInvoice = jest.fn();
 const verifyTerminalInvoice = jest.fn();
 
 beforeEach(async () => {
+  clearTerminalItemCacheForTests();
   await AsyncStorage.clear();
   await resetTerminalSqlite();
   mockSetMode.mockClear();
@@ -102,6 +104,19 @@ it('starts empty when switching wallets and does not restore another wallet’s 
   expect(view.getByTestId('terminal-amount').props.children).toBe('3');
   await switchTo('wallet-a');
   expect(view.getByTestId('terminal-amount').props.children).toBe('0');
+});
+
+it('shows warmed quick items on the first render before background revalidation finishes', async () => {
+  await saveTerminalItem('wallet-a', 'mainnet', { id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 250 }, () => true);
+  await listTerminalItems('wallet-a', 'mainnet');
+  const refresh = jest.spyOn(terminalItems, 'listTerminalItems').mockImplementationOnce(() => new Promise(() => {}));
+  try {
+    const view = renderWithCurrencyMeasurement();
+    expect(view.getByLabelText('Items')).toBeTruthy();
+    await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('Items'));
+    expect(view.getByLabelText('Add Tea')).toBeTruthy();
+  } finally { refresh.mockRestore(); }
 });
 
 it('lets the owner save an item from Terminal Settings and use it at checkout', async () => {

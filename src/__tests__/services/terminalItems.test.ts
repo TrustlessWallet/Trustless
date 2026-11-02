@@ -1,3 +1,5 @@
+import { getCachedTerminalItems, warmTerminalItems } from '../../services/terminalItems';
+import { clearTerminalItemCacheForTests } from '../../services/terminalItems';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resetTerminalSqlite } from '../helpers/terminalSqlite';
 import { getTerminalDatabase, transactTerminalDatabase } from '../../services/terminalDatabase';
@@ -10,6 +12,7 @@ const key = `${TERMINAL_ITEMS_KEY}:mainnet:wallet-a`;
 const item: TerminalItem = { id: 'coffee', name: 'Coffee', unit: 'USD', unitPrice: 1 };
 const legacy = (items: TerminalItem[], walletId = 'wallet-a') => JSON.stringify({ version: 1, walletId, network: 'mainnet', items });
 beforeEach(async () => {
+  clearTerminalItemCacheForTests();
   storage.clear();
   (AsyncStorage.removeItem as jest.Mock).mockImplementation(async key => { storage.delete(key); });
   (AsyncStorage.getItem as jest.Mock).mockReset().mockImplementation(async name => storage.get(name) ?? null);
@@ -84,4 +87,36 @@ it('removes migrated and legacy catalog data when the wallet is deleted', async 
   await removeTerminalItems('wallet-a', 'mainnet');
   expect(storage.has(key)).toBe(false);
   expect(await listTerminalItems('wallet-a', 'mainnet')).toEqual([]);
+});
+
+it('warms isolated snapshots without extra reads and protects the cache from caller mutation', async () => {
+  await saveTerminalItem('wallet-a', 'mainnet', item, () => true);
+  expect(getCachedTerminalItems('wallet-a', 'mainnet')).toBeNull();
+  await Promise.all([warmTerminalItems('wallet-a', 'mainnet'), warmTerminalItems('wallet-a', 'mainnet')]);
+  const cached = getCachedTerminalItems('wallet-a', 'mainnet')!;
+  expect(cached).toEqual([item]);
+  cached.pop();
+  expect(getCachedTerminalItems('wallet-a', 'mainnet')).toEqual([item]);
+  expect(getCachedTerminalItems('wallet-b', 'mainnet')).toBeNull();
+  expect(getCachedTerminalItems('wallet-a', 'testnet')).toBeNull();
+  const db = await getTerminalDatabase();
+  const read = jest.spyOn(db, 'withExclusiveTransactionAsync');
+  try { await warmTerminalItems('wallet-a', 'mainnet'); expect(read).not.toHaveBeenCalled(); }
+  finally { read.mockRestore(); }
+});
+
+it('invalidates catalog snapshots after edits, backup writes and wallet removal', async () => {
+  await saveTerminalItem('wallet-a', 'mainnet', item, () => true);
+  await warmTerminalItems('wallet-a', 'mainnet');
+  await saveTerminalItem('wallet-a', 'mainnet', { ...item, name: 'Tea' }, () => true);
+  expect(getCachedTerminalItems('wallet-a', 'mainnet')).toBeNull();
+  await warmTerminalItems('wallet-a', 'mainnet');
+  expect(getCachedTerminalItems('wallet-a', 'mainnet')![0].name).toBe('Tea');
+  await transactTerminalDatabase(db => writeTerminalItemsInDatabase(db, 'wallet-a', 'mainnet', [item]));
+  expect(getCachedTerminalItems('wallet-a', 'mainnet')).toBeNull();
+  await warmTerminalItems('wallet-a', 'mainnet');
+  await removeTerminalItems('wallet-a', 'mainnet');
+  expect(getCachedTerminalItems('wallet-a', 'mainnet')).toBeNull();
+  await warmTerminalItems('wallet-a', 'mainnet');
+  expect(getCachedTerminalItems('wallet-a', 'mainnet')).toEqual([]);
 });
