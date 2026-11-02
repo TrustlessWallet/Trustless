@@ -189,3 +189,92 @@ it('accepts a newer verified purchase despite an intervening cached free callbac
   emit({ ...freeInfo, requestDateMillis: 300 });
   expect(service.getSnapshot().status).toBe('free');
 });
+
+it('shares the initial subscription check across concurrent Pro opens', async () => {
+  const { service, client } = harness();
+  let resolve!: (info: typeof freeInfo) => void;
+  let started!: () => void;
+  const requested = new Promise<void>(done => { started = done; });
+  client.getCustomerInfo.mockImplementationOnce(() => {
+    started();
+    return new Promise(done => { resolve = done; });
+  });
+  const opening = service.refresh();
+  const reopening = service.refresh();
+  const plans = service.loadPlans();
+  await requested;
+  expect(client.getCustomerInfo).toHaveBeenCalledTimes(1);
+  resolve(freeInfo);
+  await Promise.all([opening, reopening, plans]);
+  expect(client.getCustomerInfo).toHaveBeenCalledTimes(1);
+  expect(service.getSnapshot().status).toBe('free');
+  service.dispose();
+});
+
+it('shares an in-flight refresh and permits a fresh check after failure', async () => {
+  const { service, client } = harness();
+  await service.initialize();
+  let reject!: (reason: Error) => void;
+  client.getCustomerInfo.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+  const first = service.refresh();
+  const second = service.refresh();
+  expect(client.getCustomerInfo).toHaveBeenCalledTimes(2);
+  reject(new Error('offline'));
+  await Promise.all([first, second]);
+  expect(service.getSnapshot().status).toBe('unavailable');
+  await service.refresh();
+  expect(client.getCustomerInfo).toHaveBeenCalledTimes(3);
+  expect(service.getSnapshot().status).toBe('free');
+  service.dispose();
+});
+
+it('keeps management busy and prevents overlapping management, purchase and restore', async () => {
+  const { service, client } = harness();
+  await service.initialize();
+  let finish!: () => void;
+  client.showManageSubscriptions.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const managing = service.manage();
+  expect(service.getSnapshot().busy).toBe(true);
+  await Promise.resolve();
+  await service.manage();
+  expect(await service.purchase('monthly')).toBe(false);
+  expect(await service.restore()).toBe(false);
+  expect(client.showManageSubscriptions).toHaveBeenCalledTimes(1);
+  expect(client.purchasePackage).not.toHaveBeenCalled();
+  expect(client.restorePurchases).not.toHaveBeenCalled();
+  finish();
+  await managing;
+  expect(service.getSnapshot().busy).toBe(false);
+  service.dispose();
+});
+
+it('releases management loading after an error and allows retry', async () => {
+  const { service, client } = harness();
+  await service.initialize();
+  await service.loadPlans();
+  client.showManageSubscriptions.mockRejectedValueOnce(new Error('unavailable'));
+  await service.manage();
+  expect(service.getSnapshot()).toMatchObject({ busy: false, error: 'Could not open subscription management.' });
+  await service.manage();
+  expect(client.showManageSubscriptions).toHaveBeenCalledTimes(2);
+  expect(service.getSnapshot()).toMatchObject({ busy: false, error: null });
+  service.dispose();
+});
+
+it('shares management URL lookup with a pending foreground refresh', async () => {
+  const { service, client, deps } = harness({ platform: 'android', androidKey: 'goog_public' });
+  await service.initialize();
+  await service.loadPlans();
+  let resolve!: (info: any) => void;
+  client.getCustomerInfo.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const refreshing = service.refresh();
+  const managing = service.manage();
+  await Promise.resolve();
+  expect(client.getCustomerInfo).toHaveBeenCalledTimes(2);
+  resolve({ ...freeInfo, managementURL: 'https://play.google.com/store/account/subscriptions?package=com.btc.trustless' });
+  await Promise.all([refreshing, managing]);
+  expect(client.getCustomerInfo).toHaveBeenCalledTimes(2);
+  expect(deps.openURL).toHaveBeenCalledWith('https://play.google.com/store/account/subscriptions?package=com.btc.trustless');
+  expect(service.getSnapshot().busy).toBe(false);
+  service.dispose();
+});

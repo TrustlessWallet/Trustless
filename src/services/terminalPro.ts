@@ -114,6 +114,7 @@ export class TerminalProService {
   private client: PurchasesClient | null = null;
   private initPromise: Promise<void> | null = null;
   private plansPromise: Promise<void> | null = null;
+  private infoPromise: Promise<void> | null = null;
   private packages = new Map<ProPlanId, StorePackage>();
   private lastInfo: CustomerInfo | null = null;
   private testStore = false;
@@ -188,7 +189,13 @@ export class TerminalProService {
     return this.initPromise;
   };
 
-  private async fetchCustomerInfo(): Promise<void> {
+  private fetchCustomerInfo(): Promise<void> {
+    if (this.infoPromise) return this.infoPromise;
+    this.infoPromise = this.fetchCustomerInfoImpl().finally(() => { this.infoPromise = null; });
+    return this.infoPromise;
+  }
+
+  private async fetchCustomerInfoImpl(): Promise<void> {
     if (!this.client) return;
     const revision = this.infoRevision;
     try {
@@ -204,7 +211,11 @@ export class TerminalProService {
   }
 
   refresh = async (): Promise<void> => {
-    await this.initialize();
+    // Initialization already reads CustomerInfo. Join it rather than fetching twice.
+    if (!this.client || this.initPromise) {
+      await this.initialize();
+      return;
+    }
     await this.fetchCustomerInfo();
   };
 
@@ -318,17 +329,21 @@ export class TerminalProService {
   };
 
   manage = async (): Promise<void> => {
-    await this.initialize();
-    if (!this.client) {
-      this.publish({ error: 'Subscription management is unavailable right now.' });
-      return;
-    }
+    if (this.mutating || this.disposed) return;
+    this.mutating = true;
+    this.publish({ busy: true, error: null });
     try {
+      await this.initialize();
+      if (!this.client) {
+        this.publish({ error: 'Subscription management is unavailable right now.' });
+        return;
+      }
       if (this.deps.platform === 'ios' && this.client.showManageSubscriptions) {
         await this.client.showManageSubscriptions();
         return;
       }
-      const url = this.lastInfo?.managementURL ?? (await this.client.getCustomerInfo()).managementURL;
+      if (!this.lastInfo?.managementURL) await this.fetchCustomerInfo();
+      const url = this.lastInfo?.managementURL;
       if (url?.startsWith('https://')) {
         await this.deps.openURL(url);
       } else if (this.deps.platform === 'android') {
@@ -338,6 +353,9 @@ export class TerminalProService {
       }
     } catch {
       this.publish({ error: 'Could not open subscription management.' });
+    } finally {
+      this.mutating = false;
+      this.publish({ busy: false });
     }
   };
 
