@@ -47,6 +47,11 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
   scopeRef.current = scope;
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const pasteContext = useRef({ scope, visible, phase, walletId: activeWallet?.id, revision: 0 });
+  if (pasteContext.current.scope !== scope || pasteContext.current.visible !== visible ||
+      pasteContext.current.phase !== phase || pasteContext.current.walletId !== activeWallet?.id) {
+    pasteContext.current = { scope, visible, phase, walletId: activeWallet?.id, revision: pasteContext.current.revision + 1 };
+  }
   const effectiveAttempts = localAttempt && !attempts.some(attempt => attempt.id === localAttempt.id && (attempt.updatedAt > localAttempt.updatedAt || (attempt.updatedAt === localAttempt.updatedAt && attempt.status === localAttempt.status)))
     ? [...attempts.filter(attempt => attempt.id !== localAttempt.id), localAttempt] : attempts;
   const remainingValue = safeRemaining(sale, effectiveAttempts);
@@ -59,6 +64,17 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
   useEffect(() => {
     if (phase === 'form' && !invoice.trim()) setAmount(String(remaining));
   }, [remaining, phase]);
+
+  const pasteInvoice = async () => {
+    if (!visible || phase !== 'form' || busy.current) return;
+    const revision = ++pasteContext.current.revision;
+    const isCurrent = () => current(scope) && !busy.current && pasteContext.current.phase === 'form' &&
+      pasteContext.current.revision === revision;
+    try {
+      const value = (await Clipboard.getStringAsync()).trim();
+      if (value && isCurrent()) { setInvoice(value); setOutcome(''); }
+    } catch { if (isCurrent()) setError('Couldn’t paste the invoice.'); }
+  };
 
   const review = async () => {
     if (busy.current || remainingValue === null) return;
@@ -167,7 +183,7 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit refund" disabled={phase !== 'review'} style={styles.secondaryButton} onPress={() => { setQuote(null); setPhase('form'); }}><Text style={styles.secondaryText}>Edit details</Text></TouchableOpacity>
       </View> : <View style={styles.form}>
         <Text style={styles.fieldLabel}>CUSTOMER LIGHTNING INVOICE</Text>
-        <StyledInput accessibilityLabel="Customer Lightning invoice" value={invoice} onChangeText={value => { setInvoice(value); setOutcome(''); }} onFocus={handleInputFocus} placeholder="BOLT11 invoice" autoCapitalize="none" autoCorrect={false} spellCheck={false} editable={phase === 'form'} rightElement={<TouchableOpacity accessibilityRole="button" accessibilityLabel="Paste invoice" onPress={() => { const captured = scope; void Clipboard.getStringAsync().then(value => { if (value && current(captured)) setInvoice(value.trim()); }).catch(() => { if (current(captured)) setError('Couldn’t paste the invoice.'); }); }}><Feather name="clipboard" size={19} color={theme.colors.primary} /></TouchableOpacity>} />
+        <StyledInput accessibilityLabel="Customer Lightning invoice" value={invoice} onChangeText={value => { ++pasteContext.current.revision; setInvoice(value); setOutcome(''); }} onFocus={handleInputFocus} placeholder="BOLT11 invoice" autoCapitalize="none" autoCorrect={false} spellCheck={false} editable={phase === 'form'} rightElement={<TouchableOpacity accessibilityRole="button" accessibilityLabel="Paste invoice" accessibilityState={{ disabled: phase !== 'form' || !visible }} disabled={phase !== 'form' || !visible} onPress={() => { void pasteInvoice(); }} style={styles.pasteButton}><Feather name="clipboard" size={19} color={phase === 'form' ? theme.colors.primary : theme.colors.muted} /></TouchableOpacity>} />
         <Text style={styles.fieldLabel}>AMOUNT</Text>
         <StyledInput accessibilityLabel="Refund amount in sats" value={amount} onChangeText={setAmount} onFocus={handleInputFocus} keyboardType="number-pad" editable={phase === 'form'} rightElement={<Text style={styles.unit}>sats</Text>} />
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Review refund" disabled={phase !== 'form'} style={styles.primaryButton} onPress={() => { void review(); }}>{phase !== 'form' ? <ActivityIndicator accessibilityLabel="Preparing refund" size="small" color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Review refund</Text>}</TouchableOpacity>
@@ -183,6 +199,7 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; border: string; muted: string; bitcoin: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
+    pasteButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
     topBar: { position: 'absolute', left: 0, right: 0, zIndex: 2, height: 56, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' },
     backButton: { width: 40, height: 40 },
     heading: { paddingHorizontal: 24, paddingBottom: 22 },

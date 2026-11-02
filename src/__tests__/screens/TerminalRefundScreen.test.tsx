@@ -3,6 +3,7 @@ import { getTerminalDatabase } from '../../services/terminalDatabase';
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 import TerminalRefundScreen from '../../screens/TerminalRefundScreen';
 import { useWallet } from '../../contexts/WalletContext';
 import { authenticate_terminal_refund } from '../../services/authState';
@@ -16,7 +17,8 @@ jest.mock('@react-navigation/native', () => ({ ...jest.requireActual('@react-nav
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' }, LAYOUT: { radius: 8, inputHeight: 56 } } }) }));
 jest.mock('../../components/GlassView', () => ({ GlassView: ({ children }: { children: React.ReactNode }) => children }));
-jest.mock('../../components/StyledInput', () => ({ StyledInput: (props: any) => require('react').createElement(require('react-native').TextInput, props) }));
+jest.mock('../../components/StyledInput', () => ({ StyledInput: ({ rightElement, ...props }: any) => require('react').createElement(require('react-native').View, null, require('react').createElement(require('react-native').TextInput, props), rightElement) }));
+jest.mock('expo-clipboard', () => ({ getStringAsync: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'refund-test-id' }));
@@ -35,6 +37,7 @@ beforeEach(async () => {
   await resetTerminalSqlite();
   clearTerminalRateCacheForTests();
   (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { currency: 'BTC', rates: { USD: '100000', EUR: '90000', CHF: '80000' } } }) });
+  (Clipboard.getStringAsync as jest.Mock).mockReset();
   prepareTerminalRefund.mockReset().mockImplementation(async (invoice, amountSats) => ({ quoteId: 'quote-one', invoice, amountSats, feeSats: 12, expiresAt: Date.now() + 120_000 }));
   sendTerminalRefund.mockReset().mockResolvedValue({ status: 'complete', paymentId: 'payment-one' });
   verifyTerminalRefund.mockReset();
@@ -173,4 +176,56 @@ it.each(['unknown', 'failure', 'offline'])('shows status-check feedback for an u
   const message = outcome === 'offline' ? 'Open this wallet and connect to Lightning to check the refund.' : outcome === 'failure' ? 'Couldn’t check this refund. Try again later.' : 'No matching refund found yet. Check again later.';
   await waitFor(() => expect(view.getByText(message)).toBeTruthy());
   expect(sendTerminalRefund).not.toHaveBeenCalled();
+});
+
+it('does not overwrite a manually edited invoice with a delayed clipboard result', async () => {
+  const sale = await paidSale();
+  let finishPaste!: (value: string) => void;
+  (Clipboard.getStringAsync as jest.Mock).mockImplementation(() => new Promise(resolve => { finishPaste = resolve; }));
+  const view = render(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
+  fireEvent.press(view.getByLabelText('Paste invoice'));
+  fireEvent.changeText(view.getByLabelText('Customer Lightning invoice'), 'lnbcnewcustomerabc');
+  await act(async () => { finishPaste('lnbcoldclipboardabc'); });
+  expect(view.getByLabelText('Customer Lightning invoice').props.value).toBe('lnbcnewcustomerabc');
+});
+
+it('ignores a paste result after leaving and returning to the refund form', async () => {
+  const sale = await paidSale();
+  let finishPaste!: (value: string) => void;
+  (Clipboard.getStringAsync as jest.Mock).mockImplementation(() => new Promise(resolve => { finishPaste = resolve; }));
+  const props = { sale, attempts: [], onClose: jest.fn() };
+  const view = render(<TerminalRefundScreen {...props} />);
+  fireEvent.press(view.getByLabelText('Paste invoice'));
+  view.rerender(<TerminalRefundScreen {...props} visible={false} />);
+  view.rerender(<TerminalRefundScreen {...props} visible />);
+  await act(async () => { finishPaste('lnbcoldclipboardabc'); });
+  expect(view.getByLabelText('Customer Lightning invoice').props.value).toBe('');
+});
+
+it('locks paste while preparing a quote and discards an earlier paste', async () => {
+  const sale = await paidSale();
+  let finishPaste!: (value: string) => void;
+  (Clipboard.getStringAsync as jest.Mock).mockImplementation(() => new Promise(resolve => { finishPaste = resolve; }));
+  prepareTerminalRefund.mockImplementation(() => new Promise(() => {}));
+  const view = render(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
+  fireEvent.changeText(view.getByLabelText('Customer Lightning invoice'), 'lnbccustomerabc');
+  fireEvent.press(view.getByLabelText('Paste invoice'));
+  fireEvent.press(view.getByLabelText('Review refund'));
+  fireEvent.press(view.getByLabelText('Paste invoice'));
+  expect(Clipboard.getStringAsync).toHaveBeenCalledTimes(1);
+  await act(async () => { finishPaste('lnbcothercustomerabc'); });
+  expect(view.getByLabelText('Customer Lightning invoice').props.value).toBe('lnbccustomerabc');
+  expect(prepareTerminalRefund).toHaveBeenCalledWith('lnbccustomerabc', 1200);
+  expect(sendTerminalRefund).not.toHaveBeenCalled();
+});
+
+it('applies only the newest clipboard request and trims the invoice', async () => {
+  const sale = await paidSale();
+  const results: ((value: string) => void)[] = [];
+  (Clipboard.getStringAsync as jest.Mock).mockImplementation(() => new Promise(resolve => { results.push(resolve); }));
+  const view = render(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
+  fireEvent.press(view.getByLabelText('Paste invoice'));
+  fireEvent.press(view.getByLabelText('Paste invoice'));
+  await act(async () => { results[1]('  lnbcnewcustomerabc  '); results[0]('lnbcoldcustomerabc'); });
+  expect(view.getByLabelText('Customer Lightning invoice').props.value).toBe('lnbcnewcustomerabc');
 });
