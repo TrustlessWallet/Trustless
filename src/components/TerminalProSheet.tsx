@@ -29,7 +29,8 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
   const [legalPage, setLegalPage] = useState<LegalPage>(null);
   const [legalOpen, setLegalOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<'purchase' | 'restore' | null>(null);
-  const [activating, setActivating] = useState(false);
+  const [activationKind, setActivationKind] = useState<'purchase' | 'restore' | null>(null);
+  const activating = activationKind !== null;
   const [activationError, setActivationError] = useState('');
   const activationBusy = useRef(false);
   const attemptStarted = useRef(false);
@@ -53,7 +54,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
       setLegalOpen(false);
       setLegalPage(null);
       setConfirmation(null);
-      setActivating(false);
+      setActivationKind(null);
       setActivationError('');
       activationBusy.current = false;
       attemptStarted.current = false;
@@ -76,7 +77,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
     attemptStarted.current = true;
     pendingApproval.current = false;
     onActivationStart?.();
-    setActivating(true);
+    setActivationKind(kind);
     setActivationError('');
     try {
       const success = kind === 'purchase' ? await purchase(selectedPlan!.id) : await restore();
@@ -84,7 +85,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
     } catch {
       if (ticket === session.current) setActivationError('Could not complete your request. Please try again.');
     } finally {
-      if (ticket === session.current) { activationBusy.current = false; setActivating(false); }
+      if (ticket === session.current) { activationBusy.current = false; setActivationKind(null); }
     }
   };
   useEffect(() => {
@@ -121,7 +122,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
     <>
     <View style={styles.root} pointerEvents={legalPage ? 'none' : 'auto'} accessibilityElementsHidden={!!legalPage} importantForAccessibility={legalPage ? 'no-hide-descendants' : 'auto'}>
       <TerminalSheetHeader title="Terminal Pro" closeLabel="Close Terminal Pro" onClose={close} disabled={working || !!legalPage} />
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} alwaysBounceVertical={false}>
+        <ScrollView key={confirmed ? 'confirmation' : 'subscription'} testID="terminal-pro-content" style={styles.scroll} contentContainerStyle={styles.content} alwaysBounceVertical={false}>
           {confirmed ? <View style={styles.confirmation} accessibilityLiveRegion="polite">
             <Feather name="check-circle" size={28} color={theme.colors.bitcoin} />
             <Text accessibilityRole="header" style={styles.confirmationTitle}>Terminal Pro is ready</Text>
@@ -142,13 +143,13 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
           {status === 'loading' || (activating && status !== 'free') ? <View style={styles.state}><ActivityIndicator color={theme.colors.bitcoin} /></View> : null}
           {status === 'unavailable' ? <View style={styles.state}><Text style={styles.stateText}>Subscriptions are unavailable right now.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry subscription" disabled={working} onPress={() => { void refresh(); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Retry</Text></TouchableOpacity></View> : null}
           {status === 'free' ? <>
-            {loadingPlans ? <View style={styles.state}><ActivityIndicator color={theme.colors.bitcoin} /></View> : plans.length ? <>
+            {loadingPlans && plans.length === 0 ? <View style={styles.state}><ActivityIndicator color={theme.colors.bitcoin} /></View> : plans.length ? <>
               <Text style={styles.sectionTitle}>CHOOSE A PLAN</Text>
               {plans.map(plan => <PlanChoice key={plan.id} plan={plan} selected={selected === plan.id} disabled={working || pending} onPress={() => setSelected(plan.id)} theme={theme} styles={styles} />)}
               {selectedPlan?.trialLabel ? <Text style={styles.trial}>{selectedPlan.trialLabel}</Text> : null}
               {selectedPlan?.renewalLabel ? <Text style={styles.renewal}>{selectedPlan.renewalLabel}</Text> : null}
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Continue with ${selected === 'annual' ? 'annual' : 'monthly'} Terminal Pro`} accessibilityState={{ disabled: working || pending, busy: working }} disabled={working || pending} onPress={() => { void activate('purchase'); }} style={[styles.primaryButton, (working || pending) && styles.disabled]}>
-                {working ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Continue with {selected === 'annual' ? 'Annual' : 'Monthly'}</Text>}
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Continue with ${selected === 'annual' ? 'annual' : 'monthly'} Terminal Pro`} accessibilityState={{ disabled: working || pending, busy: working && activationKind !== 'restore' }} disabled={working || pending} onPress={() => { void activate('purchase'); }} style={[styles.primaryButton, (working || pending) && styles.disabled]}>
+                {working && activationKind !== 'restore' ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Continue with {selected === 'annual' ? 'Annual' : 'Monthly'}</Text>}
               </TouchableOpacity>
               <Text style={styles.renewal}>Auto-renews at the store price unless canceled in your store’s subscription settings.</Text>
             </> : <View style={styles.state}>
@@ -159,7 +160,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
           {confirmed ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Continue to Terminal" onPress={continueAfterActivation} style={styles.primaryButton}><Text style={styles.primaryText}>Continue</Text></TouchableOpacity> : null}
           {pending ? <Text style={styles.stateText}>Awaiting store approval. Pro unlocks when payment is confirmed.</Text> : null}
           {error || activationError ? <Text accessibilityRole="alert" style={styles.error}>{error || activationError}</Text> : null}
-          {status !== 'pro' ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Restore purchases" disabled={working} onPress={() => { void activate('restore'); }} style={styles.restore}><Text style={styles.restoreText}>Restore purchases</Text></TouchableOpacity> : null}
+          {status !== 'pro' ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Restore purchases" accessibilityState={{ disabled: working, busy: activationKind === 'restore' }} disabled={working} onPress={() => { void activate('restore'); }} style={styles.restore}><Text style={[styles.restoreText, activationKind === 'restore' && styles.hiddenActionLabel]}>Restore purchases</Text>{activationKind === 'restore' ? <ActivityIndicator accessibilityLabel="Restoring purchases" color={theme.colors.bitcoin} style={styles.restoreSpinner} /> : null}</TouchableOpacity> : null}
           {status !== 'pro' ? <Text style={styles.freeCopy}>Checkout, payment history, refunds, raw CSV export, and backup stay free.</Text> : null}
           {!confirmed ? <View style={styles.legalLinks}>
             <TouchableOpacity accessibilityRole="link" accessibilityLabel="Privacy Policy" disabled={working} onPress={() => openLegal('privacy')} style={styles.legalTouch}><Text style={styles.legalLink}>Privacy</Text></TouchableOpacity>
@@ -229,6 +230,8 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   secondaryText: { color: theme.colors.primary, fontSize: 12 },
   error: { color: theme.colors.error, textAlign: 'center', fontSize: 11, marginTop: 12 },
   restore: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 7 },
+  hiddenActionLabel: { opacity: 0 },
+  restoreSpinner: { position: 'absolute', alignSelf: 'center' },
   restoreText: { color: theme.colors.primary, fontSize: 12, textDecorationLine: 'underline' },
   freeCopy: { color: theme.colors.muted, fontSize: 11, lineHeight: 18, textAlign: 'center', marginTop: 12 },
   legalLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 12 },

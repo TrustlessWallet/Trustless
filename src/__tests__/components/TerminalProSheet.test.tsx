@@ -207,3 +207,33 @@ it('confirms approval of a pending purchase without a second purchase', async ()
   expect(view.getByText('Terminal Pro is ready')).toBeTruthy();
   expect(purchase).toHaveBeenCalledTimes(1);
 });
+
+it('keeps loaded prices and the selected plan visible during a background plan refresh', () => {
+  const props = { visible: true, onClose: jest.fn(), onDismiss: jest.fn(), onVerified: jest.fn() };
+  const view = render(<TerminalProSheet {...props} />);
+  fireEvent.press(view.getByLabelText('Monthly plan, €4,99 month'));
+  mockState = { ...mockState, loadingPlans: true };
+  view.rerender(<TerminalProSheet {...props} />);
+  expect(view.getByText('€4,99')).toBeTruthy();
+  expect(view.getByText('€49,99')).toBeTruthy();
+  expect(view.getByLabelText('Monthly plan, €4,99 month').props.accessibilityState.selected).toBe(true);
+  expect(view.getByLabelText('Continue with monthly Terminal Pro')).toBeTruthy();
+  expect(view.UNSAFE_queryAllByType(require('react-native').ActivityIndicator)).toHaveLength(0);
+});
+
+it('shows restore progress on Restore rather than the purchase button and permits retry', async () => {
+  let finish!: (result: boolean) => void;
+  restore.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const view = render(<TerminalProSheet visible onClose={jest.fn()} onDismiss={jest.fn()} onVerified={jest.fn()} />);
+  fireEvent.press(view.getByLabelText('Restore purchases'));
+  expect(view.getByLabelText('Restore purchases').props.accessibilityState).toEqual({ disabled: true, busy: true });
+  expect(view.getByLabelText('Restoring purchases')).toBeTruthy();
+  expect(view.getByText('Continue with Annual')).toBeTruthy();
+  expect(view.getByLabelText('Continue with annual Terminal Pro').props.accessibilityState).toEqual({ disabled: true, busy: false });
+  expect(view.UNSAFE_getAllByType(require('react-native').ActivityIndicator)).toHaveLength(1);
+  fireEvent.press(view.getByLabelText('Restore purchases'));
+  expect(restore).toHaveBeenCalledTimes(1);
+  await act(async () => finish(false));
+  expect(view.getByLabelText('Restore purchases').props.accessibilityState).toEqual({ disabled: false, busy: false });
+  expect(view.queryByLabelText('Restoring purchases')).toBeNull();
+});
