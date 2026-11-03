@@ -2,6 +2,9 @@ import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { useIsFocused } from '@react-navigation/native';
 import TerminalSettingsScreen from '../../screens/TerminalSettingsScreen';
+import * as ProContext from '../../contexts/TerminalProContext';
+import { terminalNetwork } from '../../services/terminal';
+import { NETWORK_NAME } from '../../constants/network';
 import { useActiveWallet } from '../../contexts/WalletContext';
 import { useWalletMode } from '../../contexts/WalletModeContext';
 
@@ -94,4 +97,25 @@ it('does not reopen dismissed currencies when an older measurement finishes late
   expect(onSelectUnit).toHaveBeenCalledWith('USD');
   act(() => positions[0](24, 100, 280, 48));
   expect(view.queryByLabelText('USD')).toBeNull();
+});
+
+
+it('uses the same merchant network scope for purchases as checkout and receipts', async () => {
+  const beginActivation = jest.fn().mockReturnValue(1);
+  const purchase = jest.fn().mockResolvedValue(false);
+  const pro = jest.spyOn(ProContext, 'useTerminalPro').mockReturnValue({
+    status: 'free', pending: false, busy: false, loadingPlans: false, error: null,
+    plans: [{ id: 'monthly', price: '$5.99', periodLabel: 'month' }],
+    refresh: jest.fn().mockResolvedValue(undefined), loadPlans: jest.fn().mockResolvedValue(undefined),
+    purchase, restore: jest.fn(), manage: jest.fn(), activation: null,
+    beginActivation, abandonActivation: jest.fn(), claimActivation: jest.fn(), releaseActivation: jest.fn(), acknowledgeActivation: jest.fn(),
+  });
+  try {
+    (useActiveWallet as jest.Mock).mockReturnValue({ id: 'shop', type: 'standard' });
+    (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierBusy: false });
+    const view = render(<TerminalSettingsScreen unit="sats" onSelectUnit={jest.fn()} onClose={jest.fn()} />);
+    fireEvent.press(view.getByLabelText('Terminal Pro'));
+    await act(async () => fireEvent.press(view.getByLabelText('Continue with monthly Terminal Pro')));
+    expect(beginActivation).toHaveBeenCalledWith(`${terminalNetwork(NETWORK_NAME)}:shop`, 'purchase');
+  } finally { pro.mockRestore(); }
 });

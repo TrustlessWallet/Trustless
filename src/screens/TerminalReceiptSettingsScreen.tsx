@@ -1,5 +1,5 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, Alert, Image, Keyboard, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ActionSheetIOS, ActivityIndicator, Alert, Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyledInput } from '../components/StyledInput';
 import { Text } from '../components/StyledText';
 import { useTerminalPro } from '../contexts/TerminalProContext';
+import { TerminalOwnerFocusContext } from '../contexts/TerminalOwnerFocusContext';
 import { useTerminalProGate } from '../hooks/useTerminalProGate';
 import { useTheme } from '../contexts/ThemeContext';
 import { useActiveWallet } from '../contexts/WalletContext';
@@ -16,7 +17,6 @@ import { DEFAULT_TERMINAL_RECEIPT_BRANDING, loadTerminalReceiptBranding, normali
 import { terminalReceiptLogoLayout } from '../services/terminalReceiptLogo';
 import { importTerminalReceiptLogo } from '../services/terminalReceiptLogoImport';
 import { createTerminalReceiptTemplate, loadTerminalReceiptTemplates, removeTerminalReceiptTemplate, replaceTerminalReceiptTemplate, TerminalReceiptTemplate } from '../services/terminalReceiptTemplates';
-import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import TerminalProBadge from '../components/TerminalProBadge';
 
@@ -33,7 +33,8 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
   const scope = `${network}:${walletId}`;
   const context = useRef({ scope, owner: false, epoch: 0 });
   const allowed = activeWallet?.id === walletId && activeWallet.type !== 'watch-only' && cashierState === 'off';
-  const owner = allowed && focused;
+  const parentFocused = useContext(TerminalOwnerFocusContext);
+  const owner = allowed && focused && parentFocused;
   const pro = useTerminalPro();
   const proGate = useTerminalProGate({ allowed: owner, scope });
   if (context.current.scope !== scope || context.current.owner !== owner) context.current = { scope, owner, epoch: context.current.epoch + 1 };
@@ -73,7 +74,10 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
       if (mounted.current && request === generation.current && context.current.epoch === epoch) setState({ scope, ready: false, loading: false, error: true, saved: DEFAULT_TERMINAL_RECEIPT_BRANDING });
     }
   };
-  useEffect(() => { void load(); return () => { ++generation.current; }; }, [scope, owner]);
+  useEffect(() => {
+    if (owner && !(state.scope === scope && state.ready)) void load();
+    return () => { ++generation.current; };
+  }, [scope, owner]);
   const ready = state.scope === scope && state.ready;
   const dirty = fields.some(field => draft[field.key].trim() !== state.saved[field.key]) || draft.logo?.mimeType !== state.saved.logo?.mimeType || draft.logo?.base64 !== state.saved.logo?.base64;
   const libraryReady = library.scope === scope && !library.loading && !library.error;
@@ -83,7 +87,7 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
   const canEdit = () => owner && context.current.owner && context.current.scope === scope && ready && !busyRef.current && !pickingRef.current;
   const cancelNaming = () => {
     if (!canEdit()) return;
-    setNaming(false); setTemplateName(''); setTemplateError(''); Keyboard.dismiss();
+    setNaming(false); Keyboard.dismiss();
   };
   const loadTemplates = async () => {
     if (!owner || !context.current.owner) return;
@@ -98,7 +102,11 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
   };
   useEffect(() => {
     setTemplatesOpen(false); setNaming(false); setTemplateName(''); setLoadedTemplateId(null); setTemplateError('');
-    void loadTemplates(); return () => { ++libraryGeneration.current; };
+  }, [scope]);
+  useEffect(() => { if (!owner) setNaming(false); }, [owner]);
+  useEffect(() => {
+    if (owner && !(library.scope === scope && !library.loading && !library.error)) void loadTemplates();
+    return () => { ++libraryGeneration.current; };
   }, [scope, owner]);
   const applyTemplate = (template?: TerminalReceiptTemplate) => {
     if (!canEdit()) return;
@@ -124,7 +132,7 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
       if (!isCurrent()) return;
       setLibrary({ scope, items, loading: false, error: false });
       if (operation === 'create') {
-        setLoadedTemplateId(items.find(item => item.name === templateName.trim())?.id ?? null); setNaming(false); setTemplateName('');
+        setLoadedTemplateId(items.find(item => item.name === templateName.trim())?.id ?? null); setNaming(false);
       } else if (operation === 'delete' && loadedTemplateId === template!.id) setLoadedTemplateId(null);
     } catch (failure) {
       if (isCurrent()) {
@@ -188,13 +196,13 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
       if (isCurrent()) setError(failure instanceof Error && failure.message === 'Invalid receipt branding.' ? 'Use single-line text within the field limits.' : 'Couldn’t save receipt details. Try again.');
     } finally { busyRef.current = false; if (mounted.current) setPendingAction(null); }
   };
-  return <><View pointerEvents={proGate.isOpen ? 'none' : 'auto'} style={styles.root}>
-    <TerminalSheetHeader title={naming ? 'Save template' : 'Receipts'} closeLabel={naming ? 'Cancel saving template' : 'Close receipt settings'} disabled={busy} onClose={() => { if (!busyRef.current) { if (naming) cancelNaming(); else onClose(); } }} />
+  return <><View pointerEvents={proGate.isOpen || naming ? 'none' : 'auto'} accessibilityElementsHidden={naming} importantForAccessibility={naming ? 'no-hide-descendants' : 'auto'} style={styles.root}>
+    <TerminalSheetHeader title="Receipts" closeLabel="Close receipt settings" disabled={busy || naming || proGate.isOpen} onClose={() => { if (!busyRef.current && !naming && !proGate.isOpen) onClose(); }} />
     {!allowed ? <Text style={styles.message}>Owner access is required to edit receipts.</Text> : state.loading || state.scope !== scope ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="Loading receipt settings" size="small" color={theme.colors.bitcoin} /></View> : state.error ? <View style={styles.failure}><Text style={styles.message}>Receipt settings unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry receipt settings" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : <>
-    <ScrollView testID="receipt-settings-editor" pointerEvents={naming ? 'none' : 'auto'} accessibilityElementsHidden={naming} importantForAccessibility={naming ? 'no-hide-descendants' : 'auto'} style={[styles.scroll, naming && styles.hidden]} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
-      <View style={styles.templates}>
+    <ScrollView testID="receipt-settings-editor" style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
+      {pro.status === 'pro' ? <View style={styles.templates}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Load receipt template" accessibilityState={{ expanded: templatesOpen, disabled: busy || preparingLogo }} disabled={busy || preparingLogo} onPress={() => { if (canEdit()) { Keyboard.dismiss(); setTemplatesOpen(value => !value); } }} style={styles.templatesRow}>
-          <View style={styles.proLabel}><Text style={styles.templatesTitle}>Templates</Text><TerminalProBadge /></View>
+          <View style={styles.proLabel}><Text style={styles.templatesTitle}>Templates</Text></View>
           <View style={styles.templatesEnd}>{library.loading || library.scope !== scope ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : libraryReady ? <Text style={styles.templateCount}>{templates.length}</Text> : null}<Feather name={templatesOpen ? 'chevron-down' : 'chevron-right'} size={20} color={theme.colors.primary} /></View>
         </TouchableOpacity>
         {templatesOpen && library.error ? <View><Text style={styles.message}>Templates unavailable. Your receipt settings are unchanged.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry receipt templates" onPress={() => { void loadTemplates(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
@@ -205,9 +213,9 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Delete template ${template.name}`} disabled={busy || preparingLogo} onPress={() => deleteTemplate(template)} style={styles.templateDelete}>{deletingId === template.id ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="trash-2" size={17} color={theme.colors.primary} />}</TouchableOpacity>
           </View>)}
         </View> : null}
-      </View>
+      </View> : null}
       <View style={styles.field}>
-        <View style={[styles.proLabel, styles.logoLabel]}><Text style={styles.labelText}>Logo</Text><TerminalProBadge /></View>
+        <View style={[styles.proLabel, styles.logoLabel]}><Text style={styles.labelText}>Logo</Text>{pro.status === 'free' ? <TerminalProBadge /> : null}</View>
         <View style={styles.logoEditor}>
           {draft.logo ? <Image accessibilityLabel="Receipt logo preview" source={{ uri: `data:${draft.logo.mimeType};base64,${draft.logo.base64}` }} resizeMode="contain" style={[styles.logo, styles.logoEditorImage, logoLayout]} /> : null}
           <View style={styles.logoActions}>
@@ -231,30 +239,34 @@ export default function TerminalReceiptSettingsScreen({ walletId, network, onClo
       </View>
       <View style={styles.templateActions}>
           {loadedTemplate && !equalBranding(loadedTemplate.branding, draft) ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Replace receipt template ${loadedTemplate.name}`} disabled={busy || preparingLogo} onPress={() => { void changeTemplate('replace', loadedTemplate); }} style={styles.templateButton}>{pendingAction === 'template' ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.templateButtonText}>Replace “{loadedTemplate.name}”</Text>}</TouchableOpacity> : null}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save as receipt template" disabled={busy || preparingLogo || !libraryReady || templates.length >= 5} accessibilityState={{ disabled: busy || preparingLogo || !libraryReady || templates.length >= 5 }} onPress={() => { if (canEdit() && libraryReady && templates.length < 5) { Keyboard.dismiss(); proGate.requirePro(() => { setNaming(true); setTemplateName(''); setTemplateError(''); }); } }} style={[styles.templateButton, (!libraryReady || templates.length >= 5) && styles.disabled]}><View style={styles.proLabel}><Text style={styles.templateButtonText}>Save as template</Text><TerminalProBadge /></View></TouchableOpacity>
-          {libraryReady && templates.length >= 5 ? <Text style={styles.message}>Maximum of 5 templates.</Text> : null}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save as receipt template" disabled={busy || preparingLogo || (pro.status !== 'free' && (!libraryReady || templates.length >= 5))} accessibilityState={{ disabled: busy || preparingLogo || (pro.status !== 'free' && (!libraryReady || templates.length >= 5)) }} onPress={() => { if (!canEdit()) return; Keyboard.dismiss(); if (!libraryReady || templates.length >= 5) { if (pro.status === 'free') proGate.openPro(); return; } proGate.requirePro(() => { setTemplateName(''); setTemplateError(''); setNaming(true); }); }} style={[styles.templateButton, pro.status !== 'free' && (!libraryReady || templates.length >= 5) && styles.disabled]}><View style={styles.proLabel}><Text style={styles.templateButtonText}>Save as template</Text>{pro.status === 'free' ? <TerminalProBadge /> : null}</View></TouchableOpacity>
+          {pro.status === 'pro' && libraryReady && templates.length >= 5 ? <Text style={styles.message}>Maximum of 5 templates.</Text> : null}
         {templateError ? <Text accessibilityRole="alert" style={styles.message}>{templateError}</Text> : null}
       </View>
       {error ? <Text accessibilityRole="alert" style={styles.message}>{error}</Text> : null}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save receipt settings" accessibilityState={{ disabled: busy || preparingLogo || naming || !dirty, busy }} disabled={busy || preparingLogo || naming || !dirty} onPress={() => { void save(); }} style={[styles.save, styles.settingsSave, !dirty && styles.disabled]}>{pendingAction === 'settings' ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.saveText}>Save</Text>}</TouchableOpacity>
     </ScrollView>
-    {naming ? <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.namingContent, { paddingBottom: insets.bottom + 32 }]}>
+    </>}
+  </View>
+  <Modal visible={naming && owner} animationType="slide" presentationStyle="pageSheet" allowSwipeDismissal={!busy} onRequestClose={cancelNaming}>
+    <View style={styles.root}>
+      <TerminalSheetHeader title="Save template" closeLabel="Cancel saving template" disabled={busy} onClose={cancelNaming} />
+      <ScrollView style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.namingContent, { paddingBottom: insets.bottom + 32 }]}>
       <Text style={styles.label}>Template name</Text>
       <StyledInput accessibilityLabel="Receipt template name" value={templateName} maxLength={40} autoFocus editable={!busy} autoCorrect={false} returnKeyType="done" onChangeText={value => { setTemplateName(value); setTemplateError(''); }} onSubmitEditing={() => { if (templateName.trim()) void changeTemplate('create'); }} />
       {templateError ? <Text accessibilityRole="alert" style={styles.message}>{templateError}</Text> : null}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save receipt template" accessibilityState={{ disabled: busy || preparingLogo || !templateName.trim(), busy: pendingAction === 'template' }} disabled={busy || preparingLogo || !templateName.trim()} onPress={() => { void changeTemplate('create'); }} style={[styles.save, !templateName.trim() && styles.disabled]}>{pendingAction === 'template' ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.saveText}>Save template</Text>}</TouchableOpacity>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel template name" disabled={busy} onPress={cancelNaming} style={styles.templateCancel}><Text style={styles.templateButtonText}>Cancel</Text></TouchableOpacity>
-    </ScrollView> : null}
-    </>}
-  </View>{proGate.proSheet}</>;
+      </ScrollView>
+    </View>
+  </Modal>{proGate.proSheet}</>;
 }
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; muted: string; border: string }) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background }, scroll: { flex: 1, minHeight: 0 }, content: { paddingHorizontal: 24, paddingTop: 20 },
-    hidden: { position: 'absolute', top: SHEET_HEADER_HEIGHT, bottom: 0, left: 0, right: 0, opacity: 0 }, namingContent: { paddingHorizontal: 24, paddingTop: 24 },
+    namingContent: { paddingHorizontal: 24, paddingTop: 24 },
     templates: { marginBottom: 20 }, templatesRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.border }, templatesTitle: { color: colors.muted, fontSize: 16 }, templatesEnd: { flexDirection: 'row', alignItems: 'center', gap: 10 }, templateCount: { color: colors.primary, fontSize: 14 },
     templateRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.border }, templateLoad: { flex: 1, minHeight: 48, justifyContent: 'center', paddingVertical: 10 }, templateTitle: { color: colors.primary, fontSize: 14, flexShrink: 1 }, templateDelete: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center' },
-    templateActions: { marginTop: 18 }, templateButton: { minHeight: 48, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 10, marginTop: 12 }, templateButtonText: { color: colors.primary, fontSize: 13, fontFamily: 'SpaceMono-Bold', textAlign: 'center' }, templateCancel: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+    templateActions: { marginTop: 18 }, templateButton: { minHeight: 48, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 10, marginTop: 12 }, templateButtonText: { color: colors.primary, fontSize: 13, fontFamily: 'SpaceMono-Bold', textAlign: 'center' },
     proLabel: { flexDirection: 'row', alignItems: 'center', gap: 8 }, logoLabel: { marginBottom: 8 }, labelText: { color: colors.muted, fontSize: 12 },
     field: { marginBottom: 18 }, label: { color: colors.muted, fontSize: 12, marginBottom: 8 },
     logo: { alignSelf: 'flex-start', marginBottom: 8 },

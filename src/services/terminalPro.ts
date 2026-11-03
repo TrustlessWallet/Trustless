@@ -1,4 +1,5 @@
 import { Linking, Platform } from 'react-native';
+import { beginNativeStorePrompt } from './nativeStorePrompt';
 
 export type ProStatus = 'loading' | 'free' | 'pro' | 'unavailable';
 export type ProPlanId = 'monthly' | 'annual';
@@ -287,10 +288,13 @@ export class TerminalProService {
       if (!this.packages.has(id)) await this.loadPlans();
       const pkg = this.packages.get(id);
       if (!pkg) throw new Error('Plan unavailable');
-      const result = await this.client.purchasePackage(pkg);
+      const endPrompt = beginNativeStorePrompt();
+      let result: { customerInfo: CustomerInfo };
+      try { result = await this.client.purchasePackage(pkg); }
+      finally { endPrompt(); }
       this.acceptCustomerInfo(result.customerInfo);
       const success = this.snapshot.status === 'pro';
-      if (!success) this.publish({ error: 'Your purchase is pending or could not be verified yet. Please try Restore Purchases later.' });
+      if (!success) this.publish({ pending: true, error: 'Your purchase is pending or could not be verified yet. Please try Restore Purchases later.' });
       return success;
     } catch (error) {
       if (this.client && cancelled(error, this.client)) return false;
@@ -313,7 +317,10 @@ export class TerminalProService {
     try {
       await this.initialize();
       if (!this.client) throw new Error('Subscriptions unavailable');
-      const info = await this.client.restorePurchases();
+      const endPrompt = beginNativeStorePrompt();
+      let info: CustomerInfo;
+      try { info = await this.client.restorePurchases(); }
+      finally { endPrompt(); }
       this.acceptCustomerInfo(info);
       if (this.snapshot.status === 'free') this.publish({ pending: false });
       const success = this.snapshot.status === 'pro';
@@ -339,7 +346,9 @@ export class TerminalProService {
         return;
       }
       if (this.deps.platform === 'ios' && this.client.showManageSubscriptions) {
-        await this.client.showManageSubscriptions();
+        const endPrompt = beginNativeStorePrompt();
+        try { await this.client.showManageSubscriptions(); }
+        finally { endPrompt(); }
         return;
       }
       if (!this.lastInfo?.managementURL) await this.fetchCustomerInfo();

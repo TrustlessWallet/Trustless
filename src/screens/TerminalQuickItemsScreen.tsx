@@ -40,7 +40,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
               <Text style={[styles.price, { color: theme.colors.muted }]}>{formatTerminalBasketAmount(selected?.unitPrice ?? item.unitPrice, selected ? unit : item.unit)}{selected ? ` · ${formatTerminalBasketAmount(selected.total, unit)}` : ''}</Text>
             </View>
             {selected ? <>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove one ${selected.name}`} disabled={busy} style={styles.control} onPress={() => onRemoveOne(selected)}><Text style={[styles.symbol, { color: theme.colors.primary }]}>−</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove one ${selected.name}`} disabled={busy} style={styles.control} onPress={() => onRemoveOne(selected)}><Feather name="minus" size={20} color={theme.colors.primary} /></TouchableOpacity>
               <Text style={[styles.quantity, { color: theme.colors.primary }]}>{selected.quantity}</Text>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${selected.name}`} disabled={busy} style={styles.control} onPress={() => onAdd({ id: selected.itemId, name: selected.name, unit, unitPrice: selected.unitPrice })}><Feather name="plus" size={20} color={theme.colors.primary} /></TouchableOpacity>
             </> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add ${item.name}`} accessibilityState={{ disabled: unavailable || busy }} disabled={unavailable || busy} style={styles.control} onPress={() => onAdd(item)}><Feather name="plus" size={20} color={unavailable ? theme.colors.muted : theme.colors.primary} /></TouchableOpacity>}
@@ -48,7 +48,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
         })}
         {lines.filter(line => !catalog.some(item => item.id === line.itemId)).map(line => <View key={line.itemId} style={[styles.row, { borderBottomColor: theme.colors.border }]}>
           <View style={styles.info}><Text style={[styles.name, { color: theme.colors.primary }]} numberOfLines={1}>{line.name}</Text><Text style={[styles.price, { color: theme.colors.muted }]}>{formatTerminalBasketAmount(line.unitPrice, unit)} · {formatTerminalBasketAmount(line.total, unit)}</Text></View>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove one ${line.name}`} disabled={busy} style={styles.control} onPress={() => onRemoveOne(line)}><Text style={[styles.symbol, { color: theme.colors.primary }]}>−</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove one ${line.name}`} disabled={busy} style={styles.control} onPress={() => onRemoveOne(line)}><Feather name="minus" size={20} color={theme.colors.primary} /></TouchableOpacity>
           <Text style={[styles.quantity, { color: theme.colors.primary }]}>{line.quantity}</Text>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${line.name}`} disabled={busy} style={styles.control} onPress={() => onAdd({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice })}><Feather name="plus" size={20} color={theme.colors.primary} /></TouchableOpacity>
         </View>)}
@@ -63,5 +63,5 @@ const styles = StyleSheet.create({
   feedback: { paddingHorizontal: 24, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },
   scrollContainer: { flex: 1, minHeight: 0 }, scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }, row: { height: 64, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   info: { flex: 1 }, name: { fontSize: 14 }, price: { fontSize: 11, marginTop: 5 }, control: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  symbol: { fontSize: 19 }, quantity: { fontSize: 15, minWidth: 20, textAlign: 'center' },
+  quantity: { fontSize: 15, minWidth: 20, textAlign: 'center' },
 });

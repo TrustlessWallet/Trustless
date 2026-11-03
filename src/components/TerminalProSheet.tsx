@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { Text } from './StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { ProPlan, useTerminalPro } from '../contexts/TerminalProContext';
+import { ProPlan, ProActivation, ProActivationKind, useTerminalPro } from '../contexts/TerminalProContext';
 import TerminalSheetHeader from '../screens/TerminalSheetHeader';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
@@ -15,13 +15,14 @@ type Props = {
   onClose: () => void;
   onDismiss: () => void;
   onVerified: () => void;
-  onActivationStart?: () => void;
+  activation?: ProActivation | null;
+  onActivationStart?: (kind: ProActivationKind) => number | undefined;
 };
 
 const APPLE_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 const presentationStyle = Platform.OS === 'ios' ? 'pageSheet' : 'fullScreen';
 
-export default function TerminalProSheet({ visible, onClose, onDismiss, onVerified, onActivationStart }: Props) {
+export default function TerminalProSheet({ visible, activation, onClose, onDismiss, onVerified, onActivationStart }: Props) {
   const { theme } = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { status, plans, loadingPlans, busy, pending, error, refresh, loadPlans, purchase, restore, manage } = useTerminalPro();
@@ -35,6 +36,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
   const activationBusy = useRef(false);
   const attemptStarted = useRef(false);
   const pendingApproval = useRef(false);
+  const sharedAttempt = useRef(false);
   const acknowledged = useRef(false);
   const session = useRef(0);
   const previousVisible = useRef(visible);
@@ -59,6 +61,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
       activationBusy.current = false;
       attemptStarted.current = false;
       pendingApproval.current = false;
+      sharedAttempt.current = false;
       acknowledged.current = false;
     }
   }, [visible, status, loadPlans]);
@@ -76,12 +79,13 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
     activationBusy.current = true;
     attemptStarted.current = true;
     pendingApproval.current = false;
-    onActivationStart?.();
+    const attemptId = onActivationStart?.(kind);
+    sharedAttempt.current = attemptId !== undefined && attemptId !== 0;
     setActivationKind(kind);
     setActivationError('');
     try {
-      const success = kind === 'purchase' ? await purchase(selectedPlan!.id) : await restore();
-      if (ticket === session.current && success) setConfirmation(kind);
+      const success = kind === 'purchase' ? await purchase(selectedPlan!.id, ...(attemptId === undefined ? [] : [attemptId])) : await restore(...(attemptId === undefined ? [] : [attemptId]));
+      if (ticket === session.current && success && !sharedAttempt.current) setConfirmation(kind);
     } catch {
       if (ticket === session.current) setActivationError('Could not complete your request. Please try again.');
     } finally {
@@ -89,7 +93,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
     }
   };
   useEffect(() => {
-    if (visible && pendingApproval.current && status === 'pro' && !busy && !activating) {
+    if (visible && pendingApproval.current && !sharedAttempt.current && status === 'pro' && !busy && !activating) {
       pendingApproval.current = false;
       setConfirmation('purchase');
     }
@@ -104,9 +108,10 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
   const openLegal = (page: Exclude<LegalPage, null>) => {
     if (!busy && !activating && !legalPage) { setLegalPage(page); setLegalOpen(true); }
   };
-  const confirmed = confirmation !== null && status === 'pro';
+  const confirmedKind = activation?.kind ?? (sharedAttempt.current ? null : confirmation);
+  const confirmed = confirmedKind !== null && status === 'pro';
   const continueAfterActivation = () => {
-    if (!confirmed || acknowledged.current) return;
+    if (!confirmed || busy || activating || acknowledged.current) return;
     acknowledged.current = true;
     onVerified();
   };
@@ -126,7 +131,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
           {confirmed ? <View style={styles.confirmation} accessibilityLiveRegion="polite">
             <Feather name="check-circle" size={28} color={theme.colors.bitcoin} />
             <Text accessibilityRole="header" style={styles.confirmationTitle}>Terminal Pro is ready</Text>
-            {confirmation === 'restore' ? <Text style={styles.stateText}>Your subscription has been restored.</Text> : null}
+            {confirmedKind === 'restore' ? <Text style={styles.stateText}>Your subscription has been restored.</Text> : null}
           </View> : status === 'pro' && !activating ? <View style={styles.activeState}>
             <View style={styles.activeLabel}><Feather name="check-circle" size={18} color={theme.colors.bitcoin} /><Text style={styles.activeText}>Active</Text></View>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="Manage subscription" accessibilityState={{ disabled: working, busy: working }} disabled={working} onPress={() => { void manage(); }} style={styles.primaryButton}>
@@ -157,7 +162,7 @@ export default function TerminalProSheet({ visible, onClose, onDismiss, onVerifi
               <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading plans" disabled={working} onPress={() => { void loadPlans(); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Retry</Text></TouchableOpacity>
             </View>}
           </> : null}
-          {confirmed ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Continue to Terminal" onPress={continueAfterActivation} style={styles.primaryButton}><Text style={styles.primaryText}>Continue</Text></TouchableOpacity> : null}
+          {confirmed ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Continue to Terminal" accessibilityState={{ disabled: working, busy: working }} disabled={working} onPress={continueAfterActivation} style={styles.primaryButton}><Text style={styles.primaryText}>Continue</Text></TouchableOpacity> : null}
           {pending ? <Text style={styles.stateText}>Awaiting store approval. Pro unlocks when payment is confirmed.</Text> : null}
           {error || activationError ? <Text accessibilityRole="alert" style={styles.error}>{error || activationError}</Text> : null}
           {status !== 'pro' ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Restore purchases" accessibilityState={{ disabled: working, busy: activationKind === 'restore' }} disabled={working} onPress={() => { void activate('restore'); }} style={styles.restore}><Text style={[styles.restoreText, activationKind === 'restore' && styles.hiddenActionLabel]}>Restore purchases</Text>{activationKind === 'restore' ? <ActivityIndicator accessibilityLabel="Restoring purchases" color={theme.colors.bitcoin} style={styles.restoreSpinner} /> : null}</TouchableOpacity> : null}

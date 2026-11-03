@@ -4,6 +4,7 @@ import { act, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AppNavigator from '../../navigation/AppNavigator';
+import { beginNativeStorePrompt, isNativeStorePromptActive } from '../../services/nativeStorePrompt';
 import { useWallet } from '../../contexts/WalletContext';
 import { useWalletMode } from '../../contexts/WalletModeContext';
 
@@ -208,4 +209,58 @@ it('does not leave a privacy cover behind after duplicate active events followin
     expect(mockNavRef.navigate).not.toHaveBeenCalledWith('PrivacyOverlay');
     expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
   } finally { view.unmount(); listener.mockRestore(); }
+});
+
+for (const releaseBeforeResume of [true, false]) {
+  it(`keeps a native store inactive transition private without navigation when ${releaseBeforeResume ? 'the result precedes active' : 'active precedes the result'}`, async () => {
+    await AsyncStorage.multiSet([['@hasCompletedOnboarding','true'], ['@biometricsEnabled','true'], ['@autoLockTime','0']]);
+    (LocalAuthentication.isEnrolledAsync as jest.Mock).mockResolvedValue(true);
+    (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
+    let change!: (state: string) => void;
+    const listener = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, callback) => { change = callback as any; return { remove: jest.fn() } as any; });
+    const view = render(<AppNavigator />);
+    const endPrompt = beginNativeStorePrompt();
+    try {
+      await waitFor(() => expect(mockRoutes).toContain('AuthCheck'));
+      mockNavRef.navigate.mockClear();
+      await act(async () => { await change('inactive'); });
+      expect(mockNavRef.navigate).not.toHaveBeenCalledWith('PrivacyOverlay');
+      if (releaseBeforeResume) { endPrompt(); expect(isNativeStorePromptActive()).toBe(false); }
+      await act(async () => { await change('active'); });
+      if (!releaseBeforeResume) endPrompt();
+      expect(mockNavRef.navigate).not.toHaveBeenCalledWith('PrivacyOverlay');
+      expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
+      expect(await AsyncStorage.getItem('@lastActiveTime')).toBeNull();
+    } finally { endPrompt(); view.unmount(); listener.mockRestore(); }
+  });
+}
+
+it('still covers and reauthenticates after a true background transition during a store prompt', async () => {
+  await AsyncStorage.multiSet([['@hasCompletedOnboarding','true'], ['@biometricsEnabled','true'], ['@autoLockTime','0']]);
+  (LocalAuthentication.isEnrolledAsync as jest.Mock).mockResolvedValue(true);
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
+  let change!: (state: string) => void;
+  const listener = jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, callback) => { change = callback as any; return { remove: jest.fn() } as any; });
+  const view = render(<AppNavigator />);
+  const endPrompt = beginNativeStorePrompt();
+  try {
+    await waitFor(() => expect(mockRoutes).toContain('AuthCheck'));
+    mockNavRef.navigate.mockClear();
+    await act(async () => { await change('inactive'); });
+    expect(mockNavRef.navigate).not.toHaveBeenCalledWith('PrivacyOverlay');
+    await act(async () => { await change('background'); });
+    expect(mockNavRef.navigate).toHaveBeenCalledWith('PrivacyOverlay');
+    expect(await AsyncStorage.getItem('@lastActiveTime')).not.toBeNull();
+    mockNavRef.getCurrentRoute.mockReturnValue({ name: 'PrivacyOverlay' });
+    mockNavRef.canGoBack.mockReturnValue(true);
+    mockNavRef.goBack.mockClear();
+    await act(async () => { await change('inactive'); view.rerender(<AppNavigator />); });
+    expect(mockNavRef.goBack).not.toHaveBeenCalled();
+    mockNavRef.getCurrentRoute.mockReturnValue({ name: 'Terminal' });
+    mockNavRef.canGoBack.mockReturnValue(false);
+    expect(isNativeStorePromptActive()).toBe(true);
+    await act(async () => { await change('active'); });
+    expect(mockNavRef.navigate).toHaveBeenCalledWith('AuthCheck');
+    endPrompt();
+  } finally { endPrompt(); view.unmount(); listener.mockRestore(); }
 });
