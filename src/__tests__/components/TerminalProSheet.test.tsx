@@ -237,3 +237,18 @@ it('shows restore progress on Restore rather than the purchase button and permit
   expect(view.getByLabelText('Restore purchases').props.accessibilityState).toEqual({ disabled: false, busy: false });
   expect(view.queryByLabelText('Restoring purchases')).toBeNull();
 });
+
+it('waits for the shared activation claim before offering Continue', async () => {
+  purchase.mockResolvedValueOnce(true);
+  const verified = jest.fn();
+  const props = { visible: true, onClose: jest.fn(), onDismiss: jest.fn(), onVerified: verified, onActivationStart: jest.fn(() => 7) };
+  const view = render(<TerminalProSheet {...props} />);
+  fireEvent.press(view.getByLabelText('Continue with annual Terminal Pro'));
+  await waitFor(() => expect(purchase).toHaveBeenCalledWith('annual', 7));
+  mockState = { ...mockState, status: 'pro' };
+  view.rerender(<TerminalProSheet {...props} />);
+  expect(view.queryByLabelText('Continue to Terminal')).toBeNull();
+  view.rerender(<TerminalProSheet {...props} activation={{ id: 7, kind: 'purchase', scope: 'shop-a', claimedBy: 'owner-a' }} />);
+  fireEvent.press(view.getByLabelText('Continue to Terminal'));
+  expect(verified).toHaveBeenCalledTimes(1);
+});

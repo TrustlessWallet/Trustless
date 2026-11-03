@@ -471,7 +471,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
       </View>
       {onOpenReports && reportOwner ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => { const selection = { period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now }; proGate.requirePro(() => onOpenReports(selection)); }} style={styles.reportsRow}>
-        <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text><TerminalProBadge /><Feather name="chevron-right" size={18} color={theme.colors.muted} />
+        <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text>{pro.status === 'free' ? <TerminalProBadge /> : null}<Feather name="chevron-right" size={18} color={theme.colors.muted} />
       </TouchableOpacity> : null}
       <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
     </> : null}
@@ -483,7 +483,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 
   return <><View pointerEvents={proGate.isOpen ? 'none' : 'auto'} style={styles.root}>
 
-    <TerminalSheetHeader title={detail ? 'Sale details' : 'Sales'} closeLabel={detailSale ? "Close sale details" : "Close sales"} onClose={close} leading={!detail ? <GlassIconButton accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} disabled={exporting || !visible || !headerEnabled} busy={exporting} onPress={() => { void exportSales(); }} visualSize={40} align="flex-start">
+    <TerminalSheetHeader title={detail ? 'Sale details' : 'Sales'} closeLabel={detailSale ? "Close sale details" : "Close sales"} onClose={close} disabled={proGate.isOpen} leading={!detail ? <GlassIconButton accessibilityLabel={periods.find(item => item.value === period)!.exportLabel} disabled={exporting || !visible || !headerEnabled} busy={exporting} onPress={() => { void exportSales(); }} visualSize={40} align="flex-start">
         {exporting ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Feather name="download" size={19} color={theme.colors.primary} />}
     </GlassIconButton> : undefined} />
     {detail ? <ScrollView style={styles.scroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>

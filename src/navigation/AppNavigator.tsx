@@ -45,6 +45,7 @@ import { LightningTopUpScreen } from '../screens/LightningTopUpScreen';
 import { UnilateralExitScreen } from '../screens/UnilateralExitScreen';
 import { WithdrawToOnchainScreen } from '../screens/WithdrawToOnchainScreen';
 import { get_is_nfc_scanning, finish_nfc_scanning } from '../services/nfc';
+import { isNativeStorePromptActive } from '../services/nativeStorePrompt';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import SheetHeader from '../components/SheetHeader';
 import GlassIconButton from '../components/GlassIconButton';
@@ -92,6 +93,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const [needs_onboarding, set_needs_onboarding] = useState(false);
   const [has_shown_onboarding, set_has_shown_onboarding] = useState(false);
   const [is_backgrounded, set_is_backgrounded] = useState(false);
+  const [is_true_backgrounded, set_is_true_backgrounded] = useState(false);
   const [initial_route, set_initial_route] = useState<keyof RootStackParamList>('MainTabs');
   const [initial_tab, set_initial_tab] = useState<keyof TabParamList>('Wallet');
   const [current_route_name, set_current_route_name] = useState<string | undefined>(undefined);
@@ -122,12 +124,16 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async next_app_state => {
-      const is_prompt_active = get_biometric_prompt_shown();
+      const is_prompt_active = get_biometric_prompt_shown() || isNativeStorePromptActive();
       const is_nfc_active = get_is_nfc_scanning();
       const previous_app_state = app_state.current;
       const returned_from_background = was_backgrounded.current;
       const returned_from_prompt = prompt_caused_inactive.current;
       app_state.current = next_app_state;
+      // An inactive -> background change must render even while is_backgrounded
+      // is already true, so the privacy cover can appear immediately.
+      if (next_app_state === 'background') set_is_true_backgrounded(true);
+      else if (next_app_state === 'active') set_is_true_backgrounded(false);
       if (next_app_state === 'background') was_backgrounded.current = true;
       if (next_app_state === 'inactive' && is_prompt_active) prompt_caused_inactive.current = true;
       if (next_app_state === 'active') {
@@ -299,8 +305,8 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     set_nav_state_resolved(true);
   }, [nav_state_resolved, wallet_loading, is_loading, needs_onboarding, has_shown_onboarding, initial_tab]);
 
-  const is_privacy_active = app_state.current === 'background' || is_checking_auth ||
-    (is_backgrounded && !get_biometric_prompt_shown() && !get_is_nfc_scanning());
+  const is_privacy_active = is_true_backgrounded || app_state.current === 'background' || is_checking_auth ||
+    (is_backgrounded && !prompt_caused_inactive.current && !get_biometric_prompt_shown() && !isNativeStorePromptActive() && !get_is_nfc_scanning());
 
   useEffect(() => {
     if (!is_nav_ready || !navigation_ref.isReady()) return;

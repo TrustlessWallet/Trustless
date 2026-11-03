@@ -10,7 +10,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useTerminalProGate } from '../hooks/useTerminalProGate';
 import { useTerminalPro } from '../contexts/TerminalProContext';
 import { NETWORK_NAME } from '../constants/network';
-import { TerminalUnit } from '../services/terminal';
+import { TerminalUnit, terminalNetwork } from '../services/terminal';
 import { useActiveWallet } from '../contexts/WalletContext';
 import { CashierTerminalDraft, useWalletMode } from '../contexts/WalletModeContext';
 import TerminalSheetHeader from './TerminalSheetHeader';
@@ -32,7 +32,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const { cashierState, cashierBusy, enableCashier, unlockCashier } = useWalletMode();
   const pro = useTerminalPro();
-  const proGate = useTerminalProGate({ allowed: focused && cashierState === 'off' && !!activeWallet && activeWallet.type !== 'watch-only', scope: `${NETWORK_NAME}:${activeWallet?.id}` });
+  const proGate = useTerminalProGate({ allowed: focused && cashierState === 'off' && !!activeWallet && activeWallet.type !== 'watch-only', scope: `${terminalNetwork(NETWORK_NAME)}:${activeWallet?.id}` });
   const [cashierError, setCashierError] = useState('');
   const cashierPress = async () => {
     setCashierError('');
@@ -70,7 +70,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}>
       <LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} />
     </Animated.View>
-    <TerminalSheetHeader title="Settings" closeLabel="Close terminal settings" onClose={onClose} />
+    <TerminalSheetHeader title="Settings" closeLabel="Close terminal settings" onClose={onClose} disabled={proGate.isOpen} />
     <Animated.ScrollView style={styles.scroll} bounces={false} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: Math.max(24, insets.bottom + 24) }]}>
       <View style={styles.section}>
         {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' ? <View style={styles.rowWrapper}>

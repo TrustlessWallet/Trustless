@@ -13,6 +13,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTerminalPro } from '../contexts/TerminalProContext';
 import { useTerminalProGate } from '../hooks/useTerminalProGate';
+import { TerminalOwnerFocusContext } from '../contexts/TerminalOwnerFocusContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { NETWORK_NAME } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -119,7 +120,8 @@ type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expire
 export default function TerminalScreen({ visible = true, onExit }: { visible?: boolean; onExit?: () => void } = {}) {
   const { activeWallet, isLightningInitialized, lightningInitAttempted, lightningInitError, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const { setMode, changing, cashierState, cashierBusy, consumeCashierTerminalDraft } = useWalletMode();
-  const { refresh: refreshPro } = useTerminalPro();
+  const { refresh: refreshPro, activation: proActivation, abandonActivation } = useTerminalPro();
+  const terminalFocused = useIsFocused();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -172,6 +174,13 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const knownPaymentId = useRef<string | undefined>(undefined);
   const network = terminalNetwork(NETWORK_NAME);
   const scope = `${network}:${activeWallet?.id || ''}`;
+  const proFallback = useTerminalProGate({
+    allowed: visible && terminalFocused && checkoutFocused && !transitioning && cashierState === 'off' && !!activeWallet && activeWallet.type !== 'watch-only',
+    scope,
+  });
+  useEffect(() => {
+    if (proActivation && proActivation.scope !== scope) abandonActivation?.(proActivation.id);
+  }, [proActivation?.id, proActivation?.scope, scope, abandonActivation]);
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   const basketRef = useRef(basketLines);
@@ -579,6 +588,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
           {stage === 'received' ? <Feather name="check-circle" size={70} color={theme.colors.bitcoin} /> : null}
           {validated ? <View key={request?.id} style={{ alignItems: 'center' }} onLayout={event => { if (request?.id && requestRef.current?.id === request.id) setInvoiceAmountLayout({ id: request.id, height: event.nativeEvent.layout.height }); }}>{checkoutAmount(sheetWidth)}{frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}</View> : null}
           {showQr ? <View testID="terminal-qr" style={[styles.qrCard, { marginTop: 24 }]}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View> : null}
+          {showQr ? <Text style={styles.invoiceInstruction}>Scan to pay the invoice</Text> : null}
           {!validated || stage === 'received' || isExpired ? <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : 'Request expired'}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {!validated && !isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable. Retry when connected.') : 'Connecting to Lightning…'}</Text> : null}
@@ -646,7 +656,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
 
   const sheetOptions = Platform.OS === 'android' ? { presentation: 'formSheet' as const, sheetAllowedDetents: [0.95], sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const } : { presentation: 'modal' as const, animation: 'slide_from_bottom' as const };
   const quickItemsSheetOptions = { presentation: 'formSheet' as const, sheetAllowedDetents: [0.5], sheetInitialDetentIndex: 0, sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const };
-  return <TerminalSheetInteractionContext.Provider value={!transitioning}><TerminalStack.Navigator key={scope} screenListeners={{ transitionStart: () => setTransitioning(true), transitionEnd: () => setTransitioning(false), gestureCancel: () => setTransitioning(false) }} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
+  return <TerminalOwnerFocusContext.Provider value={visible && terminalFocused}><TerminalSheetInteractionContext.Provider value={!transitioning && terminalFocused}><TerminalStack.Navigator key={scope} screenListeners={{ transitionStart: () => setTransitioning(true), transitionEnd: () => setTransitioning(false), gestureCancel: () => setTransitioning(false) }} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
         checkoutNavigation.current = navigation;
@@ -683,7 +693,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     <TerminalStack.Screen name="Invoice" options={sheetOptions}>
       {() => <InvoiceRoute request={request} scope={scope} onClose={endRequest} onCanReplay={() => mounted.current && scopeRef.current === scope && requestRef.current === null} onCloseError={() => { if (mounted.current && scopeRef.current === scope) setError('Could not end the saved request. Please retry.'); }} onFocusChange={setInvoiceFocused}>{renderInvoice}</InvoiceRoute>}
     </TerminalStack.Screen>
-  </TerminalStack.Navigator></TerminalSheetInteractionContext.Provider>;
+  </TerminalStack.Navigator>{proFallback.proSheet}</TerminalSheetInteractionContext.Provider></TerminalOwnerFocusContext.Provider>;
 }
 
 function makeStyles(background: string, primary: string, inversePrimary: string, surface: string, muted: string, border: string, bitcoin: string, screenHeight: number, screenWidth: number) {
@@ -730,6 +740,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     checkoutScrollContent: { flexGrow: 1, paddingTop: 20, paddingBottom: 36 },
     checkout: { paddingHorizontal: 24, paddingBottom: 20, alignItems: 'center', justifyContent: 'center' },
     checkoutAmount: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 40, textAlign: 'center' },
+    invoiceInstruction: { color: muted, fontSize: 12, textAlign: 'center', marginTop: 16 },
     checkoutTitle: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 14, textAlign: 'center', marginTop: 12 },
     qrCard: { padding: 16, backgroundColor: background, borderRadius: 8, shadowColor: primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.16, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: border },
     unitLabel: { fontFamily: 'SpaceMono-Regular', fontSize: 24, color: muted },

@@ -288,6 +288,7 @@ it('keeps Sales minimal and passes a copied selection to Reports without loading
   expect(items).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Last 7 days sales'));
   await waitFor(() => expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true));
+  expect(view.queryByText('Pro')).toBeNull();
   fireEvent.press(view.getByLabelText('Open reports'));
   expect(onOpenReports).toHaveBeenCalledWith(expect.objectContaining({ period: 'week', day: expect.any(Number) }));
   expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
@@ -376,6 +377,7 @@ it('keeps the selected sales period and raw CSV free when a Reports upgrade is c
   await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Last 7 days sales'));
   await waitFor(() => expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true));
+  expect(view.getByText('Pro')).toBeTruthy();
   fireEvent.press(view.getByLabelText('Open reports'));
   expect(open).not.toHaveBeenCalled();
   expect(view.getByText('Terminal Pro')).toBeTruthy();
@@ -383,4 +385,14 @@ it('keeps the selected sales period and raw CSV free when a Reports upgrade is c
   expect(view.getByLabelText('Last 7 days sales').props.accessibilityState.selected).toBe(true);
   await act(async () => fireEvent.press(view.getByLabelText('Export last 7 days activity')));
   expect(exportTerminalSalesCsv).toHaveBeenCalledWith(expect.objectContaining({ period: 'week' }));
+});
+
+
+it('does not label Reports as an upgrade for an active subscriber', async () => {
+  const open = jest.fn();
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} onOpenReports={open} />);
+  await waitFor(() => expect(view.getByText('No sales today')).toBeTruthy());
+  expect(view.queryByText('Pro')).toBeNull();
+  fireEvent.press(view.getByLabelText('Open reports'));
+  expect(open).toHaveBeenCalledTimes(1);
 });

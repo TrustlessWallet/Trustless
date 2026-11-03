@@ -1,3 +1,4 @@
+import { isNativeStorePromptActive } from '../../services/nativeStorePrompt';
 import { PurchasesClient, statusFromCustomerInfo, TerminalProService, TerminalProDependencies } from '../../services/terminalPro';
 
 const freeInfo = { entitlements: { verification: 'VERIFIED', active: {} } } as const;
@@ -123,6 +124,10 @@ it('does not grant access on cancelled, pending, or unverified purchases and blo
   client.purchasePackage.mockResolvedValueOnce({ customerInfo: unverifiedInfo });
   expect(await service.purchase('monthly')).toBe(false);
   expect(service.getSnapshot().status).toBe('unavailable');
+  expect(service.getSnapshot().pending).toBe(true);
+  emit(proInfo); // A later verified store update settles the unresolved purchase.
+  expect(service.getSnapshot().pending).toBe(false);
+  emit(freeInfo);
   let release!: (value: { customerInfo: typeof proInfo }) => void;
   client.purchasePackage.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
   const first = service.purchase('monthly');
@@ -277,4 +282,24 @@ it('shares management URL lookup with a pending foreground refresh', async () =>
   expect(deps.openURL).toHaveBeenCalledWith('https://play.google.com/store/account/subscriptions?package=com.btc.trustless');
   expect(service.getSnapshot().busy).toBe(false);
   service.dispose();
+});
+
+it('limits the native prompt guard to SDK calls and releases it on cancellation and rejection', async () => {
+  const { service, client } = harness();
+  await service.initialize();
+  await service.loadPlans();
+  let rejectPurchase!: (reason: unknown) => void;
+  client.purchasePackage.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectPurchase = reject; }));
+  const purchase = service.purchase('annual');
+  await Promise.resolve();
+  expect(isNativeStorePromptActive()).toBe(true);
+  rejectPurchase({ userCancelled: true, code: '1' });
+  expect(await purchase).toBe(false);
+  expect(isNativeStorePromptActive()).toBe(false);
+  client.restorePurchases.mockRejectedValueOnce(new Error('store unavailable'));
+  expect(await service.restore()).toBe(false);
+  expect(isNativeStorePromptActive()).toBe(false);
+  client.showManageSubscriptions.mockRejectedValueOnce(new Error('store unavailable'));
+  await service.manage();
+  expect(isNativeStorePromptActive()).toBe(false);
 });

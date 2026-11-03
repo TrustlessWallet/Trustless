@@ -94,6 +94,7 @@ it('warms Pro status on owner entry without waiting for checkout or repeating on
     fireEvent.press(view.getByTestId('terminal-request'));
     await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
     expect(mockPro.refresh).toHaveBeenCalledTimes(1);
+    expect(view.getByText('Scan to pay the invoice')).toBeTruthy();
   } finally {
     await act(async () => finishStatus?.());
     view.unmount();
@@ -410,6 +411,7 @@ it('opens Quick items as a scrollable half-height sheet with matching plus contr
   expect(view.getByLabelText('Add Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
   fireEvent.press(view.getByLabelText('Add Tea'));
   expect(view.getByLabelText('Add one Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
+  expect(view.getByLabelText('Remove one Tea').findByType(Feather).props).toMatchObject({ name: 'minus', size: 20 });
   expect(view.queryByLabelText('Remove Tea')).toBeNull();
   fireEvent.press(view.getByLabelText('Remove one Tea'));
   expect(view.getByLabelText('Add Tea')).toBeTruthy();
@@ -427,6 +429,7 @@ it('keeps a deleted catalog item adjustable with only one-item controls', () => 
   expect(onRemoveOne).toHaveBeenCalledWith(line);
   expect(onAdd).toHaveBeenCalledWith({ id: 'deleted', name: 'Old item', unit: 'sats', unitPrice: 25 });
   expect(view.getByLabelText('Add one Old item').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
+  expect(view.getByLabelText('Remove one Old item').findByType(Feather).props).toMatchObject({ name: 'minus', size: 20 });
 });
 
 it('requires an available rate before charging in fiat', async () => {
@@ -788,6 +791,7 @@ it('preloads local sales before Sales opens and keeps them current while hidden'
   await waitFor(() => expect(view.getByText('Paid', { includeHiddenElements: true })).toBeTruthy());
   fireEvent.press(view.getByLabelText('Sales'));
   expect(view.getByText('Paid')).toBeTruthy();
+  expect(view.queryByText('Scan to pay the invoice')).toBeNull();
   expect(view.queryByText('Loading sales…')).toBeNull();
 });
 

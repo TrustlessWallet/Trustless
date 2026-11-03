@@ -1,10 +1,12 @@
 const mockPro = { status: 'pro', pending: false, plans: [], busy: false, loadingPlans: false, error: null, loadPlans: jest.fn(), refresh: jest.fn().mockResolvedValue(undefined), purchase: jest.fn(), restore: jest.fn(), manage: jest.fn() };
+let mockFocused = true;
 jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => mockPro }));
 import React from 'react';
-import { ActionSheetIOS, Alert } from 'react-native';
+import { ActionSheetIOS, Alert, Modal, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import TerminalReceiptSettingsScreen from '../../screens/TerminalReceiptSettingsScreen';
+import TerminalSheetHeader from '../../screens/TerminalSheetHeader';
 import { useActiveWallet } from '../../contexts/WalletContext';
 import { useWalletMode } from '../../contexts/WalletModeContext';
 import { loadTerminalReceiptBranding, saveTerminalReceiptBranding } from '../../services/terminalReceiptBranding';
@@ -13,7 +15,7 @@ import * as Templates from '../../services/terminalReceiptTemplates';
 import { importTerminalReceiptLogo } from '../../services/terminalReceiptLogoImport';
 
 const mockOptions = jest.fn();
-jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true, useNavigation: () => ({ setOptions: mockOptions }) }));
+jest.mock('@react-navigation/native', () => ({ useIsFocused: () => mockFocused, useNavigation: () => ({ setOptions: mockOptions }) }));
 jest.mock('../../contexts/WalletContext', () => ({ useActiveWallet: jest.fn() }));
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: jest.fn() }));
 jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' }, LAYOUT: { radius: 8, inputHeight: 48 } } }) }));
@@ -27,8 +29,10 @@ jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn(), UIIm
 jest.mock('../../services/terminalReceiptLogoImport', () => ({ importTerminalReceiptLogo: jest.fn() }));
 const branding = { name: 'Corner café', contact: 'shop@example.com', footer: 'Thank you' };
 const props = { walletId: 'wallet-a', network: 'mainnet' as const, onClose: jest.fn() };
+const namingModal = (view: ReturnType<typeof render>) => view.UNSAFE_getAllByType(Modal).find(modal => modal.props.presentationStyle === 'pageSheet')!;
 beforeEach(() => {
   mockPro.status = 'pro';
+  mockFocused = true;
   jest.clearAllMocks();
   jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(1));
   (useActiveWallet as jest.Mock).mockReturnValue({ id: 'wallet-a', type: 'standard' });
@@ -173,13 +177,14 @@ it('saves a named copy without applying receipt settings, then applies only thro
   await waitFor(() => expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false));
   fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Weekend footer');
   fireEvent.press(view.getByLabelText('Save as receipt template'));
+  expect(namingModal(view).props.visible).toBe(true);
   expect(view.queryByLabelText('Save receipt settings')).toBeNull();
   fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Weekend');
   await act(async () => {
     fireEvent.press(view.getByLabelText('Save receipt template'));
     fireEvent.press(view.getByLabelText('Save receipt template'));
   });
-  await waitFor(() => expect(view.queryByLabelText('Receipt template name')).toBeNull());
+  await waitFor(() => expect(namingModal(view).props.visible).toBe(false));
   expect(Templates.createTerminalReceiptTemplate).toHaveBeenCalledTimes(1);
   expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Save receipt settings'));
@@ -233,22 +238,44 @@ it('ignores late template writes and stale delete confirmations after wallet cha
 });
 
 
-it('keeps template naming compact and returns to the unchanged receipt draft on cancel', async () => {
+it('presents naming in a swipeable page sheet and preserves the receipt draft on dismissal', async () => {
   const view = render(<TerminalReceiptSettingsScreen {...props} />);
   await waitFor(() => expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false));
   fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Unsaved footer');
   fireEvent.press(view.getByLabelText('Save as receipt template'));
+  const modal = namingModal(view);
+  expect(modal.props).toEqual(expect.objectContaining({ visible: true, animationType: 'slide', presentationStyle: 'pageSheet', allowSwipeDismissal: true }));
   expect(view.getAllByText('Save template')).toHaveLength(2);
   expect(view.getByLabelText('Receipt template name').props.autoFocus).toBe(true);
+  expect(view.getByLabelText('Receipt template name').props.editable).toBe(true);
+  expect(view.UNSAFE_getAllByType(TerminalSheetHeader).find(header => header.props.title === 'Receipts')?.props.disabled).toBe(true);
+  expect(view.queryByLabelText('Cancel template name')).toBeNull();
   expect(view.queryByLabelText('Receipt branding preview')).toBeNull();
   expect(view.queryByLabelText('Receipt business name')).toBeNull();
   expect(view.getByLabelText('Receipt business name', { includeHiddenElements: true }).props.editable).toBe(false);
+  expect(view.UNSAFE_getAllByType(View).some(node => node.props.pointerEvents === 'none' && node.props.accessibilityElementsHidden === true)).toBe(true);
   fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Unfinished');
-  fireEvent.press(view.getByLabelText('Cancel saving template'));
+  act(() => modal.props.onRequestClose());
+  expect(namingModal(view).props.visible).toBe(false);
   expect(view.getByLabelText('Receipt footer').props.value).toBe('Unsaved footer');
   expect(view.getByLabelText('Receipt branding preview')).toBeTruthy();
   expect(Templates.createTerminalReceiptTemplate).not.toHaveBeenCalled();
   expect(props.onClose).not.toHaveBeenCalled();
+});
+
+it('disables swipe dismissal while a template write is in progress', async () => {
+  let finish!: (value: unknown) => void;
+  (Templates.createTerminalReceiptTemplate as jest.Mock).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false));
+  fireEvent.press(view.getByLabelText('Save as receipt template'));
+  fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Weekend');
+  fireEvent.press(view.getByLabelText('Save receipt template'));
+  expect(namingModal(view).props.allowSwipeDismissal).toBe(false);
+  act(() => namingModal(view).props.onRequestClose());
+  expect(namingModal(view).props.visible).toBe(true);
+  await act(async () => finish([savedTemplate]));
+  expect(namingModal(view).props.visible).toBe(false);
 });
 
 
@@ -266,7 +293,7 @@ it('keeps a failed template name editable and retries without applying the recei
   fireEvent.changeText(view.getByLabelText('Receipt template name'), 'New weekend');
   fireEvent(view.getByLabelText('Receipt template name'), 'submitEditing');
   expect(Templates.createTerminalReceiptTemplate).toHaveBeenCalledTimes(2);
-  await waitFor(() => expect(view.queryByLabelText('Receipt template name')).toBeNull());
+  await waitFor(() => expect(namingModal(view).props.visible).toBe(false));
   expect(view.getByLabelText('Receipt footer').props.value).toBe('Keep this draft');
   expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
 });
@@ -285,12 +312,57 @@ it('keeps a receipt draft on upgrade cancellation and leaves basic Save free', a
   expect(saveTerminalReceiptBranding).toHaveBeenCalledWith('wallet-a', 'mainnet', expect.objectContaining({ name: 'Unsaved café' }), expect.any(Function));
 });
 
-it('marks logos and templates as Pro while keeping basic receipt editing available', async () => {
-  mockPro.status = 'free';
+it('keeps same-wallet receipt edits and template selection after temporary focus loss', async () => {
+  (Templates.loadTerminalReceiptTemplates as jest.Mock).mockResolvedValue([savedTemplate]);
   const view = render(<TerminalReceiptSettingsScreen {...props} />);
   await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
-  expect(view.getAllByText('Pro')).toHaveLength(3);
+  fireEvent.press(view.getByLabelText('Load receipt template'));
+  fireEvent.press(view.getByLabelText('Load template Weekend'));
+  fireEvent.changeText(view.getByLabelText('Receipt business name'), 'Unsaved name');
+  fireEvent.changeText(view.getByLabelText('Receipt footer'), 'Unsaved footer');
+  fireEvent.press(view.getByLabelText('Save as receipt template'));
+  expect(namingModal(view).props.visible).toBe(true);
+  mockFocused = false;
+  view.rerender(<TerminalReceiptSettingsScreen {...props} />);
+  expect(namingModal(view).props.visible).toBe(false);
+  mockFocused = true;
+  view.rerender(<TerminalReceiptSettingsScreen {...props} />);
+  expect(view.getByLabelText('Receipt business name').props.value).toBe('Unsaved name');
+  expect(view.getByLabelText('Receipt footer').props.value).toBe('Unsaved footer');
+  expect(view.getByLabelText('Replace receipt template Weekend')).toBeTruthy();
+  expect(loadTerminalReceiptBranding).toHaveBeenCalledTimes(1);
+  expect(Templates.loadTerminalReceiptTemplates).toHaveBeenCalledTimes(1);
+});
+
+it('hides the template library for free users while keeping the save entry and basic receipt editing', async () => {
+  mockPro.status = 'free';
+  (Templates.loadTerminalReceiptTemplates as jest.Mock).mockResolvedValue([savedTemplate]);
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  expect(view.getAllByText('Pro')).toHaveLength(2);
+  expect(view.queryByLabelText('Load receipt template')).toBeNull();
+  expect(view.queryByLabelText('Load template Weekend')).toBeNull();
   expect(view.getByLabelText('Receipt business name').props.editable).toBe(true);
   expect(view.getByLabelText('Choose receipt logo')).toBeTruthy();
   expect(view.getByLabelText('Save as receipt template')).toBeTruthy();
+});
+
+it('shows no Pro badges for a subscriber and exposes saved templates', async () => {
+  (Templates.loadTerminalReceiptTemplates as jest.Mock).mockResolvedValue([savedTemplate]);
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  expect(view.queryByText('Pro')).toBeNull();
+  fireEvent.press(view.getByLabelText('Load receipt template'));
+  expect(view.getByLabelText('Load template Weekend')).toBeTruthy();
+});
+
+it('keeps Save as template usable as the free upgrade entry when saved templates are full', async () => {
+  mockPro.status = 'free';
+  (Templates.loadTerminalReceiptTemplates as jest.Mock).mockResolvedValue(Array.from({ length: 5 }, (_, index) => ({ ...savedTemplate, id: String(index), name: `Saved ${index}` })));
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  expect(view.queryByLabelText('Load receipt template')).toBeNull();
+  expect(view.getByLabelText('Save as receipt template').props.accessibilityState.disabled).toBe(false);
+  fireEvent.press(view.getByLabelText('Save as receipt template'));
+  expect(view.getByText('Terminal Pro')).toBeTruthy();
 });
