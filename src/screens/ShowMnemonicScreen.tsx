@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -7,20 +7,31 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme'; 
+import { NETWORK_NAME } from '../constants/network';
+import { confirmWalletBackup } from '../services/firstLaunchWallet';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ShowMnemonic'>;
 type RoutePropType = RouteProp<RootStackParamList, 'ShowMnemonic'>;
 const ShowMnemonicScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<RoutePropType>();
-    const { mnemonic, mode } = route.params;
+    const { mnemonic, mode, walletId } = route.params;
     const words = mnemonic.split(' ');
     const wordCount = words.length;
     const isBackupMode = mode === 'backup';
+    const confirmingRef = useRef(false);
+    const [confirming, setConfirming] = useState(false);
     const { theme } = useTheme(); 
     const styles = useMemo(() => getStyles(theme), [theme]); 
-    const handleContinue = () => {
+    const handleContinue = async () => {
+        if (confirmingRef.current || navigation.isFocused?.() === false) return;
+        confirmingRef.current = true;
+        setConfirming(true);
         if (isBackupMode) {
-            navigation.popToTop();
+            if (walletId) {
+                try { await confirmWalletBackup(NETWORK_NAME, walletId); }
+                catch { Alert.alert('Backup confirmation failed', 'Please try again.'); confirmingRef.current = false; setConfirming(false); return; }
+            }
+            if (navigation.isFocused?.() !== false) navigation.popToTop();
         } else {
             navigation.navigate('VerifyMnemonic', { mnemonic });
         }
@@ -49,7 +60,7 @@ const ShowMnemonicScreen = () => {
                     })}
                 </View>
             </View>
-            <TouchableOpacity style={styles.button} onPress={handleContinue}>
+            <TouchableOpacity style={styles.button} onPress={handleContinue} disabled={confirming}>
                 <View style={styles.buttonContentRowCentered}>
                     <Feather
                         name={isBackupMode ? "check-circle" : "arrow-right-circle"}
@@ -57,7 +68,7 @@ const ShowMnemonicScreen = () => {
                         color={theme.colors.inversePrimary}
                     />
                     <Text style={styles.buttonText}>
-                        {isBackupMode ? "Done" : "Continue to verification"}
+                        {isBackupMode && walletId ? 'I saved my recovery phrase' : isBackupMode ? 'Done' : 'Continue to verification'}
                     </Text>
                 </View>
             </TouchableOpacity>

@@ -75,7 +75,7 @@ const PrivacyOverlayScreen = () => {
 };
 
 const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
-  const { wallets, loading: wallet_loading } = useWallet();
+  const { wallets, loading: wallet_loading, bootstrapError } = useWallet();
   const { cashierState, cashierUnlockRevision, cashierUnlockDestination } = useWalletMode();
   const cashierRestricted = cashierState !== 'off';
   const cashierRestrictedRef = useRef(cashierRestricted);
@@ -253,7 +253,9 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
         const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
 
-        if (has_completed_onboarding === null) {
+        // An automatically created or previously imported wallet is ready to use.
+        // The legacy welcome stack is only for an actually empty wallet list.
+        if (has_completed_onboarding === null && wallets.length === 0 && !bootstrapError) {
           set_needs_onboarding(true);
           set_is_loading(false);
           return;
@@ -277,7 +279,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     if (!wallet_loading) {
       check_initial_status();
     }
-  }, [wallet_loading]);
+  }, [wallet_loading, wallets.length, bootstrapError]);
 
   useEffect(() => {
     if (nav_state_resolved) return;

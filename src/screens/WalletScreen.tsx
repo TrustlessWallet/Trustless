@@ -21,6 +21,8 @@ import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-g
 import { authenticate_transaction_action } from '../services/authState';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTerminalEntry } from '../hooks/useTerminalEntry';
+import { NETWORK_NAME } from '../constants/network';
+import { isBackupPending } from '../services/firstLaunchWallet';
 
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -80,6 +82,8 @@ const WalletScreen = () => {
     const {
         activeWallet,
         loading: walletLoading,
+        bootstrapError,
+        retryBootstrap,
         triggerRefresh,
         lightningBalance,
         lightningTransactions,
@@ -90,12 +94,24 @@ const WalletScreen = () => {
     } = useWallet();
 
     const [hideBalance, setHideBalance] = useState(false);
+    const [backupReminderWalletId, setBackupReminderWalletId] = useState<string | null>(null);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
     const [isSheetMounted, setIsSheetMounted] = useState(false);
     const refreshDrag = useRef({ armed: false, dragging: false, distance: 0, releasedAt: 0 });
 
     const isFocused = useIsFocused();
+    useEffect(() => {
+        let current = true;
+        const walletId = activeWallet?.type === 'standard' ? activeWallet.id : null;
+        setBackupReminderWalletId(null);
+        if (walletId && isFocused) {
+            void isBackupPending(NETWORK_NAME, walletId).then(pending => {
+                if (current) setBackupReminderWalletId(pending ? walletId : null);
+            }).catch(() => {});
+        }
+        return () => { current = false; };
+    }, [activeWallet?.id, activeWallet?.type, isFocused]);
     const focusedRef = useRef(isFocused);
     focusedRef.current = isFocused;
     useTipHeight(!!activeWallet && isFocused && !isLightningMode);
@@ -628,12 +644,15 @@ const WalletScreen = () => {
         return (
             <SafeAreaView style={styles.container} edges={['right', 'left']}>
                 <View style={styles.emptyStateContainer}>
-                    <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate('BackupIntro')}>
+                    {bootstrapError && <TouchableOpacity style={styles.importButton} onPress={retryBootstrap}>
+                        <Text style={styles.importButtonText}>{bootstrapError} Tap to retry.</Text>
+                    </TouchableOpacity>}
+                    {!bootstrapError && <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate('BackupIntro')}>
                         <Feather name="plus-circle" size={18} color={theme.colors.inversePrimary} />
                         <Text style={styles.createButtonText}>Create a new wallet</Text>
-                    </TouchableOpacity>
+                    </TouchableOpacity>}
                     <View style={{ width: '100%' }}>
-                        <Text style={styles.orText}>Or</Text>
+                        {!bootstrapError && <Text style={styles.orText}>Or</Text>}
                         <TouchableOpacity style={styles.importButton} onPress={() => navigation.navigate('RecoverWallet')}>
                             <Feather name="refresh-ccw" size={18} color={theme.colors.primary} />
                             <Text style={styles.importButtonText}>Import existing wallet</Text>
@@ -840,7 +859,15 @@ const WalletScreen = () => {
                         <Text style={styles.noTxText}>No transactions yet</Text>
                 }
                 ListFooterComponent={
-                    displayTransactions.length > 0 ? (
+                    <View>
+                    {backupReminderWalletId === activeWallet.id && <TouchableOpacity
+                        accessibilityLabel="Back up this wallet"
+                        style={{ marginHorizontal: 20, marginTop: 16, paddingVertical: 12, borderTopWidth: 1, borderColor: theme.colors.border }}
+                        onPress={() => navigation.navigate('BackupDisclaimer', { walletId: activeWallet.id })}
+                    >
+                        <Text style={{ color: theme.colors.bitcoin }}>Back up recovery phrase  ›</Text>
+                    </TouchableOpacity>}
+                    {displayTransactions.length > 0 ? (
                         <TouchableOpacity
                             style={styles.historyButton}
                             onPress={() => navigation.navigate('TransactionHistory', {
@@ -849,7 +876,8 @@ const WalletScreen = () => {
                         >
                             <Text style={styles.historyButtonText}>See full transaction history</Text>
                         </TouchableOpacity>
-                    ) : null
+                    ) : null}
+                    </View>
                 }
                 showsVerticalScrollIndicator={false}
                 refreshControl={
