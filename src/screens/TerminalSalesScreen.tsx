@@ -20,6 +20,7 @@ import TerminalRefundScreen from './TerminalRefundScreen';
 import { TerminalDateRangeDraft } from '../components/TerminalDateRangePicker';
 import TerminalSalesPeriodControls from '../components/TerminalSalesPeriodControls';
 import { useTerminalProGate } from '../hooks/useTerminalProGate';
+import TerminalProBadge from '../components/TerminalProBadge';
 import { useTerminalPro } from '../contexts/TerminalProContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import type { TerminalReportSelection } from './TerminalReportsScreen';
@@ -470,7 +471,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         {period !== 'all' ? <Text style={styles.summaryNote}>By local verification date</Text> : null}
       </View>
       {onOpenReports && reportOwner ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => { const selection = { period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now }; proGate.requirePro(() => onOpenReports(selection)); }} style={styles.reportsRow}>
-        <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text>{pro.status !== 'pro' ? <Text style={{ color: theme.colors.muted, fontSize: 11 }}>Pro</Text> : null}<Feather name="chevron-right" size={18} color={theme.colors.muted} />
+        <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text><TerminalProBadge /><Feather name="chevron-right" size={18} color={theme.colors.muted} />
       </TouchableOpacity> : null}
       <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
     </> : null}

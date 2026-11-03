@@ -11,6 +11,7 @@ export function useTerminalProGate({ allowed, scope }: { allowed: boolean; scope
   const [isOpen, setIsOpen] = useState(false);
   const pending = useRef<PendingAction | null>(null);
   const verified = useRef(false);
+  const activationStarted = useRef(false);
   const closingForUnlock = useRef(false);
   const mounted = useRef(true);
   const current = useRef({ allowed, scope, status });
@@ -23,6 +24,7 @@ export function useTerminalProGate({ allowed, scope }: { allowed: boolean; scope
     priorScope.current = scope;
     pending.current = null;
     verified.current = false;
+    activationStarted.current = false;
     closingForUnlock.current = false;
   }
 
@@ -36,6 +38,7 @@ export function useTerminalProGate({ allowed, scope }: { allowed: boolean; scope
       mounted.current = false;
       pending.current = null;
       verified.current = false;
+      activationStarted.current = false;
       closingForUnlock.current = false;
     };
   }, []);
@@ -47,12 +50,14 @@ export function useTerminalProGate({ allowed, scope }: { allowed: boolean; scope
     pending.current = null;
     const canRun = mounted.current && verified.current && current.current.allowed && current.current.status === 'pro' && action?.scope === current.current.scope;
     verified.current = false;
+    activationStarted.current = false;
     if (canRun) action?.run();
   }, []);
 
   const dismiss = useCallback(() => {
     pending.current = null;
     verified.current = false;
+    activationStarted.current = false;
     closingForUnlock.current = false;
     setIsOpen(false);
   }, []);
@@ -61,6 +66,7 @@ export function useTerminalProGate({ allowed, scope }: { allowed: boolean; scope
     if (!current.current.allowed) return;
     pending.current = null;
     verified.current = false;
+    activationStarted.current = false;
     closingForUnlock.current = false;
     setIsOpen(true);
   }, []);
@@ -74,9 +80,12 @@ export function useTerminalProGate({ allowed, scope }: { allowed: boolean; scope
     }
     pending.current = { scope: owner.scope, run: onUnlocked };
     verified.current = false;
+    activationStarted.current = false;
     closingForUnlock.current = false;
     setIsOpen(true);
   }, []);
+
+  const onActivationStart = useCallback(() => { activationStarted.current = true; }, []);
 
   const onVerified = useCallback(() => {
     if (!mounted.current || !current.current.allowed) return;
@@ -88,7 +97,7 @@ export function useTerminalProGate({ allowed, scope }: { allowed: boolean; scope
   }, []);
 
   useEffect(() => {
-    if (!isOpen || !pending.current || status !== 'pro') return;
+    if (!isOpen || !pending.current || status !== 'pro' || activationStarted.current) return;
     verified.current = true;
     closingForUnlock.current = true;
     setIsOpen(false);
@@ -107,6 +116,6 @@ export function useTerminalProGate({ allowed, scope }: { allowed: boolean; scope
     openPro,
     requirePro,
     isOpen: visible,
-    proSheet: <TerminalProSheet visible={visible} onClose={dismiss} onDismiss={finishDismissal} onVerified={onVerified} />,
+    proSheet: <TerminalProSheet visible={visible} onClose={dismiss} onDismiss={finishDismissal} onVerified={onVerified} onActivationStart={onActivationStart} />,
   };
 }

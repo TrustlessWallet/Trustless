@@ -14,6 +14,7 @@ import { TerminalUnit } from '../services/terminal';
 import { useActiveWallet } from '../contexts/WalletContext';
 import { CashierTerminalDraft, useWalletMode } from '../contexts/WalletModeContext';
 import TerminalSheetHeader from './TerminalSheetHeader';
+import TerminalProBadge from '../components/TerminalProBadge';
 import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 
 type Props = { unit: TerminalUnit; onSelectUnit: (unit: TerminalUnit) => void; onClose: () => void; onOpenItems?: () => void; onOpenReceipts?: () => void; onOpenBackup?: () => void; getTerminalDraft?: () => CashierTerminalDraft | null };
@@ -74,7 +75,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
       <View style={styles.section}>
         {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' ? <View style={styles.rowWrapper}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Terminal Pro" onPress={proGate.openPro} style={styles.row}>
-            <Text style={styles.rowLabel}>Terminal Pro</Text><View style={styles.rowEnd}>{pro.status === 'pro' ? <Text style={styles.currentUnit}>Active</Text> : null}<Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
+            <View style={styles.rowEnd}><Text style={styles.rowLabel}>Terminal</Text><TerminalProBadge /></View><View style={styles.rowEnd}>{pro.status === 'loading' ? <ActivityIndicator accessibilityLabel="Checking subscription" size="small" color={theme.colors.bitcoin} /> : pro.status === 'pro' ? <Text style={styles.currentUnit}>Active</Text> : null}<Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
           </TouchableOpacity>
         </View> : null}
         <View style={styles.rowWrapper}>

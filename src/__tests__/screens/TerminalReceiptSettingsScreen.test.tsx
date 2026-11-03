@@ -175,7 +175,10 @@ it('saves a named copy without applying receipt settings, then applies only thro
   fireEvent.press(view.getByLabelText('Save as receipt template'));
   expect(view.queryByLabelText('Save receipt settings')).toBeNull();
   fireEvent.changeText(view.getByLabelText('Receipt template name'), 'Weekend');
-  fireEvent.press(view.getByLabelText('Save receipt template')); fireEvent.press(view.getByLabelText('Save receipt template'));
+  await act(async () => {
+    fireEvent.press(view.getByLabelText('Save receipt template'));
+    fireEvent.press(view.getByLabelText('Save receipt template'));
+  });
   await waitFor(() => expect(view.queryByLabelText('Receipt template name')).toBeNull());
   expect(Templates.createTerminalReceiptTemplate).toHaveBeenCalledTimes(1);
   expect(saveTerminalReceiptBranding).not.toHaveBeenCalled();
@@ -280,4 +283,14 @@ it('keeps a receipt draft on upgrade cancellation and leaves basic Save free', a
   expect(view.getByDisplayValue('Unsaved café')).toBeTruthy();
   await act(async () => fireEvent.press(view.getByLabelText('Save receipt settings')));
   expect(saveTerminalReceiptBranding).toHaveBeenCalledWith('wallet-a', 'mainnet', expect.objectContaining({ name: 'Unsaved café' }), expect.any(Function));
+});
+
+it('marks logos and templates as Pro while keeping basic receipt editing available', async () => {
+  mockPro.status = 'free';
+  const view = render(<TerminalReceiptSettingsScreen {...props} />);
+  await waitFor(() => expect(view.getByDisplayValue('Corner café')).toBeTruthy());
+  expect(view.getAllByText('Pro')).toHaveLength(3);
+  expect(view.getByLabelText('Receipt business name').props.editable).toBe(true);
+  expect(view.getByLabelText('Choose receipt logo')).toBeTruthy();
+  expect(view.getByLabelText('Save as receipt template')).toBeTruthy();
 });

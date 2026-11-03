@@ -37,6 +37,7 @@ const verifyTerminalInvoice = jest.fn();
 
 beforeEach(async () => {
   mockPro.status = 'pro';
+  mockPro.refresh.mockReset().mockResolvedValue(undefined);
   clearTerminalItemCacheForTests();
   await AsyncStorage.clear();
   await resetTerminalSqlite();
@@ -73,6 +74,30 @@ const openCurrency = async (view: ReturnType<typeof render>) => {
 it('runs a pending terminal check immediately after the device clock is corrected backward', () => {
   expect(isTerminalPollDue(10_000, 5_000, 9_000)).toBe(true);
   expect(isTerminalPollDue(10_000, 5_000, 14_000)).toBe(false);
+});
+
+it('warms Pro status on owner entry without waiting for checkout or repeating on child routes', async () => {
+  let finishStatus!: () => void;
+  mockPro.refresh.mockImplementationOnce(() => new Promise<void>(resolve => { finishStatus = resolve; }));
+  createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt: Date.now() + 60000 });
+  const view = render(<NavigationContainer><TerminalScreen visible={false} /></NavigationContainer>);
+  try {
+    expect(mockPro.refresh).not.toHaveBeenCalled();
+    view.rerender(<NavigationContainer><TerminalScreen visible /></NavigationContainer>);
+    await waitFor(() => expect(mockPro.refresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('Terminal settings'));
+    await waitFor(() => expect(view.getByLabelText('Close terminal settings')).toBeTruthy());
+    fireEvent.press(view.getByLabelText('Close terminal settings'));
+    await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
+    fireEvent.press(view.getByText('1'));
+    fireEvent.press(view.getByTestId('terminal-request'));
+    await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
+    expect(mockPro.refresh).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => finishStatus?.());
+    view.unmount();
+  }
 });
 
 it('preserves the entered amount and wallet mode after visiting Settings', async () => {
