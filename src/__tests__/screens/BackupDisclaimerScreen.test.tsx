@@ -59,7 +59,7 @@ describe('BackupDisclaimerScreen', () => {
         await waitFor(() => expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1));
         expect(get_biometric_prompt_shown()).toBe(true);
         await act(async () => authentication.resolve({ success: true }));
-        await waitFor(() => expect(navigate).toHaveBeenCalledWith('ShowMnemonic', { mnemonic: publicTestPhrase, mode: 'backup' }));
+        await waitFor(() => expect(navigate).toHaveBeenCalledWith('ShowMnemonic', { mnemonic: publicTestPhrase, mode: 'backup', walletId: 'public-test-wallet' }));
         expect(get_biometric_prompt_shown()).toBe(false);
         screen.unmount();
     });

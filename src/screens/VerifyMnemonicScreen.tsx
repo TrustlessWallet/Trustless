@@ -10,6 +10,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import { StyledInput } from '../components/StyledInput'; 
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
+import { NETWORK_NAME } from '../constants/network';
+import { confirmWalletBackup } from '../services/firstLaunchWallet';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'VerifyMnemonic'>;
 type RoutePropType = RouteProp<RootStackParamList, 'VerifyMnemonic'>;
 const VerifyMnemonicScreen = () => {
@@ -42,7 +44,12 @@ const VerifyMnemonicScreen = () => {
         if (isCorrect) {
             setLoading(true);
             try {
-                await addWallet({ mnemonic });
+                const created = await addWallet({ mnemonic });
+                if (!created) return;
+                // Wallet creation has already committed. If this optional marker
+                // fails, keep the reminder rather than reporting creation failed.
+                try { await confirmWalletBackup(NETWORK_NAME, created.id); }
+                catch { /* The wallet remains usable; its backup reminder stays visible. */ }
                 Alert.alert("Success!", "Your wallet is now set up and secured.", [
                     { text: "OK", onPress: () => navigation.popToTop() }
                 ]);

@@ -116,7 +116,7 @@ const BackupDisclaimerScreen = () => {
             const mnemonic = await getMnemonicForWallet(walletId);
             if (!is_current(id) || !await wait_until_active() || !is_current(id)) return;
             if (mnemonic) {
-                navigation.navigate(destination, { mnemonic, mode: 'backup' });
+                navigation.navigate(destination, { mnemonic, mode: 'backup', walletId });
             } else {
                 Alert.alert("Error", "Could not retrieve recovery phrase for this wallet.");
             }

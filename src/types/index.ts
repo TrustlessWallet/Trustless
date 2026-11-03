@@ -114,8 +114,8 @@ export type RootStackParamList = {
   AuthCheck: undefined;
   AddAddress: undefined;
   BackupIntro: undefined;
-  ShowMnemonic: { mnemonic: string; mode?: string };
-  ShowMnemonicQR: undefined;
+  ShowMnemonic: { mnemonic: string; mode?: string; walletId?: string };
+  ShowMnemonicQR: { mnemonic: string; mode?: string; walletId?: string };
   VerifyMnemonic: { mnemonic: string };
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
