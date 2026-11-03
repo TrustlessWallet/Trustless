@@ -119,6 +119,7 @@ type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expire
 export default function TerminalScreen({ visible = true, onExit }: { visible?: boolean; onExit?: () => void } = {}) {
   const { activeWallet, isLightningInitialized, lightningInitAttempted, lightningInitError, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const { setMode, changing, cashierState, cashierBusy, consumeCashierTerminalDraft } = useWalletMode();
+  const { refresh: refreshPro } = useTerminalPro();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -154,6 +155,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const [validated, setValidated] = useState(false);
   const [validationRevision, retryValidation] = useState(0);
   const mounted = useRef(true);
+  const proWarmupStarted = useRef(false);
   const activeRef = useRef(active);
   activeRef.current = active;
   const generation = useRef(0);
@@ -176,6 +178,12 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   basketRef.current = basketLines;
   const basketUnitRef = useRef<TerminalUnit | null>(null);
   const styles = makeStyles(theme.colors.background, theme.colors.primary, theme.colors.inversePrimary, theme.colors.surface, theme.colors.muted, theme.colors.border, theme.colors.bitcoin, screenHeight, screenWidth);
+
+  useEffect(() => {
+    if (proWarmupStarted.current || !visible || cashierState !== 'off' || !activeWallet || activeWallet.type === 'watch-only') return;
+    proWarmupStarted.current = true;
+    void refreshPro();
+  }, [visible, cashierState, activeWallet?.id, activeWallet?.type, refreshPro]);
 
   useEffect(() => {
     if (visible && checkoutFocused && activeWallet && activeWallet.type !== 'watch-only') {

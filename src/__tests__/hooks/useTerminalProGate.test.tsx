@@ -8,8 +8,9 @@ jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => ({
 jest.mock('../../components/TerminalProSheet', () => {
   const React = require('react');
   const { Text, TouchableOpacity, View } = require('react-native');
-  return function MockSheet({ visible, onClose, onDismiss, onVerified }: any) {
+  return function MockSheet({ visible, onClose, onDismiss, onVerified, onActivationStart }: any) {
     return <View testID="pro-sheet" visible={visible} onDismiss={onDismiss}>
+      <TouchableOpacity accessibilityLabel="Start purchase" onPress={onActivationStart}><Text>Start</Text></TouchableOpacity>
       <TouchableOpacity accessibilityLabel="Verify purchase" onPress={onVerified}><Text>Verify</Text></TouchableOpacity>
       <TouchableOpacity accessibilityLabel="Cancel purchase" onPress={onClose}><Text>Cancel</Text></TouchableOpacity>
     </View>;
@@ -95,4 +96,41 @@ it('resumes once when a pending scoped action receives verified access asynchron
   expect(action).not.toHaveBeenCalled();
   fireEvent(view.getByTestId('pro-sheet'), 'dismiss');
   expect(action).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the sheet open through early purchase status and resumes only after confirmation', () => {
+  const action = jest.fn();
+  const view = render(<Owner onAction={action} />);
+  fireEvent.press(view.getByLabelText('Gated action'));
+  fireEvent.press(view.getByLabelText('Start purchase'));
+  mockStatus = 'pro';
+  view.rerender(<Owner onAction={action} />);
+  expect(view.getByTestId('pro-sheet').props.visible).toBe(true);
+  expect(action).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Verify purchase'));
+  expect(view.getByTestId('pro-sheet').props.visible).toBe(false);
+  fireEvent(view.getByTestId('pro-sheet'), 'dismiss');
+  fireEvent(view.getByTestId('pro-sheet'), 'dismiss');
+  expect(action).toHaveBeenCalledTimes(1);
+});
+
+it('abandons a confirmed purchase action when its sheet is closed or owner scope changes', () => {
+  const action = jest.fn();
+  const view = render(<Owner onAction={action} />);
+  fireEvent.press(view.getByLabelText('Gated action'));
+  fireEvent.press(view.getByLabelText('Start purchase'));
+  mockStatus = 'pro';
+  view.rerender(<Owner onAction={action} />);
+  fireEvent.press(view.getByLabelText('Cancel purchase'));
+  fireEvent(view.getByTestId('pro-sheet'), 'dismiss');
+  expect(action).not.toHaveBeenCalled();
+  mockStatus = 'free';
+  view.rerender(<Owner onAction={action} />);
+  fireEvent.press(view.getByLabelText('Gated action'));
+  fireEvent.press(view.getByLabelText('Start purchase'));
+  mockStatus = 'pro';
+  view.rerender(<Owner scope="other" onAction={action} />);
+  fireEvent.press(view.getByLabelText('Verify purchase'));
+  fireEvent(view.getByTestId('pro-sheet'), 'dismiss');
+  expect(action).not.toHaveBeenCalled();
 });
