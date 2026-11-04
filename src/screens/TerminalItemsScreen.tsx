@@ -9,7 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { formatTerminalBasketAmount, TerminalNetwork, TerminalUnit } from '../services/terminal';
-import { deleteTerminalItem, listTerminalItems, TerminalItem } from '../services/terminalItems';
+import { deleteTerminalItem, getCachedTerminalItems, listTerminalItems, TerminalItem } from '../services/terminalItems';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 
@@ -21,11 +21,12 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   const { cashierState } = useWalletMode();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const [items, setItems] = useState<TerminalItem[]>([]);
+  const [items, setItems] = useState<TerminalItem[]>(() => getCachedTerminalItems(walletId, network) ?? []);
   const [readError, setReadError] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const loadRevision = useRef(0);
   const mounted = useRef(true);
   const ownerRef = useRef(false);
   const currentScope = useRef(`${network}:${walletId}`);
@@ -38,18 +39,21 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   const fadeOpacity = scrollY.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' });
 
   const load = async () => {
+    const revision = ++loadRevision.current;
     setReadError(false);
-    try { const saved = await listTerminalItems(walletId, network); if (ownerCurrent()) setItems(saved); }
-    catch { if (ownerCurrent()) setReadError(true); }
+    try { const saved = await listTerminalItems(walletId, network); if (ownerCurrent() && revision === loadRevision.current) setItems(saved); }
+    catch { if (ownerCurrent() && revision === loadRevision.current) setReadError(true); }
   };
   useEffect(() => {
     mounted.current = true;
-    if (focused) void load();
-    return () => { mounted.current = false; };
-  }, [walletId, network, focused]);
+    setItems(getCachedTerminalItems(walletId, network) ?? []);
+    if (focused && ownerAllowed) void load();
+    return () => { mounted.current = false; ++loadRevision.current; };
+  }, [walletId, network, focused, ownerAllowed]);
 
   const remove = async (item: TerminalItem) => {
     if (busyRef.current || !ownerCurrent()) return;
+    ++loadRevision.current;
     busyRef.current = true; setBusy(true); setError('');
     try { const next = await deleteTerminalItem(walletId, network, item.id, ownerCurrent); if (ownerCurrent()) setItems(next); }
     catch (failure) { if (ownerCurrent()) setError((failure as Error).message || 'Couldn’t delete item.'); }
