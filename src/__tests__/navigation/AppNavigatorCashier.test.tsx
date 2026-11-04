@@ -277,6 +277,19 @@ it('shows onboarding before wallet bootstrap finishes and keeps it after automat
   view.rerender(<AppNavigator />);
   expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2 });
 });
+it('does not replay onboarding after setup finishes and wallet bootstrap remounts navigation', async () => {
+  await AsyncStorage.removeItem('@hasCompletedOnboarding');
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
+  (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: false });
+  const view = render(<AppNavigator />);
+  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2 }));
+  await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
+  (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });
+  view.rerender(<AppNavigator />);
+  (useWallet as jest.Mock).mockReturnValue({ wallets: [{ id: 'automatic' }], loading: false });
+  view.rerender(<AppNavigator />);
+  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toBeUndefined());
+});
 it('waits for the wallet on later launches without replaying completed onboarding', async () => {
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
   (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });

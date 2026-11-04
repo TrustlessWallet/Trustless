@@ -43,7 +43,7 @@ it('shows localized annual total by default and only metadata supplied trial wor
   expect(view.getByText('€49,99')).toBeTruthy();
   expect(view.getByLabelText('Annual plan, €49,99 year').props.accessibilityState.selected).toBe(true);
   expect(view.queryByText(/free trial/i)).toBeNull();
-  expect(view.getByText(/Checkout, payment history, refunds, raw CSV export, and backup stay free/)).toBeTruthy();
+  expect(view.queryByText(/Checkout, payment history/)).toBeNull();
   fireEvent.press(view.getByLabelText('Continue with annual Terminal Pro'));
   await waitFor(() => expect(purchase).toHaveBeenCalledWith('annual'));
   expect(verified).not.toHaveBeenCalled();

@@ -333,6 +333,7 @@ it('quotes rapid basket quantity changes from one fiat grand total and freezes s
   fireEvent.press(view.getByLabelText('Add one Coffee'));
   fireEvent.press(view.getByLabelText('Add one Coffee'));
   fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
   await waitFor(() => expect(view.getByTestId('terminal-request')).toBeTruthy());
   fireEvent.press(view.getByTestId('terminal-request'));
   fireEvent.press(view.getByTestId('terminal-request'));
@@ -356,6 +357,7 @@ it('keeps the first item currency when two different currencies are tapped rapid
   });
   expect(view.getByLabelText('Add Dollar item').props.accessibilityState.disabled).toBe(true);
   fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
   expect(view.getByTestId('terminal-amount').props.children).toBe('1.25');
   expect(view.getByText('€')).toBeTruthy();
 });
@@ -372,6 +374,7 @@ it('does not let a delayed preferred currency reinterpret an active basket', asy
     fireEvent.press(view.getByLabelText('Items'));
     fireEvent.press(view.getByLabelText('Add Tea'));
     fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
     expect(view.getByTestId('terminal-amount').props.children).toBe('250');
     await act(async () => { finishPreference('USD'); });
     expect(view.getByTestId('terminal-amount').props.children).toBe('250');
@@ -386,17 +389,20 @@ it('keeps manual entry on dismissal and returns to zero after removing the last 
   fireEvent.press(view.getByText('5'));
   fireEvent.press(view.getByLabelText('Items'));
   fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
   expect(view.getByTestId('terminal-amount').props.children).toBe('5');
   expect(createTerminalInvoice).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Items'));
   fireEvent.press(view.getByLabelText('Add Tea'));
   fireEvent.press(view.getByLabelText('Remove one Tea'));
   fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
   fireEvent.press(view.getByTestId('terminal-request'));
   expect(createTerminalInvoice).not.toHaveBeenCalled();
   fireEvent.press(view.getByLabelText('Items'));
   expect(view.queryByLabelText('Return to manual amount')).toBeNull();
   fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
   expect(view.getByTestId('terminal-amount').props.children).toBe('0');
 });
 
@@ -406,8 +412,7 @@ it('opens Quick items as a scrollable half-height sheet with matching plus contr
   await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Items'));
   const picker = nativeScreen(view.getByLabelText('Close item picker'));
-  expect(picker.props.stackPresentation).toBe('formSheet');
-  expect(picker.props.sheetAllowedDetents).toEqual([0.5]);
+  expect(picker.props.stackPresentation).toBe('transparentModal');
   expect(view.getByLabelText('Add Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
   fireEvent.press(view.getByLabelText('Add Tea'));
   expect(view.getByLabelText('Add one Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
@@ -600,7 +605,7 @@ it('restores a paid invoice and keeps its sale after guarded sheet closing', asy
   validateTerminalInvoice.mockResolvedValue(expiresAt);
   const resumed = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   // A temporarily incomplete SDK query cannot turn a known paid sale unpaid.
-  await waitFor(() => expect(resumed.getByText('Paid')).toBeTruthy());
+  await waitFor(() => expect(resumed.getByText('Payment received')).toBeTruthy());
   fireEvent.press(resumed.getByLabelText('Close invoice'));
   await waitFor(() => expect(resumed.getByText('Generate invoice')).toBeTruthy());
   expect((await listTerminalSales('wallet-a', 'mainnet'))[0].status).toBe('received');
@@ -903,6 +908,7 @@ it('starts a fresh amount when changing basket currency without reinterpreting i
   fireEvent.press(view.getByLabelText('Add Coffee'));
   expect(view.queryByText(/Basket in/)).toBeNull();
   fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
   expect(view.getByTestId('terminal-amount').props.children).toBe('3.50');
   fireEvent.press(view.getByLabelText('Terminal settings'));
   expect(view.queryByLabelText('Clear basket')).toBeNull();
@@ -929,7 +935,7 @@ it.each(['sats', 'BTC', 'USD'])('keeps Generate inactive for an empty or zero %s
   expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(true);
   fireEvent.press(view.getByText('1'));
   expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(false);
-  fireEvent.press(view.getByText('⌫'));
+  fireEvent.press(view.getByText('C'));
   expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(true);
   fireEvent.press(view.getAllByText('0').slice(-1)[0]);
   if (unit !== 'sats') { fireEvent.press(view.getByText('.')); fireEvent.press(view.getAllByText('0').slice(-1)[0]); }
@@ -984,6 +990,7 @@ it('clears a stale basket warning after generating and closing an invoice', asyn
   fireEvent.press(view.getByLabelText('Add one Tea'));
   expect(view.getByText('Maximum quantity is 99.')).toBeTruthy();
   fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Close invoice'));
@@ -1000,6 +1007,7 @@ it('keeps an order snapshot adjustable after its catalog name, price and currenc
   fireEvent.press(view.getByLabelText('Items'));
   fireEvent.press(view.getByLabelText('Add Tea'));
   fireEvent.press(view.getByLabelText('Close item picker'));
+  await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
   await saveTerminalItem('wallet-a', 'mainnet', { id: 'tea', name: 'Premium tea', unit: 'USD', unitPrice: 500 }, () => true);
   fireEvent.press(view.getByLabelText('Terminal settings'));
   fireEvent.press(view.getByLabelText('Close terminal settings'));
@@ -1014,4 +1022,25 @@ it('keeps an order snapshot adjustable after its catalog name, price and currenc
   expect(view.getByLabelText('Add Premium tea')).toBeTruthy();
   fireEvent.press(view.getByLabelText('Add Premium tea'));
   expect(view.getByText('USD 5.00 · USD 5.00')).toBeTruthy();
+});
+
+it('clears the basket with C and allows keypad entry to replace selected items', async () => {
+ await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'coffee', name: 'Coffee', unit: 'sats', unitPrice: 350 }] }));
+ const view = renderWithCurrencyMeasurement();
+ await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
+ fireEvent.press(view.getByLabelText('Items'));
+ fireEvent.press(view.getByLabelText('Add Coffee'));
+ act(() => view.UNSAFE_getByType(TerminalQuickItemsScreen).props.onClose());
+ await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
+ fireEvent.press(view.getByLabelText('Clear amount and items'));
+ expect(view.getByTestId('terminal-amount').props.children).toBe('0');
+ fireEvent.press(view.getByLabelText('Items'));
+ expect(view.queryByLabelText('Remove one Coffee')).toBeNull();
+ fireEvent.press(view.getByLabelText('Add Coffee'));
+ act(() => view.UNSAFE_getByType(TerminalQuickItemsScreen).props.onClose());
+ await waitFor(() => expect(view.queryByLabelText('Close item picker')).toBeNull());
+ fireEvent.press(view.getByText('2'));
+ expect(view.getByTestId('terminal-amount').props.children).toBe('2');
+ fireEvent.press(view.getByLabelText('Items'));
+ expect(view.queryByLabelText('Remove one Coffee')).toBeNull();
 });

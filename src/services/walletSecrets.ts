@@ -1,3 +1,5 @@
+import { hmac } from '@noble/hashes/hmac';
+import { sha512 } from '@noble/hashes/sha512';
 import * as Keychain from 'react-native-keychain';
 import * as bip39 from 'bip39';
 
@@ -72,4 +74,29 @@ export async function deleteWalletMnemonic(id: string): Promise<void> {
     if (task) await task.catch(() => {});
     await Keychain.resetGenericPassword({ service: secureService(id) });
     await Keychain.resetGenericPassword({ service: legacyService(id) });
+}
+
+/** BIP39: PBKDF2-HMAC-SHA512, 2048 rounds, 64 bytes, empty passphrase.
+ * Yield to the native event loop; resolved promises alone do not allow touch events.
+ */
+export async function firstLaunchSeed(mnemonic: string): Promise<Buffer> {
+    const prf = hmac.create(sha512, mnemonic.normalize('NFKD'));
+    const saltBlock = new Uint8Array([109, 110, 101, 109, 111, 110, 105, 99, 0, 0, 0, 1]); // "mnemonic" + INT_32_BE(1)
+    let u = prf.clone().update(saltBlock).digest();
+    const seed = Uint8Array.from(u);
+    let chunkStarted = Date.now();
+    try {
+        for (let round = 1; round < 2048; round++) {
+            const next = prf.clone().update(u).digest();
+            u.fill(0); u = next;
+            for (let byte = 0; byte < seed.length; byte++) seed[byte] ^= u[byte];
+            if (round % 32 === 0 && Date.now() - chunkStarted >= 4) {
+                await new Promise<void>(resolve => setTimeout(resolve, 0));
+                chunkStarted = Date.now();
+            }
+        }
+        return Buffer.from(seed);
+    } finally {
+        u.fill(0); seed.fill(0); prf.destroy();
+    }
 }

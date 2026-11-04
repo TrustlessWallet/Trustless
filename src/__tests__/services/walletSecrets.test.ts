@@ -76,3 +76,21 @@ it('refuses mnemonic generation in the polyfill remote-debugger fallback configu
     expect(() => generateWalletMnemonic(128)).toThrow('Secure randomness is unavailable');
   } finally { runtime.nativeCallSyncHook = sync; runtime.RN$Bridgeless = bridge; }
 });
+
+it('derives the standard BIP39 seed cooperatively without changing wallet keys', async () => {
+ const { firstLaunchSeed } = require('../../services/walletSecrets');
+ const phrase = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+ expect((await firstLaunchSeed(phrase)).toString('hex')).toBe('5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4');
+});
+
+it('yields seed derivation to native timer and touch tasks', async () => {
+ const { firstLaunchSeed } = require('../../services/walletSecrets');
+ let clock = 0;
+ const now = jest.spyOn(Date, 'now').mockImplementation(() => clock += 5);
+ let timerRan = false;
+ setTimeout(() => { timerRan = true; }, 0);
+ try {
+  await firstLaunchSeed('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
+  expect(timerRan).toBe(true);
+ } finally { now.mockRestore(); }
+});

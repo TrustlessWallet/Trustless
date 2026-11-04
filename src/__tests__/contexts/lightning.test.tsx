@@ -1,5 +1,6 @@
 import { resetTerminalSqlite } from '../helpers/terminalSqlite';
 import React, { memo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, render, renderHook, waitFor, cleanup } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WalletProvider, useWallet, useActiveWallet } from '../../contexts/WalletContext';
@@ -30,7 +31,7 @@ jest.mock('../../services/database', () => ({
 jest.mock('../../hooks/useBalance', () => ({
     useWalletBalanceSync: () => ({ data: undefined }), useAddressListSync: () => ({ data: undefined }),
 }));
-jest.mock('../../services/bitcoin', () => ({ fetchAddressInfoBatch: jest.fn(async () => []), fetchUTXOs: jest.fn(async () => []) }));
+jest.mock('../../services/bitcoin', () => ({ getBip32Node: jest.fn((xpub, network) => require('bip32').BIP32Factory(require('@bitcoinerlab/secp256k1')).fromBase58(xpub, network)), fetchAddressInfoBatch: jest.fn(async () => []), fetchUTXOs: jest.fn(async () => []) }));
 jest.mock('expo-file-system', () => ({
     Paths: { document: { uri: 'file:///test/' } },
     Directory: class { uri: string; constructor(uri: string) { this.uri = uri; } async info() { return { exists: true }; } },
@@ -91,12 +92,24 @@ async function connected() {
 }
 beforeEach(async () => {
     await resetTerminalSqlite();
+    await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
     process.env.EXPO_PUBLIC_BREEZ_API_KEY = 'test';
     a = session(100); b = session(900);
     client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     (sdkModule.connect as jest.Mock).mockImplementation(async ({ storageDir }) => storageDir.endsWith('/a') ? a : b);
 });
 afterEach(async () => { cleanup(); client.clear(); jest.restoreAllMocks(); jest.useRealTimers(); });
+
+it('loads local wallet records but does not initialize Lightning during onboarding', async () => {
+    await AsyncStorage.removeItem('@hasCompletedOnboarding');
+    const hook = renderHook(() => useWallet(), { wrapper });
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    await waitFor(() => expect(dbGetWallets).toHaveBeenCalled());
+    expect(sdkModule.connect).not.toHaveBeenCalled();
+    await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
+    await act(async () => hook.result.current.completeOnboarding());
+    await waitFor(() => expect(sdkModule.connect).toHaveBeenCalled());
+});
 
 const refundInvoice = 'lnbc123refund';
 function mockRefundPreparation() {
@@ -616,4 +629,19 @@ it('invalidates pending receive derivation before deleting an active wallet', as
     expect(await next).toBeNull();
     expect(hook.result.current.activeWallet?.id).toBe('b');
     expect(dbSaveAddress).not.toHaveBeenCalled();
+});
+
+it('repairs an interrupted first receive address locally before publishing the wallet', async () => {
+    (dbSaveAddress as jest.Mock).mockClear();
+    const connections = (sdkModule.connect as jest.Mock).mock.calls.length;
+    const fetches = (fetchAddressInfoBatch as jest.Mock).mock.calls.length;
+    await AsyncStorage.removeItem('@hasCompletedOnboarding');
+    const account = require('bip32').BIP32Factory(require('@bitcoinerlab/secp256k1')).fromSeed(Buffer.alloc(32, 1)).derivePath("m/84'/0'/0'").neutered();
+    (dbGetWallets as jest.Mock).mockResolvedValue([{ id: 'a', name: 'a', type: 'standard', xpub: account.toBase58(), nextUtxoCount: 0 }]);
+    (dbGetDerivedAddresses as jest.Mock).mockImplementation(async (_id, chain) => chain === 0 && (dbSaveAddress as jest.Mock).mock.calls.length ? [{ address: 'bc1qrepaired', index: 0 }] : []);
+    const hook = renderHook(() => useWallet(), { wrapper });
+    await waitFor(() => expect(hook.result.current.activeWallet?.derivedReceiveAddresses.length).toBe(1));
+    expect(dbSaveAddress).toHaveBeenCalledWith('a', expect.objectContaining({ address: expect.stringMatching(/^bc1/), index: 0 }), 0, expect.any(String));
+    expect(sdkModule.connect).toHaveBeenCalledTimes(connections);
+    expect(fetchAddressInfoBatch).toHaveBeenCalledTimes(fetches);
 });

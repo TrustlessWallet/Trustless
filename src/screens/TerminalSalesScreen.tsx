@@ -118,6 +118,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const [checkError, setCheckError] = useState('');
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundState, setRefundState] = useState<{ scope: string; attempts: TerminalRefundAttempt[]; loading: boolean; error: boolean }>({ scope: '', attempts: [], loading: true, error: false });
+  const [expandedInvoiceKey, setExpandedInvoiceKey] = useState<string | null>(null);
   const [detailState, setDetailState] = useState<{ key: string; sale: TerminalSale | null }>(() => detailSale?.request.walletId === walletId && detailSale.request.network === network ? { key: `${scope}:${detailSale.request.id}`, sale: detailSale } : { key: '', sale: null });
   const [receiptError, setReceiptError] = useState('');
   const [sharingReceipt, setSharingReceipt] = useState(false);
@@ -499,14 +500,15 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
           <Text style={styles.itemsDetailName}>{line.name} × {line.quantity}</Text>
           <Text style={styles.itemsDetailPrice}>{formatTerminalBasketAmount(line.total, detail.request.basket!.unit)}</Text>
         </View>)}
-        <Text style={styles.itemsDetailPrice}>Total {formatTerminalBasketAmount(detail.request.basket.total, detail.request.basket.unit)}</Text>
+        <View style={styles.itemsDetailRow}><Text style={styles.itemsDetailName}>Total</Text><Text style={styles.itemsDetailPrice}>{formatTerminalBasketAmount(detail.request.basket.total, detail.request.basket.unit)}</Text></View>
       </View> : null}
       <View style={styles.detailsList}>
         <DetailField label="CREATED" value={formatLongDate(detail.request.createdAt)} styles={styles} />
         {detail.receivedAt ? <DetailField label="VERIFIED" value={formatLongDate(detail.receivedAt)} styles={styles} /> : null}
         <DetailField label="EXPIRES" value={formatLongDate(detail.request.expiresAt)} styles={styles} />
         {detail.paymentId ? <DetailField label="PAYMENT ID" value={detail.paymentId} styles={styles} selectable /> : null}
-        <DetailField label="INVOICE" value={detail.request.invoice} styles={styles} selectable />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Lightning invoice" accessibilityState={{ expanded: expandedInvoiceKey === detailKey }} onPress={() => setExpandedInvoiceKey(value => value === detailKey ? null : detailKey)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><Text style={styles.fieldLabel}>INVOICE</Text><Feather name={expandedInvoiceKey === detailKey ? 'chevron-up' : 'chevron-down'} size={18} color={theme.colors.muted} /></TouchableOpacity>
+        {expandedInvoiceKey === detailKey ? <Text selectable style={styles.fieldValue}>{detail.request.invoice}</Text> : null}
       </View>
       {isPaid(detail) ? <View style={styles.checkArea}>
         {refundState.scope === scope && refundState.error ? <><Text style={styles.checkError}>Refund records unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry refund records" onPress={() => { void refreshRefunds(); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Retry</Text></TouchableOpacity></> : null}
@@ -614,7 +616,7 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     itemsDetail: { marginHorizontal: 24, marginTop: 24, padding: 18, borderRadius: 12, backgroundColor: colors.surface },
     itemsDetailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 12 },
     itemsDetailName: { color: colors.primary, fontSize: 13, flex: 1 },
-    itemsDetailPrice: { color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginTop: 12 },
+    itemsDetailPrice: { color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 12, textAlign: 'right', flexShrink: 1 },
     detailsList: { marginHorizontal: 24, marginTop: 24 },
     detailField: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     fieldLabel: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.2 },

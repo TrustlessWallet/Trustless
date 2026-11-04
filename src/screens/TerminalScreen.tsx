@@ -4,6 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
+import TerminalPaymentSuccess from '../components/TerminalPaymentSuccess';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -507,11 +508,13 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const key = (digit: string) => {
-    if (busy.current || stage === 'loading' || basketRef.current.length) return;
+    if (busy.current || stage === 'loading' || requestRef.current) return;
+    const hadBasket = basketRef.current.length > 0;
+    if (hadBasket || digit === 'clear') { basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setAmount(''); }
     Haptics.selectionAsync().catch(() => undefined);
     userEditedAmount.current = true;
     setError('');
-    if (digit === 'back') { setAmount(v => v.slice(0, -1)); return; }
+    if (digit === 'clear') { setAmount(''); return; }
     if (digit === '.' && (unit === 'sats' || amount.includes('.'))) return;
     setAmount(v => {
       if (v.length >= 20 || (v.includes('.') && v.split('.')[1].length >= (isFiat(unit) ? 2 : 8))) return v;
@@ -581,6 +584,11 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     const amountHeight = invoiceAmountLayout.id === request?.id ? invoiceAmountLayout.height : 0;
     // Center the QR itself in the measured sheet, reserving room for its amount above.
     const qrTop = Math.max(20, sheetHeight / 2 - 56 - amountHeight - 24 - (qrSize + 34) / 2);
+    if (stage === 'received') return <View style={styles.root}>
+      <TerminalSheetHeader title="Invoice" closeLabel="Close invoice" disabled={endingRequest} onClose={dismiss} />
+      <View style={{ flex: 1, justifyContent: 'center' }}><TerminalPaymentSuccess>{checkoutAmount(sheetWidth)}{frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}</TerminalPaymentSuccess></View>
+      <View style={[styles.actionBar, { paddingBottom: Math.max(24, insets.bottom + 16) }]}><TouchableOpacity accessibilityRole="button" accessibilityLabel="New sale" disabled={endingRequest} style={styles.primaryAction} onPress={dismiss}>{endingRequest ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>New sale</Text>}</TouchableOpacity></View>
+    </View>;
     return <View style={styles.root}>
       <TerminalSheetHeader title="Invoice" closeLabel="Close invoice" disabled={endingRequest} onClose={dismiss} />
       <ScrollView style={styles.checkoutScroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.checkoutScrollContent, showQr && { paddingTop: qrTop }]} bounces={false} showsVerticalScrollIndicator={false}>
@@ -631,23 +639,24 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
               </View>
             </View>
             <View style={styles.padArea}>
-              <View style={styles.keypad}>{['1','2','3','4','5','6','7','8','9',unit === 'sats' ? '' : '.', '0','back'].map((digit, i) =>
-                <TouchableOpacity key={i} disabled={!digit} style={styles.key} activeOpacity={0.55} onPress={() => key(digit)}>
-                  <Text style={styles.keyText}>{digit === 'back' ? '⌫' : digit}</Text>
+              <View style={styles.keypad}>{['1','2','3','4','5','6','7','8','9',unit === 'sats' ? '' : '.', '0','clear'].map((digit, i) =>
+                <TouchableOpacity key={i} accessibilityRole="button" accessibilityLabel={digit === 'clear' ? 'Clear amount and items' : digit || 'Decimal unavailable'} disabled={!digit} style={styles.key} activeOpacity={0.55} onPress={() => key(digit)}>
+                  <Text style={styles.keyText}>{digit === 'clear' ? 'C' : digit}</Text>
                 </TouchableOpacity>)}</View>
               <View style={styles.feedbackArea}>
                 {error ? <Text numberOfLines={2} style={styles.error}>{error}</Text> : null}
                 {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
                 {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={styles.error}>Items unavailable · Retry</Text></TouchableOpacity> : null}
               </View>
-              <View style={styles.itemsRow}>
-                {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
-              </View>
+
             </View>
           </View>
         }
     </View>
     {entry && <View style={styles.actionBar}>
+              <View style={styles.itemsRow}>
+                {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
+              </View>
       <TouchableOpacity testID="terminal-request" disabled={requestDisabled} style={[styles.primaryAction, requestDisabled && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
         {endingRequest || stage === 'creating' ? <ActivityIndicator accessibilityLabel={endingRequest ? 'Closing invoice' : 'Generating invoice'} color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>{hasRequest ? 'Resume invoice' : hydrationFailed ? 'Retry loading' : 'Generate invoice'}</Text>}
       </TouchableOpacity>
@@ -655,7 +664,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   </View>;
 
   const sheetOptions = Platform.OS === 'android' ? { presentation: 'formSheet' as const, sheetAllowedDetents: [0.95], sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const } : { presentation: 'modal' as const, animation: 'slide_from_bottom' as const };
-  const quickItemsSheetOptions = { presentation: 'transparentModal' as const, contentStyle: { backgroundColor: 'transparent' }, gestureEnabled: false, animation: 'slide_from_bottom' as const };
+  const quickItemsSheetOptions = { presentation: 'transparentModal' as const, contentStyle: { backgroundColor: 'transparent' }, gestureEnabled: false, animation: 'none' as const };
   return <TerminalOwnerFocusContext.Provider value={visible && terminalFocused}><TerminalSheetInteractionContext.Provider value={!transitioning && terminalFocused}><TerminalStack.Navigator key={scope} screenListeners={{ transitionStart: () => setTransitioning(true), transitionEnd: () => setTransitioning(false), gestureCancel: () => setTransitioning(false) }} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
@@ -730,7 +739,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     key: { width: '33.33%', height: keyHeight, alignItems: 'center', justifyContent: 'center' },
     keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: keyFontSize },
     feedbackArea: { height: feedbackHeight, alignItems: 'center', justifyContent: 'center' },
-    itemsRow: { height: 36, alignItems: 'center', justifyContent: 'center' },
+    itemsRow: { height: 44, marginBottom: 12, alignItems: 'center', justifyContent: 'center' },
     itemsCapsule: { width: 80, height: 36 },
     actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: actionBottomPadding },
     primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
