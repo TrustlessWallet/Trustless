@@ -32,7 +32,7 @@ const hasPreferences = (value: Preferences) => value.templates.length > 0 || val
 type Prepared = { token: string; scope: string; preview: TerminalBackupPreview; items: readonly TerminalItem[]; preferences: Preferences | null; busy: boolean };
 const prepared = new WeakMap<TerminalBackupPreview, Prepared>();
 const catalog = (value: unknown): TerminalItem[] => {
-  if (!Array.isArray(value) || value.length > 30 || !value.every(isTerminalItem) || new Set(value.map(item => item.id)).size !== value.length) throw new Error('Invalid backup items.');
+  if (!Array.isArray(value) || !value.every(isTerminalItem) || new Set(value.map(item => item.id)).size !== value.length) throw new Error('Invalid backup items.');
   return value.map(item => ({ id: item.id, name: item.name, unit: item.unit, unitPrice: item.unitPrice }));
 };
 const LEGACY_FORMAT = 'trustless-terminal-records-1';

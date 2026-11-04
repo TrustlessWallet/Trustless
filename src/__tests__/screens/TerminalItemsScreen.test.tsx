@@ -15,7 +15,7 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: () => null }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('../../screens/TerminalSheetHeader', () => () => null);
-jest.mock('../../services/terminalItems', () => ({ FREE_TERMINAL_ITEM_LIMIT: 5, PRO_TERMINAL_ITEM_LIMIT: 30, deleteTerminalItem: jest.fn(), getCachedTerminalItems: jest.fn(), listTerminalItems: jest.fn() }));
+jest.mock('../../services/terminalItems', () => ({ FREE_TERMINAL_ITEM_LIMIT: 5, deleteTerminalItem: jest.fn(), getCachedTerminalItems: jest.fn(), listTerminalItems: jest.fn() }));
 const coffee = { id: 'coffee', name: 'Coffee', unit: 'USD', unitPrice: 123456 };
 beforeEach(() => { jest.clearAllMocks(); (getCachedTerminalItems as jest.Mock).mockReturnValue([coffee]); });
 
@@ -42,15 +42,15 @@ it('ignores stale refresh errors after a successful deletion', async () => {
   expect(view.queryByText('Saved items are unavailable.')).toBeNull();
 });
 
-it('explains why adding is disabled when the catalog is full', () => {
-  const items = Array.from({ length: 30 }, (_, i) => ({ ...coffee, id: `item-${i}`, name: `Item ${i}` }));
+it('keeps adding available for Pro beyond the old catalog cap', () => {
+  mockProStatus = 'pro';
+  const items = Array.from({ length: 31 }, (_, i) => ({ ...coffee, id: `item-${i}`, name: `Item ${i}` }));
   (getCachedTerminalItems as jest.Mock).mockReturnValue(items);
   (listTerminalItems as jest.Mock).mockReturnValue(new Promise(() => {}));
   const edit = jest.fn();
   const view = render(<TerminalItemsScreen walletId="shop" network="mainnet" preferredUnit="USD" onClose={jest.fn()} onEdit={edit} />);
-  expect(view.getByText('Item limit reached')).toBeTruthy();
   fireEvent.press(view.getByLabelText('Add item'));
-  expect(edit).not.toHaveBeenCalled();
+  expect(edit).toHaveBeenCalledTimes(1);
 });
 
 it('offers Pro at five free items while keeping editing available', () => {

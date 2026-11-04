@@ -11,7 +11,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { formatTerminalBasketAmount, TerminalNetwork, TerminalUnit } from '../services/terminal';
-import { FREE_TERMINAL_ITEM_LIMIT, PRO_TERMINAL_ITEM_LIMIT, deleteTerminalItem, getCachedTerminalItems, listTerminalItems, TerminalItem } from '../services/terminalItems';
+import { FREE_TERMINAL_ITEM_LIMIT, deleteTerminalItem, getCachedTerminalItems, listTerminalItems, TerminalItem } from '../services/terminalItems';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 
@@ -40,8 +40,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   const ownerCurrent = () => mounted.current && ownerRef.current && currentScope.current === screenScope;
   const proGate = useTerminalProGate({ allowed: focused && ownerAllowed, scope: `${network}:${walletId}:items` });
   const needsPro = pro.status !== 'pro' && items.length >= FREE_TERMINAL_ITEM_LIMIT;
-  const full = items.length >= PRO_TERMINAL_ITEM_LIMIT;
-  const add = () => { if (!ownerCurrent() || busyRef.current || readError || full) return; if (needsPro) proGate.requirePro(() => { if (ownerCurrent()) onEdit(); }); else onEdit(); };
+  const add = () => { if (!ownerCurrent() || busyRef.current || readError) return; if (needsPro) proGate.requirePro(() => { if (ownerCurrent()) onEdit(); }); else onEdit(); };
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeOpacity = scrollY.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' });
 
@@ -87,9 +86,9 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
         </>}
     </Animated.ScrollView>
     <View style={[styles.footer, { paddingBottom: insets.bottom + 24, backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
-      {needsPro && !full ? <Text style={[styles.limitHint, { color: theme.colors.muted }]}>5 items free · 30 with Pro</Text> : null}
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel={needsPro && !full ? 'Upgrade to Terminal Pro' : 'Add item'} disabled={busy || readError || full} onPress={add} style={[styles.add, { backgroundColor: theme.colors.primary, opacity: busy || readError || full ? 0.55 : 1 }]}>
-        <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }}>{full ? 'Item limit reached' : needsPro ? 'Upgrade to Pro' : 'Add item'}</Text>
+      {needsPro ? <Text style={[styles.limitHint, { color: theme.colors.muted }]}>5 items included. Add more with Pro.</Text> : null}
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={needsPro ? 'Upgrade to Terminal Pro' : 'Add item'} disabled={busy || readError} onPress={add} style={[styles.add, { backgroundColor: theme.colors.primary, opacity: busy || readError ? 0.55 : 1 }]}>
+        <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }}>{needsPro ? 'Upgrade to Pro' : 'Add item'}</Text>
       </TouchableOpacity>
     </View>
   </View>

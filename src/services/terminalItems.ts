@@ -6,8 +6,6 @@ import { transactTerminalDatabase } from './terminalDatabase';
 export const TERMINAL_ITEMS_KEY = '@terminalItems:v1';
 export type TerminalItem = Readonly<{ id: string; name: string; unit: TerminalUnit; unitPrice: number }>;
 export const FREE_TERMINAL_ITEM_LIMIT = 5;
-export const PRO_TERMINAL_ITEM_LIMIT = 30;
-const MAX_ITEMS = PRO_TERMINAL_ITEM_LIMIT;
 const MAX_LEGACY_LENGTH = 64 * 1024;
 const units: TerminalUnit[] = ['sats', 'BTC', 'USD', 'EUR', 'CHF'];
 const keyFor = (walletId: string, network: TerminalNetwork) => `${TERMINAL_ITEMS_KEY}:${network}:${walletId}`;
@@ -52,7 +50,7 @@ export function clearTerminalItemCacheForTests() {
 }
 
 function validateItems(value: unknown): TerminalItem[] {
-  if (!Array.isArray(value) || value.length > MAX_ITEMS || !value.every(isTerminalItem) ||
+  if (!Array.isArray(value) || !value.every(isTerminalItem) ||
     new Set((value as TerminalItem[]).map(item => item.id)).size !== value.length) throw new Error('Saved items are invalid.');
   return value.map(item => ({ id: item.id, name: item.name, unit: item.unit, unitPrice: item.unitPrice }));
 }
@@ -117,9 +115,8 @@ export function saveTerminalItem(walletId: string, network: string, item: Termin
     const items = await readTerminalItemsInDatabase(db, identity.walletId, identity.network);
     if (!isOwnerCurrent()) throw new Error('Owner access to this wallet is required.');
     const existing = items.findIndex(entry => entry.id === frozen.id);
-    if (existing < 0 && items.length >= MAX_ITEMS) throw new Error('Item limit reached.');
     if (existing < 0 && items.length >= FREE_TERMINAL_ITEM_LIMIT && !canAddProItems()) {
-      throw Object.assign(new Error('Terminal Pro supports up to 30 items.'), { code: 'TERMINAL_ITEM_PRO_REQUIRED' });
+      throw Object.assign(new Error('Add more items with Terminal Pro.'), { code: 'TERMINAL_ITEM_PRO_REQUIRED' });
     }
     const next = existing < 0 ? [...items, frozen] : items.map(entry => entry.id === frozen.id ? frozen : entry);
     if (!isOwnerCurrent()) throw new Error('Owner access to this wallet is required.');
