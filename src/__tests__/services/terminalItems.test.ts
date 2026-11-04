@@ -73,11 +73,12 @@ it('rolls back a stale owner mutation and allows backup helpers in one transacti
   expect(await listTerminalItems('wallet-a', 'mainnet')).toEqual([item]);
 });
 
-it('rejects more than 30 items and corrupt SQLite payloads', async () => {
+it('accepts larger catalogs but rejects corrupt SQLite payloads', async () => {
   const many = Array.from({ length: 31 }, (_, index) => ({ ...item, id: `item-${index}` }));
-  await expect(transactTerminalDatabase(db => writeTerminalItemsInDatabase(db, 'wallet-a', 'mainnet', many))).rejects.toThrow('invalid');
+  await transactTerminalDatabase(db => writeTerminalItemsInDatabase(db, 'wallet-a', 'mainnet', many));
+  expect(await listTerminalItems('wallet-a', 'mainnet')).toHaveLength(31);
   const db = await getTerminalDatabase();
-  await db.runAsync('INSERT INTO terminal_catalog(wallet_id,network,payload) VALUES (?,?,?)', ['wallet-a', 'mainnet', '{bad']);
+  await db.runAsync('UPDATE terminal_catalog SET payload=? WHERE wallet_id=? AND network=?', ['{bad', 'wallet-a', 'mainnet']);
   await expect(listTerminalItems('wallet-a', 'mainnet')).rejects.toThrow('unreadable');
 });
 
@@ -119,4 +120,15 @@ it('invalidates catalog snapshots after edits, backup writes and wallet removal'
   expect(getCachedTerminalItems('wallet-a', 'mainnet')).toBeNull();
   await warmTerminalItems('wallet-a', 'mainnet');
   expect(getCachedTerminalItems('wallet-a', 'mainnet')).toEqual([]);
+});
+
+it('limits free catalogs to five, permits Pro expansion, and preserves existing items after downgrade', async () => {
+  for (let i = 0; i < 5; i++) await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: `item-${i}` }, () => true);
+  await expect(saveTerminalItem('wallet-a', 'mainnet', { ...item, id: 'sixth' }, () => true)).rejects.toMatchObject({ code: 'TERMINAL_ITEM_PRO_REQUIRED' });
+  await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: 'sixth' }, () => true, () => true);
+  await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: 'sixth', name: 'Updated' }, () => true);
+  expect((await listTerminalItems('wallet-a', 'mainnet')).length).toBe(6);
+  for (let i = 6; i < 30; i++) await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: `item-${i}` }, () => true, () => true);
+  await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: 'extra' }, () => true, () => true);
+  expect(await listTerminalItems('wallet-a', 'mainnet')).toHaveLength(31);
 });

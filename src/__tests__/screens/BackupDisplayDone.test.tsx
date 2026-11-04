@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { useNavigation } from '@react-navigation/native';
 import { get_biometric_prompt_shown } from '../../services/authState';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isBackupPending, setBackupPending } from '../../services/firstLaunchWallet';
+import { setBackupPending } from '../../services/firstLaunchWallet';
 import ShowMnemonicScreen from '../../screens/ShowMnemonicScreen';
 import ShowMnemonicQRScreen from '../../screens/ShowMnemonicQRScreen';
 
@@ -51,8 +51,8 @@ describe('backup display Done', () => {
         const screen = render(<Screen />);
         fireEvent.press(screen.getByText('I saved my recovery phrase'));
         await waitFor(() => expect(popToTop).toHaveBeenCalledTimes(1));
-        expect(await isBackupPending('Bitcoin', 'wallet-a')).toBe(false);
-        expect(await isBackupPending('Bitcoin', 'wallet-b')).toBe(true);
+        expect(await AsyncStorage.getItem('@walletBackupStatus.Bitcoin.wallet-a')).toBe('confirmed');
+        expect(await AsyncStorage.getItem('@walletBackupStatus.Bitcoin.wallet-b')).toBe('pending');
         screen.unmount();
     });
 

@@ -73,10 +73,15 @@ export function formatFiatMinor(minor: number): string {
   return `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, '0')}`;
 }
 
+export function formatTerminalFiatDisplay(amount: string): string {
+  const [whole, fraction] = amount.split('.');
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}${fraction === undefined ? '' : `.${fraction}`}`;
+}
+
 export function formatTerminalBasketAmount(value: number, unit: TerminalUnit): string {
   if (unit === 'sats') return `${formatTerminalSats(value)} sats`;
   if (unit === 'BTC') return `${formatTerminalAmount(value, 'BTC')} BTC`;
-  return `${unit} ${formatFiatMinor(value)}`;
+  return `${unit} ${formatTerminalFiatDisplay(formatFiatMinor(value))}`;
 }
 
 export function satsFromFiat(amountMinor: number, rate: string): number {
