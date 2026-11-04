@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, FlatList, Dimensions, Image, Linking, Clipboard } from 'react-native';
+import { ActivityIndicator, Alert, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, FlatList, Dimensions, Image, Linking, Clipboard } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
@@ -160,23 +160,21 @@ const OnboardingWalletScreen = () => {
   const { theme, isDark } = useTheme(); 
   const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]); 
 
-  const mark_onboarding_complete = async () => {
+  const [finishing, setFinishing] = useState(false);
+  const finishingRef = useRef(false);
+  const handle_complete_onboarding = async () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    setFinishing(true);
     try {
       await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
-    } catch (e) {
-      console.error('Failed to save onboarding status', e);
+      navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+    } catch {
+      Alert.alert('Couldn’t finish setup', 'Please try again.');
+    } finally {
+      finishingRef.current = false;
+      setFinishing(false);
     }
-  };
-
-  useEffect(() => {
-    mark_onboarding_complete();
-  }, []);
-
-  const handle_complete_onboarding = () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'MainTabs' }],
-    });
   };
 
   const handle_next = () => {
@@ -234,10 +232,10 @@ const OnboardingWalletScreen = () => {
             />
           ))}
         </View>
-        <TouchableOpacity style={styles.button} onPress={handle_next}>
-          <Text style={styles.button_text}>
+        <TouchableOpacity style={styles.button} disabled={finishing} onPress={handle_next}>
+          {finishing ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.button_text}>
             {current_index === slides.length - 1 ? 'Get started' : 'Next'}
-          </Text>
+          </Text>}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

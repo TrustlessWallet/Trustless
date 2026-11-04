@@ -83,8 +83,10 @@ jest.mock('../../components/GlassView', () => ({ GlassView: () => null }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 
 beforeEach(async () => {
+  jest.spyOn(AppState, 'addEventListener').mockImplementation(() => ({ remove: jest.fn() }));
   mockPromptActive = false;
   await AsyncStorage.clear();
+  await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
   Object.defineProperty(AppState, 'currentState', { configurable: true, value: 'active' });
   mockRoutes.length = 0;
   mockContainers.length = 0;
@@ -263,4 +265,26 @@ it('still covers and reauthenticates after a true background transition during a
     expect(mockNavRef.navigate).toHaveBeenCalledWith('AuthCheck');
     endPrompt();
   } finally { endPrompt(); view.unmount(); listener.mockRestore(); }
+});
+
+it('shows onboarding before wallet bootstrap finishes and keeps it after automatic creation', async () => {
+  await AsyncStorage.removeItem('@hasCompletedOnboarding');
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
+  (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });
+  const view = render(<AppNavigator />);
+  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2, routes: [{ name: 'MainTabs' }, { name: 'OnboardingWallet' }, { name: 'OnboardingWelcome' }] }));
+  (useWallet as jest.Mock).mockReturnValue({ wallets: [{ id: 'automatic' }], loading: false });
+  view.rerender(<AppNavigator />);
+  expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2 });
+});
+it('waits for the wallet on later launches without replaying completed onboarding', async () => {
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
+  (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });
+  const view = render(<AppNavigator />);
+  await act(async () => {});
+  expect(mockContainers).toHaveLength(0);
+  (useWallet as jest.Mock).mockReturnValue({ wallets: [{ id: 'automatic' }], loading: false });
+  view.rerender(<AppNavigator />);
+  await waitFor(() => expect(mockContainers.length).toBeGreaterThan(0));
+  expect(mockContainers.at(-1)?.initialState).toBeUndefined();
 });
