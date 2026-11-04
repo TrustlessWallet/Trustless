@@ -1444,7 +1444,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setActiveWallet(wallet);
             // A new wallet has no history to discover. Let the first screen
             // become usable before the normal Lightning initialization.
-            const startNetwork = () => { if (wallet.type !== 'watch-only') scheduleDeferred(() => {
+            const walletType = wallet.type;
+            const startNetwork = () => { if (walletType !== 'watch-only') scheduleDeferred(() => {
                 InteractionManager.runAfterInteractions(() => {
                     void readWalletCredentials(walletId).then(credentials => {
                         if (credentials && initVersion === lightningInitVersionRef.current) {

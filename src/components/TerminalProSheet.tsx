@@ -225,6 +225,7 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   planTitle: { color: theme.colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
   planPeriod: { color: theme.colors.muted, fontSize: 10, marginTop: 3 },
   planPrice: { color: theme.colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
+  renewal: { color: theme.colors.muted, fontSize: 10, lineHeight: 16, marginTop: 9 },
   trial: { color: theme.colors.primary, fontSize: 12, marginTop: 7 },
   primaryButton: { minHeight: 50, borderRadius: 8, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 20, paddingHorizontal: 12 },
   primaryText: { color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },

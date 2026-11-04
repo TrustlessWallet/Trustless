@@ -593,11 +593,10 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       <TerminalSheetHeader title="Invoice" closeLabel="Close invoice" disabled={endingRequest} onClose={dismiss} />
       <ScrollView style={styles.checkoutScroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.checkoutScrollContent, showQr && { paddingTop: qrTop }]} bounces={false} showsVerticalScrollIndicator={false}>
         <View style={[styles.checkout, !showQr && { flexGrow: 1 }, showQr && { opacity: amountHeight > 0 ? 1 : 0 }]}>
-          {stage === 'received' ? <Feather name="check-circle" size={70} color={theme.colors.bitcoin} /> : null}
           {validated ? <View key={request?.id} style={{ alignItems: 'center' }} onLayout={event => { if (request?.id && requestRef.current?.id === request.id) setInvoiceAmountLayout({ id: request.id, height: event.nativeEvent.layout.height }); }}>{checkoutAmount(sheetWidth)}{frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}</View> : null}
           {showQr ? <View testID="terminal-qr" style={[styles.qrCard, { marginTop: 24 }]}><QRCode value={request.invoice.toUpperCase()} size={qrSize} color={theme.colors.primary} backgroundColor={theme.colors.background} /></View> : null}
           {showQr ? <Text style={styles.invoiceInstruction}>Scan to pay the invoice</Text> : null}
-          {!validated || stage === 'received' || isExpired ? <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : stage === 'received' ? 'Paid' : 'Request expired'}</Text> : null}
+          {!validated || isExpired ? <Text style={styles.checkoutTitle}>{!validated ? stage === 'verificationUnavailable' ? 'Cannot validate request' : 'Checking saved request' : 'Request expired'}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {!validated && !isLightningInitialized ? <Text style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable. Retry when connected.') : 'Connecting to Lightning…'}</Text> : null}
           {stage === 'verificationUnavailable' || isExpired ? <TouchableOpacity style={styles.secondary} onPress={() => { if (validated) void verify(true); else retryValidation(value => value + 1); }}><Text style={styles.secondaryText}>{validated ? 'Check payment' : 'Retry validation'}</Text></TouchableOpacity> : null}
