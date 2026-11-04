@@ -11,7 +11,7 @@ export function formatTerminalReceipt(sale: TerminalSale, refunds: readonly Term
   const details = [
     'Payment receipt',
     `Sale: ${request.id}`,
-    `Network: ${request.network}`,
+    `Payment method: Lightning${request.network === 'testnet' ? ' (testnet)' : ''}`,
     `Amount: ${formatTerminalSats(request.amountSats)} sats`,
   ];
   if (request.fiat) {

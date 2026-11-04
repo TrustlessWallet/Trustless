@@ -157,7 +157,6 @@ export default function TerminalProSheet({ visible, activation, onClose, onDismi
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Continue with ${selected === 'annual' ? 'annual' : 'monthly'} Terminal Pro`} accessibilityState={{ disabled: working || pending, busy: working && activationKind !== 'restore' }} disabled={working || pending} onPress={() => { void activate('purchase'); }} style={[styles.primaryButton, (working || pending) && styles.disabled]}>
                 {working && activationKind !== 'restore' ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Continue with {selected === 'annual' ? 'Annual' : 'Monthly'}</Text>}
               </TouchableOpacity>
-              <Text style={styles.renewal}>Auto-renews at the store price unless canceled in your store’s subscription settings.</Text>
             </> : <View style={styles.state}>
               <Text style={styles.stateText}>Store plans are unavailable right now.</Text>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading plans" disabled={working} onPress={() => { void loadPlans(); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Retry</Text></TouchableOpacity>
@@ -167,7 +166,6 @@ export default function TerminalProSheet({ visible, activation, onClose, onDismi
           {pending ? <Text style={styles.stateText}>Awaiting store approval. Pro unlocks when payment is confirmed.</Text> : null}
           {error || activationError ? <Text accessibilityRole="alert" style={styles.error}>{error || activationError}</Text> : null}
           {status !== 'pro' ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Restore purchases" accessibilityState={{ disabled: working, busy: activationKind === 'restore' }} disabled={working} onPress={() => { void activate('restore'); }} style={styles.restore}><Text style={[styles.restoreText, activationKind === 'restore' && styles.hiddenActionLabel]}>Restore purchases</Text>{activationKind === 'restore' ? <ActivityIndicator accessibilityLabel="Restoring purchases" color={theme.colors.bitcoin} style={styles.restoreSpinner} /> : null}</TouchableOpacity> : null}
-          {status !== 'pro' ? <Text style={styles.freeCopy}>Checkout, payment history, refunds, raw CSV export, and backup stay free.</Text> : null}
           {!confirmed ? <View style={styles.legalLinks}>
             <TouchableOpacity accessibilityRole="link" accessibilityLabel="Privacy Policy" disabled={working} onPress={() => openLegal('privacy')} style={styles.legalTouch}><Text style={styles.legalLink}>Privacy</Text></TouchableOpacity>
             <TouchableOpacity accessibilityRole="link" accessibilityLabel="Terms and Conditions" disabled={working} onPress={() => openLegal('terms')} style={styles.legalTouch}><Text style={styles.legalLink}>Terms</Text></TouchableOpacity>
@@ -227,8 +225,8 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   planTitle: { color: theme.colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
   planPeriod: { color: theme.colors.muted, fontSize: 10, marginTop: 3 },
   planPrice: { color: theme.colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
-  trial: { color: theme.colors.primary, fontSize: 12, marginTop: 7 },
   renewal: { color: theme.colors.muted, fontSize: 10, lineHeight: 16, marginTop: 9 },
+  trial: { color: theme.colors.primary, fontSize: 12, marginTop: 7 },
   primaryButton: { minHeight: 50, borderRadius: 8, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 20, paddingHorizontal: 12 },
   primaryText: { color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
   disabled: { opacity: 0.55 },
@@ -239,7 +237,6 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   hiddenActionLabel: { opacity: 0 },
   restoreSpinner: { position: 'absolute', alignSelf: 'center' },
   restoreText: { color: theme.colors.primary, fontSize: 12, textDecorationLine: 'underline' },
-  freeCopy: { color: theme.colors.muted, fontSize: 11, lineHeight: 18, textAlign: 'center', marginTop: 12 },
   legalLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 12 },
   legalTouch: { minHeight: 44, minWidth: 64, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   legalLink: { color: theme.colors.muted, fontSize: 11, textDecorationLine: 'underline' },

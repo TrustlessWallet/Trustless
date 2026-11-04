@@ -127,3 +127,18 @@ it('does not transfer the first-launch reminder when importing or switching wall
     await confirmWalletBackup('Bitcoin', 'imported-wallet');
     expect(await isBackupPending('Bitcoin', 'imported-wallet')).toBe(false);
 });
+
+it('preserves first-launch eligibility when onboarding finishes during local setup', async () => {
+ preferences.set('@hasCompletedOnboarding', 'true');
+ expect(await claimFirstLaunchWallet('Bitcoin', 'active', firstId, true)).toBe('fixed-wallet-id');
+ await markFirstLaunchCompleted('Bitcoin', 'fixed-wallet-id');
+ expect(await claimFirstLaunchWallet('Bitcoin', 'active', firstId, true)).toBeNull();
+});
+
+it('resumes a durable onboarding handoff after termination before the claim', async () => {
+ preferences.set('@hasCompletedOnboarding', 'wallet-pending');
+ expect(await claimFirstLaunchWallet('Bitcoin', 'active', firstId)).toBe('fixed-wallet-id');
+ await markFirstLaunchCompleted('Bitcoin', 'fixed-wallet-id');
+ expect(preferences.get('@hasCompletedOnboarding')).toBe('true');
+ expect(await claimFirstLaunchWallet('Bitcoin', 'active', firstId)).toBeNull();
+});

@@ -1,3 +1,5 @@
+let mockCameraScan: ((value: { data: string }) => void) | undefined;
+jest.mock('expo-camera', () => ({ useCameraPermissions: () => [{ granted: true }, jest.fn()], CameraView: (props: any) => { mockCameraScan = props.onBarcodeScanned; return null; } }));
 import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
 import { getTerminalDatabase } from '../../services/terminalDatabase';
 import React from 'react';
@@ -228,4 +230,25 @@ it('applies only the newest clipboard request and trims the invoice', async () =
   fireEvent.press(view.getByLabelText('Paste invoice'));
   await act(async () => { results[1]('  lnbcnewcustomerabc  '); results[0]('lnbcoldcustomerabc'); });
   expect(view.getByLabelText('Customer Lightning invoice').props.value).toBe('lnbcnewcustomerabc');
+});
+
+it('scans a customer Lightning invoice and returns it to the refund form', async () => {
+  await recordTerminalSale(request);
+  const sale = await updateTerminalSalePayment(request, { status: 'received' });
+  const view = render(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
+  fireEvent.press(view.getByLabelText('Scan customer invoice'));
+  act(() => mockCameraScan?.({ data: 'lightning:lnbc123abc' }));
+  expect(view.getByLabelText('Customer Lightning invoice').props.value).toBe('lnbc123abc');
+  expect(view.queryByLabelText('Close invoice scanner')).toBeNull();
+});
+it('does not accept a delayed camera result after the active wallet changes', async () => {
+  await recordTerminalSale(request);
+  const sale = await updateTerminalSalePayment(request, { status: 'received' });
+  const view = render(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
+  fireEvent.press(view.getByLabelText('Scan customer invoice'));
+  const delayed = mockCameraScan;
+  (useWallet as jest.Mock).mockReturnValue({ activeWallet: { id: 'different-wallet' }, isLightningInitialized: true });
+  view.rerender(<TerminalRefundScreen sale={sale} attempts={[]} onClose={jest.fn()} />);
+  act(() => delayed?.({ data: 'lnbc123abc' }));
+  expect(view.getByLabelText('Customer Lightning invoice').props.value).toBe('');
 });

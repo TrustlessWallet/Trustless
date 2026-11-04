@@ -12,12 +12,9 @@ import { Theme } from '../constants/theme';
 type QRScannerScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'QRScanner'>;
 type QRScannerScreenRouteProp = RouteProp<RootStackParamList, 'QRScanner'>;
 
-const QRScannerScreen = () => {
+export const QRScannerView = ({ onScanSuccess, onClose }: { onScanSuccess: (value: string) => void; onClose: () => void }) => {
   const [permission, requestPermission] = useCameraPermissions();
   const isScannedRef = useRef(false);
-  const navigation = useNavigation<QRScannerScreenNavigationProp>();
-  const route = useRoute<QRScannerScreenRouteProp>();
-  const { onScanSuccess } = route.params;
   const { theme } = useTheme(); 
   const styles = useMemo(() => getStyles(theme), [theme]); 
 
@@ -27,7 +24,7 @@ const QRScannerScreen = () => {
     
     const address = scanningResult.data.replace(/^(bitcoin:)/, '');
     onScanSuccess(address);
-    navigation.goBack();
+    onClose();
   };
 
   useEffect(() => {
@@ -68,7 +65,7 @@ const QRScannerScreen = () => {
         facing="back"
         style={{ flex: 1, width: '100%' }}
       />
-      <View style={styles.overlay}>
+      <View pointerEvents="none" style={styles.overlay}>
         <View style={styles.scanBox} />
         <Text style={styles.scanText}>Scan a QR code</Text>
       </View>
@@ -130,4 +127,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
 });
 
+const QRScannerScreen = () => {
+  const navigation = useNavigation<QRScannerScreenNavigationProp>();
+  const route = useRoute<QRScannerScreenRouteProp>();
+  return <QRScannerView onScanSuccess={route.params.onScanSuccess} onClose={() => navigation.goBack()} />;
+};
 export default QRScannerScreen;

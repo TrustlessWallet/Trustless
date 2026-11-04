@@ -43,7 +43,7 @@ async function writeJournal(network: string, value: Journal): Promise<void> {
 }
 
 /** Claim a fixed ID before creating any secret. A failed eligibility read never creates a wallet. */
-export async function claimFirstLaunchWallet(network: string, activeWalletService: string, newId: () => string): Promise<string | null> {
+export async function claimFirstLaunchWallet(network: string, activeWalletService: string, newId: () => string, onboardingStarted = false): Promise<string | null> {
     const install = await installationId(newId);
     const journal = await readJournal(network);
     if (journal?.version === 2 && journal.installationId === install) {
@@ -57,11 +57,12 @@ export async function claimFirstLaunchWallet(network: string, activeWalletServic
     // A v1 journal has no installation ID. If onboarding state remains, it
     // belongs to this install. Reset App removes that state, so a fully erased
     // legacy install cannot be distinguished from a reinstall.
-    if (journal?.version === 1 && await AsyncStorage.getItem('@hasCompletedOnboarding') !== null) {
+    if (journal?.version === 1 && !onboardingStarted && await AsyncStorage.getItem('@hasCompletedOnboarding') === 'true') {
         await writeJournal(network, { ...journal, version: 2, installationId: install });
         return null;
     }
-    if (await AsyncStorage.getItem('@hasCompletedOnboarding') !== null) return null;
+    const onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
+    if (!onboardingStarted && onboarding !== null && onboarding !== 'wallet-pending') return null;
     const priorInstallation = journal !== null && (journal.version === 1 || journal.installationId !== install);
     if (!priorInstallation && await Keychain.getGenericPassword({ service: activeWalletService })) {
         throw new Error('An active wallet reference exists without its wallet record. Restore the wallet or retry.');
@@ -107,6 +108,9 @@ export async function markFirstLaunchCompleted(network: string, walletId: string
         throw new Error('First-launch wallet journal changed.');
     }
     await writeJournal(network, { ...journal, state: 'completed' });
+    if (await AsyncStorage.getItem('@hasCompletedOnboarding') === 'wallet-pending') {
+        await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
+    }
 }
 
 export async function setBackupPending(network: string, walletId: string): Promise<void> {

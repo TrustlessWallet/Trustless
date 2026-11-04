@@ -389,7 +389,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       key="normal-wallet"
       ref={navigation_ref}
       theme={navigation_theme}
-      initialState={unlockedRoot.current ? undefined : initial_nav_state || undefined}
+      initialState={unlockedRoot.current || !needs_onboarding ? undefined : initial_nav_state || undefined}
       onReady={() => {
         set_is_nav_ready(true);
         set_current_route_name(navigation_ref.getCurrentRoute()?.name);

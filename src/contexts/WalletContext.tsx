@@ -10,6 +10,7 @@ import { payments } from 'bitcoinjs-lib';
 import { ECPairFactory } from 'ecpair';
 import { useQueryClient } from '@tanstack/react-query';
 import { Alert, AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as breezSdk from '@breeztech/breez-sdk-spark-react-native';
 import * as FileSystem from 'expo-file-system';
 import { LightningLifecycle, SingleFlight, withDeadline } from '../services/lightningSession';
@@ -17,7 +18,7 @@ import { assertNoActiveExit, loadExit } from '../services/exitStorage';
 import type { RunExit } from '../services/unilateralExit';
 
 import { Wallet, DerivedAddress, BitcoinAddress, LightningTransaction } from '../types';
-import { canonicalMnemonic, generateWalletMnemonic, readWalletCredentials, storeWalletMnemonic, deleteWalletMnemonic } from '../services/walletSecrets';
+import { canonicalMnemonic, firstLaunchSeed, generateWalletMnemonic, readWalletCredentials, storeWalletMnemonic, deleteWalletMnemonic } from '../services/walletSecrets';
 import { claimFirstLaunchWallet, firstLaunchMnemonic, markFirstLaunchCompleted, markFirstLaunchUsed } from '../services/firstLaunchWallet';
 import { ActiveWalletProvider } from './ActiveWalletContext';
 import type { ActiveWallet } from './ActiveWalletContext';
@@ -195,6 +196,7 @@ interface WalletContextType {
     loading: boolean;
     bootstrapError: string | null;
     retryBootstrap: () => void;
+    completeOnboarding: () => void;
     lastRefreshTime: number;
     triggerRefresh: (mode?: 'lightning' | 'onchain' | 'all') => Promise<void>;
     isWalletSwitching: boolean;
@@ -269,6 +271,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [activeWallet, setActiveWallet] = useState<ActiveWallet | null>(null);
     const [loading, setLoading] = useState(true);
     const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+    const [networkReady, setNetworkReady] = useState(false);
+    const networkReadyRef = useRef(false);
+    const pendingFirstWalletNetwork = useRef<(() => void) | null>(null);
+    const completeOnboarding = () => {
+        networkReadyRef.current = true;
+        setNetworkReady(true);
+        pendingFirstWalletNetwork.current?.();
+        pendingFirstWalletNetwork.current = null;
+    };
     const [bootstrapRevision, setBootstrapRevision] = useState(0);
     const [lastRefreshTime, setLastRefreshTime] = useState(() => Date.now());
 
@@ -283,7 +294,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [lightningAddress, setLightningAddress] = useState<string>('');
 
     const ACTIVE_WALLET_KEY = getStorageKey(KEYCHAIN_ACTIVE_WALLET_ID_KEY_BASE);
-    const retryBootstrap = () => setBootstrapRevision(revision => revision + 1);
+    const retryBootstrap = () => {
+        setLoading(true);
+        setBootstrapRevision(revision => revision + 1);
+    };
 
     // Tracks any setTimeout ids scheduled for deferred work (Lightning init,
     // UTXO scanning) so they can be cancelled if the provider unmounts,
@@ -409,7 +423,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    const { data: syncedWalletData } = useWalletBalanceSync(activeWallet?.id, activeWalletAddresses);
+    const { data: syncedWalletData } = useWalletBalanceSync(networkReady ? activeWallet?.id : undefined, networkReady ? activeWalletAddresses : []);
 
     useEffect(() => {
         if (syncedWalletData && activeWallet) {
@@ -438,7 +452,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [syncedWalletData]);
 
-    const { data: syncedSavedBalances } = useAddressListSync('saved', savedAddresses);
+    const { data: syncedSavedBalances } = useAddressListSync('saved', networkReady ? savedAddresses : []);
 
     useEffect(() => {
         if (syncedSavedBalances && savedAddresses.length > 0) {
@@ -573,7 +587,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     useEffect(() => {
         const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
             lightningTrace(lightningTraceContext(), 'app.state', { state });
-            if (state === 'active' && activeWalletIdRef.current && !switchingRef.current) {
+            if (state === 'active' && networkReadyRef.current && activeWalletIdRef.current && !switchingRef.current) {
                 void triggerRefresh('lightning').catch(error => console.warn('Foreground Lightning refresh failed:', error));
             }
         });
@@ -1389,7 +1403,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
 
-    const loadAndSetActiveWallet = async (walletId: string): Promise<boolean> => {
+    const loadAndSetActiveWallet = async (walletId: string, skipDiscovery = false): Promise<boolean> => {
         const loadStarted = Date.now();
         const generation = ++walletGenerationRef.current;
         const networkName = NETWORK_NAME;
@@ -1414,6 +1428,36 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         let wallet = await buildActiveWallet(walletId);
         lightningTrace({ wallet: lightningWalletLabel(walletId), session: initVersion }, 'wallet.local.loaded', { elapsedMs: Date.now() - loadStarted, found: !!wallet, receiveAddresses: wallet?.derivedReceiveAddresses.length, changeAddresses: wallet?.derivedChangeAddresses.length });
         if (!wallet || !current()) return false;
+
+        if (skipDiscovery) {
+            // Repair an interrupted local setup using the saved public account key.
+            if (!wallet.derivedReceiveAddresses.length) {
+                if (!wallet.xpub) throw new Error('Wallet account key is missing.');
+                const address = deriveReceiveAddress(getBip32Node(wallet.xpub, NETWORK), 0, true, wallet.scriptType || 'p2wpkh');
+                if (!address) throw new Error('Could not derive the first wallet address.');
+                await dbSaveAddress(walletId, address, 0, networkName);
+                if (!current()) return false;
+                wallet = await buildActiveWallet(walletId);
+                if (!wallet || !current()) return false;
+            }
+            activeWalletIdRef.current = walletId;
+            setActiveWallet(wallet);
+            // A new wallet has no history to discover. Let the first screen
+            // become usable before the normal Lightning initialization.
+            const walletType = wallet.type;
+            const startNetwork = () => { if (walletType !== 'watch-only') scheduleDeferred(() => {
+                InteractionManager.runAfterInteractions(() => {
+                    void readWalletCredentials(walletId).then(credentials => {
+                        if (credentials && initVersion === lightningInitVersionRef.current) {
+                            return initLightningNode(credentials.password, walletId, initVersion);
+                        }
+                    }).catch(error => setLightningInitError(String(error?.message || error)));
+                });
+            }, 0); };
+            if (networkReadyRef.current) startNetwork();
+            else pendingFirstWalletNetwork.current = startNetwork;
+            return true;
+        }
 
         try {
             const root = await getRootNode(wallet);
@@ -1598,9 +1642,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // FAST-PATH BOOTSTRAP
     useEffect(() => {
         let mounted = true;
-        const bootstrap = () => serializeWalletMutation(async () => {
+        const bootstrap = async () => {
+            let onboardingStarted = false;
+            try {
+                onboardingStarted = await AsyncStorage.getItem('@hasCompletedOnboarding') === null;
+                if (!mounted) return;
+                if (!onboardingStarted) completeOnboarding();
+                else { setLoading(false); setLoadingSavedAddresses(false); }
+            } catch {
+                if (mounted) { setBootstrapError('Could not read setup state. Please retry.'); setLoading(false); }
+                return;
+            }
+            return serializeWalletMutation(async () => {
             if (!mounted) return;
-            setLoading(true);
+            setLoading(!onboardingStarted);
             setBootstrapError(null);
             setLoadingSavedAddresses(true);
             try {
@@ -1613,10 +1668,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     const saved = await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses').catch(() => []);
                     setSavedAddresses(saved);
                     setLoadingSavedAddresses(false);
-                    const walletId = await claimFirstLaunchWallet(NETWORK_NAME, ACTIVE_WALLET_KEY, uuidv4);
+                    const walletId = await claimFirstLaunchWallet(NETWORK_NAME, ACTIVE_WALLET_KEY, uuidv4, onboardingStarted);
                     if (walletId && mounted) {
                         const mnemonic = await firstLaunchMnemonic(walletId);
-                        const created = await addWalletInternal({ mnemonic, type: 'standard' }, walletId);
+                        const created = await addWalletInternal({ mnemonic, type: 'standard' }, walletId, true);
                         if (created) {
                             await markFirstLaunchCompleted(NETWORK_NAME, walletId);
                         }
@@ -1645,13 +1700,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     currentId = walletsFromDb[0].id;
                 }
 
-                let success = await loadAndSetActiveWallet(currentId);
+                let success = await loadAndSetActiveWallet(currentId, onboardingStarted);
 
                 if (!success) {
                     console.warn("Active wallet failed to load. Attempting fallback...");
                     for (const w of walletsFromDb) {
                         if (w.id === currentId) continue;
-                        success = await loadAndSetActiveWallet(w.id);
+                        success = await loadAndSetActiveWallet(w.id, onboardingStarted);
                         if (success) {
                             await Keychain.setGenericPassword('user', w.id, { service: ACTIVE_WALLET_KEY });
                             break;
@@ -1670,7 +1725,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     setLoadingSavedAddresses(false);
                 }
             }
-        });
+            });
+        };
         void bootstrap();
         return () => { mounted = false; };
     }, [bootstrapRevision]);
@@ -1720,7 +1776,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     type AddWalletParams = { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; };
-    const addWalletInternal = async (params: AddWalletParams, fixedId?: string): Promise<Wallet | null> => {
+    const addWalletInternal = async (params: AddWalletParams, fixedId?: string, skipDiscovery = false): Promise<Wallet | null> => {
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
         const { name } = params;
         const mnemonic = params.type === 'watch-only' ? undefined : canonicalMnemonic(params.mnemonic ?? '');
@@ -1728,6 +1784,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         let walletXpub = params.xpub;
         let fingerprint = params.fingerprint;
         let derivation_path = params.derivation_path;
+        let firstAddress: DerivedAddress | null = null;
+        let preparedRoot: ReturnType<typeof bip32.fromSeed> | undefined;
 
         let scriptType: 'p2wpkh' | 'p2sh-p2wpkh' = 'p2wpkh';
         if (type !== 'standard' && type !== 'watch-only') throw new Error('Unsupported wallet type.');
@@ -1744,8 +1802,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         try {
 
             if (type === 'standard' && mnemonic) {
-                const seed = bip39.mnemonicToSeedSync(mnemonic);
+                const seed = skipDiscovery
+                    ? await firstLaunchSeed(mnemonic)
+                    : bip39.mnemonicToSeedSync(mnemonic);
                 const root = bip32.fromSeed(seed, NETWORK);
+                preparedRoot = root;
                 try {
                     const accountNode = root.derivePath(DERIVATION_PARENT_PATH);
                     walletXpub = accountNode.neutered().toBase58();
@@ -1770,13 +1831,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (type === 'watch-only' && walletXpub) {
                 root = getBip32Node(walletXpub, NETWORK);
             } else if (type === 'standard' && mnemonic) {
-                const seed = bip39.mnemonicToSeedSync(mnemonic);
-                root = bip32.fromSeed(seed, NETWORK);
+                root = preparedRoot;
+                // Yield between account and address derivation during local first launch.
+                if (skipDiscovery) await new Promise<void>(resolve => setTimeout(resolve, 0));
             }
 
             if (root) {
                 const isWatchOnly = type === 'watch-only';
                 const firstAddressObj = deriveReceiveAddress(root, 0, isWatchOnly, scriptType);
+                firstAddress = firstAddressObj;
 
                 if (firstAddressObj) {
                     const existingId = await dbFindWalletByAddress(firstAddressObj.address);
@@ -1789,6 +1852,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (e) {
             throw new Error('Could not validate the wallet before import.');
         }
+        if (skipDiscovery && !firstAddress) throw new Error('Could not derive the first wallet address.');
         assertImportNetwork();
 
         const existingWallets = await dbGetWallets(importNetwork);
@@ -1802,6 +1866,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         assertImportNetwork();
 
         await dbCreateWallet(newWalletId, defaultName, importNetwork, type, walletXpub, scriptType, fingerprint, derivation_path);
+        if (skipDiscovery && firstAddress) await dbSaveAddress(newWalletId, firstAddress, 0, importNetwork);
 
         const newWallets = await dbGetWallets(NETWORK_NAME);
         setWallets(newWallets);
@@ -1811,7 +1876,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 .then(setSavedAddresses)
                 .catch(() => { });
             await Keychain.setGenericPassword('user', newWalletId, { service: ACTIVE_WALLET_KEY });
-            await loadAndSetActiveWallet(newWalletId);
+            await loadAndSetActiveWallet(newWalletId, skipDiscovery);
         } else {
             await switchWallet(newWalletId);
         }
@@ -2112,6 +2177,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         loading,
         bootstrapError,
         retryBootstrap,
+        completeOnboarding,
         lastRefreshTime,
         triggerRefresh,
         generateMnemonic,

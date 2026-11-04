@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Keyboard, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, Keyboard, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { v4 as uuidv4 } from 'uuid';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { QRScannerView } from './QRScannerScreen';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import { StyledInput } from '../components/StyledInput';
 import { Text } from '../components/StyledText';
@@ -33,6 +34,12 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
   const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({ basePaddingBottom: insets.bottom + 28, animateLayoutChanges: true });
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const [invoice, setInvoice] = useState('');
+  const [scannerScope, setScannerScope] = useState<string | null>(null);
+  const scannerRevision = useRef(0);
+  const scanRevision = scannerRevision.current;
+  const closeScanner = () => { ++scannerRevision.current; setScannerScope(null); };
+  const activeWalletRef = useRef(activeWallet?.id);
+  activeWalletRef.current = activeWallet?.id;
   const [amount, setAmount] = useState(() => String(safeRemaining(sale, attempts) ?? 0));
   const [quote, setQuote] = useState<Quote | null>(null);
   const [localAttempt, setLocalAttempt] = useState<TerminalRefundAttempt | null>(null);
@@ -61,6 +68,9 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
   const current = (captured: string) => mounted.current && visibleRef.current && captured === scopeRef.current;
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    if (scannerScope && (!visible || scannerScope !== scope || activeWallet?.id !== sale.request.walletId)) closeScanner();
+  }, [visible, scope, activeWallet?.id, scannerScope]);
   useEffect(() => {
     if (phase === 'form' && !invoice.trim()) setAmount(String(remaining));
   }, [remaining, phase]);
@@ -157,8 +167,8 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
     } finally { busy.current = false; if (current(captured)) setCheckingId(null); }
   };
 
-  return <View style={styles.root}>
-    <TerminalSheetHeader title="Refund" closeLabel="Close refund" onClose={onClose} />
+  return <><View style={styles.root}>
+    <TerminalSheetHeader title="Refund" closeLabel="Close refund" disabled={scannerScope !== null} onClose={onClose} />
     <ScrollView style={{ flex: 1 }} ref={scrollViewRef} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: 20, paddingBottom }} showsVerticalScrollIndicator={false}>
       <View style={styles.heading}><Text style={styles.subtitle}>Original sale · {sats(sale.request.amountSats)}</Text></View>
       <View style={styles.balance}><Text style={styles.balanceLabel}>AVAILABLE TO REFUND</Text><Text style={styles.balanceAmount}>{sats(remaining)}</Text></View>
@@ -183,7 +193,7 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit refund" disabled={phase !== 'review'} style={styles.secondaryButton} onPress={() => { setQuote(null); setPhase('form'); }}><Text style={styles.secondaryText}>Edit details</Text></TouchableOpacity>
       </View> : <View style={styles.form}>
         <Text style={styles.fieldLabel}>CUSTOMER LIGHTNING INVOICE</Text>
-        <StyledInput accessibilityLabel="Customer Lightning invoice" value={invoice} onChangeText={value => { ++pasteContext.current.revision; setInvoice(value); setOutcome(''); }} onFocus={handleInputFocus} placeholder="BOLT11 invoice" autoCapitalize="none" autoCorrect={false} spellCheck={false} editable={phase === 'form'} rightElement={<TouchableOpacity accessibilityRole="button" accessibilityLabel="Paste invoice" accessibilityState={{ disabled: phase !== 'form' || !visible }} disabled={phase !== 'form' || !visible} onPress={() => { void pasteInvoice(); }} style={styles.pasteButton}><Feather name="clipboard" size={19} color={phase === 'form' ? theme.colors.primary : theme.colors.muted} /></TouchableOpacity>} />
+        <StyledInput accessibilityLabel="Customer Lightning invoice" value={invoice} onChangeText={value => { ++pasteContext.current.revision; setInvoice(value); setOutcome(''); }} onFocus={handleInputFocus} placeholder="BOLT11 invoice" autoCapitalize="none" autoCorrect={false} spellCheck={false} editable={phase === 'form'} rightElement={<View style={{ flexDirection: 'row' }}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Scan customer invoice" disabled={phase !== 'form' || !visible} style={styles.pasteButton} onPress={() => { if (!busy.current && current(scope)) { Keyboard.dismiss(); ++pasteContext.current.revision; ++scannerRevision.current; setScannerScope(scope); } }}><Feather name="camera" size={20} color={theme.colors.primary} /></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="Paste invoice" accessibilityState={{ disabled: phase !== 'form' || !visible }} disabled={phase !== 'form' || !visible} onPress={() => { void pasteInvoice(); }} style={styles.pasteButton}><Feather name="clipboard" size={19} color={phase === 'form' ? theme.colors.primary : theme.colors.muted} /></TouchableOpacity></View>} />
         <Text style={styles.fieldLabel}>AMOUNT</Text>
         <StyledInput accessibilityLabel="Refund amount in sats" value={amount} onChangeText={setAmount} onFocus={handleInputFocus} keyboardType="number-pad" editable={phase === 'form'} rightElement={<Text style={styles.unit}>sats</Text>} />
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Review refund" disabled={phase !== 'form'} style={styles.primaryButton} onPress={() => { void review(); }}>{phase !== 'form' ? <ActivityIndicator accessibilityLabel="Preparing refund" size="small" color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Review refund</Text>}</TouchableOpacity>
@@ -193,7 +203,16 @@ export default function TerminalRefundScreen({ sale, attempts, onClose, visible 
       {remainingValue === null ? <Text style={styles.notice}>Refund records need attention. New refunds are unavailable.</Text> : null}
       {remainingValue === 0 && !unresolved.length ? <Text style={styles.notice}>This sale has been fully refunded.</Text> : null}
     </ScrollView>
-  </View>;
+  </View>
+  <Modal visible={visible && scannerScope === scope && activeWallet?.id === sale.request.walletId} presentationStyle="pageSheet" animationType="slide" onRequestClose={closeScanner}>
+    <View style={styles.root}><TerminalSheetHeader title="Scan invoice" closeLabel="Close invoice scanner" onClose={closeScanner} />
+    {visible && scannerScope === scope && activeWallet?.id === sale.request.walletId ? <QRScannerView onClose={() => { if (scannerRevision.current === scanRevision) closeScanner(); }} onScanSuccess={value => {
+      if (scannerRevision.current !== scanRevision || !current(scope) || activeWalletRef.current !== sale.request.walletId || scannerScope !== scope || phase !== 'form' || busy.current) return;
+      const normalized = value.trim().replace(/^lightning:/i, '');
+      if (!/^ln(bc|tb)[a-z0-9]+$/i.test(normalized)) { setError('Scan a BOLT11 Lightning invoice from the customer.'); return; }
+      ++pasteContext.current.revision; setInvoice(normalized); setOutcome(''); setError('');
+    }} /> : null}</View>
+  </Modal></>;
 }
 
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; border: string; muted: string; bitcoin: string }) {

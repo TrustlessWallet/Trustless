@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ActivityIndicator, Alert, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, FlatList, Dimensions, Image, Linking, Clipboard } from 'react-native';
+import { ActivityIndicator, Alert, InteractionManager, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, FlatList, Dimensions, Image, Linking, Clipboard } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
@@ -8,6 +8,7 @@ import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { useTheme } from '../contexts/ThemeContext'; 
+import { useWallet } from '../contexts/WalletContext';
 import { Theme } from '../constants/theme'; 
 
 
@@ -155,7 +156,9 @@ const SlideItem = React.memo(({ item, styles, handle_link_press, theme }: any) =
 
 const OnboardingWalletScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingWallet'>>();
+  const { completeOnboarding, activeWallet } = useWallet();
   const [current_index, set_current_index] = useState(0);
+  const requestedIndex = useRef<number | null>(null);
   const flat_list_ref = useRef<FlatList>(null);
   const { theme, isDark } = useTheme(); 
   const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]); 
@@ -167,8 +170,9 @@ const OnboardingWalletScreen = () => {
     finishingRef.current = true;
     setFinishing(true);
     try {
-      await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
+      await AsyncStorage.setItem('@hasCompletedOnboarding', activeWallet ? 'true' : 'wallet-pending');
       navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+      InteractionManager.runAfterInteractions(completeOnboarding);
     } catch {
       Alert.alert('Couldn’t finish setup', 'Please try again.');
     } finally {
@@ -179,7 +183,10 @@ const OnboardingWalletScreen = () => {
 
   const handle_next = () => {
     if (current_index < slides.length - 1) {
-      flat_list_ref.current?.scrollToIndex({ index: current_index + 1 });
+      const next = current_index + 1;
+      requestedIndex.current = next;
+      set_current_index(next);
+      flat_list_ref.current?.scrollToOffset({ offset: next * width, animated: true });
     } else {
       handle_complete_onboarding();
     }
@@ -192,7 +199,10 @@ const OnboardingWalletScreen = () => {
   const on_viewable_items_changed = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
       const new_index = viewableItems[0].index;
-      set_current_index(new_index);
+      if (requestedIndex.current === null || requestedIndex.current === new_index) {
+        requestedIndex.current = null;
+        set_current_index(new_index);
+      }
     }
   }).current;
 
@@ -214,13 +224,15 @@ const OnboardingWalletScreen = () => {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={on_viewable_items_changed}
+        onScrollBeginDrag={() => { requestedIndex.current = null; }}
+        getItemLayout={(_data, index) => ({ length: width, offset: width * index, index })}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         keyExtractor={(item) => item.key}
         renderItem={render_item}
         removeClippedSubviews={false} 
-        initialNumToRender={slides.length}
-        maxToRenderPerBatch={slides.length}
-        windowSize={21}
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
+        windowSize={3}
       />
       
       <View style={styles.footer}>
