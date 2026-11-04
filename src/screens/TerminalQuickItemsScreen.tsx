@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { FlatList, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import React, { useMemo, useRef } from 'react';
+import { Animated, FlatList, PanResponder, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/StyledText';
@@ -23,16 +23,29 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  // Fixed iOS form-sheet detents otherwise inherit the list’s intrinsic height.
-  const sheetHeight = Math.max(0, (height - insets.top) * 0.5);
+  const sheetHeight = height * 0.5;
+  const dragY = useRef(new Animated.Value(0)).current;
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const headerDrag = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx),
+    onPanResponderMove: (_event, gesture) => dragY.setValue(Math.max(0, gesture.dy)),
+    onPanResponderRelease: (_event, gesture) => {
+      if (gesture.dy > 80 || gesture.vy > 0.8) closeRef.current();
+      else Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start();
+    },
+    onPanResponderTerminate: () => Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start(),
+  })).current;
   const basketUnit = lines.length ? unit : null;
   const selectedById = useMemo(() => new Map(lines.map(line => [line.itemId, line])), [lines]);
   const rows = useMemo(() => {
     const ids = new Set(catalog.map(item => item.id));
     return [...catalog, ...lines.filter(line => !ids.has(line.itemId)).map(line => ({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }))];
   }, [catalog, lines, unit]);
-  return <View style={[styles.root, { height: sheetHeight, backgroundColor: theme.colors.background }]}>
-    <TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={onClose} />
+  return <View style={styles.overlay}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Dismiss item picker" onPress={onClose} style={StyleSheet.absoluteFill} />
+    <Animated.View style={[styles.root, { height: sheetHeight, backgroundColor: theme.colors.background, transform: [{ translateY: dragY }] }]}>
+    <View {...headerDrag.panHandlers}><TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={onClose} /></View>
     {/* A native wrapper keeps react-native-screens from misplacing this list in an iOS formSheet. */}
     <View collapsable={false} style={styles.scrollContainer}>
       <FlatList data={rows} keyExtractor={item => item.id} extraData={{ lines, unit, busy }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, { paddingBottom: Math.max(12, insets.bottom) }]}
@@ -54,11 +67,12 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
       />
     </View>
     {error ? <View style={[styles.feedback, { paddingBottom: Math.max(12, insets.bottom) }]}><Text accessibilityRole="alert" style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text></View> : null}
-  </View>;
+  </Animated.View></View>;
 }
 
 const styles = StyleSheet.create({
-  root: { flexShrink: 0 },
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000033' },
+  root: { flexShrink: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   feedback: { paddingHorizontal: 24, paddingTop: 12, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },
   scrollContainer: { flex: 1, minHeight: 0 }, scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }, row: { minHeight: 64, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   info: { flex: 1, minWidth: 0, paddingRight: 8 }, name: { fontSize: 14, lineHeight: 20 }, price: { fontSize: 12, lineHeight: 18, marginTop: 4 }, control: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
