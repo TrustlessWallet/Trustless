@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalSats, isTerminalRequest, loadTerminalRequest, matchTerminalPayment, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalRequest } from '../../services/terminal';
+import { clearTerminalRequest, formatTerminalFiatDisplay, formatTerminalBasketAmount, formatFiatMinor, formatTerminalAmount, formatTerminalSats, isTerminalRequest, loadTerminalRequest, matchTerminalPayment, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalRequest } from '../../services/terminal';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
@@ -106,4 +106,11 @@ it('groups displayed sats without changing payment amounts', () => {
   expect(formatTerminalSats(999)).toBe('999');
   expect(formatTerminalSats(100000)).toBe('100 000');
   expect(formatTerminalSats(123456789)).toBe('123 456 789');
+});
+
+it('groups fiat display amounts without changing precise inputs or exports', () => {
+  expect(formatTerminalBasketAmount(123456789, 'USD')).toBe('USD 1 234 567.89');
+  expect(formatTerminalFiatDisplay('12345.')).toBe('12 345.');
+  expect(formatTerminalFiatDisplay('12345.60')).toBe('12 345.60');
+  expect(formatFiatMinor(123456789)).toBe('1234567.89');
 });

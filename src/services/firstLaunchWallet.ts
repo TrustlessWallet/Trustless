@@ -114,8 +114,8 @@ export async function setBackupPending(network: string, walletId: string): Promi
 }
 
 export async function isBackupPending(network: string, walletId: string): Promise<boolean> {
-    // Older and imported standard wallets have no marker. Keep reminding until
-    // their owner explicitly acknowledges a backup for this wallet.
+    const journal = await readJournal(network);
+    if (!journal || journal.state === 'used' || journal.walletId !== walletId) return false;
     return await AsyncStorage.getItem(backupKey(network, walletId)) !== 'confirmed';
 }
 

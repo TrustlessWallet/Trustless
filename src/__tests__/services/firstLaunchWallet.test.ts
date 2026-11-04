@@ -89,19 +89,24 @@ it('keeps a legacy completed journal consumed when local onboarding state surviv
     expect(JSON.parse(records.get('com.btc.trustless.firstLaunchWallet.Bitcoin')!).installationId).toBe('installation-id');
 });
 
-it('acknowledges only the selected wallet backup', async () => {
+it('reminds only the automatically created wallet, then respects confirmation', async () => {
+    await claimFirstLaunchWallet('Bitcoin', 'active', firstId);
+    await markFirstLaunchCompleted('Bitcoin', 'fixed-wallet-id');
+    expect(await isBackupPending('Bitcoin', 'fixed-wallet-id')).toBe(true);
+    await confirmWalletBackup('Bitcoin', 'fixed-wallet-id');
+    expect(await isBackupPending('Bitcoin', 'fixed-wallet-id')).toBe(false);
     await setBackupPending('Bitcoin', 'first');
     await setBackupPending('Bitcoin', 'second');
     await confirmWalletBackup('Bitcoin', 'first');
     expect(await isBackupPending('Bitcoin', 'first')).toBe(false);
-    expect(await isBackupPending('Bitcoin', 'second')).toBe(true);
-    expect(await isBackupPending('Bitcoin-testnet', 'first')).toBe(true);
+    expect(await isBackupPending('Bitcoin', 'second')).toBe(false);
+    expect(await isBackupPending('Bitcoin-testnet', 'first')).toBe(false);
 });
 
 it('does not create a second wallet after a journal write or read-back failure', async () => {
     (Keychain.setGenericPassword as jest.Mock).mockResolvedValueOnce(false);
     await expect(claimFirstLaunchWallet('Bitcoin', 'active', firstId)).rejects.toThrow('Could not record');
-    expect(await isBackupPending('Bitcoin', 'unrelated')).toBe(true);
+    expect(await isBackupPending('Bitcoin', 'unrelated')).toBe(false);
     expect(await claimFirstLaunchWallet('Bitcoin', 'active', firstId)).toBe('fixed-wallet-id');
 });
 
@@ -113,8 +118,12 @@ it('never replaces an already stored first-launch phrase', async () => {
     expect(storeWalletMnemonic).not.toHaveBeenCalled();
 });
 
-it('allows an imported standard wallet to acknowledge its missing backup marker', async () => {
-    expect(await isBackupPending('Bitcoin', 'imported-wallet')).toBe(true);
+it('does not transfer the first-launch reminder when importing or switching wallets', async () => {
+    await claimFirstLaunchWallet('Bitcoin', 'active', firstId);
+    await markFirstLaunchCompleted('Bitcoin', 'fixed-wallet-id');
+    await markFirstLaunchUsed('Bitcoin', 'imported-wallet', firstId);
+    expect(await isBackupPending('Bitcoin', 'fixed-wallet-id')).toBe(true);
+    expect(await isBackupPending('Bitcoin', 'imported-wallet')).toBe(false);
     await confirmWalletBackup('Bitcoin', 'imported-wallet');
     expect(await isBackupPending('Bitcoin', 'imported-wallet')).toBe(false);
 });

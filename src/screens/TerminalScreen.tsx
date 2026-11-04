@@ -17,7 +17,7 @@ import { TerminalOwnerFocusContext } from '../contexts/TerminalOwnerFocusContext
 import { useTheme } from '../contexts/ThemeContext';
 import { NETWORK_NAME } from '../constants/network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearTerminalRequest, formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalBasket, TerminalBasketLine, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
+import { clearTerminalRequest, formatTerminalFiatDisplay, formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalBasket, TerminalBasketLine, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
 import { FiatCurrency, getTerminalRates, getTerminalReportingRate, TerminalRates, TerminalReportingRate } from '../services/terminalRates';
 import { recordTerminalSale, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
 import TerminalSalesScreen from './TerminalSalesScreen';
@@ -564,7 +564,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     ? request.fiat.currency === 'USD' ? '$' : request.fiat.currency === 'EUR' ? '€' : 'CHF'
     : '';
   const frozenAmount = request?.fiat
-    ? formatFiatMinor(request.fiat.amountMinor)
+    ? formatTerminalFiatDisplay(formatFiatMinor(request.fiat.amountMinor))
     : request?.inputUnit === 'BTC' ? formatTerminalAmount(request.amountSats, 'BTC')
       : formatTerminalSats(request?.amountSats || 0);
   const frozenSuffix = request?.fiat ? '' : request?.inputUnit === 'BTC' ? '₿' : 'sats';
@@ -622,7 +622,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
             <View style={styles.amountArea}>
               <View style={[styles.amountRow, styles.entryAmountRow]}>
                 <View style={[styles.symbolRail, styles.prefixRail]}>{amountPrefix ? <Text style={styles.unitLabel}>{amountPrefix}</Text> : null}</View>
-                <Text testID="terminal-amount" style={[styles.amount, styles.numberWidth]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.18}>{entryAmount || '0'}</Text>
+                <Text testID="terminal-amount" style={[styles.amount, styles.numberWidth]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.18}>{isFiat(unit) ? formatTerminalFiatDisplay(entryAmount || '0') : entryAmount || '0'}</Text>
                 <View style={[styles.symbolRail, styles.suffixRail]}>{unit === 'sats' || unit === 'BTC' ? <Text style={[styles.unitLabel, unit === 'BTC' && styles.orangeSymbol]}>{unit === 'BTC' ? '₿' : 'sats'}</Text> : null}</View>
               </View>
               <View style={styles.priceLine}>

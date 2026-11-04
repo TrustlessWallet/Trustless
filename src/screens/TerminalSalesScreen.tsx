@@ -9,7 +9,7 @@ import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWallet } from '../contexts/WalletContext';
-import { formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, TerminalNetwork, TerminalRequest } from '../services/terminal';
+import { formatTerminalFiatDisplay, formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, TerminalNetwork, TerminalRequest } from '../services/terminal';
 import { getTerminalSale, getTerminalSalesSummary, listTerminalSalesPage, subscribeTerminalSales, terminalSaleDisplayStatus, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
 import { getTerminalRefundTotal, listTerminalRefundsForSale, remainingTerminalRefundSats, subscribeTerminalRefunds, TerminalRefundAttempt } from '../services/terminalRefunds';
 import { shareTerminalReceipt } from '../services/terminalReceipt';
@@ -59,7 +59,7 @@ const safeRefundRemaining = (sale: TerminalSale, attempts: TerminalRefundAttempt
 const saleTime = (sale: TerminalSale) => sale.receivedAt ?? sale.request.createdAt;
 const isPaid = (sale: TerminalSale) => sale.status === 'received';
 const displayAmount = (request: TerminalRequest) => request.fiat
-  ? `${request.fiat.currency === 'USD' ? '$' : request.fiat.currency === 'EUR' ? '€' : 'CHF '}${formatFiatMinor(request.fiat.amountMinor)}`
+  ? `${request.fiat.currency === 'USD' ? '$' : request.fiat.currency === 'EUR' ? '€' : 'CHF '}${formatTerminalFiatDisplay(formatFiatMinor(request.fiat.amountMinor))}`
   : request.inputUnit === 'BTC'
     ? `${formatTerminalAmount(request.amountSats, 'BTC')} ₿`
     : `${formatTerminalSats(request.amountSats)} sats`;
