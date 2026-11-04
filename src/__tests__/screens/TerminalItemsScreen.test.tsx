@@ -37,3 +37,14 @@ it('ignores stale refresh errors after a successful deletion', async () => {
   await act(async () => { fail(new Error('Old read failed')); });
   expect(view.queryByText('Saved items are unavailable.')).toBeNull();
 });
+
+it('explains why adding is disabled when the catalog is full', () => {
+  const items = Array.from({ length: 30 }, (_, i) => ({ ...coffee, id: `item-${i}`, name: `Item ${i}` }));
+  (getCachedTerminalItems as jest.Mock).mockReturnValue(items);
+  (listTerminalItems as jest.Mock).mockReturnValue(new Promise(() => {}));
+  const edit = jest.fn();
+  const view = render(<TerminalItemsScreen walletId="shop" network="mainnet" preferredUnit="USD" onClose={jest.fn()} onEdit={edit} />);
+  expect(view.getByText('Item limit reached')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Add item'));
+  expect(edit).not.toHaveBeenCalled();
+});

@@ -81,7 +81,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
     </Animated.ScrollView>
     <View style={[styles.footer, { paddingBottom: insets.bottom + 24, backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add item" accessibilityHint={items.length >= 30 ? 'Catalog limit of 30 items reached' : undefined} disabled={busy || readError || items.length >= 30} onPress={() => { if (ownerCurrent()) onEdit(); }} style={[styles.add, { backgroundColor: theme.colors.primary, opacity: busy || readError || items.length >= 30 ? 0.55 : 1 }]}>
-        <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }}>Add item</Text>
+        <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }}>{items.length >= 30 ? 'Item limit reached' : 'Add item'}</Text>
       </TouchableOpacity>
     </View>
   </View>;
@@ -92,8 +92,8 @@ const styles = StyleSheet.create({
   scrollFade: { position: 'absolute', top: SHEET_HEADER_HEIGHT, left: 0, right: 0, height: 48, zIndex: 1 },
   scroll: { flex: 1, minHeight: 0 }, content: { paddingHorizontal: 24, paddingTop: 20 },
   message: { fontSize: 12, marginTop: 12 }, link: { fontSize: 13, marginTop: 12 },
-  itemRow: { minHeight: 65, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
-  itemInfo: { flex: 1 }, itemName: { fontSize: 16 }, itemPrice: { fontSize: 12, marginTop: 4 }, iconButton: { padding: 12 },
+  itemRow: { minHeight: 65, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
+  itemInfo: { flex: 1, minWidth: 0, paddingRight: 8 }, itemName: { fontSize: 16, lineHeight: 22 }, itemPrice: { fontSize: 12, lineHeight: 18, marginTop: 4 }, iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   footer: { padding: 24, borderTopWidth: StyleSheet.hairlineWidth },
   add: { minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 });
