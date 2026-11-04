@@ -120,3 +120,13 @@ it('invalidates catalog snapshots after edits, backup writes and wallet removal'
   await warmTerminalItems('wallet-a', 'mainnet');
   expect(getCachedTerminalItems('wallet-a', 'mainnet')).toEqual([]);
 });
+
+it('limits free catalogs to five, permits Pro expansion, and preserves existing items after downgrade', async () => {
+  for (let i = 0; i < 5; i++) await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: `item-${i}` }, () => true);
+  await expect(saveTerminalItem('wallet-a', 'mainnet', { ...item, id: 'sixth' }, () => true)).rejects.toMatchObject({ code: 'TERMINAL_ITEM_PRO_REQUIRED' });
+  await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: 'sixth' }, () => true, () => true);
+  await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: 'sixth', name: 'Updated' }, () => true);
+  expect((await listTerminalItems('wallet-a', 'mainnet')).length).toBe(6);
+  for (let i = 6; i < 30; i++) await saveTerminalItem('wallet-a', 'mainnet', { ...item, id: `item-${i}` }, () => true, () => true);
+  await expect(saveTerminalItem('wallet-a', 'mainnet', { ...item, id: 'extra' }, () => true, () => true)).rejects.toThrow('Item limit reached');
+});

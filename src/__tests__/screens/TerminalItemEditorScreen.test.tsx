@@ -1,4 +1,8 @@
 import React from 'react';
+let mockProStatus = 'free';
+const mockRequirePro = jest.fn();
+jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => ({ status: mockProStatus }) }));
+jest.mock('../../hooks/useTerminalProGate', () => ({ useTerminalProGate: () => ({ requirePro: mockRequirePro, openPro: jest.fn(), proSheet: null }) }));
 import { act, fireEvent, render } from '@testing-library/react-native';
 import TerminalItemEditorScreen from '../../screens/TerminalItemEditorScreen';
 import { saveTerminalItem } from '../../services/terminalItems';
@@ -21,6 +25,6 @@ it.each(['USD', 'EUR', 'CHF', 'sats', 'BTC'] as const)('preserves the exact %s p
   const screen = render(<TerminalItemEditorScreen walletId="shop" network="mainnet" preferredUnit="sats" initialItem={item} onClose={close} />);
   expect(screen.getByLabelText('Item price').props.value).toBe(unit === 'BTC' ? '1.23456789' : unit === 'sats' ? '123456789' : '1234567.89');
   await act(async () => { fireEvent.press(screen.getByLabelText('Save item')); });
-  expect(saveTerminalItem).toHaveBeenCalledWith('shop', 'mainnet', item, expect.any(Function));
+  expect(saveTerminalItem).toHaveBeenCalledWith('shop', 'mainnet', item, expect.any(Function), expect.any(Function));
   expect(close).toHaveBeenCalledTimes(1);
 });

@@ -4,6 +4,8 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyledInput } from '../components/StyledInput';
+import { useTerminalPro } from '../contexts/TerminalProContext';
+import { useTerminalProGate } from '../hooks/useTerminalProGate';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { useActiveWallet } from '../contexts/WalletContext';
@@ -28,6 +30,9 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
   const activeWallet = useActiveWallet();
   const { cashierState } = useWalletMode();
   const focused = useIsFocused();
+  const pro = useTerminalPro();
+  const proRef = useRef(pro.status);
+  proRef.current = pro.status;
   const navigation = useNavigation<NativeStackNavigationProp<{ ItemEditor: undefined }>>();
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -55,6 +60,7 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
   const screenScope = `${network}:${walletId}`;
   const ownerCurrent = () => mounted.current && ownerRef.current && scopeRef.current === screenScope;
 
+  const proGate = useTerminalProGate({ allowed: focused && ownerAllowed, scope: `${network}:${walletId}:item-editor` });
   const save = async () => {
     if (busyRef.current || !ownerCurrent()) return;
     let item: TerminalItem;
@@ -66,14 +72,17 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
     } catch (failure) { setError((failure as Error).message); return; }
     busyRef.current = true; setBusy(true); setError('');
     try {
-      await saveTerminalItem(walletId, network, item, ownerCurrent);
+      await saveTerminalItem(walletId, network, item, ownerCurrent, () => proRef.current === 'pro');
       if (ownerCurrent()) onClose();
     } catch (failure) {
-      if (ownerCurrent()) setError((failure as Error).message || 'Couldn’t save item.');
+      if (ownerCurrent()) {
+        if ((failure as { code?: string }).code === 'TERMINAL_ITEM_PRO_REQUIRED') proGate.openPro();
+        else setError((failure as Error).message || 'Couldn’t save item.');
+      }
     } finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   };
 
-  return <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+  return <><View style={[styles.root, { backgroundColor: theme.colors.background }]}>
     <TerminalSheetHeader title={initialItem ? 'Edit item' : 'Add item'} closeLabel="Close item editor" disabled={busy} onClose={() => { if (!busyRef.current) onClose(); }} />
     {ownerAllowed ? <ScrollView ref={scrollViewRef} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom }]}>
       <Text style={[styles.fieldLabel, { color: theme.colors.muted }]}>Name</Text>
@@ -84,7 +93,7 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
       {error ? <Text style={[styles.message, { color: theme.colors.muted }]}>{error}</Text> : null}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save item" disabled={busy} onPress={() => { void save(); }} style={[styles.save, { backgroundColor: theme.colors.primary }]}>{busy ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold' }}>Save item</Text>}</TouchableOpacity>
     </ScrollView> : <Text style={[styles.message, { color: theme.colors.muted, marginTop: insets.top + 110, marginHorizontal: 24 }]}>Owner access is required to edit items.</Text>}
-  </View>;
+  </View>{proGate.proSheet}</>;
 }
 
 const styles = StyleSheet.create({

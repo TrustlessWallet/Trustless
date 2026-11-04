@@ -1,4 +1,8 @@
 import React from 'react';
+let mockProStatus = 'free';
+const mockRequirePro = jest.fn();
+jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => ({ status: mockProStatus }) }));
+jest.mock('../../hooks/useTerminalProGate', () => ({ useTerminalProGate: () => ({ requirePro: mockRequirePro, openPro: jest.fn(), proSheet: null }) }));
 import { act, fireEvent, render } from '@testing-library/react-native';
 import TerminalItemsScreen from '../../screens/TerminalItemsScreen';
 import { deleteTerminalItem, getCachedTerminalItems, listTerminalItems } from '../../services/terminalItems';
@@ -11,7 +15,7 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: () => null }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('../../screens/TerminalSheetHeader', () => () => null);
-jest.mock('../../services/terminalItems', () => ({ deleteTerminalItem: jest.fn(), getCachedTerminalItems: jest.fn(), listTerminalItems: jest.fn() }));
+jest.mock('../../services/terminalItems', () => ({ FREE_TERMINAL_ITEM_LIMIT: 5, PRO_TERMINAL_ITEM_LIMIT: 30, deleteTerminalItem: jest.fn(), getCachedTerminalItems: jest.fn(), listTerminalItems: jest.fn() }));
 const coffee = { id: 'coffee', name: 'Coffee', unit: 'USD', unitPrice: 123456 };
 beforeEach(() => { jest.clearAllMocks(); (getCachedTerminalItems as jest.Mock).mockReturnValue([coffee]); });
 
@@ -47,4 +51,22 @@ it('explains why adding is disabled when the catalog is full', () => {
   expect(view.getByText('Item limit reached')).toBeTruthy();
   fireEvent.press(view.getByLabelText('Add item'));
   expect(edit).not.toHaveBeenCalled();
+});
+
+it('offers Pro at five free items while keeping editing available', () => {
+  mockProStatus = 'free'; mockRequirePro.mockClear();
+  const items = Array.from({ length: 5 }, (_, i) => ({ ...coffee, id: `item-${i}`, name: `Item ${i}` }));
+  (getCachedTerminalItems as jest.Mock).mockReturnValue(items);
+  (listTerminalItems as jest.Mock).mockReturnValue(new Promise(() => {}));
+  const edit = jest.fn();
+  const view = render(<TerminalItemsScreen walletId="shop" network="mainnet" preferredUnit="USD" onClose={jest.fn()} onEdit={edit} />);
+  fireEvent.press(view.getByLabelText('Upgrade to Terminal Pro'));
+  expect(mockRequirePro).toHaveBeenCalledTimes(1);
+  expect(edit).not.toHaveBeenCalled();
+  fireEvent.press(view.getByLabelText('Edit Item 0'));
+  expect(edit).toHaveBeenCalledWith(items[0]);
+  mockProStatus = 'pro';
+  view.rerender(<TerminalItemsScreen walletId="shop" network="mainnet" preferredUnit="USD" onClose={jest.fn()} onEdit={edit} />);
+  fireEvent.press(view.getByLabelText('Add item'));
+  expect(edit).toHaveBeenLastCalledWith();
 });

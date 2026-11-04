@@ -4,12 +4,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTerminalPro } from '../contexts/TerminalProContext';
+import { useTerminalProGate } from '../hooks/useTerminalProGate';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { formatTerminalBasketAmount, TerminalNetwork, TerminalUnit } from '../services/terminal';
-import { deleteTerminalItem, getCachedTerminalItems, listTerminalItems, TerminalItem } from '../services/terminalItems';
+import { FREE_TERMINAL_ITEM_LIMIT, PRO_TERMINAL_ITEM_LIMIT, deleteTerminalItem, getCachedTerminalItems, listTerminalItems, TerminalItem } from '../services/terminalItems';
 import TerminalSheetHeader from './TerminalSheetHeader';
 import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 
@@ -20,6 +22,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   const activeWallet = useActiveWallet();
   const { cashierState } = useWalletMode();
   const focused = useIsFocused();
+  const pro = useTerminalPro();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<TerminalItem[]>(() => getCachedTerminalItems(walletId, network) ?? []);
   const [readError, setReadError] = useState(false);
@@ -35,6 +38,10 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   ownerRef.current = focused && ownerAllowed;
   const screenScope = `${network}:${walletId}`;
   const ownerCurrent = () => mounted.current && ownerRef.current && currentScope.current === screenScope;
+  const proGate = useTerminalProGate({ allowed: focused && ownerAllowed, scope: `${network}:${walletId}:items` });
+  const needsPro = pro.status !== 'pro' && items.length >= FREE_TERMINAL_ITEM_LIMIT;
+  const full = items.length >= PRO_TERMINAL_ITEM_LIMIT;
+  const add = () => { if (!ownerCurrent() || busyRef.current || readError || full) return; if (needsPro) proGate.requirePro(() => { if (ownerCurrent()) onEdit(); }); else onEdit(); };
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeOpacity = scrollY.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' });
 
@@ -64,7 +71,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
     <TerminalSheetHeader title="Items" closeLabel="Close items" onClose={onClose} />
     <Text style={[styles.message, { color: theme.colors.muted, marginTop: insets.top + 110, marginHorizontal: 24 }]}>Owner access is required to edit items.</Text>
   </View>;
-  return <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+  return <><View style={[styles.root, { backgroundColor: theme.colors.background }]}>
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}><LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} /></Animated.View>
     <TerminalSheetHeader title="Items" closeLabel="Close items" onClose={onClose} />
     <Animated.ScrollView style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: 24 }]}>
@@ -80,11 +87,13 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
         </>}
     </Animated.ScrollView>
     <View style={[styles.footer, { paddingBottom: insets.bottom + 24, backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add item" accessibilityHint={items.length >= 30 ? 'Catalog limit of 30 items reached' : undefined} disabled={busy || readError || items.length >= 30} onPress={() => { if (ownerCurrent()) onEdit(); }} style={[styles.add, { backgroundColor: theme.colors.primary, opacity: busy || readError || items.length >= 30 ? 0.55 : 1 }]}>
-        <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }}>{items.length >= 30 ? 'Item limit reached' : 'Add item'}</Text>
+      {needsPro && !full ? <Text style={[styles.limitHint, { color: theme.colors.muted }]}>5 items free · 30 with Pro</Text> : null}
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={needsPro && !full ? 'Upgrade to Terminal Pro' : 'Add item'} disabled={busy || readError || full} onPress={add} style={[styles.add, { backgroundColor: theme.colors.primary, opacity: busy || readError || full ? 0.55 : 1 }]}>
+        <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }}>{full ? 'Item limit reached' : needsPro ? 'Upgrade to Pro' : 'Add item'}</Text>
       </TouchableOpacity>
     </View>
-  </View>;
+  </View>
+  {proGate.proSheet}</>;
 }
 
 const styles = StyleSheet.create({
@@ -95,5 +104,6 @@ const styles = StyleSheet.create({
   itemRow: { minHeight: 65, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   itemInfo: { flex: 1, minWidth: 0, paddingRight: 8 }, itemName: { fontSize: 16, lineHeight: 22 }, itemPrice: { fontSize: 12, lineHeight: 18, marginTop: 4 }, iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   footer: { padding: 24, borderTopWidth: StyleSheet.hairlineWidth },
+  limitHint: { fontSize: 12, textAlign: 'center', marginBottom: 12 },
   add: { minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 });
