@@ -18,9 +18,9 @@ it.each(['USD', 'EUR', 'CHF', 'sats', 'BTC'] as const)('preserves the exact %s p
   jest.clearAllMocks();
   const item = { id: 'coffee', name: 'Coffee', unit, unitPrice: 123456789 };
   const close = jest.fn();
-  const screen = render(<TerminalItemEditorScreen walletId="shop" network="bitcoin" preferredUnit="sats" initialItem={item} onClose={close} />);
+  const screen = render(<TerminalItemEditorScreen walletId="shop" network="mainnet" preferredUnit="sats" initialItem={item} onClose={close} />);
   expect(screen.getByLabelText('Item price').props.value).toBe(unit === 'BTC' ? '1.23456789' : unit === 'sats' ? '123456789' : '1234567.89');
   await act(async () => { fireEvent.press(screen.getByLabelText('Save item')); });
-  expect(saveTerminalItem).toHaveBeenCalledWith('shop', 'bitcoin', item, expect.any(Function));
+  expect(saveTerminalItem).toHaveBeenCalledWith('shop', 'mainnet', item, expect.any(Function));
   expect(close).toHaveBeenCalledTimes(1);
 });
