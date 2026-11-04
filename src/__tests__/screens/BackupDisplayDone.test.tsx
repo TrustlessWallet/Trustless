@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { useNavigation } from '@react-navigation/native';
 import { get_biometric_prompt_shown } from '../../services/authState';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -20,10 +20,13 @@ jest.mock('react-native-qrcode-svg', () => () => null);
 
 describe('backup display Done', () => {
     const popToTop = jest.fn();
+    const navigate = jest.fn();
+    let focus: (() => void) | undefined;
     beforeEach(() => {
         jest.clearAllMocks();
-        mockRouteParams = { ...mockRouteParams, walletId: undefined };
-        (useNavigation as jest.Mock).mockReturnValue({ popToTop });
+        mockRouteParams = { ...mockRouteParams, mode: 'backup', walletId: undefined };
+        focus = undefined;
+        (useNavigation as jest.Mock).mockReturnValue({ popToTop, navigate, addListener: (_event: string, listener: () => void) => { focus = listener; return jest.fn(); } });
     });
 
     it.each([
@@ -50,6 +53,17 @@ describe('backup display Done', () => {
         await waitFor(() => expect(popToTop).toHaveBeenCalledTimes(1));
         expect(await isBackupPending('Bitcoin', 'wallet-a')).toBe(false);
         expect(await isBackupPending('Bitcoin', 'wallet-b')).toBe(true);
+        screen.unmount();
+    });
+
+    it('allows another verification attempt after returning to the phrase screen', () => {
+        mockRouteParams = { ...mockRouteParams, mode: 'create' };
+        const screen = render(<ShowMnemonicScreen />);
+        fireEvent.press(screen.getByText('Continue to verification'));
+        expect(navigate).toHaveBeenCalledTimes(1);
+        act(() => focus?.());
+        fireEvent.press(screen.getByText('Continue to verification'));
+        expect(navigate).toHaveBeenCalledTimes(2);
         screen.unmount();
     });
 });

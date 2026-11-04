@@ -11,6 +11,10 @@ import * as sdkModule from '@breeztech/breez-sdk-spark-react-native';
 import * as refundJournal from '../../services/terminalRefunds';
 
 jest.mock('../../services/exitStorage', () => ({ assertNoActiveExit: jest.fn(async () => {}), loadExit: jest.fn(async () => null) }));
+jest.mock('../../services/firstLaunchWallet', () => ({
+    claimFirstLaunchWallet: jest.fn(async () => null), firstLaunchMnemonic: jest.fn(),
+    markFirstLaunchCompleted: jest.fn(), markFirstLaunchUsed: jest.fn(async () => {}),
+}));
 jest.mock('uuid', () => ({ v4: () => '123e4567-e89b-42d3-a456-426614174000' }));
 jest.mock('react-native-keychain', () => ({
     getGenericPassword: jest.fn(async ({ service }) => ({ password: service.includes('activeWalletId') ? 'a' : 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' })),
