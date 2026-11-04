@@ -722,31 +722,42 @@ const WalletScreen = () => {
 
                 ListHeaderComponent={
                     <View style={styles.topSection}>
-                        <View style={styles.headerRow}>
-                            <TouchableOpacity
-                                activeOpacity={1}
-                                style={styles.toggleTouchable}
-                                onPress={toggleMode}
-                                disabled={isToggleDisabled}
+                        <View style={styles.walletHeader}>
+                            {backupReminderWalletId === activeWallet.id && <TouchableOpacity
+                                accessibilityRole="button"
+                                accessibilityLabel="Back up this wallet"
+                                style={styles.backupReminder}
+                                onPress={() => navigation.navigate('BackupDisclaimer', { walletId: activeWallet.id })}
                             >
-                                {activeWallet?.type !== 'watch-only' && toggleIconElement}
-                            </TouchableOpacity>
+                                <Text style={styles.backupReminderText}>Back up recovery phrase</Text>
+                                <Feather name="chevron-right" size={14} color={theme.colors.bitcoin} />
+                            </TouchableOpacity>}
+                            <View style={styles.headerRow}>
+                                <TouchableOpacity
+                                    activeOpacity={1}
+                                    style={styles.toggleTouchable}
+                                    onPress={toggleMode}
+                                    disabled={isToggleDisabled}
+                                >
+                                    {activeWallet?.type !== 'watch-only' && toggleIconElement}
+                                </TouchableOpacity>
 
-                            <TouchableOpacity activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
-                                <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={true}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
-                                        <Text
-                                            style={[styles.walletName]}
-                                            numberOfLines={1}
-                                            ellipsizeMode="middle"
-                                        >
-                                            {activeWallet?.name || 'Wallet'}
-                                        </Text>
-                                    </View>
-                                </GlassView>
-                            </TouchableOpacity>
+                                <TouchableOpacity activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
+                                    <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={true}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
+                                            <Text
+                                                style={[styles.walletName]}
+                                                numberOfLines={1}
+                                                ellipsizeMode="middle"
+                                            >
+                                                {activeWallet?.name || 'Wallet'}
+                                            </Text>
+                                        </View>
+                                    </GlassView>
+                                </TouchableOpacity>
 
-                            {terminalEntryElement}
+                                {terminalEntryElement}
+                            </View>
                         </View>
                         <View style={styles.balanceRow}>
                             <View style={styles.balanceSideSpacer} />
@@ -860,13 +871,6 @@ const WalletScreen = () => {
                 }
                 ListFooterComponent={
                     <View>
-                    {backupReminderWalletId === activeWallet.id && <TouchableOpacity
-                        accessibilityLabel="Back up this wallet"
-                        style={{ marginHorizontal: 20, marginTop: 16, paddingVertical: 12, borderTopWidth: 1, borderColor: theme.colors.border }}
-                        onPress={() => navigation.navigate('BackupDisclaimer', { walletId: activeWallet.id })}
-                    >
-                        <Text style={{ color: theme.colors.bitcoin }}>Back up recovery phrase  ›</Text>
-                    </TouchableOpacity>}
                     {displayTransactions.length > 0 ? (
                         <TouchableOpacity
                             style={styles.historyButton}
@@ -1033,6 +1037,24 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
         alignItems: 'center',
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
+    },
+    walletHeader: {
+        alignItems: 'center',
+    },
+    backupReminder: {
+        position: 'absolute',
+        bottom: '100%',
+        minHeight: 44,
+        marginBottom: 4,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        paddingHorizontal: 12,
+    },
+    backupReminderText: {
+        fontSize: 13,
+        color: theme.colors.bitcoin,
     },
     headerRow: {
         flexDirection: 'row',
