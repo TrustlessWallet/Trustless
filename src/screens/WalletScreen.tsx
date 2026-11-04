@@ -22,7 +22,7 @@ import { authenticate_transaction_action } from '../services/authState';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTerminalEntry } from '../hooks/useTerminalEntry';
 import { NETWORK_NAME } from '../constants/network';
-import { isBackupPending } from '../services/firstLaunchWallet';
+import { useWalletBackupReminder } from '../hooks/useWalletBackupReminder';
 
 
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -94,24 +94,13 @@ const WalletScreen = () => {
     } = useWallet();
 
     const [hideBalance, setHideBalance] = useState(false);
-    const [backupReminderWalletId, setBackupReminderWalletId] = useState<string | null>(null);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
     const [isSheetMounted, setIsSheetMounted] = useState(false);
     const refreshDrag = useRef({ armed: false, dragging: false, distance: 0, releasedAt: 0 });
 
     const isFocused = useIsFocused();
-    useEffect(() => {
-        let current = true;
-        const walletId = activeWallet?.type === 'standard' ? activeWallet.id : null;
-        setBackupReminderWalletId(null);
-        if (walletId && isFocused) {
-            void isBackupPending(NETWORK_NAME, walletId).then(pending => {
-                if (current) setBackupReminderWalletId(pending ? walletId : null);
-            }).catch(() => {});
-        }
-        return () => { current = false; };
-    }, [activeWallet?.id, activeWallet?.type, isFocused]);
+    const backupReminderWalletId = useWalletBackupReminder(activeWallet?.type === 'standard' ? activeWallet.id : null, NETWORK_NAME, isFocused);
     const focusedRef = useRef(isFocused);
     focusedRef.current = isFocused;
     useTipHeight(!!activeWallet && isFocused && !isLightningMode);

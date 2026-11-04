@@ -253,15 +253,15 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
         const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
 
-        // An automatically created or previously imported wallet is ready to use.
-        // The legacy welcome stack is only for an actually empty wallet list.
-        if (has_completed_onboarding === null && wallets.length === 0 && !bootstrapError) {
+        // Onboarding belongs to this installation, independently of wallet creation.
+        if (has_completed_onboarding === null) {
           set_needs_onboarding(true);
           set_is_loading(false);
           return;
         }
 
         set_needs_onboarding(false);
+        if (wallet_loading) return;
 
         const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
         const is_enrolled = await LocalAuthentication.isEnrolledAsync();
@@ -276,14 +276,12 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       }
     };
 
-    if (!wallet_loading) {
-      check_initial_status();
-    }
+    void check_initial_status();
   }, [wallet_loading, wallets.length, bootstrapError]);
 
   useEffect(() => {
     if (nav_state_resolved) return;
-    if (wallet_loading || is_loading) return;
+    if ((wallet_loading && !needs_onboarding) || is_loading) return;
 
     if (needs_onboarding && !has_shown_onboarding) {
       set_initial_nav_state({
@@ -369,7 +367,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     animation: 'slide_from_bottom',
   } : {};
 
-  if (wallet_loading || is_loading || !nav_state_resolved) {
+  if ((wallet_loading && !needs_onboarding) || is_loading || !nav_state_resolved) {
     return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
   }
 
