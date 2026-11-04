@@ -86,7 +86,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
         </>}
     </Animated.ScrollView>
     <View style={[styles.footer, { paddingBottom: insets.bottom + 24, backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
-      {needsPro ? <Text style={[styles.limitHint, { color: theme.colors.muted }]}>5 items included. Add more with Pro.</Text> : null}
+      {needsPro ? <Text style={[styles.limitHint, { color: theme.colors.muted }]}>5 items included. Go unlimited with Pro.</Text> : null}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={needsPro ? 'Upgrade to Terminal Pro' : 'Add item'} disabled={busy || readError} onPress={add} style={[styles.add, { backgroundColor: theme.colors.primary, opacity: busy || readError ? 0.55 : 1 }]}>
         <Text style={{ color: theme.colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 }}>{needsPro ? 'Upgrade to Pro' : 'Add item'}</Text>
       </TouchableOpacity>
