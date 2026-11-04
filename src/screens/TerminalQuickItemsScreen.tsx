@@ -35,7 +35,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
     <TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={onClose} />
     {/* A native wrapper keeps react-native-screens from misplacing this list in an iOS formSheet. */}
     <View collapsable={false} style={styles.scrollContainer}>
-      <FlatList data={rows} keyExtractor={item => item.id} extraData={{ lines, unit, busy }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={styles.list}
+      <FlatList data={rows} keyExtractor={item => item.id} extraData={{ lines, unit, busy }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, { paddingBottom: Math.max(12, insets.bottom) }]}
         renderItem={({ item }) => {
           const selected = selectedById.get(item.id);
           const unavailable = !selected && !!basketUnit && item.unit !== basketUnit;
@@ -53,13 +53,13 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
         }}
       />
     </View>
-    <View style={[styles.feedback, { paddingBottom: insets.bottom, height: Math.max(56, insets.bottom + 40) }]}>{error ? <Text accessibilityRole="alert" style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text> : null}</View>
+    {error ? <View style={[styles.feedback, { paddingBottom: Math.max(12, insets.bottom) }]}><Text accessibilityRole="alert" style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text></View> : null}
   </View>;
 }
 
 const styles = StyleSheet.create({
   root: { flexShrink: 0 },
-  feedback: { paddingHorizontal: 24, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },
+  feedback: { paddingHorizontal: 24, paddingTop: 12, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },
   scrollContainer: { flex: 1, minHeight: 0 }, scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }, row: { minHeight: 64, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   info: { flex: 1, minWidth: 0, paddingRight: 8 }, name: { fontSize: 14, lineHeight: 20 }, price: { fontSize: 12, lineHeight: 18, marginTop: 4 }, control: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   quantity: { fontSize: 15, minWidth: 20, textAlign: 'center' },
