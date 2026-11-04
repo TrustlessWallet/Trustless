@@ -73,18 +73,17 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   return <><View style={[styles.root, { backgroundColor: theme.colors.background }]}>
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}><LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} /></Animated.View>
     <TerminalSheetHeader title="Items" closeLabel="Close items" onClose={onClose} />
-    <Animated.ScrollView style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: 24 }]}>
-      {readError ? <View><Text style={[styles.message, { color: theme.colors.muted }]}>Saved items are unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => { void load(); }}><Text style={[styles.link, { color: theme.colors.bitcoin }]}>Retry</Text></TouchableOpacity></View>
-        : <>
-          {items.map(item => <View key={item.id} style={[styles.itemRow, { borderBottomColor: theme.colors.border }]}>
+    <Animated.FlatList data={readError ? [] : items} keyExtractor={item => item.id} extraData={busy} initialNumToRender={12} maxToRenderPerBatch={12} windowSize={5} style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: 24 }]}
+      ListEmptyComponent={readError ? <View><Text style={[styles.message, { color: theme.colors.muted }]}>Saved items are unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => { void load(); }}><Text style={[styles.link, { color: theme.colors.bitcoin }]}>Retry</Text></TouchableOpacity></View>
+        : null}
+      renderItem={({ item }) => <View key={item.id} style={[styles.itemRow, { borderBottomColor: theme.colors.border }]}>
             <View style={styles.itemInfo}><Text style={[styles.itemName, { color: theme.colors.primary }]}>{item.name}</Text><Text style={[styles.itemPrice, { color: theme.colors.muted }]}>{formatTerminalBasketAmount(item.unitPrice, item.unit)}</Text></View>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Edit ${item.name}`} disabled={busy} onPress={() => { if (ownerCurrent()) onEdit(item); }} style={styles.iconButton}><Feather name="edit" size={18} color={theme.colors.primary} /></TouchableOpacity>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Delete ${item.name}`} disabled={busy} onPress={() => { void remove(item); }} style={styles.iconButton}><Feather name="trash-2" size={17} color={theme.colors.primary} /></TouchableOpacity>
-          </View>)}
+          </View>}
 
-          {error ? <Text style={[styles.message, { color: theme.colors.muted }]}>{error}</Text> : null}
-        </>}
-    </Animated.ScrollView>
+      ListFooterComponent={error ? <Text style={[styles.message, { color: theme.colors.muted }]}>{error}</Text> : null}
+    />
     <View style={[styles.footer, { paddingBottom: insets.bottom + 24, backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
       {needsPro ? <Text style={[styles.limitHint, { color: theme.colors.muted }]}>5 items included. Go unlimited with Pro.</Text> : null}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={needsPro ? 'Upgrade to Terminal Pro' : 'Add item'} disabled={busy || readError} onPress={add} style={[styles.add, { backgroundColor: theme.colors.primary, opacity: busy || readError ? 0.55 : 1 }]}>
