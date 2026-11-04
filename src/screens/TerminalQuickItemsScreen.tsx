@@ -24,6 +24,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const sheetHeight = height * 0.5;
+  // Animate layout so native glass keeps the same frame as its press target.
   const dragY = useRef(new Animated.Value(sheetHeight)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const closing = useRef(false);
@@ -31,7 +32,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
   useEffect(() => {
     mounted.current = true;
     Animated.parallel([
-      Animated.timing(dragY, { toValue: 0, duration: 230, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(dragY, { toValue: 0, duration: 230, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
       Animated.timing(backdropOpacity, { toValue: 1, duration: 180, useNativeDriver: true }),
     ]).start();
     return () => { mounted.current = false; dragY.stopAnimation(); backdropOpacity.stopAnimation(); };
@@ -40,7 +41,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
     if (closing.current) return;
     closing.current = true;
     Animated.parallel([
-      Animated.timing(dragY, { toValue: sheetHeight, duration: 180, useNativeDriver: true }),
+      Animated.timing(dragY, { toValue: sheetHeight, duration: 180, useNativeDriver: false }),
       Animated.timing(backdropOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
     ]).start(({ finished }) => { if (finished && mounted.current) onClose(); });
   };
@@ -51,9 +52,9 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
     onPanResponderMove: (_event, gesture) => dragY.setValue(Math.max(0, gesture.dy)),
     onPanResponderRelease: (_event, gesture) => {
       if (gesture.dy > 80 || gesture.vy > 0.8) closeRef.current();
-      else Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start();
+      else Animated.spring(dragY, { toValue: 0, useNativeDriver: false }).start();
     },
-    onPanResponderTerminate: () => Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start(),
+    onPanResponderTerminate: () => Animated.spring(dragY, { toValue: 0, useNativeDriver: false }).start(),
   })).current;
   const basketUnit = lines.length ? unit : null;
   const selectedById = useMemo(() => new Map(lines.map(line => [line.itemId, line])), [lines]);
@@ -64,7 +65,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
   return <View style={styles.overlay}>
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#00000033', opacity: backdropOpacity }]} />
     <Pressable accessibilityRole="button" accessibilityLabel="Dismiss item picker" onPress={dismiss} style={StyleSheet.absoluteFill} />
-    <Animated.View style={[styles.root, { height: sheetHeight, backgroundColor: theme.colors.background, transform: [{ translateY: dragY }] }]}>
+    <Animated.View style={[styles.root, { height: sheetHeight, backgroundColor: theme.colors.background, bottom: Animated.multiply(dragY, -1) }]}>
     <View {...headerDrag.panHandlers}><TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={dismiss} /></View>
     {/* A native wrapper keeps react-native-screens from misplacing this list in an iOS formSheet. */}
     <View collapsable={false} style={styles.scrollContainer}>
@@ -92,7 +93,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  root: { flexShrink: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
+  root: { position: 'absolute', left: 0, right: 0, flexShrink: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   feedback: { paddingHorizontal: 24, paddingTop: 12, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },
   scrollContainer: { flex: 1, minHeight: 0 }, scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }, row: { minHeight: 64, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   info: { flex: 1, minWidth: 0, paddingRight: 8 }, name: { fontSize: 14, lineHeight: 20 }, price: { fontSize: 12, lineHeight: 18, marginTop: 4 }, control: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },

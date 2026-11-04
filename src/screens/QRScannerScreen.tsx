@@ -65,7 +65,7 @@ export const QRScannerView = ({ onScanSuccess, onClose }: { onScanSuccess: (valu
         facing="back"
         style={{ flex: 1, width: '100%' }}
       />
-      <View style={styles.overlay}>
+      <View pointerEvents="none" style={styles.overlay}>
         <View style={styles.scanBox} />
         <Text style={styles.scanText}>Scan a QR code</Text>
       </View>
