@@ -1626,7 +1626,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
                 // Record prior use before a later last-wallet deletion can leave an empty DB.
                 // A failed optional journal write must never prevent loading an existing wallet.
-                try { await markFirstLaunchUsed(NETWORK_NAME, walletsFromDb[0].id); }
+                try { await markFirstLaunchUsed(NETWORK_NAME, walletsFromDb[0].id, uuidv4); }
                 catch (error) { console.warn('Could not record first-launch wallet state:', error); }
 
                 // Existing wallets: fetch active ID and address book concurrently
@@ -1822,7 +1822,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         serializeWalletMutation(async () => {
             const created = await addWalletInternal(params);
             if (created) {
-                try { await markFirstLaunchUsed(NETWORK_NAME, created.id); }
+                try { await markFirstLaunchUsed(NETWORK_NAME, created.id, uuidv4); }
                 catch (error) { console.warn('Could not record first-launch wallet state:', error); }
             }
             return created;
@@ -1858,7 +1858,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const removeWallet = (walletId: string) => serializeWalletMutation(async () => {
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
-        await markFirstLaunchUsed(NETWORK_NAME);
+        await markFirstLaunchUsed(NETWORK_NAME, undefined, uuidv4);
         await assertNoActiveExit(walletId);
         await removeTerminalRefunds(walletId, NETWORK_NAME);
         await removeTerminalSales(walletId, NETWORK_NAME);
@@ -1909,7 +1909,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const resetWallet = () => serializeWalletMutation(async () => {
         await assertNoActiveExit();
         if (paymentInFlightRef.current || switchingRef.current) throw new Error('Please wait for the current wallet operation to finish.');
-        await markFirstLaunchUsed(NETWORK_NAME);
+        await markFirstLaunchUsed(NETWORK_NAME, undefined, uuidv4);
         activeWalletIdRef.current = null;
         ++walletGenerationRef.current;
         ++lightningInitVersionRef.current;

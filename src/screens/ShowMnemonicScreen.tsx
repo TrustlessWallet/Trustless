@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
@@ -22,6 +22,11 @@ const ShowMnemonicScreen = () => {
     const [confirming, setConfirming] = useState(false);
     const { theme } = useTheme(); 
     const styles = useMemo(() => getStyles(theme), [theme]); 
+    useEffect(() => navigation.addListener?.('focus', () => {
+        // The create flow returns here when verification is cancelled.
+        confirmingRef.current = false;
+        setConfirming(false);
+    }), [navigation]);
     const handleContinue = async () => {
         if (confirmingRef.current || navigation.isFocused?.() === false) return;
         confirmingRef.current = true;
