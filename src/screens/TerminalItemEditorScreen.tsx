@@ -9,7 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useActiveWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
-import { formatTerminalBasketAmount, parseFiatMinor, parseTerminalAmount, TerminalNetwork, TerminalUnit } from '../services/terminal';
+import { formatFiatMinor, formatTerminalAmount, parseFiatMinor, parseTerminalAmount, TerminalNetwork, TerminalUnit } from '../services/terminal';
 import { saveTerminalItem, TerminalItem } from '../services/terminalItems';
 import TerminalSheetHeader from './TerminalSheetHeader';
 
@@ -19,8 +19,8 @@ const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 function priceText(item?: TerminalItem) {
   if (!item) return '';
   if (item.unit === 'sats') return String(item.unitPrice);
-  if (item.unit === 'BTC') return formatTerminalBasketAmount(item.unitPrice, 'BTC').replace(' BTC', '');
-  return formatTerminalBasketAmount(item.unitPrice, item.unit).split(' ')[1];
+  if (item.unit === 'BTC') return formatTerminalAmount(item.unitPrice, 'BTC');
+  return formatFiatMinor(item.unitPrice);
 }
 
 export default function TerminalItemEditorScreen({ walletId, network, preferredUnit, initialItem, onClose }: Props) {
