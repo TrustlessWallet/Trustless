@@ -245,7 +245,6 @@ const SettingsScreen = () => {
           onPress: async () => {
             try {
               await AsyncStorage.multiRemove([
-                '@hasCompletedOnboarding',
                 DEFAULT_SCREEN_KEY,
                 DEFAULT_WALLET_MODE_KEY,
                 BIOMETRICS_ENABLED_KEY,

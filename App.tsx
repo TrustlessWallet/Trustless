@@ -22,7 +22,8 @@ import 'react-native-get-random-values';
 import './shim';
 
 import { registerRootComponent } from 'expo';
-import { initDatabase } from './src/services/database';
+import { dbHasWallets, initDatabase } from './src/services/database';
+import { restoreOnboardingSeen } from './src/services/onboardingSeen';
 import PrivacySwitcherOverlay from './src/components/PrivacySwitcherOverlay';
 
 
@@ -75,6 +76,7 @@ export default function App() {
     const prepareApp = async () => {
       try {
         await initDatabase();
+        await restoreOnboardingSeen(dbHasWallets).catch(error => console.warn('Could not restore onboarding preference:', error));
         try { await Font.loadAsync(Feather.font); } catch (e) { console.error(e); }
 
 

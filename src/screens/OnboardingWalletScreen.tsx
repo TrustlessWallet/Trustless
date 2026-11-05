@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ActivityIndicator, Alert, InteractionManager, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, FlatList, Dimensions, Image, Linking, Clipboard } from 'react-native';
+import { ActivityIndicator, Alert, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, PanResponder, Image, Linking, Clipboard } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { finishOnboarding } from '../services/onboardingSeen';
+import OnboardingWelcomeScreen from './OnboardingWelcomeScreen';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
@@ -12,7 +13,6 @@ import { useWallet } from '../contexts/WalletContext';
 import { Theme } from '../constants/theme'; 
 
 
-const { width } = Dimensions.get('window');
 const REPO_URL = 'https://github.com/TrustlessWallet/Trustless';
 const OPEN_SOURCE_IMAGE_WIDTH = 1486;
 const OPEN_SOURCE_IMAGE_HEIGHT = 3040;
@@ -156,12 +156,19 @@ const SlideItem = React.memo(({ item, styles, handle_link_press, theme }: any) =
 
 const OnboardingWalletScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingWallet'>>();
-  const { completeOnboarding, activeWallet } = useWallet();
+  const { retryBootstrap } = useWallet();
+  const [showWelcome, setShowWelcome] = useState(true);
   const [current_index, set_current_index] = useState(0);
-  const requestedIndex = useRef<number | null>(null);
-  const flat_list_ref = useRef<FlatList>(null);
-  const { theme, isDark } = useTheme(); 
-  const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]); 
+  const { theme, isDark } = useTheme();
+  const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]);
+  const swipe = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, { dx, dy }) => Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy) * 2,
+    onPanResponderRelease: (_, { dx }) => {
+      if (Math.abs(dx) > 45) {
+        set_current_index(index => Math.min(slides.length - 1, Math.max(0, index + (dx < 0 ? 1 : -1))));
+      }
+    },
+  }), []);
 
   const [finishing, setFinishing] = useState(false);
   const finishingRef = useRef(false);
@@ -170,71 +177,33 @@ const OnboardingWalletScreen = () => {
     finishingRef.current = true;
     setFinishing(true);
     try {
-      await AsyncStorage.setItem('@hasCompletedOnboarding', activeWallet ? 'true' : 'wallet-pending');
+      await finishOnboarding();
+      retryBootstrap();
       navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
-      InteractionManager.runAfterInteractions(completeOnboarding);
     } catch {
-      Alert.alert('Couldn’t finish setup', 'Please try again.');
-    } finally {
       finishingRef.current = false;
       setFinishing(false);
+      Alert.alert('Couldn’t finish setup', 'Please try again.');
     }
   };
 
   const handle_next = () => {
-    if (current_index < slides.length - 1) {
-      const next = current_index + 1;
-      requestedIndex.current = next;
-      set_current_index(next);
-      flat_list_ref.current?.scrollToOffset({ offset: next * width, animated: true });
-    } else {
-      handle_complete_onboarding();
-    }
+    if (current_index === slides.length - 1) void handle_complete_onboarding();
+    else set_current_index(index => Math.min(index + 1, slides.length - 1));
   };
 
   const handle_link_press = (url: string) => {
     Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
   };
 
-  const on_viewable_items_changed = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      const new_index = viewableItems[0].index;
-      if (requestedIndex.current === null || requestedIndex.current === new_index) {
-        requestedIndex.current = null;
-        set_current_index(new_index);
-      }
-    }
-  }).current;
+  if (showWelcome) return <OnboardingWelcomeScreen onContinue={() => setShowWelcome(false)} />;
 
-  const render_item = ({ item }: any) => (
-    <SlideItem 
-      item={item}
-      styles={styles}
-      handle_link_press={handle_link_press}
-      theme={theme}
-    />
-  );
-
+  const slide = slides[current_index];
   return (
     <SafeAreaView style={styles.container}>
-      <FlatList
-        ref={flat_list_ref}
-        data={slides}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onViewableItemsChanged={on_viewable_items_changed}
-        onScrollBeginDrag={() => { requestedIndex.current = null; }}
-        getItemLayout={(_data, index) => ({ length: width, offset: width * index, index })}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
-        keyExtractor={(item) => item.key}
-        renderItem={render_item}
-        removeClippedSubviews={false} 
-        initialNumToRender={1}
-        maxToRenderPerBatch={2}
-        windowSize={3}
-      />
-      
+      <View style={styles.slideViewport} {...swipe.panHandlers}>
+        <SlideItem key={slide.key} item={slide} styles={styles} handle_link_press={handle_link_press} theme={theme} />
+      </View>
       <View style={styles.footer}>
         <View style={styles.dots_container}>
           {slides.map((_, index) => (
@@ -244,7 +213,7 @@ const OnboardingWalletScreen = () => {
             />
           ))}
         </View>
-        <TouchableOpacity style={styles.button} disabled={finishing} onPress={handle_next}>
+        <TouchableOpacity accessibilityRole="button" style={styles.button} disabled={finishing} onPress={handle_next}>
           {finishing ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.button_text}>
             {current_index === slides.length - 1 ? 'Get started' : 'Next'}
           </Text>}
@@ -259,8 +228,9 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  slideViewport: { flex: 1, minHeight: 0 },
   slide: {
-    width: width,
+
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',

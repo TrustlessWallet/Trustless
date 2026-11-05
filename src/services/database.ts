@@ -137,6 +137,10 @@ export const getDB = () => {
  * Fetch all wallets for the current network.
  * We hydrate the basic object; derived addresses are fetched separately for performance.
  */
+export async function dbHasWallets(): Promise<boolean> {
+  return !!(await getDB().getFirstAsync('SELECT 1 FROM wallets LIMIT 1'));
+}
+
 export const dbGetWallets = async (network: string): Promise<Wallet[]> => {
   const d = getDB();
   const rows = await d.getAllAsync<any>(

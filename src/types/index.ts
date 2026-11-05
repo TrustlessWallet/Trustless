@@ -175,7 +175,7 @@ export type RootStackParamList = {
   ShowPublicKey: { wallet_id: string };
   QRScanner: { onScanSuccess: (data: string) => void };
   TransactionDetails: { transaction?: Transaction | LightningTransaction; txId?: string };
-  OnboardingWelcome: undefined;
+  OnboardingBackdrop: undefined;
   OnboardingWallet: undefined;
   PrivacyPolicy: undefined;
   TermsConditions: undefined;
