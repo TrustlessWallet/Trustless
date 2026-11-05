@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Linking, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Text } from './StyledText';
 import { useTheme } from '../contexts/ThemeContext';
@@ -109,7 +109,7 @@ export default function TerminalProSheet({ visible, activation, onClose, onDismi
     if (!busy && !activating && !legalPage) { setLegalPage(page); setLegalOpen(true); }
   };
   const confirmedKind = activation?.kind ?? (sharedAttempt.current ? null : confirmation);
-  const confirmed = confirmedKind !== null && status === 'pro';
+  const confirmed = visible && confirmedKind !== null && status === 'pro' && !busy && !activating && !legalPage;
   const continueAfterActivation = () => {
     if (!confirmed || busy || activating || acknowledged.current) return;
     acknowledged.current = true;
@@ -127,7 +127,7 @@ export default function TerminalProSheet({ visible, activation, onClose, onDismi
     <>
     <View style={styles.root} pointerEvents={legalPage ? 'none' : 'auto'} accessibilityElementsHidden={!!legalPage} importantForAccessibility={legalPage ? 'no-hide-descendants' : 'auto'}>
       <TerminalSheetHeader title="Terminal Pro" closeLabel="Close Terminal Pro" onClose={close} disabled={working || !!legalPage} />
-        <ScrollView key={confirmed ? 'confirmation' : 'subscription'} testID="terminal-pro-content" style={styles.scroll} contentContainerStyle={styles.content} alwaysBounceVertical={false}>
+        <ProContent key={confirmed ? 'confirmation' : 'subscription'} slideIn={confirmed} testID="terminal-pro-content" style={styles.scroll} contentContainerStyle={styles.content} alwaysBounceVertical={false}>
           {confirmed ? <View style={styles.confirmation} accessibilityLiveRegion="polite">
             <Feather name="check-circle" size={28} color={theme.colors.bitcoin} />
             <Text accessibilityRole="header" style={styles.confirmationTitle}>Terminal Pro is ready</Text>
@@ -171,7 +171,7 @@ export default function TerminalProSheet({ visible, activation, onClose, onDismi
             <TouchableOpacity accessibilityRole="link" accessibilityLabel="Terms and Conditions" disabled={working} onPress={() => openLegal('terms')} style={styles.legalTouch}><Text style={styles.legalLink}>Terms</Text></TouchableOpacity>
             {Platform.OS === 'ios' ? <TouchableOpacity accessibilityRole="link" accessibilityLabel="Apple standard EULA" disabled={working} onPress={() => { void Linking.openURL(APPLE_EULA_URL); }} style={styles.legalTouch}><Text style={styles.legalLink}>Apple EULA</Text></TouchableOpacity> : null}
           </View> : null}
-        </ScrollView>
+        </ProContent>
     </View>
     <Modal visible={visible && legalOpen} presentationStyle={presentationStyle} animationType="slide" allowSwipeDismissal onRequestClose={closeLegal} onDismiss={() => setLegalPage(null)}>
     <View style={styles.root}>
@@ -181,6 +181,26 @@ export default function TerminalProSheet({ visible, activation, onClose, onDismi
     </Modal>
     </>
   </Modal>;
+}
+
+function ProContent({ slideIn, style, ...props }: React.ComponentProps<typeof ScrollView> & { slideIn: boolean }) {
+  const { height } = useWindowDimensions();
+  const offset = useRef(new Animated.Value(slideIn ? height : 0)).current;
+
+  useEffect(() => {
+    if (!slideIn) return;
+    const entrance = Animated.timing(offset, {
+      toValue: 0,
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    entrance.start();
+    return () => entrance.stop();
+  }, [offset, slideIn]);
+
+  if (!slideIn) return <ScrollView {...props} style={style} />;
+  return <Animated.ScrollView {...props} style={[style, { transform: [{ translateY: offset }] }]} />;
 }
 
 function FeatureRow({ title, detail, theme, styles }: { title: string; detail: string; theme: Theme; styles: ReturnType<typeof makeStyles> }) {
