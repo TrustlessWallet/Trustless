@@ -109,7 +109,7 @@ export type TabParamList = {
 };
 
 export type RootStackParamList = {
-  MainTabs: { screen?: string } | undefined;
+  MainTabs: { screen?: string; onboarding?: true } | undefined;
   Terminal: undefined;
   AuthCheck: undefined;
   AddAddress: undefined;
@@ -175,7 +175,6 @@ export type RootStackParamList = {
   ShowPublicKey: { wallet_id: string };
   QRScanner: { onScanSuccess: (data: string) => void };
   TransactionDetails: { transaction?: Transaction | LightningTransaction; txId?: string };
-  OnboardingBackdrop: undefined;
   OnboardingWelcome: undefined;
   OnboardingWallet: undefined;
   PrivacyPolicy: undefined;

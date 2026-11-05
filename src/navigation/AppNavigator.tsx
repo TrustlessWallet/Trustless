@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer, useNavigationContainerRef, DefaultTheme } from '@react-navigation/native';
-import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
+import { createNativeStackNavigator, NativeStackNavigationOptions, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, TabParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { useWalletMode } from '../contexts/WalletModeContext';
@@ -35,7 +35,7 @@ import BalanceDetailScreen from '../screens/BalanceDetailScreen';
 import CoinControlScreen from '../screens/CoinControlScreen';
 import AuthCheckScreen from '../screens/AuthCheckScreen';
 import OnboardingWelcomeScreen from '../screens/OnboardingWelcomeScreen';
-import OnboardingWalletScreen, { OnboardingBackdrop } from '../screens/OnboardingWalletScreen';
+import OnboardingWalletScreen, { OnboardingWalletRoot } from '../screens/OnboardingWalletScreen';
 import AddressDetailsScreen from '../screens/AddressDetailsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
@@ -73,6 +73,11 @@ const PrivacyOverlayScreen = () => {
     </View>
   );
 };
+
+function MainTabsRoot({ route }: NativeStackScreenProps<RootStackParamList, 'MainTabs'>) {
+  const onboarding = useRef(route.params?.onboarding === true).current;
+  return onboarding ? <OnboardingWalletRoot><MainRoot /></OnboardingWalletRoot> : <MainRoot />;
+}
 
 const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const { wallets, loading: wallet_loading } = useWallet();
@@ -287,9 +292,9 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         type: 'stack',
         key: 'root',
         index: 2,
-        routeNames: ['OnboardingBackdrop', 'OnboardingWallet', 'OnboardingWelcome'],
+        routeNames: ['MainTabs', 'OnboardingWallet', 'OnboardingWelcome'],
         routes: [
-          { key: 'OnboardingBackdrop', name: 'OnboardingBackdrop' },
+          { key: 'MainTabs', name: 'MainTabs', params: { onboarding: true } },
           { key: 'OnboardingWallet', name: 'OnboardingWallet' },
           { key: 'OnboardingWelcome', name: 'OnboardingWelcome' },
         ],
@@ -400,7 +405,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       >
         <Stack.Screen
           name="MainTabs"
-          component={MainRoot}
+          component={MainTabsRoot}
           options={{
             headerShown: false,
             contentStyle: { backgroundColor: theme.colors.background }
@@ -414,7 +419,6 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           gestureEnabled: false,
           contentStyle: { backgroundColor: theme.colors.background },
         }} />
-        <Stack.Screen name="OnboardingBackdrop" component={OnboardingBackdrop} options={{ headerShown: false }} />
         <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
 
         <Stack.Group screenOptions={{

@@ -153,30 +153,32 @@ const SlideItem = React.memo(({ item, styles, handle_link_press, theme }: any) =
   );
 });
 
-export function OnboardingBackdrop() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingBackdrop'>>();
+export function OnboardingWalletRoot({ children }: { children: React.ReactNode }) {
   const focused = useIsFocused();
   const { retryBootstrap, completeOnboarding, activeWallet, loading, bootstrapError } = useWallet();
   const { theme } = useTheme();
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
+  const [finished, setFinished] = useState(false);
   const finish = useCallback(async () => {
     if (started.current || loading || !activeWallet) return;
     started.current = true;
     setFailed(false);
     try {
       await finishOnboarding(true);
-      navigation.replace('MainTabs');
+      setFinished(true);
       InteractionManager.runAfterInteractions(completeOnboarding);
     } catch {
       setFailed(true);
     }
-  }, [navigation, completeOnboarding, activeWallet, loading]);
+  }, [completeOnboarding, activeWallet, loading]);
 
-  // Both Get started and a native sheet dismissal reveal this route.
+  // The wallet is already mounted when either dismissal path focuses this route.
   useEffect(() => {
     if (focused) void finish();
   }, [focused, finish]);
+
+  if (finished || (activeWallet && !loading && !failed)) return <>{children}</>;
 
   return <View style={{ flex: 1, backgroundColor: theme.colors.background, alignItems: 'center', justifyContent: 'center' }}>
     {focused && (failed || (!loading && !activeWallet)
