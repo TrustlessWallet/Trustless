@@ -642,20 +642,21 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
                 <TouchableOpacity key={i} accessibilityRole="button" accessibilityLabel={digit === 'clear' ? 'Clear amount and items' : digit || 'Decimal unavailable'} disabled={!digit} style={styles.key} activeOpacity={0.55} onPress={() => key(digit)}>
                   <Text style={styles.keyText}>{digit === 'clear' ? 'C' : digit}</Text>
                 </TouchableOpacity>)}</View>
-              <View style={styles.feedbackArea}>
-                {error ? <Text numberOfLines={2} style={styles.error}>{error}</Text> : null}
-                {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
-                {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={styles.error}>Items unavailable · Retry</Text></TouchableOpacity> : null}
-              </View>
-
             </View>
           </View>
         }
     </View>
-    {entry && <View style={styles.actionBar}>
-              <View style={styles.itemsRow}>
-                {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
-              </View>
+    {entry && <View style={[styles.actionBar, styles.entryActionBar]}>
+      <View style={styles.checkoutGap}>
+        <View style={styles.feedbackArea}>
+          {error ? <Text numberOfLines={2} style={styles.error}>{error}</Text> : null}
+          {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
+          {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={styles.error}>Items unavailable · Retry</Text></TouchableOpacity> : null}
+        </View>
+        <View style={styles.itemsRow}>
+          {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
+        </View>
+      </View>
       <TouchableOpacity testID="terminal-request" disabled={requestDisabled} style={[styles.primaryAction, requestDisabled && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
         {endingRequest || stage === 'creating' ? <ActivityIndicator accessibilityLabel={endingRequest ? 'Closing invoice' : 'Generating invoice'} color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>{hasRequest ? 'Resume invoice' : hydrationFailed ? 'Retry loading' : 'Generate invoice'}</Text>}
       </TouchableOpacity>
@@ -713,6 +714,13 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
   const keypadPadding = short ? 12 : compact ? 14 : 22;
   const feedbackHeight = short ? 38 : compact ? 40 : 44;
   const actionBottomPadding = short ? 30 : compact ? 40 : 48;
+  const actionTopPadding = 8;
+  const actionHeight = 56;
+  const itemsGap = 12;
+  const gapReduction = short ? 8 : compact ? 10 : 12;
+  // Tighten both sides of Items while keeping its center fixed.
+  const checkoutGapHeight = feedbackHeight + keypadPadding + actionTopPadding + 44 + itemsGap - 2 * gapReduction;
+  const itemsCenter = (checkoutGapHeight + actionHeight / 2 - keyHeight / 2) / 2;
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: background },
     header: { height: 56, zIndex: 2, elevation: 2, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -733,15 +741,17 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     priceLine: { minHeight: 20, alignItems: 'center', justifyContent: 'center', marginTop: -4 },
     approx: { color: muted, fontFamily: 'SpaceMono-Regular', fontSize: 13, textAlign: 'center' },
     refresh: { color: bitcoin, fontFamily: 'SpaceMono-Bold', fontSize: 12, marginTop: 5 },
-    padArea: { justifyContent: 'flex-end', paddingBottom: keypadPadding },
+    padArea: { justifyContent: 'flex-end' },
     keypad: { flexDirection: 'row', flexWrap: 'wrap' },
     key: { width: '33.33%', height: keyHeight, alignItems: 'center', justifyContent: 'center' },
     keyText: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: keyFontSize },
-    feedbackArea: { height: feedbackHeight, alignItems: 'center', justifyContent: 'center' },
-    itemsRow: { height: 44, marginBottom: 12, alignItems: 'center', justifyContent: 'center' },
+    feedbackArea: { position: 'absolute', top: itemsCenter + 18, bottom: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'center' },
+    entryActionBar: { paddingTop: 0, paddingBottom: actionBottomPadding + gapReduction },
+    checkoutGap: { height: checkoutGapHeight },
+    itemsRow: { position: 'absolute', top: itemsCenter - 22, left: 0, right: 0, height: 44, alignItems: 'center', justifyContent: 'center' },
     itemsCapsule: { width: 80, height: 36 },
-    actionBar: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: actionBottomPadding },
-    primaryAction: { backgroundColor: primary, minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+    actionBar: { paddingHorizontal: 24, paddingTop: actionTopPadding, paddingBottom: actionBottomPadding },
+    primaryAction: { backgroundColor: primary, minHeight: actionHeight, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     primaryActionText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 16 },
     disabled: { opacity: 0.55 },
     checkoutScroll: { flex: 1, minHeight: 0 },
