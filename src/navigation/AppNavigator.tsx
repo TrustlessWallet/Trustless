@@ -34,7 +34,7 @@ import AddSavedAddressScreen from '../screens/AddSavedAddressScreen';
 import BalanceDetailScreen from '../screens/BalanceDetailScreen';
 import CoinControlScreen from '../screens/CoinControlScreen';
 import AuthCheckScreen from '../screens/AuthCheckScreen';
-import OnboardingWalletScreen from '../screens/OnboardingWalletScreen';
+import OnboardingWalletScreen, { OnboardingBackdrop } from '../screens/OnboardingWalletScreen';
 import AddressDetailsScreen from '../screens/AddressDetailsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
@@ -72,11 +72,6 @@ const PrivacyOverlayScreen = () => {
     </View>
   );
 };
-
-function OnboardingBackdrop() {
-  const { theme } = useTheme();
-  return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
-}
 
 const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const { wallets, loading: wallet_loading } = useWallet();
@@ -181,7 +176,8 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     };
   }, []);
   useEffect(() => {
-    if (!cashierRestricted && !authenticatedCashierUnlock && !wallet_loading && wallets.length > 0 && app_state.current === 'active') {
+    // Cold-start authentication is handled by the initial route, even during wallet loading.
+    if (nav_state_resolved && initial_route !== 'AuthCheck' && !cashierRestricted && !authenticatedCashierUnlock && !wallet_loading && wallets.length > 0 && app_state.current === 'active') {
       const check_pending_auth = async () => {
         const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
         const is_enrolled = await LocalAuthentication.isEnrolledAsync();
@@ -206,7 +202,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
       check_pending_auth();
     }
-  }, [wallet_loading, wallets.length, cashierRestricted]);
+  }, [wallet_loading, wallets.length, cashierRestricted, nav_state_resolved, initial_route]);
 
   const check_auth_needed = async () => {
     try {
@@ -264,7 +260,6 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         }
 
         set_needs_onboarding(false);
-        if (wallet_loading) return;
 
         const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
         if (is_biometrics_enabled === 'true' && await LocalAuthentication.isEnrolledAsync() && current) {
@@ -279,11 +274,11 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
     void check_initial_status();
     return () => { current = false; };
-  }, [wallet_loading, nav_state_resolved]);
+  }, [nav_state_resolved]);
 
   useEffect(() => {
     if (nav_state_resolved) return;
-    if ((wallet_loading && !needs_onboarding) || is_loading) return;
+    if (is_loading) return;
 
     if (needs_onboarding) {
       set_initial_nav_state({
@@ -303,7 +298,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
 
     set_initial_nav_state(undefined);
     set_nav_state_resolved(true);
-  }, [nav_state_resolved, wallet_loading, is_loading, needs_onboarding]);
+  }, [nav_state_resolved, is_loading, needs_onboarding]);
 
   const is_privacy_active = is_true_backgrounded || app_state.current === 'background' || is_checking_auth ||
     (is_backgrounded && !prompt_caused_inactive.current && !get_biometric_prompt_shown() && !isNativeStorePromptActive() && !get_is_nfc_scanning());
@@ -502,7 +497,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen
             name="OnboardingWallet"
             component={OnboardingWalletScreen}
-            options={{ headerShown: false, gestureEnabled: false }}
+            options={{ headerShown: false, gestureEnabled: true, gestureDirection: 'vertical' }}
           />
           <Stack.Screen
             name="PrivacyPolicy"

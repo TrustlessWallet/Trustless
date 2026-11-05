@@ -288,14 +288,23 @@ it('keeps navigation mounted while the first wallet starts loading after onboard
   view.rerender(<AppNavigator />);
   expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 1 });
 });
-it('waits for the wallet on later launches without replaying completed onboarding', async () => {
+it('opens navigation before the wallet finishes loading on later launches', async () => {
+  (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
+  (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });
+  const onBootReady = jest.fn();
+  render(<AppNavigator onBootReady={onBootReady} />);
+  await waitFor(() => expect(onBootReady).toHaveBeenCalled());
+  expect(mockContainers.at(-1)?.initialState).toBeUndefined();
+});
+
+it('starts biometric authentication while wallet loading is pending and avoids a duplicate prompt', async () => {
+  await AsyncStorage.multiSet([['@biometricsEnabled', 'true'], ['@autoLockTime', '0']]);
+  (LocalAuthentication.isEnrolledAsync as jest.Mock).mockResolvedValue(true);
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
   (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });
   const view = render(<AppNavigator />);
-  await act(async () => {});
-  expect(mockContainers).toHaveLength(0);
+  await waitFor(() => expect(mockNavigators.at(-1)?.initialRouteName).toBe('AuthCheck'));
   (useWallet as jest.Mock).mockReturnValue({ wallets: [{ id: 'automatic' }], loading: false });
-  view.rerender(<AppNavigator />);
-  await waitFor(() => expect(mockContainers.length).toBeGreaterThan(0));
-  expect(mockContainers.at(-1)?.initialState).toBeUndefined();
+  await act(async () => view.rerender(<AppNavigator />));
+  expect(mockNavRef.navigate).not.toHaveBeenCalledWith('AuthCheck');
 });
