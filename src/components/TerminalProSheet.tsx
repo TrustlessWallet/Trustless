@@ -153,7 +153,7 @@ export default function TerminalProSheet({ visible, activation, onClose, onDismi
               <Text style={styles.sectionTitle}>CHOOSE A PLAN</Text>
               {plans.map(plan => <PlanChoice key={plan.id} plan={plan} selected={selected === plan.id} disabled={working || pending} onPress={() => setSelected(plan.id)} theme={theme} styles={styles} />)}
               {selectedPlan?.trialLabel ? <Text style={styles.trial}>{selectedPlan.trialLabel}</Text> : null}
-              {selectedPlan?.renewalLabel ? <Text style={styles.renewal}>{selectedPlan.renewalLabel}</Text> : null}
+              {selectedPlan?.renewalLabel ? <Text style={styles.renewal}>{selectedPlan.trialLabel ? 'Then ' : ''}{selectedPlan.renewalLabel}</Text> : null}
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Continue with ${selected === 'annual' ? 'annual' : 'monthly'} Terminal Pro`} accessibilityState={{ disabled: working || pending, busy: working && activationKind !== 'restore' }} disabled={working || pending} onPress={() => { void activate('purchase'); }} style={[styles.primaryButton, (working || pending) && styles.disabled]}>
                 {working && activationKind !== 'restore' ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryText}>Continue with {selected === 'annual' ? 'Annual' : 'Monthly'}</Text>}
               </TouchableOpacity>
