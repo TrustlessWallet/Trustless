@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
+import { ONBOARDING_INSTALL_KEY, ONBOARDING_SEEN_KEY } from './onboardingSeen';
 import { generateWalletMnemonic, readWalletCredentials, storeWalletMnemonic } from './walletSecrets';
 
 type Journal = { version: 1; state: 'started' | 'completed' | 'used'; walletId?: string } |
@@ -57,17 +58,20 @@ export async function claimFirstLaunchWallet(network: string, activeWalletServic
     // A v1 journal has no installation ID. If onboarding state remains, it
     // belongs to this install. Reset App removes that state, so a fully erased
     // legacy install cannot be distinguished from a reinstall.
-    if (journal?.version === 1 && !onboardingStarted && await AsyncStorage.getItem('@hasCompletedOnboarding') === 'true') {
+    if (journal?.version === 1 && !onboardingStarted && await AsyncStorage.getItem(ONBOARDING_SEEN_KEY) === 'true') {
         await writeJournal(network, { ...journal, version: 2, installationId: install });
         return null;
     }
-    const onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
+    const onboarding = await AsyncStorage.getItem(ONBOARDING_SEEN_KEY);
     if (!onboardingStarted && onboarding !== null && onboarding !== 'wallet-pending') return null;
     const priorInstallation = journal !== null && (journal.version === 1 || journal.installationId !== install);
-    if (!priorInstallation && await Keychain.getGenericPassword({ service: activeWalletService })) {
+    // Explicit onboarding completion may create a new wallet in an empty install.
+    // Keep residual credentials intact and use a fresh wallet ID.
+    const completedSetup = onboarding === 'wallet-pending' && await AsyncStorage.getItem(ONBOARDING_INSTALL_KEY) === 'true';
+    if (!priorInstallation && !completedSetup && await Keychain.getGenericPassword({ service: activeWalletService })) {
         throw new Error('An active wallet reference exists without its wallet record. Restore the wallet or retry.');
     }
-    if (!priorInstallation) {
+    if (!priorInstallation && !completedSetup) {
         const services = await Keychain.getAllGenericPasswordServices();
         if (services.some(service => service.startsWith('com.btc.trustless.mnemonic.') ||
             service.startsWith('com.btc.trustless.firstLaunchWallet.') ||
@@ -108,8 +112,8 @@ export async function markFirstLaunchCompleted(network: string, walletId: string
         throw new Error('First-launch wallet journal changed.');
     }
     await writeJournal(network, { ...journal, state: 'completed' });
-    if (await AsyncStorage.getItem('@hasCompletedOnboarding') === 'wallet-pending') {
-        await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
+    if (await AsyncStorage.getItem(ONBOARDING_SEEN_KEY) === 'wallet-pending') {
+        await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
     }
 }
 

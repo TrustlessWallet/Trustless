@@ -142,3 +142,13 @@ it('resumes a durable onboarding handoff after termination before the claim', as
  expect(preferences.get('@hasCompletedOnboarding')).toBe('true');
  expect(await claimFirstLaunchWallet('Bitcoin', 'active', firstId)).toBeNull();
 });
+
+it('creates a new wallet after explicit setup while retaining unjournaled legacy credentials', async () => {
+    records.set('active', 'old-wallet');
+    records.set('com.btc.trustless.mnemonic.v2.old-wallet', 'old-protected-phrase');
+    preferences.set('@hasCompletedOnboarding', 'wallet-pending');
+    preferences.set('@onboardingCompletedInInstall', 'true');
+    expect(await claimFirstLaunchWallet('Bitcoin', 'active', firstId)).toBe('fixed-wallet-id');
+    expect(records.get('active')).toBe('old-wallet');
+    expect(records.get('com.btc.trustless.mnemonic.v2.old-wallet')).toBe('old-protected-phrase');
+});
