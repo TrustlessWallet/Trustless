@@ -34,3 +34,9 @@ it('keeps a saved first-wallet handoff retryable on relaunch', async () => {
   await restoreOnboardingSeen(async () => false);
   expect(await AsyncStorage.getItem(ONBOARDING_SEEN_KEY)).toBe('wallet-pending');
 });
+
+it('resumes an unfinished tutorial even if its wallet was already prepared', async () => {
+  await restoreOnboardingSeen(async () => false);
+  await restoreOnboardingSeen(async () => true);
+  expect(await AsyncStorage.getItem(ONBOARDING_SEEN_KEY)).toBeNull();
+});

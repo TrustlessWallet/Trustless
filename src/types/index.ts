@@ -176,6 +176,7 @@ export type RootStackParamList = {
   QRScanner: { onScanSuccess: (data: string) => void };
   TransactionDetails: { transaction?: Transaction | LightningTransaction; txId?: string };
   OnboardingBackdrop: undefined;
+  OnboardingWelcome: undefined;
   OnboardingWallet: undefined;
   PrivacyPolicy: undefined;
   TermsConditions: undefined;

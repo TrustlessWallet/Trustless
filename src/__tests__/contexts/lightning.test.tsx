@@ -100,14 +100,13 @@ beforeEach(async () => {
 });
 afterEach(async () => { cleanup(); client.clear(); jest.restoreAllMocks(); jest.useRealTimers(); });
 
-it('defers wallet loading and Lightning until after onboarding', async () => {
+it('prepares the local wallet without discovery or Lightning during onboarding', async () => {
     await AsyncStorage.removeItem('@hasCompletedOnboarding');
     const hook = renderHook(() => useWallet(), { wrapper });
-    await waitFor(() => expect(hook.result.current.loading).toBe(false));
-    expect(dbGetWallets).not.toHaveBeenCalled();
+    await waitFor(() => expect(hook.result.current.activeWallet).toBeTruthy());
+    expect(fetchAddressInfoBatch).not.toHaveBeenCalled();
     expect(sdkModule.connect).not.toHaveBeenCalled();
-    await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
-    await act(async () => hook.result.current.retryBootstrap());
+    await act(async () => hook.result.current.completeOnboarding());
     await waitFor(() => expect(sdkModule.connect).toHaveBeenCalled());
 });
 
