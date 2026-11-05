@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ActivityIndicator, Animated, Easing, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, PanResponder, Image, Linking, Clipboard, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, FlatList, InteractionManager, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, Image, Linking, Clipboard, useWindowDimensions } from 'react-native';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { finishOnboarding } from '../services/onboardingSeen';
-import OnboardingWelcomeScreen from './OnboardingWelcomeScreen';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
@@ -157,22 +156,22 @@ const SlideItem = React.memo(({ item, styles, handle_link_press, theme }: any) =
 export function OnboardingBackdrop() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingBackdrop'>>();
   const focused = useIsFocused();
-  const { retryBootstrap } = useWallet();
+  const { retryBootstrap, completeOnboarding, activeWallet, loading, bootstrapError } = useWallet();
   const { theme } = useTheme();
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
   const finish = useCallback(async () => {
-    if (started.current) return;
+    if (started.current || loading || !activeWallet) return;
     started.current = true;
     setFailed(false);
     try {
-      await finishOnboarding();
-      retryBootstrap();
+      await finishOnboarding(true);
       navigation.replace('MainTabs');
+      InteractionManager.runAfterInteractions(completeOnboarding);
     } catch {
       setFailed(true);
     }
-  }, [navigation, retryBootstrap]);
+  }, [navigation, completeOnboarding, activeWallet, loading]);
 
   // Both Get started and a native sheet dismissal reveal this route.
   useEffect(() => {
@@ -180,9 +179,9 @@ export function OnboardingBackdrop() {
   }, [focused, finish]);
 
   return <View style={{ flex: 1, backgroundColor: theme.colors.background, alignItems: 'center', justifyContent: 'center' }}>
-    {focused && (failed
-      ? <TouchableOpacity accessibilityRole="button" onPress={() => { started.current = false; void finish(); }}>
-          <Text style={{ color: theme.colors.primary }}>Couldn’t finish setup. Tap to retry.</Text>
+    {focused && (failed || (!loading && !activeWallet)
+      ? <TouchableOpacity accessibilityRole="button" onPress={() => { started.current = false; if (activeWallet) void finish(); else retryBootstrap(); }}>
+          <Text style={{ color: theme.colors.primary }}>{bootstrapError || "Couldn’t finish setup."} Tap to retry.</Text>
         </TouchableOpacity>
       : <ActivityIndicator color={theme.colors.bitcoin} />)}
   </View>;
@@ -190,73 +189,69 @@ export function OnboardingBackdrop() {
 
 const OnboardingWalletScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingWallet'>>();
-  const [showWelcome, setShowWelcome] = useState(true);
-  const [{ index, previous }, setPage] = useState<{ index: number; previous: number | null }>({ index: 0, previous: null });
-  const requestedIndex = useRef(0);
+  const { loading } = useWallet();
+  const [index, setIndex] = useState(0);
+  const [finishing, setFinishing] = useState(false);
+  const requestedIndex = useRef<number | null>(null);
   const leaving = useRef(false);
-  const progress = useRef(new Animated.Value(1)).current;
-  const { width } = useWindowDimensions();
+  const list = useRef<FlatList<(typeof slides)[number]>>(null);
+  const { width: windowWidth } = useWindowDimensions();
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const width = viewportWidth || windowWidth;
   const { theme, isDark } = useTheme();
   const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]);
-  const advance = useCallback((direction: number) => {
-    const from = requestedIndex.current;
-    const to = Math.min(slides.length - 1, Math.max(0, from + direction));
-    if (to === from || leaving.current) return;
-    requestedIndex.current = to;
-    progress.stopAnimation();
-    progress.setValue(0);
-    setPage({ index: to, previous: from });
-  }, [progress]);
-  const swipe = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_, { dx, dy }) => Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy) * 2,
-    onPanResponderRelease: (_, { dx }) => {
-      if (Math.abs(dx) > 45) advance(dx < 0 ? 1 : -1);
-    },
-  }), [advance]);
 
   useEffect(() => {
-    if (previous === null) return;
-    const transition = Animated.timing(progress, {
-      toValue: 1,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    });
-    transition.start(({ finished }) => {
-      if (finished) setPage(page => page.index === index ? { index, previous: null } : page);
-    });
-    return () => transition.stop();
-  }, [index, previous, progress]);
+    if (!finishing || loading || leaving.current) return;
+    leaving.current = true;
+    navigation.goBack();
+  }, [finishing, loading, navigation]);
 
   const handle_next = () => {
-    if (requestedIndex.current !== slides.length - 1) {
-      advance(1);
-    } else if (!leaving.current) {
-      leaving.current = true;
-      navigation.goBack();
+    const current = requestedIndex.current ?? index;
+    if (current === slides.length - 1) {
+      setFinishing(true);
+      return;
     }
+    const next = current + 1;
+    requestedIndex.current = next;
+    setIndex(next);
+    list.current?.scrollToOffset({ offset: next * width, animated: true });
   };
+
+  const onViewableItemsChanged = useRef<NonNullable<React.ComponentProps<typeof FlatList<(typeof slides)[number]>>['onViewableItemsChanged']>>(({ viewableItems }) => {
+    const visibleIndex = viewableItems[0]?.index;
+    if (visibleIndex == null || (requestedIndex.current !== null && requestedIndex.current !== visibleIndex)) return;
+    requestedIndex.current = null;
+    setIndex(visibleIndex);
+  }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 51 }).current;
 
   const handle_link_press = (url: string) => {
     Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
   };
 
-  if (showWelcome) return <OnboardingWelcomeScreen onContinue={() => setShowWelcome(false)} />;
-
-  const slide = slides[index];
-  const distance = previous !== null && previous > index ? -width : width;
-  const incoming = progress.interpolate({ inputRange: [0, 1], outputRange: [distance, 0] });
-  const outgoing = progress.interpolate({ inputRange: [0, 1], outputRange: [0, -distance] });
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.slideViewport} {...swipe.panHandlers}>
-        {previous !== null && <Animated.View key={slides[previous].key} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[StyleSheet.absoluteFill, { transform: [{ translateX: outgoing }] }]}>
-          <SlideItem item={slides[previous]} styles={styles} handle_link_press={handle_link_press} theme={theme} />
-        </Animated.View>}
-        <Animated.View key={slide.key} style={[StyleSheet.absoluteFill, previous !== null && { transform: [{ translateX: incoming }] }]}>
-          <SlideItem item={slide} styles={styles} handle_link_press={handle_link_press} theme={theme} />
-        </Animated.View>
-      </View>
+      <FlatList
+        ref={list}
+        data={slides}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onLayout={event => setViewportWidth(event.nativeEvent.layout.width)}
+        onScrollBeginDrag={() => { requestedIndex.current = null; }}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        getItemLayout={(_, position) => ({ index: position, length: width, offset: position * width })}
+        keyExtractor={item => item.key}
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={5}
+        renderItem={({ item }) => <View style={{ width }}>
+          <SlideItem item={item} styles={styles} handle_link_press={handle_link_press} theme={theme} />
+        </View>}
+      />
       <View style={styles.footer}>
         <View style={styles.dots_container}>
           {slides.map((_, dotIndex) => (
@@ -266,10 +261,10 @@ const OnboardingWalletScreen = () => {
             />
           ))}
         </View>
-        <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={handle_next}>
-          <Text style={styles.button_text}>
+        <TouchableOpacity accessibilityRole="button" style={styles.button} disabled={finishing} onPress={handle_next}>
+          {finishing ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.button_text}>
             {index === slides.length - 1 ? 'Get started' : 'Next'}
-          </Text>
+          </Text>}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -281,7 +276,6 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  slideViewport: { flex: 1, minHeight: 0, overflow: 'hidden' },
   slide: {
 
     flex: 1,

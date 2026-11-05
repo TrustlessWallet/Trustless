@@ -34,6 +34,7 @@ import AddSavedAddressScreen from '../screens/AddSavedAddressScreen';
 import BalanceDetailScreen from '../screens/BalanceDetailScreen';
 import CoinControlScreen from '../screens/CoinControlScreen';
 import AuthCheckScreen from '../screens/AuthCheckScreen';
+import OnboardingWelcomeScreen from '../screens/OnboardingWelcomeScreen';
 import OnboardingWalletScreen, { OnboardingBackdrop } from '../screens/OnboardingWalletScreen';
 import AddressDetailsScreen from '../screens/AddressDetailsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
@@ -285,11 +286,12 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         stale: false,
         type: 'stack',
         key: 'root',
-        index: 1,
-        routeNames: ['OnboardingBackdrop', 'OnboardingWallet'],
+        index: 2,
+        routeNames: ['OnboardingBackdrop', 'OnboardingWallet', 'OnboardingWelcome'],
         routes: [
           { key: 'OnboardingBackdrop', name: 'OnboardingBackdrop' },
           { key: 'OnboardingWallet', name: 'OnboardingWallet' },
+          { key: 'OnboardingWelcome', name: 'OnboardingWelcome' },
         ],
       });
       set_nav_state_resolved(true);
@@ -495,9 +497,14 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
             })}
           />
           <Stack.Screen
+            name="OnboardingWelcome"
+            component={OnboardingWelcomeScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="OnboardingWallet"
             component={OnboardingWalletScreen}
-            options={{ headerShown: false, gestureEnabled: true, gestureDirection: 'vertical' }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="PrivacyPolicy"

@@ -65,13 +65,15 @@ export async function claimFirstLaunchWallet(network: string, activeWalletServic
     const onboarding = await AsyncStorage.getItem(ONBOARDING_SEEN_KEY);
     if (!onboardingStarted && onboarding !== null && onboarding !== 'wallet-pending') return null;
     const priorInstallation = journal !== null && (journal.version === 1 || journal.installationId !== install);
-    // Explicit onboarding completion may create a new wallet in an empty install.
+    // An empty install preparing onboarding may create its own wallet.
     // Keep residual credentials intact and use a fresh wallet ID.
-    const completedSetup = onboarding === 'wallet-pending' && await AsyncStorage.getItem(ONBOARDING_INSTALL_KEY) === 'true';
-    if (!priorInstallation && !completedSetup && await Keychain.getGenericPassword({ service: activeWalletService })) {
+    const installSetup = await AsyncStorage.getItem(ONBOARDING_INSTALL_KEY);
+    const freshSetup = (onboarding === 'wallet-pending' && installSetup === 'true') ||
+        (onboarding === null && onboardingStarted && installSetup === 'preparing');
+    if (!priorInstallation && !freshSetup && await Keychain.getGenericPassword({ service: activeWalletService })) {
         throw new Error('An active wallet reference exists without its wallet record. Restore the wallet or retry.');
     }
-    if (!priorInstallation && !completedSetup) {
+    if (!priorInstallation && !freshSetup) {
         const services = await Keychain.getAllGenericPasswordServices();
         if (services.some(service => service.startsWith('com.btc.trustless.mnemonic.') ||
             service.startsWith('com.btc.trustless.firstLaunchWallet.') ||

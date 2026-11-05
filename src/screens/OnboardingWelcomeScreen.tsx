@@ -1,13 +1,20 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../types';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { Theme } from '../constants/theme';
 
 
-const OnboardingWelcomeScreen = ({ onContinue }: { onContinue: () => void }) => {
+const OnboardingWelcomeScreen = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'OnboardingWelcome'>>();
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
+  const handleNext = () => {
+    navigation.goBack();
+  };
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -21,7 +28,7 @@ const OnboardingWelcomeScreen = ({ onContinue }: { onContinue: () => void }) => 
           <Text style={styles.welcomeText}>
             That's <Text style={styles.orangeSymbol}>Bitcoin</Text>
           </Text>
-          <TouchableOpacity style={styles.button} accessibilityRole="button" onPress={onContinue}>
+          <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={handleNext}>
             <Text style={styles.buttonText}>Continue</Text>
           </TouchableOpacity>
         </View>

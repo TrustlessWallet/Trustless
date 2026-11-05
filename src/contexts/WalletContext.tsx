@@ -196,6 +196,7 @@ interface WalletContextType {
     loading: boolean;
     bootstrapError: string | null;
     retryBootstrap: () => void;
+    completeOnboarding: () => void;
     lastRefreshTime: number;
     triggerRefresh: (mode?: 'lightning' | 'onchain' | 'all') => Promise<void>;
     isWalletSwitching: boolean;
@@ -272,10 +273,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [bootstrapError, setBootstrapError] = useState<string | null>(null);
     const [networkReady, setNetworkReady] = useState(false);
     const networkReadyRef = useRef(false);
-    const enableWalletNetwork = () => {
+    const pendingFirstWalletNetwork = useRef<(() => void) | null>(null);
+    const enableWalletNetwork = useCallback(() => {
         networkReadyRef.current = true;
         setNetworkReady(true);
-    };
+        pendingFirstWalletNetwork.current?.();
+        pendingFirstWalletNetwork.current = null;
+    }, []);
     const [bootstrapRevision, setBootstrapRevision] = useState(0);
     const [lastRefreshTime, setLastRefreshTime] = useState(() => Date.now());
 
@@ -1450,7 +1454,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     }).catch(error => setLightningInitError(String(error?.message || error)));
                 });
             }, 0); };
-            startNetwork();
+            if (networkReadyRef.current) startNetwork();
+            else pendingFirstWalletNetwork.current = startNetwork;
             return true;
         }
 
@@ -1639,16 +1644,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         let mounted = true;
         const bootstrap = async () => {
             let onboardingPending = false;
+            let preparingOnboarding = false;
             try {
                 const onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
                 onboardingPending = onboarding === 'wallet-pending';
                 if (!mounted) return;
-                if (onboarding === null) {
-                    setLoading(false);
-                    setLoadingSavedAddresses(false);
-                    return;
-                }
-                enableWalletNetwork();
+                preparingOnboarding = onboarding === null;
+                if (!preparingOnboarding) enableWalletNetwork();
             } catch {
                 if (mounted) { setBootstrapError('Could not read setup state. Please retry.'); setLoading(false); }
                 return;
@@ -1668,7 +1670,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     const saved = await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses').catch(() => []);
                     setSavedAddresses(saved);
                     setLoadingSavedAddresses(false);
-                    const walletId = await claimFirstLaunchWallet(NETWORK_NAME, ACTIVE_WALLET_KEY, uuidv4);
+                    const walletId = await claimFirstLaunchWallet(NETWORK_NAME, ACTIVE_WALLET_KEY, uuidv4, preparingOnboarding);
                     if (walletId && mounted) {
                         const mnemonic = await firstLaunchMnemonic(walletId);
                         const created = await addWalletInternal({ mnemonic, type: 'standard' }, walletId, true);
@@ -1700,13 +1702,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     currentId = walletsFromDb[0].id;
                 }
 
-                let success = await loadAndSetActiveWallet(currentId, onboardingPending);
+                let success = await loadAndSetActiveWallet(currentId, onboardingPending || preparingOnboarding);
 
                 if (!success) {
                     console.warn("Active wallet failed to load. Attempting fallback...");
                     for (const w of walletsFromDb) {
                         if (w.id === currentId) continue;
-                        success = await loadAndSetActiveWallet(w.id, onboardingPending);
+                        success = await loadAndSetActiveWallet(w.id, onboardingPending || preparingOnboarding);
                         if (success) {
                             await Keychain.setGenericPassword('user', w.id, { service: ACTIVE_WALLET_KEY });
                             break;
@@ -1787,6 +1789,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         let derivation_path = params.derivation_path;
         let firstAddress: DerivedAddress | null = null;
         let preparedRoot: ReturnType<typeof bip32.fromSeed> | undefined;
+        let preparedAccount: ReturnType<typeof bip32.fromSeed> | undefined;
 
         let scriptType: 'p2wpkh' | 'p2sh-p2wpkh' = 'p2wpkh';
         if (type !== 'standard' && type !== 'watch-only') throw new Error('Unsupported wallet type.');
@@ -1810,7 +1813,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 preparedRoot = root;
                 try {
                     const accountNode = root.derivePath(DERIVATION_PARENT_PATH);
-                    walletXpub = accountNode.neutered().toBase58();
+                    preparedAccount = accountNode.neutered();
+                    walletXpub = preparedAccount.toBase58();
                     scriptType = 'p2wpkh';
 
                     fingerprint = root.fingerprint.toString('hex');
@@ -1832,14 +1836,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (type === 'watch-only' && walletXpub) {
                 root = getBip32Node(walletXpub, NETWORK);
             } else if (type === 'standard' && mnemonic) {
-                root = preparedRoot;
+                root = skipDiscovery ? preparedAccount : preparedRoot;
                 // Yield between account and address derivation during local first launch.
                 if (skipDiscovery) await new Promise<void>(resolve => setTimeout(resolve, 0));
             }
 
             if (root) {
-                const isWatchOnly = type === 'watch-only';
-                const firstAddressObj = deriveReceiveAddress(root, 0, isWatchOnly, scriptType);
+                const useAccountPath = type === 'watch-only' || skipDiscovery;
+                const firstAddressObj = deriveReceiveAddress(root, 0, useAccountPath, scriptType);
                 firstAddress = firstAddressObj;
 
                 if (firstAddressObj) {
@@ -2178,6 +2182,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         loading,
         bootstrapError,
         retryBootstrap,
+        completeOnboarding: enableWalletNetwork,
         lastRefreshTime,
         triggerRefresh,
         generateMnemonic,

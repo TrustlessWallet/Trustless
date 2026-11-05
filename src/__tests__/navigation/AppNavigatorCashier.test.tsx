@@ -272,21 +272,21 @@ it('mounts onboarding above a blank backdrop without mounting wallet tabs', asyn
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
   (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });
   const view = render(<AppNavigator />);
-  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 1, routes: [{ name: 'OnboardingBackdrop' }, { name: 'OnboardingWallet' }] }));
+  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2, routes: [{ name: 'OnboardingBackdrop' }, { name: 'OnboardingWallet' }, { name: 'OnboardingWelcome' }] }));
   (useWallet as jest.Mock).mockReturnValue({ wallets: [{ id: 'automatic' }], loading: false });
   view.rerender(<AppNavigator />);
-  expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 1 });
+  expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2 });
 });
 it('keeps navigation mounted while the first wallet starts loading after onboarding', async () => {
   await AsyncStorage.removeItem('@hasCompletedOnboarding');
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
   (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: false });
   const view = render(<AppNavigator />);
-  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 1 }));
+  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2 }));
   await AsyncStorage.setItem('@hasCompletedOnboarding', 'wallet-pending');
   (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });
   view.rerender(<AppNavigator />);
-  expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 1 });
+  expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2 });
 });
 it('opens navigation before the wallet finishes loading on later launches', async () => {
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
