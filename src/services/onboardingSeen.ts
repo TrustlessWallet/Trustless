@@ -1,36 +1,29 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Keychain from 'react-native-keychain';
 
 export const ONBOARDING_SEEN_KEY = '@hasCompletedOnboarding';
-const service = 'com.btc.trustless.onboardingSeen';
+// Distinguishes completion on this install from the old device-wide flag.
+export const ONBOARDING_INSTALL_KEY = '@onboardingCompletedInInstall';
 
-async function rememberOnDevice() {
-  try {
-    if (await Keychain.getGenericPassword({ service })) return;
-    await Keychain.setGenericPassword('onboarding', 'seen', {
-      service,
-      accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    });
-  } catch (error) {
-    console.warn('Could not back up the onboarding preference:', error);
-  }
-}
-
-/** Repair older installs that already have wallet data or lost their local preference. */
 export async function restoreOnboardingSeen(hasWallet: () => Promise<boolean>) {
-  if (await AsyncStorage.getItem(ONBOARDING_SEEN_KEY) !== null) {
-    void rememberOnDevice();
-    return;
-  }
-  const remembered = await Keychain.getGenericPassword({ service }).catch(() => false);
-  if (remembered || await hasWallet()) {
-    await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
-    if (!remembered) void rememberOnDevice();
+  const seen = await AsyncStorage.getItem(ONBOARDING_SEEN_KEY);
+  const completedHere = await AsyncStorage.getItem(ONBOARDING_INSTALL_KEY);
+  if (completedHere === 'true' && seen !== null) return;
+
+  if (seen === 'wallet-pending' || completedHere === 'true' || await hasWallet()) {
+    await AsyncStorage.multiSet([
+      [ONBOARDING_SEEN_KEY, seen === 'wallet-pending' ? seen : 'true'],
+      [ONBOARDING_INSTALL_KEY, 'true'],
+    ]);
+  } else if (seen !== null) {
+    // Older builds could copy the previous install's Keychain flag into an empty install.
+    await AsyncStorage.removeItem(ONBOARDING_SEEN_KEY);
   }
 }
 
 export async function finishOnboarding() {
   // Keep first-wallet creation retryable if the process exits after this write.
-  await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'wallet-pending');
-  void rememberOnDevice();
+  await AsyncStorage.multiSet([
+    [ONBOARDING_SEEN_KEY, 'wallet-pending'],
+    [ONBOARDING_INSTALL_KEY, 'true'],
+  ]);
 }
