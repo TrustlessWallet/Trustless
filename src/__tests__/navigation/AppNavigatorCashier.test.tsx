@@ -267,12 +267,12 @@ it('still covers and reauthenticates after a true background transition during a
   } finally { endPrompt(); view.unmount(); listener.mockRestore(); }
 });
 
-it('mounts onboarding above a blank backdrop without mounting wallet tabs', async () => {
+it('puts the wallet route behind the two onboarding sheets', async () => {
   await AsyncStorage.removeItem('@hasCompletedOnboarding');
   (useWalletMode as jest.Mock).mockReturnValue({ cashierState: 'off', cashierUnlockRevision: 0 });
   (useWallet as jest.Mock).mockReturnValue({ wallets: [], loading: true });
   const view = render(<AppNavigator />);
-  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2, routes: [{ name: 'OnboardingBackdrop' }, { name: 'OnboardingWallet' }, { name: 'OnboardingWelcome' }] }));
+  await waitFor(() => expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2, routes: [{ name: 'MainTabs', params: { onboarding: true } }, { name: 'OnboardingWallet' }, { name: 'OnboardingWelcome' }] }));
   (useWallet as jest.Mock).mockReturnValue({ wallets: [{ id: 'automatic' }], loading: false });
   view.rerender(<AppNavigator />);
   expect(mockContainers.at(-1)?.initialState).toMatchObject({ index: 2 });
