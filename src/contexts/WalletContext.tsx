@@ -196,7 +196,6 @@ interface WalletContextType {
     loading: boolean;
     bootstrapError: string | null;
     retryBootstrap: () => void;
-    completeOnboarding: () => void;
     lastRefreshTime: number;
     triggerRefresh: (mode?: 'lightning' | 'onchain' | 'all') => Promise<void>;
     isWalletSwitching: boolean;
@@ -273,12 +272,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [bootstrapError, setBootstrapError] = useState<string | null>(null);
     const [networkReady, setNetworkReady] = useState(false);
     const networkReadyRef = useRef(false);
-    const pendingFirstWalletNetwork = useRef<(() => void) | null>(null);
-    const completeOnboarding = () => {
+    const enableWalletNetwork = () => {
         networkReadyRef.current = true;
         setNetworkReady(true);
-        pendingFirstWalletNetwork.current?.();
-        pendingFirstWalletNetwork.current = null;
     };
     const [bootstrapRevision, setBootstrapRevision] = useState(0);
     const [lastRefreshTime, setLastRefreshTime] = useState(() => Date.now());
@@ -1454,8 +1450,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     }).catch(error => setLightningInitError(String(error?.message || error)));
                 });
             }, 0); };
-            if (networkReadyRef.current) startNetwork();
-            else pendingFirstWalletNetwork.current = startNetwork;
+            startNetwork();
             return true;
         }
 
@@ -1643,19 +1638,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     useEffect(() => {
         let mounted = true;
         const bootstrap = async () => {
-            let onboardingStarted = false;
+            let onboardingPending = false;
             try {
-                onboardingStarted = await AsyncStorage.getItem('@hasCompletedOnboarding') === null;
+                const onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
+                onboardingPending = onboarding === 'wallet-pending';
                 if (!mounted) return;
-                if (!onboardingStarted) completeOnboarding();
-                else { setLoading(false); setLoadingSavedAddresses(false); }
+                if (onboarding === null) {
+                    setLoading(false);
+                    setLoadingSavedAddresses(false);
+                    return;
+                }
+                enableWalletNetwork();
             } catch {
                 if (mounted) { setBootstrapError('Could not read setup state. Please retry.'); setLoading(false); }
                 return;
             }
             return serializeWalletMutation(async () => {
             if (!mounted) return;
-            setLoading(!onboardingStarted);
+            setLoading(true);
             setBootstrapError(null);
             setLoadingSavedAddresses(true);
             try {
@@ -1668,7 +1668,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     const saved = await dbGetSavedAddresses(NETWORK_NAME, 'saved_addresses').catch(() => []);
                     setSavedAddresses(saved);
                     setLoadingSavedAddresses(false);
-                    const walletId = await claimFirstLaunchWallet(NETWORK_NAME, ACTIVE_WALLET_KEY, uuidv4, onboardingStarted);
+                    const walletId = await claimFirstLaunchWallet(NETWORK_NAME, ACTIVE_WALLET_KEY, uuidv4);
                     if (walletId && mounted) {
                         const mnemonic = await firstLaunchMnemonic(walletId);
                         const created = await addWalletInternal({ mnemonic, type: 'standard' }, walletId, true);
@@ -1700,19 +1700,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     currentId = walletsFromDb[0].id;
                 }
 
-                let success = await loadAndSetActiveWallet(currentId, onboardingStarted);
+                let success = await loadAndSetActiveWallet(currentId, onboardingPending);
 
                 if (!success) {
                     console.warn("Active wallet failed to load. Attempting fallback...");
                     for (const w of walletsFromDb) {
                         if (w.id === currentId) continue;
-                        success = await loadAndSetActiveWallet(w.id, onboardingStarted);
+                        success = await loadAndSetActiveWallet(w.id, onboardingPending);
                         if (success) {
                             await Keychain.setGenericPassword('user', w.id, { service: ACTIVE_WALLET_KEY });
                             break;
                         }
                     }
                 }
+                if (success && onboardingPending) await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
             } catch (error) {
                 console.error("DEBUG: Failed to bootstrap wallet:", error);
                 if (mounted) setBootstrapError(error instanceof Error &&
@@ -2177,7 +2178,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         loading,
         bootstrapError,
         retryBootstrap,
-        completeOnboarding,
         lastRefreshTime,
         triggerRefresh,
         generateMnemonic,

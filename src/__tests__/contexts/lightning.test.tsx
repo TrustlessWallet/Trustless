@@ -100,14 +100,14 @@ beforeEach(async () => {
 });
 afterEach(async () => { cleanup(); client.clear(); jest.restoreAllMocks(); jest.useRealTimers(); });
 
-it('loads local wallet records but does not initialize Lightning during onboarding', async () => {
+it('defers wallet loading and Lightning until after onboarding', async () => {
     await AsyncStorage.removeItem('@hasCompletedOnboarding');
     const hook = renderHook(() => useWallet(), { wrapper });
     await waitFor(() => expect(hook.result.current.loading).toBe(false));
-    await waitFor(() => expect(dbGetWallets).toHaveBeenCalled());
+    expect(dbGetWallets).not.toHaveBeenCalled();
     expect(sdkModule.connect).not.toHaveBeenCalled();
     await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
-    await act(async () => hook.result.current.completeOnboarding());
+    await act(async () => hook.result.current.retryBootstrap());
     await waitFor(() => expect(sdkModule.connect).toHaveBeenCalled());
 });
 
@@ -633,15 +633,13 @@ it('invalidates pending receive derivation before deleting an active wallet', as
 
 it('repairs an interrupted first receive address locally before publishing the wallet', async () => {
     (dbSaveAddress as jest.Mock).mockClear();
-    const connections = (sdkModule.connect as jest.Mock).mock.calls.length;
     const fetches = (fetchAddressInfoBatch as jest.Mock).mock.calls.length;
-    await AsyncStorage.removeItem('@hasCompletedOnboarding');
+    await AsyncStorage.setItem('@hasCompletedOnboarding', 'wallet-pending');
     const account = require('bip32').BIP32Factory(require('@bitcoinerlab/secp256k1')).fromSeed(Buffer.alloc(32, 1)).derivePath("m/84'/0'/0'").neutered();
     (dbGetWallets as jest.Mock).mockResolvedValue([{ id: 'a', name: 'a', type: 'standard', xpub: account.toBase58(), nextUtxoCount: 0 }]);
     (dbGetDerivedAddresses as jest.Mock).mockImplementation(async (_id, chain) => chain === 0 && (dbSaveAddress as jest.Mock).mock.calls.length ? [{ address: 'bc1qrepaired', index: 0 }] : []);
     const hook = renderHook(() => useWallet(), { wrapper });
     await waitFor(() => expect(hook.result.current.activeWallet?.derivedReceiveAddresses.length).toBe(1));
     expect(dbSaveAddress).toHaveBeenCalledWith('a', expect.objectContaining({ address: expect.stringMatching(/^bc1/), index: 0 }), 0, expect.any(String));
-    expect(sdkModule.connect).toHaveBeenCalledTimes(connections);
     expect(fetchAddressInfoBatch).toHaveBeenCalledTimes(fetches);
 });

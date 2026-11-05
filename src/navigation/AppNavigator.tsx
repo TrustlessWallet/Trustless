@@ -34,7 +34,6 @@ import AddSavedAddressScreen from '../screens/AddSavedAddressScreen';
 import BalanceDetailScreen from '../screens/BalanceDetailScreen';
 import CoinControlScreen from '../screens/CoinControlScreen';
 import AuthCheckScreen from '../screens/AuthCheckScreen';
-import OnboardingWelcomeScreen from '../screens/OnboardingWelcomeScreen';
 import OnboardingWalletScreen from '../screens/OnboardingWalletScreen';
 import AddressDetailsScreen from '../screens/AddressDetailsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
@@ -74,8 +73,13 @@ const PrivacyOverlayScreen = () => {
   );
 };
 
+function OnboardingBackdrop() {
+  const { theme } = useTheme();
+  return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
+}
+
 const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
-  const { wallets, loading: wallet_loading, bootstrapError } = useWallet();
+  const { wallets, loading: wallet_loading } = useWallet();
   const { cashierState, cashierUnlockRevision, cashierUnlockDestination } = useWalletMode();
   const cashierRestricted = cashierState !== 'off';
   const cashierRestrictedRef = useRef(cashierRestricted);
@@ -91,11 +95,10 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   const navigation_ref = useNavigationContainerRef<RootStackParamList>();
   const [is_loading, set_is_loading] = useState(true);
   const [needs_onboarding, set_needs_onboarding] = useState(false);
-  const [has_shown_onboarding, set_has_shown_onboarding] = useState(false);
   const [is_backgrounded, set_is_backgrounded] = useState(false);
   const [is_true_backgrounded, set_is_true_backgrounded] = useState(false);
   const [initial_route, set_initial_route] = useState<keyof RootStackParamList>('MainTabs');
-  const [initial_tab, set_initial_tab] = useState<keyof TabParamList>('Wallet');
+  const initial_tab: keyof TabParamList = 'Wallet';
   const [current_route_name, set_current_route_name] = useState<string | undefined>(undefined);
   const [is_nav_ready, set_is_nav_ready] = useState(false);
   const app_state = useRef(AppState.currentState);
@@ -247,13 +250,13 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   });
 
   useEffect(() => {
+    if (nav_state_resolved) return;
+    let current = true;
     const check_initial_status = async () => {
       try {
-        set_initial_tab('Wallet');
-
         const has_completed_onboarding = await AsyncStorage.getItem('@hasCompletedOnboarding');
 
-        // Onboarding belongs to this installation, independently of wallet creation.
+        if (!current) return;
         if (has_completed_onboarding === null) {
           set_needs_onboarding(true);
           set_is_loading(false);
@@ -264,46 +267,43 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         if (wallet_loading) return;
 
         const is_biometrics_enabled = await AsyncStorage.getItem(BIOMETRICS_ENABLED_KEY);
-        const is_enrolled = await LocalAuthentication.isEnrolledAsync();
-
-        if (is_biometrics_enabled === 'true' && is_enrolled) {
+        if (is_biometrics_enabled === 'true' && await LocalAuthentication.isEnrolledAsync() && current) {
           set_initial_route('AuthCheck');
         }
+        if (current) set_is_loading(false);
       } catch (e) {
         console.error("Failed to check app status", e);
-      } finally {
-        set_is_loading(false);
+        if (current) set_is_loading(false);
       }
     };
 
     void check_initial_status();
-  }, [wallet_loading, wallets.length, bootstrapError]);
+    return () => { current = false; };
+  }, [wallet_loading, nav_state_resolved]);
 
   useEffect(() => {
     if (nav_state_resolved) return;
     if ((wallet_loading && !needs_onboarding) || is_loading) return;
 
-    if (needs_onboarding && !has_shown_onboarding) {
+    if (needs_onboarding) {
       set_initial_nav_state({
         stale: false,
         type: 'stack',
         key: 'root',
-        index: 2,
-        routeNames: ['MainTabs', 'OnboardingWallet', 'OnboardingWelcome', 'AuthCheck'],
+        index: 1,
+        routeNames: ['OnboardingBackdrop', 'OnboardingWallet'],
         routes: [
-          { key: 'MainTabs', name: 'MainTabs', params: { screen: initial_tab } },
+          { key: 'OnboardingBackdrop', name: 'OnboardingBackdrop' },
           { key: 'OnboardingWallet', name: 'OnboardingWallet' },
-          { key: 'OnboardingWelcome', name: 'OnboardingWelcome' },
         ],
       });
-      set_has_shown_onboarding(true);
       set_nav_state_resolved(true);
       return;
     }
 
     set_initial_nav_state(undefined);
     set_nav_state_resolved(true);
-  }, [nav_state_resolved, wallet_loading, is_loading, needs_onboarding, has_shown_onboarding, initial_tab]);
+  }, [nav_state_resolved, wallet_loading, is_loading, needs_onboarding]);
 
   const is_privacy_active = is_true_backgrounded || app_state.current === 'background' || is_checking_auth ||
     (is_backgrounded && !prompt_caused_inactive.current && !get_biometric_prompt_shown() && !isNativeStorePromptActive() && !get_is_nfc_scanning());
@@ -367,7 +367,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
     animation: 'slide_from_bottom',
   } : {};
 
-  if ((wallet_loading && !needs_onboarding) || is_loading || !nav_state_resolved) {
+  if (is_loading || !nav_state_resolved) {
     return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
   }
 
@@ -417,6 +417,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           gestureEnabled: false,
           contentStyle: { backgroundColor: theme.colors.background },
         }} />
+        <Stack.Screen name="OnboardingBackdrop" component={OnboardingBackdrop} options={{ headerShown: false }} />
         <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
 
         <Stack.Group screenOptions={{
@@ -499,14 +500,9 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
             })}
           />
           <Stack.Screen
-            name="OnboardingWelcome"
-            component={OnboardingWelcomeScreen}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
             name="OnboardingWallet"
             component={OnboardingWalletScreen}
-            options={{ headerShown: false }}
+            options={{ headerShown: false, gestureEnabled: false }}
           />
           <Stack.Screen
             name="PrivacyPolicy"
