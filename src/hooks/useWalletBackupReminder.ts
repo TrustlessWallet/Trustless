@@ -7,7 +7,8 @@ export function useWalletBackupReminder(walletId: string | null, network: string
     let current = true;
     // Covering sheets must not clear the last confirmed reminder state.
     setReminder(previous => previous?.walletId === walletId && previous.network === network ? previous : null);
-    if (walletId && focused) {
+    // Load behind onboarding as soon as the wallet mounts. Focus changes still refresh it.
+    if (walletId) {
       void isBackupPending(network, walletId).then(pending => {
         if (current) setReminder(pending ? { walletId, network } : null);
       }).catch(() => {});
