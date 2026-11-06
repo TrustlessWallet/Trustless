@@ -178,7 +178,7 @@ export function OnboardingWalletRoot({ children }: { children: React.ReactNode }
     if (focused) void finish();
   }, [focused, finish]);
 
-  if (finished || (activeWallet && !loading && !failed)) return <>{children}</>;
+if (finished) return <>{children}</>;   // mount the app only after onboarding is done
 
   return <View style={{ flex: 1, backgroundColor: theme.colors.background, alignItems: 'center', justifyContent: 'center' }}>
     {focused && (failed || (!loading && !activeWallet)
