@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ActivityIndicator, FlatList, InteractionManager, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, Image, Linking, Clipboard, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, Easing, FlatList, View, StyleSheet, TouchableOpacity, Pressable, SafeAreaView, Image, Linking, Clipboard, useWindowDimensions } from 'react-native';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { useTheme } from '../contexts/ThemeContext'; 
 import { useWallet } from '../contexts/WalletContext';
+import { RevealContext } from '../contexts/RevealContext';
 import { Theme } from '../constants/theme'; 
 
 
@@ -160,6 +161,35 @@ export function OnboardingWalletRoot({ children }: { children: React.ReactNode }
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
   const [finished, setFinished] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [covered, setCovered] = useState(true);
+  const coverOpacity = useRef(new Animated.Value(1)).current;
+  const reveal = useCallback(() => setReady(true), []);
+
+  useEffect(() => {
+    if (!finished || ready) return;
+    const timeout = setTimeout(reveal, 1200);
+    return () => clearTimeout(timeout);
+  }, [finished, ready, reveal]);
+
+  useEffect(() => {
+    if (!ready || !covered) return;
+    const animation = Animated.timing(coverOpacity, {
+      toValue: 0,
+      duration: 280,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    });
+    animation.start(({ finished }) => {
+      if (finished) setCovered(false);
+    });
+    return () => animation.stop();
+  }, [ready, covered, coverOpacity]);
+
+  useEffect(() => {
+    if (!covered) completeOnboarding();
+  }, [covered, completeOnboarding]);
+
   const finish = useCallback(async () => {
     if (started.current || loading || !activeWallet) return;
     started.current = true;
@@ -167,20 +197,46 @@ export function OnboardingWalletRoot({ children }: { children: React.ReactNode }
     try {
       await finishOnboarding(true);
       setFinished(true);
-      InteractionManager.runAfterInteractions(completeOnboarding);
     } catch {
       setFailed(true);
     }
-  }, [completeOnboarding, activeWallet, loading]);
+  }, [activeWallet, loading]);
 
-  // The wallet is already mounted when either dismissal path focuses this route.
+  // Either dismissal path focuses this route and starts the handoff.
   useEffect(() => {
     if (focused) void finish();
   }, [focused, finish]);
 
-if (finished) return <>{children}</>;   // mount the app only after onboarding is done
+  const coverStyle = {
+    backgroundColor: theme.colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as const;
 
-  return <View style={{ flex: 1, backgroundColor: theme.colors.background, alignItems: 'center', justifyContent: 'center' }}>
+  if (finished) {
+    return (
+      <View style={{ flex: 1 }}>
+        <View
+          style={{ flex: 1 }}
+          accessibilityElementsHidden={covered}
+          importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'}
+          pointerEvents={covered ? 'none' : 'auto'}
+        >
+          <RevealContext.Provider value={covered ? reveal : null}>{children}</RevealContext.Provider>
+        </View>
+        {covered && (
+          <Animated.View
+            testID="onboarding-wallet-cover"
+            style={[StyleSheet.absoluteFill, coverStyle, { opacity: coverOpacity, zIndex: 1 }]}
+          >
+            <ActivityIndicator color={theme.colors.bitcoin} />
+          </Animated.View>
+        )}
+      </View>
+    );
+  }
+
+  return <View style={[{ flex: 1 }, coverStyle]}>
     {focused && (failed || (!loading && !activeWallet)
       ? <TouchableOpacity accessibilityRole="button" onPress={() => { started.current = false; if (activeWallet) void finish(); else retryBootstrap(); }}>
           <Text style={{ color: theme.colors.primary }}>{bootstrapError || "Couldn’t finish setup."} Tap to retry.</Text>

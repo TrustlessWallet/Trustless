@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Animated, RefreshControl, Alert, Modal, Pressable, Vibration, Easing, useWindowDimensions, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { scanLightningInvoice, finish_nfc_scanning, NfcCancelledError, NfcUnsupportedError } from '../services/nfc';
@@ -22,6 +22,7 @@ import { authenticate_transaction_action } from '../services/authState';
 import { useWalletMode } from '../contexts/WalletModeContext';
 import { useTerminalEntry } from '../hooks/useTerminalEntry';
 import { NETWORK_NAME } from '../constants/network';
+import { RevealContext } from '../contexts/RevealContext';
 import { useWalletBackupReminder } from '../hooks/useWalletBackupReminder';
 
 
@@ -94,16 +95,19 @@ const WalletScreen = () => {
     } = useWallet();
 
     const [hideBalance, setHideBalance] = useState(false);
+    const [balancePreferenceReady, setBalancePreferenceReady] = useState(false);
+    const [modePreferenceReady, setModePreferenceReady] = useState(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
     const [isSheetMounted, setIsSheetMounted] = useState(false);
     const refreshDrag = useRef({ armed: false, dragging: false, distance: 0, releasedAt: 0 });
 
     const isFocused = useIsFocused();
-    const backupReminderWalletId = useWalletBackupReminder(activeWallet?.type === 'standard' ? activeWallet.id : null, NETWORK_NAME, isFocused);
+    const reveal = useContext(RevealContext);
+    const { walletId: backupReminderWalletId, ready: backupReminderReady } = useWalletBackupReminder(activeWallet?.type === 'standard' ? activeWallet.id : null, NETWORK_NAME, isFocused);
     const focusedRef = useRef(isFocused);
     focusedRef.current = isFocused;
-    useTipHeight(!!activeWallet && isFocused && !isLightningMode);
+    useTipHeight(!reveal && !!activeWallet && isFocused && !isLightningMode);
     const scrollY = useRef(new Animated.Value(0)).current;
 
     const sheetTranslateY = useRef(new Animated.Value(SHEET_CLOSED_OFFSET)).current;
@@ -151,6 +155,8 @@ const WalletScreen = () => {
         activeWallet?.id,
         queryAddresses,
         10,
+        0,
+        !reveal,
     );
 
     // Make the Lightning switch show activity during both initialization and
@@ -432,7 +438,9 @@ const WalletScreen = () => {
             const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
             setHideBalance(savedPref === 'true');
         };
-        if (isFocused) loadPreference();
+        if (isFocused) {
+            void loadPreference().catch(() => {}).finally(() => setBalancePreferenceReady(true));
+        }
     }, [isFocused]);
 
     // Safety net: whenever this screen regains focus (closing Send, Receive,
@@ -461,7 +469,7 @@ const WalletScreen = () => {
             const savedMode = await AsyncStorage.getItem(DEFAULT_WALLET_MODE_KEY);
             if (savedMode === 'Lightning') setIsLightningMode(true);
         };
-        loadInitialWalletMode();
+        void loadInitialWalletMode().catch(() => {}).finally(() => setModePreferenceReady(true));
     }, []);
 
 
@@ -470,6 +478,14 @@ const WalletScreen = () => {
             setIsLightningMode(false);
         }
     }, [activeWallet?.type, isLightningMode]);
+
+    const revealReady = isFocused && !!activeWallet && !walletLoading && !loadingTxs &&
+        backupReminderReady && balancePreferenceReady && modePreferenceReady;
+    useEffect(() => {
+        if (!reveal || !revealReady) return;
+        const frame = requestAnimationFrame(reveal);
+        return () => cancelAnimationFrame(frame);
+    }, [reveal, revealReady]);
 
     const refreshEpoch = useRef(0);
     const manualRefreshRef = useRef(false);
