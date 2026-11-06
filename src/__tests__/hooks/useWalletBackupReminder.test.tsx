@@ -3,7 +3,7 @@ import { useWalletBackupReminder } from '../../hooks/useWalletBackupReminder';
 import { isBackupPending } from '../../services/firstLaunchWallet';
 jest.mock('../../services/firstLaunchWallet', () => ({ isBackupPending: jest.fn() }));
 it('retains the reminder under sheets and while rechecking on return, then clears on confirmation', async () => {
- (isBackupPending as jest.Mock).mockResolvedValueOnce(true);
+ (isBackupPending as jest.Mock).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
  const hook = renderHook(({ focused }) => useWalletBackupReminder('auto', 'Bitcoin', focused), { initialProps: { focused: true } });
  await waitFor(() => expect(hook.result.current).toBe('auto'));
  hook.rerender({ focused: false });
@@ -22,4 +22,10 @@ it('never carries the reminder to another wallet or accepts an obsolete read', a
  hook.rerender({ id: 'imported' });
  await act(async () => finish(true));
  expect(hook.result.current).toBeNull();
+});
+
+it('loads the reminder before the wallet screen first receives focus', async () => {
+ (isBackupPending as jest.Mock).mockResolvedValueOnce(true);
+ const hook = renderHook(() => useWalletBackupReminder('auto', 'Bitcoin', false));
+ await waitFor(() => expect(hook.result.current).toBe('auto'));
 });
