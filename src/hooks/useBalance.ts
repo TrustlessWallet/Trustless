@@ -59,6 +59,7 @@ export const useWalletTransactions = (
     addresses: string[],
     limit?: number,
     offset: number = 0,
+    networkEnabled = true,
 ) => {
     const network = NETWORK_NAME;
     const [dbCache, setDbCache] = useState<{
@@ -140,7 +141,7 @@ export const useWalletTransactions = (
             return newTxs;
         },
 
-        enabled: !!walletId && addresses.length > 0,
+        enabled: networkEnabled && !!walletId && addresses.length > 0,
 
         staleTime: 60000,
 

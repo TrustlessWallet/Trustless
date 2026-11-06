@@ -1,7 +1,8 @@
 import React from 'react';
-import { View } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Animated, View } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { RevealContext } from '../../contexts/RevealContext';
 import OnboardingWalletScreen, { OnboardingWalletRoot } from '../../screens/OnboardingWalletScreen';
 
 const mockGoBack = jest.fn();
@@ -37,21 +38,61 @@ it('registers consecutive taps and closes the carousel through native navigation
   expect(mockGoBack).toHaveBeenCalledTimes(1);
 });
 
-it('keeps the prepared wallet mounted when onboarding closes', async () => {
-  mockLoading = true;
-  mockWallet = null;
-  const tree = () => <OnboardingWalletRoot><View testID="prepared-wallet" /></OnboardingWalletRoot>;
-  const view = render(tree());
-  expect(view.queryByTestId('prepared-wallet')).toBeNull();
-  mockLoading = false;
-  mockWallet = { id: 'first' };
-  view.rerender(tree());
-  const wallet = view.getByTestId('prepared-wallet');
-  expect(await AsyncStorage.getItem('@hasCompletedOnboarding')).toBeNull();
+it('mounts the wallet under the cover after dismissal and starts sync after the fade', async () => {
+  let reveal: (() => void) | null = null;
+  let completeFade: Animated.EndCallback | undefined;
+  const timing = jest.spyOn(Animated, 'timing').mockReturnValue({
+    start: callback => { completeFade = callback; },
+    stop: jest.fn(),
+    reset: jest.fn(),
+  });
+  function PreparedWallet() {
+    reveal = React.useContext(RevealContext);
+    return <View testID="prepared-wallet" />;
+  }
+  const tree = <OnboardingWalletRoot><PreparedWallet /></OnboardingWalletRoot>;
+  try {
+    const view = render(tree);
+    expect(view.queryByTestId('prepared-wallet', { includeHiddenElements: true })).toBeNull();
+    expect(await AsyncStorage.getItem('@hasCompletedOnboarding')).toBeNull();
 
+    mockFocused = true;
+    view.rerender(<OnboardingWalletRoot><PreparedWallet /></OnboardingWalletRoot>);
+    await waitFor(() => expect(view.getByTestId('onboarding-wallet-cover')).toBeTruthy());
+    expect(view.getByTestId('prepared-wallet', { includeHiddenElements: true })).toBeTruthy();
+    expect(await AsyncStorage.getItem('@hasCompletedOnboarding')).toBe('true');
+    expect(mockComplete).not.toHaveBeenCalled();
+
+    act(() => reveal?.());
+    expect(timing).toHaveBeenCalledTimes(1);
+    expect(mockComplete).not.toHaveBeenCalled();
+
+    act(() => completeFade?.({ finished: true }));
+    expect(view.queryByTestId('onboarding-wallet-cover')).toBeNull();
+    expect(view.getByTestId('prepared-wallet')).toBeTruthy();
+    expect(mockComplete).toHaveBeenCalledTimes(1);
+  } finally {
+    timing.mockRestore();
+  }
+});
+
+it('reveals after the fallback if the wallet never signals readiness', async () => {
+  jest.useFakeTimers();
   mockFocused = true;
-  view.rerender(tree());
-  await waitFor(() => expect(mockComplete).toHaveBeenCalledTimes(1));
-  expect(view.getByTestId('prepared-wallet')).toBe(wallet);
-  expect(await AsyncStorage.getItem('@hasCompletedOnboarding')).toBe('true');
+  const timing = jest.spyOn(Animated, 'timing').mockReturnValue({
+    start: callback => { callback?.({ finished: true }); },
+    stop: jest.fn(),
+    reset: jest.fn(),
+  });
+  try {
+    const view = render(<OnboardingWalletRoot><View /></OnboardingWalletRoot>);
+    await act(async () => {});
+    expect(view.getByTestId('onboarding-wallet-cover')).toBeTruthy();
+    act(() => jest.advanceTimersByTime(1200));
+    expect(view.queryByTestId('onboarding-wallet-cover')).toBeNull();
+    expect(mockComplete).toHaveBeenCalledTimes(1);
+  } finally {
+    timing.mockRestore();
+    jest.useRealTimers();
+  }
 });
