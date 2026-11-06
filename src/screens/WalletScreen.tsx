@@ -726,7 +726,7 @@ const WalletScreen = () => {
                 ]}
 
                 ListHeaderComponent={
-                    <View style={styles.topSection}>
+                    <View style={[styles.topSection, recentTransactions.length > 0 && styles.transactionDivider]}>
                         <View style={styles.walletHeader}>
                             {backupReminderWalletId === activeWallet.id && <TouchableOpacity
                                 accessibilityRole="button"
@@ -872,7 +872,7 @@ const WalletScreen = () => {
                 ListEmptyComponent={
                     (!isLightningMode && loadingTxs) ?
                         <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.bitcoin} /> :
-                        <Text style={styles.noTxText}>No transactions yet</Text>
+                        null
                 }
                 ListFooterComponent={
                     <View>
@@ -1040,6 +1040,8 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
         paddingTop: 56,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    transactionDivider: {
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
     },
@@ -1184,12 +1186,6 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
         top: 6,
         right: 8,
         opacity: 0.8,
-    },
-    noTxText: {
-        textAlign: 'center',
-        paddingVertical: 40,
-        fontSize: 16,
-        color: theme.colors.muted
     },
     historyButton: {
         flexDirection: 'row',
