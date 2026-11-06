@@ -576,15 +576,13 @@ const ReceiveScreen = () => {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.listHeaderContainer}>
-              <Text style={styles.listHeader}>Used addresses</Text>
-              {wallet_loading && <ActivityIndicator color={theme.colors.bitcoin} />}
-            </View>
+            {used_addresses.length > 0 && <>
+              <View style={styles.listHeaderContainer}>
+                <Text style={styles.listHeader}>Used addresses</Text>
+                {wallet_loading && <ActivityIndicator color={theme.colors.bitcoin} />}
+              </View>
 
-            {used_addresses.length === 0 ? (
-              <Text style={styles.emptyText}>No used receive addresses yet</Text>
-            ) : (
-              used_addresses.map((item) => {
+              {used_addresses.map((item) => {
                 const balance = item.balance;
                 return (
                   <TouchableOpacity
@@ -609,8 +607,8 @@ const ReceiveScreen = () => {
                     </View>
                   </TouchableOpacity>
                 );
-              })
-            )}
+              })}
+            </>}
           </>
         ) : (
           <View style={styles.lnContainer}>
@@ -874,7 +872,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 24,
   },
   listHeader: {
     fontSize: 16,
@@ -916,13 +914,6 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   orangeSymbol: {
     fontSize: 14,
     color: theme.colors.bitcoin,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: theme.colors.muted,
-    alignSelf: 'center',
-    marginTop: 32,
-    padding: 20,
   },
   warningBanner: {
     flexDirection: 'row',
