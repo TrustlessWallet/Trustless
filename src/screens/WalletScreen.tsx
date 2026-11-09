@@ -1037,7 +1037,7 @@ const getStyles = (theme: Theme, screenHeight: number) => StyleSheet.create({
     },
     topSection: {
         minHeight: screenHeight * 0.65,
-        paddingTop: 56,
+        paddingTop: 64,
         justifyContent: 'center',
         alignItems: 'center',
     },
