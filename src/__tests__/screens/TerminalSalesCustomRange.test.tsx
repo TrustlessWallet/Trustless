@@ -1,3 +1,4 @@
+jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ cashierState: 'off' }) }));
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import TerminalSalesScreen from '../../screens/TerminalSalesScreen';

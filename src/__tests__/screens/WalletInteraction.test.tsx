@@ -16,6 +16,7 @@ jest.mock('@react-navigation/native', () => ({
 let mockTerminalChanging = false;
 let mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
 let mockTransactions: any[] = [];
+let mockTransactionsLoading = false;
 jest.mock('../../contexts/WalletModeContext', () => ({ useWalletMode: () => ({ showTerminal: true, setMode: jest.fn(), changing: mockTerminalChanging }) }));
 
 jest.mock('../../contexts/WalletContext', () => ({
@@ -27,7 +28,7 @@ jest.mock('../../contexts/ThemeContext', () => ({
 }));
 
 jest.mock('../../hooks/useBalance', () => ({
-    useWalletTransactions: () => ({ data: mockTransactions, isLoading: false, refetch: jest.fn() }),
+    useWalletTransactions: () => ({ data: mockTransactions, isLoading: mockTransactionsLoading, refetch: jest.fn() }),
     useWalletUTXOs: () => ({ data: [], refetch: jest.fn() }),
     useTipHeight: jest.fn(),
 }));
@@ -70,6 +71,7 @@ beforeEach(() => {
     mockTerminalChanging = false;
     mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
     mockTransactions = [];
+    mockTransactionsLoading = false;
     Platform.OS = 'ios';
     (useNavigation as jest.Mock).mockReturnValue({ navigate });
     (useWallet as jest.Mock).mockReturnValue({
@@ -170,6 +172,7 @@ it('shows three recent transactions and keeps the full-history link', async () =
     await act(async () => {});
     expect(screen.getByTestId('wallet-transactions').props.data.map((tx: any) => tx.txid))
         .toEqual(['tx-0', 'tx-1', 'tx-2']);
+    expect(screen.queryByText('No transactions yet')).toBeNull();
     fireEvent.press(screen.getByText('See full transaction history'));
     expect(navigate).toHaveBeenCalledWith('TransactionHistory', { mode: 'onchain' });
 });
@@ -224,4 +227,16 @@ it('shows the Bitcoin-colored spinner while Terminal entry is busy', async () =>
     screen.rerender(<WalletScreen />);
     expect(screen.queryByTestId('terminal-entry-spinner')).toBeNull();
     expect(screen.getByText('T')).toBeTruthy();
+});
+
+it('keeps the transaction divider and empty text after loading finishes', async () => {
+    mockTransactionsLoading = true;
+    const screen = render(<WalletScreen />);
+    await act(async () => {});
+    expect(screen.queryByText('No transactions yet')).toBeNull();
+    mockTransactionsLoading = false;
+    screen.rerender(<WalletScreen />);
+    expect(screen.getByText('No transactions yet')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('wallet-transactions').props.ListHeaderComponent.props.style).borderBottomWidth).toBe(1);
+    expect(screen.queryByText('See full transaction history')).toBeNull();
 });

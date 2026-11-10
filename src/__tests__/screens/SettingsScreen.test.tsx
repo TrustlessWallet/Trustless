@@ -19,9 +19,10 @@ jest.mock('@react-navigation/native', () => ({
     useIsFocused: jest.fn(() => true),
 }));
 
-jest.mock('../../contexts/WalletContext', () => ({
-    useWallet: jest.fn(),
-}));
+jest.mock('../../contexts/WalletContext', () => {
+    const useWallet = jest.fn();
+    return { useWallet, useActiveWallet: () => useWallet().activeWallet };
+});
 
 jest.mock('../../contexts/ThemeContext', () => ({
     useTheme: () => ({
@@ -141,6 +142,13 @@ describe('SettingsScreen - Biometrics toggle sync', () => {
         const { getByTestId: getByTestIdAgain } = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
         await waitFor(() => expect(getByTestIdAgain('toggle-tx-confirm')).toBeTruthy());
         expect(read_toggle_state(getByTestIdAgain, 'toggle-tx-confirm')).toBe('Off');
+    });
+
+    it('hides unilateral exit for a signing wallet with Lightning ready', async () => {
+        const view = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
+        await waitFor(() => expect(view.getByTestId('toggle-show-terminal')).toBeTruthy());
+        expect(view.getByText('Lightning status')).toBeTruthy();
+        expect(view.queryByText(/unilateral exit/i)).toBeNull();
     });
 
     it('shows the Terminal entry by default and persists an explicit choice', async () => {
