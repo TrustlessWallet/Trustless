@@ -25,6 +25,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   const pro = useTerminalPro();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<TerminalItem[]>(() => getCachedTerminalItems(walletId, network) ?? []);
+  const [loadedScope, setLoadedScope] = useState<string | null>(() => getCachedTerminalItems(walletId, network) != null ? `${network}:${walletId}` : null);
   const [readError, setReadError] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -47,7 +48,7 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   const load = async () => {
     const revision = ++loadRevision.current;
     setReadError(false);
-    try { const saved = await listTerminalItems(walletId, network); if (ownerCurrent() && revision === loadRevision.current) setItems(saved); }
+    try { const saved = await listTerminalItems(walletId, network); if (ownerCurrent() && revision === loadRevision.current) { setItems(saved); setLoadedScope(screenScope); } }
     catch { if (ownerCurrent() && revision === loadRevision.current) setReadError(true); }
   };
   useEffect(() => {
@@ -73,9 +74,9 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   return <><View style={[styles.root, { backgroundColor: theme.colors.background }]}>
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}><LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} /></Animated.View>
     <TerminalSheetHeader title="Items" closeLabel="Close items" onClose={onClose} />
-    <Animated.FlatList data={readError ? [] : items} keyExtractor={item => item.id} extraData={busy} initialNumToRender={12} maxToRenderPerBatch={12} windowSize={5} style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, { paddingBottom: 24 }]}
+    <Animated.FlatList data={readError ? [] : items} keyExtractor={item => item.id} extraData={busy} initialNumToRender={12} maxToRenderPerBatch={12} windowSize={5} style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, !readError && items.length === 0 && styles.emptyContent, { paddingBottom: 24 }]}
       ListEmptyComponent={readError ? <View><Text style={[styles.message, { color: theme.colors.muted }]}>Saved items are unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => { void load(); }}><Text style={[styles.link, { color: theme.colors.bitcoin }]}>Retry</Text></TouchableOpacity></View>
-        : null}
+        : loadedScope === screenScope ? <Text style={[styles.emptyText, { color: theme.colors.muted }]}>No items yet</Text> : null}
       renderItem={({ item }) => <View key={item.id} style={[styles.itemRow, { borderBottomColor: theme.colors.border }]}>
             <View style={styles.itemInfo}><Text style={[styles.itemName, { color: theme.colors.primary }]}>{item.name}</Text><Text style={[styles.itemPrice, { color: theme.colors.muted }]}>{formatTerminalBasketAmount(item.unitPrice, item.unit)}</Text></View>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Edit ${item.name}`} disabled={busy} onPress={() => { if (ownerCurrent()) onEdit(item); }} style={styles.iconButton}><Feather name="edit" size={18} color={theme.colors.primary} /></TouchableOpacity>
@@ -98,6 +99,8 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   scrollFade: { position: 'absolute', top: SHEET_HEADER_HEIGHT, left: 0, right: 0, height: 48, zIndex: 1 },
   scroll: { flex: 1, minHeight: 0 }, content: { paddingHorizontal: 24, paddingTop: 20 },
+  emptyContent: { flexGrow: 1, justifyContent: 'center' },
+  emptyText: { fontSize: 16, textAlign: 'center' },
   message: { fontSize: 12, marginTop: 12 }, link: { fontSize: 13, marginTop: 12 },
   itemRow: { minHeight: 65, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   itemInfo: { flex: 1, minWidth: 0, paddingRight: 8 }, itemName: { fontSize: 16, lineHeight: 22 }, itemPrice: { fontSize: 12, lineHeight: 18, marginTop: 4 }, iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
