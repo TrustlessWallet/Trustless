@@ -1,3 +1,4 @@
+import { TerminalPaymentScan } from '../services/terminalPaymentScan';
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback, useMemo } from 'react';
 import 'react-native-get-random-values';
 import * as bip39 from 'bip39';
@@ -321,6 +322,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const switchingRef = useRef(false);
     const paymentInFlightRef = useRef(false);
     const preparedWithdrawalsRef = useRef(new WeakMap<object, LightningSdk>());
+    const terminalPaymentScans = useRef(new TerminalPaymentScan<breezSdk.Payment>());
     const preparedRefundsRef = useRef(new Map<string, { quote: TerminalRefundQuote; response: breezSdk.PrepareSendPaymentResponse; sdk: LightningSdk; walletId: string; version: number; used: boolean }>());
     const [isWalletSwitching, setIsWalletSwitching] = useState(false);
     const [lightningSyncing, setLightningSyncing] = useState(false);
@@ -833,28 +835,25 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const match = evaluate(result.payment);
             if (match) return match;
         }
-        // A resumed request has no SDK payment ID. The SDK has no exact-invoice
-        // filter, so restrict its bounded search to the invoice's lifetime. A
-        // five-minute allowance keeps the lookup safe if the device clock was
-        // slightly wrong when the request was saved.
+        // Ascending history keeps new payments from moving older entries ahead
+        // of the continuation cursor. Each check reads at most five pages per
+        // window; repeated checks resume instead of restarting at page zero.
         const findMatchingPayment = async (fromTimestamp: bigint | undefined) => {
-            for (let offset = 0; offset < 250; offset += 50) {
+            const key = JSON.stringify([lightningInitVersionRef.current, walletId, 'receive', target, String(fromTimestamp)]);
+            const payment = await terminalPaymentScans.current.find(key, async (offset, limit) => {
                 const result = await withDeadline(sdk.listPayments({
-                    offset, limit: 50, sortAscending: false,
+                    offset, limit, sortAscending: true,
                     typeFilter: [breezSdk.PaymentType.Receive], statusFilter: undefined,
                     assetFilter: new breezSdk.AssetFilter.Bitcoin(),
                     paymentDetailsFilter: [breezSdk.PaymentDetailsFilter.Lightning.new({ htlcStatus: undefined })],
                     fromTimestamp, toTimestamp: undefined,
                 }), 'Checking terminal payments');
+                return result.payments;
+            }, payment => evaluate(payment) !== null, () => {
                 assertCurrent();
                 if (walletId !== activeWalletIdRef.current) throw new Error('The active wallet changed.');
-                for (const payment of result.payments) {
-                    const match = evaluate(payment);
-                    if (match) return match;
-                }
-                if (result.payments.length < 50) break;
-            }
-            return null;
+            });
+            return payment ? evaluate(payment) : null;
         };
         const fromTimestamp = BigInt(Math.max(0, Math.floor(createdAt / 1000) - 300));
         const recentMatch = await findMatchingPayment(fromTimestamp);
@@ -964,24 +963,27 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const result = matchRefundPayment(payment?.payment, invoice, attempt.amountSats);
             if (result && (result.status !== 'failed' || attempt.paymentId === result.paymentId)) return result;
         }
-        // Bounded, user-triggered lookup. An empty or mismatched result never
-        // proves failure and must leave the refund reserved.
-        for (let offset = 0; offset < 250; offset += 50) {
+        // Missing history never proves failure. Continue a bounded ascending
+        // scan on the next user check without releasing the reservation.
+        const key = JSON.stringify([lightningInitVersionRef.current, walletId, 'send', normalizeInvoice(invoice), createdAt]);
+        const evaluate = (payment: breezSdk.Payment) => {
+            const result = matchRefundPayment(payment, invoice, attempt.amountSats);
+            return result && (result.status !== 'failed' || attempt.paymentId === result.paymentId) ? result : null;
+        };
+        const payment = await terminalPaymentScans.current.find(key, async (offset, limit) => {
             const page = await withDeadline(sdk.listPayments({
-                offset, limit: 50, sortAscending: false,
+                offset, limit, sortAscending: true,
                 typeFilter: [breezSdk.PaymentType.Send], statusFilter: undefined,
                 assetFilter: new breezSdk.AssetFilter.Bitcoin(),
                 paymentDetailsFilter: [breezSdk.PaymentDetailsFilter.Lightning.new({ htlcStatus: undefined })],
                 fromTimestamp: BigInt(Math.max(0, Math.floor(createdAt / 1000) - 300)), toTimestamp: undefined,
             }), 'Checking refund payments');
+            return page.payments;
+        }, payment => evaluate(payment) !== null, () => {
             assertCurrent();
             if (walletId !== activeWalletIdRef.current) preflightRefund('The active wallet changed.');
-            for (const payment of page.payments) {
-                const result = matchRefundPayment(payment, invoice, attempt.amountSats);
-                if (result && (result.status !== 'failed' || attempt.paymentId === result.paymentId)) return result;
-            }
-            if (page.payments.length < 50) break;
-        }
+        });
+        if (payment) return evaluate(payment)!;
         return { status: 'unknown' };
     };
 

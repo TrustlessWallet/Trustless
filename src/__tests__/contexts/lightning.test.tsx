@@ -110,6 +110,40 @@ it('prepares the local wallet without discovery or Lightning during onboarding',
     await waitFor(() => expect(sdkModule.connect).toHaveBeenCalled());
 });
 
+it.each([249, 250, 251, 1251])('recovers Terminal payments across bounded history checks with %i preceding rows', async preceding => {
+    const hook = await connected();
+    const sales = require('../../services/terminalSales');
+    const invoice = 'lnbc123target';
+    const sale = await sales.updateTerminalSalePayment({ id: 'scan-sale', walletId: 'a', network: 'mainnet', invoice: 'lnbc123sale', amountSats: 1000, createdAt: 1000, expiresAt: 2000 }, { status: 'received', paymentId: 'sale-paid' }, 3000);
+    const attempt = await refundJournal.reserveTerminalRefund(sale, { id: 'scan-refund', invoice, amountSats: 123, feeSats: 1, quoteExpiresAt: Date.now() + 60000 });
+    a.listPayments.mockImplementation(async (req: any) => {
+        const type = req.typeFilter?.[0] ?? 0;
+        const row = (id: string, inv: string) => ({ ...payment(id), paymentType: type, details: { tag: 'Lightning', inner: { invoice: inv } } });
+        const rows = Array.from({ length: preceding }, (_, i) => row(`older-${i}`, `lnbcother${i}`)).concat(row('target-paid', invoice));
+        return { payments: rows.slice(req.offset, req.offset + req.limit) };
+    });
+    a.listPayments.mockClear();
+    for (let i = 0; i <= Math.floor(preceding / 250); i++) {
+        const before = a.listPayments.mock.calls.length;
+        const receive = await hook.result.current.verifyTerminalInvoice(invoice, 1000);
+        expect(receive.status).toBe(i === Math.floor(preceding / 250) ? 'received' : 'unknown');
+        expect(a.listPayments.mock.calls.length - before).toBeLessThanOrEqual(5);
+        const refund = await hook.result.current.verifyTerminalRefund(invoice, 1000);
+        expect(refund.status).toBe(i === Math.floor(preceding / 250) ? 'complete' : 'unknown');
+        if (refund.status === 'unknown') {
+            await expect(refundJournal.reserveTerminalRefund(sale, { id: 'second', invoice: 'lnbcsecond', amountSats: 100, feeSats: 1, quoteExpiresAt: Date.now() + 60000 })).rejects.toThrow('unresolved');
+        }
+        await refundJournal.updateTerminalRefund(attempt, refund);
+        if (preceding === 250 && i === 0) {
+            a.listPayments.mockRejectedValueOnce(new Error('offline'));
+            await expect(hook.result.current.verifyTerminalRefund(invoice, 1000)).rejects.toThrow('offline');
+            expect((await refundJournal.findTerminalRefundByInvoice('a', 'mainnet', invoice))?.status).toBe('unknown');
+        }
+    }
+    expect(a.listPayments.mock.calls.every(([req]: any) => req.sortAscending === true)).toBe(true);
+    expect(a.sendPayment).not.toHaveBeenCalled();
+});
+
 const refundInvoice = 'lnbc123refund';
 function mockRefundPreparation() {
     const now = BigInt(Math.floor(Date.now() / 1000));
