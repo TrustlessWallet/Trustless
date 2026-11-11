@@ -26,7 +26,7 @@ beforeEach(async () => { await AsyncStorage.clear(); jest.clearAllMocks(); mockF
 it('registers consecutive taps and closes the carousel through native navigation', async () => {
   const view = render(<OnboardingWalletScreen />);
   expect(view.getByText('Create your wallet')).toBeTruthy();
-  for (let step = 0; step < 7; step++) fireEvent.press(view.getByRole('button', { name: 'Next' }));
+  for (let step = 0; step < 8; step++) fireEvent.press(view.getByRole('button', { name: 'Next' }));
   expect(await AsyncStorage.getItem('@hasCompletedOnboarding')).toBeNull();
   expect(mockBootstrap).not.toHaveBeenCalled();
   mockLoading = true;
