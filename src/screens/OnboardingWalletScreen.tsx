@@ -58,6 +58,12 @@ const slides = [
     image: require('../../assets/Map-onboarding.png'),
   },
   {
+    key: 'terminal',
+    headline: 'Become a merchant',
+    body: 'Accept Lightning payments\nwith Terminal.',
+    image: require('../../assets/Terminal-onboarding.png'),
+  },
+  {
     key: '6',
     headline: 'Control your coins',
     body: 'Manually select which UTXOs to spend. You are in charge.',
