@@ -4,6 +4,7 @@ const mockRequirePro = jest.fn();
 jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => ({ status: mockProStatus }) }));
 jest.mock('../../hooks/useTerminalProGate', () => ({ useTerminalProGate: () => ({ requirePro: mockRequirePro, openPro: jest.fn(), proSheet: null }) }));
 import { act, fireEvent, render } from '@testing-library/react-native';
+import { FlatList, StyleSheet } from 'react-native';
 import TerminalItemsScreen from '../../screens/TerminalItemsScreen';
 import { deleteTerminalItem, getCachedTerminalItems, listTerminalItems } from '../../services/terminalItems';
 
@@ -69,4 +70,29 @@ it('offers Pro at five free items while keeping editing available', () => {
   view.rerender(<TerminalItemsScreen walletId="shop" network="mainnet" preferredUnit="USD" onClose={jest.fn()} onEdit={edit} />);
   fireEvent.press(view.getByLabelText('Add item'));
   expect(edit).toHaveBeenLastCalledWith();
+});
+
+it('shows centered empty copy only after an uncached catalog loads successfully', async () => {
+  (getCachedTerminalItems as jest.Mock).mockReturnValue(null);
+  let finish!: (items: unknown[]) => void;
+  (listTerminalItems as jest.Mock).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const view = render(<TerminalItemsScreen walletId="shop" network="mainnet" preferredUnit="USD" onClose={jest.fn()} onEdit={jest.fn()} />);
+  expect(view.queryByText('No items yet')).toBeNull();
+  await act(async () => { finish([]); });
+  expect(view.getByText('No items yet')).toBeTruthy();
+  expect(StyleSheet.flatten(view.UNSAFE_getByType(FlatList).props.contentContainerStyle)).toMatchObject({ flexGrow: 1, justifyContent: 'center' });
+  expect(StyleSheet.flatten(view.getByText('No items yet').props.style).textAlign).toBe('center');
+});
+
+it('shows retry instead of empty copy on read failure and restores the populated catalog', async () => {
+  (getCachedTerminalItems as jest.Mock).mockReturnValue(null);
+  (listTerminalItems as jest.Mock).mockRejectedValueOnce(new Error('Unavailable')).mockResolvedValueOnce([coffee]);
+  const view = render(<TerminalItemsScreen walletId="shop" network="mainnet" preferredUnit="USD" onClose={jest.fn()} onEdit={jest.fn()} />);
+  await act(async () => {});
+  expect(view.getByText('Saved items are unavailable.')).toBeTruthy();
+  expect(view.queryByText('No items yet')).toBeNull();
+  await act(async () => { fireEvent.press(view.getByLabelText('Retry items')); });
+  expect(view.getByText('Coffee')).toBeTruthy();
+  expect(view.queryByText('Saved items are unavailable.')).toBeNull();
+  expect(view.queryByText('No items yet')).toBeNull();
 });
