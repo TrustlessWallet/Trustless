@@ -2,6 +2,7 @@ const mockPro = { status: 'pro', pending: false, plans: [], busy: false, loading
 jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => mockPro }));
 import { clearTerminalItemCacheForTests } from '../../services/terminalItems';
 import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
+import { shareTerminalPdfReceipt } from '../../services/terminalReceiptPdfShare';
 import { getTerminalDatabase } from '../../services/terminalDatabase';
 import React from 'react';
 import { Alert, Modal } from 'react-native';
@@ -18,6 +19,8 @@ import { clearTerminalRateCacheForTests } from '../../services/terminalRates';
 import { saveTerminalItem, listTerminalItems } from '../../services/terminalItems';
 import * as terminalItems from '../../services/terminalItems';
 import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from '../../services/terminalSales';
+
+jest.mock('../../services/terminalReceiptPdfShare', () => ({ shareTerminalPdfReceipt: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('crypto', () => require('node:crypto'));
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn(), useActiveWallet: jest.fn() }));
@@ -598,6 +601,7 @@ it('restores a paid invoice and keeps its sale after guarded sheet closing', asy
   fireEvent.press(view.getByTestId('terminal-request'));
   await waitFor(() => expect(view.getByTestId('terminal-qr')).toBeTruthy());
   expect(view.getByLabelText('Close invoice')).toBeTruthy();
+  expect(view.queryByRole('button', { name: 'Share PDF receipt' })).toBeNull();
   expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
   view.unmount();
   const [sale] = await listTerminalSales('wallet-a', 'mainnet');
@@ -606,7 +610,23 @@ it('restores a paid invoice and keeps its sale after guarded sheet closing', asy
   const resumed = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
   // A temporarily incomplete SDK query cannot turn a known paid sale unpaid.
   await waitFor(() => expect(resumed.getByText('Payment received')).toBeTruthy());
-  fireEvent.press(resumed.getByLabelText('Close invoice'));
+  const share = resumed.getByRole('button', { name: 'Share PDF receipt' });
+  const shareMock = jest.mocked(shareTerminalPdfReceipt);
+  let finishShare!: () => void;
+  shareMock.mockClear().mockImplementationOnce(() => new Promise<void>(resolve => { finishShare = resolve; }));
+  act(() => {
+    fireEvent.press(share);
+    fireEvent.press(share);
+  });
+  await waitFor(() => expect(shareMock).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'received', paymentId: 'paid-one', request: sale.request }),
+    [],
+    expect.any(Function),
+  ));
+  expect(shareMock).toHaveBeenCalledTimes(1);
+  expect(resumed.getByRole('button', { name: 'Share PDF receipt' }).props.accessibilityState.busy).toBe(true);
+  await act(async () => { finishShare(); });
+  fireEvent.press(resumed.getByRole('button', { name: 'New sale' }));
   await waitFor(() => expect(resumed.getByText('Generate invoice')).toBeTruthy());
   expect((await listTerminalSales('wallet-a', 'mainnet'))[0].status).toBe('received');
 });
