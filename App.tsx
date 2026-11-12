@@ -63,7 +63,6 @@ export default function App() {
   const [navBootReady, setNavBootReady] = useState(false);
 
   const launchOpacity = useRef(new Animated.Value(1)).current;
-  const splashStartMs = useRef<number>(Date.now()).current;
 
   let [fontsLoaded] = useFonts({
     'SpaceMono-Regular': SpaceMono_400Regular,
@@ -117,18 +116,13 @@ export default function App() {
     const appReady = Boolean(fontsLoaded && networkLoaded && dbReady && navBootReady && isAppInitialized);
     if (!appReady) return;
 
-    const minSplashMs = 1000;
-    const elapsed = Date.now() - splashStartMs;
-    const remaining = Math.max(0, minSplashMs - elapsed);
+    const fade = Animated.timing(launchOpacity, { toValue: 0, duration: 300, useNativeDriver: true });
+    fade.start(({ finished }) => {
+      if (finished) setShowLaunchOverlay(false);
+    });
 
-    const t = setTimeout(() => {
-      Animated.timing(launchOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
-        setShowLaunchOverlay(false);
-      });
-    }, remaining);
-
-    return () => clearTimeout(t);
-  }, [fontsLoaded, networkLoaded, dbReady, navBootReady, isAppInitialized, launchOpacity, splashStartMs]);
+    return () => fade.stop();
+  }, [fontsLoaded, networkLoaded, dbReady, navBootReady, isAppInitialized, launchOpacity]);
 
 
   return (

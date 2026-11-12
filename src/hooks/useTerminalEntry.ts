@@ -3,6 +3,8 @@ import { Alert } from 'react-native';
 import { NETWORK_NAME } from '../constants/network';
 import { warmTerminalItems } from '../services/terminalItems';
 
+const CATALOG_WARMUP_BUDGET_MS = 120;
+
 type Wallet = { id: string; type: string } | null;
 export function useTerminalEntry(wallet: Wallet, changing: boolean, setMode: (mode: 'terminal') => Promise<void>, focused = true) {
   const [preparing, setPreparing] = useState(false);
@@ -22,12 +24,18 @@ export function useTerminalEntry(wallet: Wallet, changing: boolean, setMode: (mo
     const epoch = current.current.epoch;
     const isCurrent = () => mounted.current && current.current.epoch === epoch;
     flight.current = epoch; setPreparing(true);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      // Catalog failure must not prevent a manual payment; checkout has its own retry.
-      await warmTerminalItems(wallet.id, NETWORK_NAME).catch(() => undefined);
+      // Give an in-progress catalog read a short head start. Manual checkout
+      // can open while a slow read finishes in the background.
+      await Promise.race([
+        warmTerminalItems(wallet.id, NETWORK_NAME).catch(() => undefined),
+        new Promise<void>(resolve => { timeout = setTimeout(resolve, CATALOG_WARMUP_BUDGET_MS); }),
+      ]);
       if (isCurrent()) await setMode('terminal');
     } catch { if (isCurrent()) Alert.alert('Could not open terminal', 'Please retry.'); }
     finally {
+      if (timeout !== undefined) clearTimeout(timeout);
       if (flight.current === epoch) flight.current = null;
       if (isCurrent()) setPreparing(false);
     }
