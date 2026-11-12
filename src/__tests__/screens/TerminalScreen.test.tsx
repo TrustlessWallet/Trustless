@@ -2,6 +2,7 @@ const mockPro = { status: 'pro', pending: false, plans: [], busy: false, loading
 jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => mockPro }));
 import { clearTerminalItemCacheForTests } from '../../services/terminalItems';
 import { resetTerminalSqlite, failNextTerminalSqliteWrite } from '../helpers/terminalSqlite';
+import { useKeepAwake } from 'expo-keep-awake';
 import { shareTerminalPdfReceipt } from '../../services/terminalReceiptPdfShare';
 import { getTerminalDatabase } from '../../services/terminalDatabase';
 import React from 'react';
@@ -22,6 +23,7 @@ import { listTerminalSales, recordTerminalSale, updateTerminalSalePayment } from
 
 jest.mock('../../services/terminalReceiptPdfShare', () => ({ shareTerminalPdfReceipt: jest.fn().mockResolvedValue(undefined) }));
 
+jest.mock('expo-keep-awake', () => ({ useKeepAwake: jest.fn() }));
 jest.mock('crypto', () => require('node:crypto'));
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn(), useActiveWallet: jest.fn() }));
 const mockSetMode = jest.fn();
@@ -593,6 +595,11 @@ it.each([false, true])('keeps a new wallet request intact when ending the old wa
 });
 
 it('restores a paid invoice and keeps its sale after guarded sheet closing', async () => {
+  const wakeHook = jest.mocked(useKeepAwake);
+  const releaseWakeLock = jest.fn();
+  wakeHook.mockImplementation(() => {
+    React.useEffect(() => releaseWakeLock, []);
+  });
   const expiresAt = Date.now() + 60000;
   createTerminalInvoice.mockResolvedValue({ invoice: 'lnbc123abc', expiresAt });
   const view = render(<NavigationContainer><TerminalScreen /></NavigationContainer>);
@@ -603,7 +610,9 @@ it('restores a paid invoice and keeps its sale after guarded sheet closing', asy
   expect(view.getByLabelText('Close invoice')).toBeTruthy();
   expect(view.queryByRole('button', { name: 'Share PDF receipt' })).toBeNull();
   expect(createTerminalInvoice).toHaveBeenCalledTimes(1);
+  expect(wakeHook).toHaveBeenCalled();
   view.unmount();
+  expect(releaseWakeLock).toHaveBeenCalledTimes(1);
   const [sale] = await listTerminalSales('wallet-a', 'mainnet');
   await updateTerminalSalePayment(sale.request, { status: 'received', paymentId: 'paid-one' });
   validateTerminalInvoice.mockResolvedValue(expiresAt);
@@ -626,6 +635,14 @@ it('restores a paid invoice and keeps its sale after guarded sheet closing', asy
   expect(shareMock).toHaveBeenCalledTimes(1);
   expect(resumed.getByRole('button', { name: 'Share PDF receipt' }).props.accessibilityState.busy).toBe(true);
   await act(async () => { finishShare(); });
+  shareMock.mockRejectedValueOnce(new Error('Share unavailable'));
+  fireEvent.press(resumed.getByRole('button', { name: 'Share PDF receipt' }));
+  await waitFor(() => expect(resumed.getByRole('alert')).toHaveTextContent('Couldn’t share the PDF receipt. Please try again.'));
+  fireEvent.press(resumed.getByRole('button', { name: 'Share PDF receipt' }));
+  await waitFor(() => expect(shareMock).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(resumed.getByRole('button', { name: 'Share PDF receipt' }).props.accessibilityState.busy).toBe(false));
+  expect(resumed.queryByRole('alert')).toBeNull();
+  wakeHook.mockReset();
   fireEvent.press(resumed.getByRole('button', { name: 'New sale' }));
   await waitFor(() => expect(resumed.getByText('Generate invoice')).toBeTruthy());
   expect((await listTerminalSales('wallet-a', 'mainnet'))[0].status).toBe('received');
