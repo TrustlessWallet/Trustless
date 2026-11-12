@@ -34,6 +34,22 @@ it.each(['switch', 'unmount', 'blur'])('does not open a stale Terminal after %s'
   expect(setMode).not.toHaveBeenCalled();
   unmount();
 });
+it('opens manual checkout even while the catalog read is still pending', async () => {
+  jest.useFakeTimers();
+  try {
+    (warmTerminalItems as jest.Mock).mockReturnValue(new Promise<void>(() => {}));
+    const setMode = jest.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useTerminalEntry(wallet, false, setMode));
+    await act(async () => {
+      void result.current.openTerminal();
+      jest.advanceTimersByTime(150);
+    });
+    expect(setMode).toHaveBeenCalledTimes(1);
+    expect(result.current.busy).toBe(false);
+  } finally {
+    jest.useRealTimers();
+  }
+});
 it('allows manual checkout when the optional catalog cannot load', async () => {
   (warmTerminalItems as jest.Mock).mockRejectedValue(new Error('storage busy'));
   const setMode = jest.fn().mockResolvedValue(undefined);
