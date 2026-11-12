@@ -24,3 +24,20 @@ it('updates virtualized controls when the payment becomes busy', () => {
   fireEvent.press(view.getByLabelText('Add Coffee'));
   expect(add).not.toHaveBeenCalled();
 });
+
+it('filters accent-insensitively and restores basket controls when cleared', () => {
+  const coffee = { id: 'coffee', name: 'Caffè', unit: 'USD' as const, unitPrice: 100 };
+  const tea = { id: 'tea', name: 'Tea', unit: 'USD' as const, unitPrice: 200 };
+  const view = render(<TerminalQuickItemsScreen catalog={[coffee, tea]}
+    lines={[{ itemId: coffee.id, name: coffee.name, unitPrice: 100, quantity: 2, total: 200 }]}
+    unit="USD" busy={false} onAdd={jest.fn()} onRemoveOne={jest.fn()} onClose={jest.fn()} />);
+  fireEvent.changeText(view.getByLabelText('Search items'), 'tea');
+  expect(view.queryByLabelText('Remove one Caffè')).toBeNull();
+  fireEvent.changeText(view.getByLabelText('Search items'), 'CAFFE');
+  expect(view.getByLabelText('Remove one Caffè')).toBeTruthy();
+  expect(view.getByText('2')).toBeTruthy();
+  expect(view.queryByLabelText('Add Tea')).toBeNull();
+  fireEvent.press(view.getByLabelText('Clear search items'));
+  expect(view.getByLabelText('Add Tea')).toBeTruthy();
+  expect(view.getByText('2')).toBeTruthy();
+});

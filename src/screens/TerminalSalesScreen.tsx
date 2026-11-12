@@ -1,3 +1,5 @@
+import { TerminalSearchInput } from '../components/TerminalSearchInput';
+import type { TerminalSalesFilter } from '../services/terminalSales';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
@@ -113,7 +115,19 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const periodDay = useMemo(() => new Date(dayStart), [dayStart]);
   const range = useMemo(() => terminalSalesPeriodBounds(period, periodDay, customRange ?? undefined), [period, periodDay, customRange]);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
-  const loadIdentity = `${scope}:${period}:${rangeKey}`;
+  const [search, setSearch] = useState({ scope, query: '', status: undefined as TerminalSalesFilter['status'] });
+  const query = search.scope === scope ? search.query : '';
+  const statusFilter = search.scope === scope ? search.status : undefined;
+  const [debounced, setDebounced] = useState({ scope, query: '' });
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced({ scope, query: query.trim() }), query.trim() ? 180 : 0);
+    return () => clearTimeout(timer);
+  }, [query, scope]);
+  const searchTerm = debounced.scope === scope ? debounced.query : '';
+  const filter = useMemo(() => searchTerm || statusFilter ? { query: searchTerm, status: statusFilter } : undefined, [searchTerm, statusFilter]);
+  const filterKey = filter ? JSON.stringify(filter) : '';
+  const periodIdentity = `${scope}:${period}:${rangeKey}|`;
+  const loadIdentity = periodIdentity + filterKey;
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState('');
   const [refundOpen, setRefundOpen] = useState(false);
@@ -167,14 +181,14 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       identity,
       sales: previous.identity === identity ? previous.sales : [],
       nextCursor: previous.identity === identity ? previous.nextCursor : null,
-      summary: previous.identity === identity ? previous.summary : null,
-      refundedSats: previous.identity === identity ? previous.refundedSats : null,
+      summary: previous.identity.startsWith(periodIdentity) ? previous.summary : null,
+      refundedSats: previous.identity.startsWith(periodIdentity) ? previous.refundedSats : null,
       loading: true, refreshing: userInitiated, error: false, pageLoading: false, pageError: false,
     }));
     else setState(previous => previous.identity === identity ? { ...previous, pageLoading: false, pageError: false } : previous);
     try {
       const [firstPage, summary, refundedSats] = await Promise.all([
-        listTerminalSalesPage(walletId, network, { range, limit: 50 }),
+        listTerminalSalesPage(walletId, network, { range, limit: 50, ...(filter ? { filter } : {}) }),
         getTerminalSalesSummary(walletId, network, range),
         getTerminalRefundTotal(walletId, network, range),
       ]);
@@ -183,7 +197,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       const ids = new Set(sales.map(sale => sale.request.id));
       let nextCursor = firstPage.nextCursor;
       while (!showLoading && sales.length < retainedCount && nextCursor) {
-        const page = await listTerminalSalesPage(walletId, network, { range, cursor: nextCursor, limit: 50 });
+        const page = await listTerminalSalesPage(walletId, network, { range, cursor: nextCursor, limit: 50, ...(filter ? { filter } : {}) });
         if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
         for (const sale of page.items) if (!ids.has(sale.request.id)) { ids.add(sale.request.id); sales.push(sale); }
         nextCursor = page.nextCursor;
@@ -197,11 +211,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
       setState(previous => !showLoading && previous.identity === identity && previous.summary !== null
         ? { ...previous, loading: false, refreshing: false, pageLoading: false, pageError: false }
-        : { ...previous, identity, sales: [], nextCursor: null, summary: null, refundedSats: null, loading: false, refreshing: false, error: true, pageLoading: false, pageError: false });
+        : { ...previous, identity, sales: [], nextCursor: null, summary: previous.identity.startsWith(periodIdentity) ? previous.summary : null, refundedSats: previous.identity.startsWith(periodIdentity) ? previous.refundedSats : null, loading: false, refreshing: false, error: true, pageLoading: false, pageError: false });
     } finally {
       if (refreshInFlight.current === generation) refreshInFlight.current = 0;
     }
-  }, [loadIdentity, walletId, network, range]);
+  }, [loadIdentity, walletId, network, range, filter, periodIdentity]);
 
   const loadNextPage = useCallback(async () => {
     if (!visibleRef.current || pageBusy.current || refreshInFlight.current || state.identity !== loadIdentity || state.loading || state.error || !state.nextCursor) return;
@@ -211,7 +225,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     pageBusy.current = true;
     setState(previous => previous.identity === identity ? { ...previous, pageLoading: true, pageError: false } : previous);
     try {
-      const page = await listTerminalSalesPage(walletId, network, { range, cursor, limit: 50 });
+      const page = await listTerminalSalesPage(walletId, network, { range, cursor, limit: 50, ...(filter ? { filter } : {}) });
       if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
       setState(previous => {
         if (previous.identity !== identity) return previous;
@@ -223,7 +237,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     } finally {
       if (generation === loadGeneration.current && identity === currentLoadIdentity.current) pageBusy.current = false;
     }
-  }, [state.identity, state.loading, state.error, state.nextCursor, loadIdentity, walletId, network, range]);
+  }, [state.identity, state.loading, state.error, state.nextCursor, loadIdentity, walletId, network, range, filter]);
 
   useEffect(() => {
     mounted.current = true;
@@ -306,7 +320,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const sales = state.identity === loadIdentity ? state.sales : [];
   const loading = state.identity !== loadIdentity || state.loading;
   const error = state.identity === loadIdentity && state.error;
-  const summary = state.identity === loadIdentity ? state.summary : null;
+  const summary = state.identity.startsWith(periodIdentity) ? state.summary : null;
   const shown = sales;
   const paidCount = summary?.receivedCount ?? 0;
   const totals = useMemo(() => totalsFor(summary), [summary]);
@@ -318,7 +332,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const refundsReady = refundsLoaded && refundRemaining !== null;
   const completedRefund = refunds.reduce((total, attempt) => attempt.status === 'complete' ? total + BigInt(attempt.amountSats) : total, 0n);
   const reservedRefund = refunds.reduce((total, attempt) => attempt.status === 'unknown' || attempt.status === 'pending' ? total + BigInt(attempt.amountSats) : total, 0n);
-  const refundedSats = state.identity === loadIdentity ? state.refundedSats : null;
+  const refundedSats = state.identity.startsWith(periodIdentity) ? state.refundedSats : null;
   const summaryShape = useRef<{ scope: string; totalRows: number }>({ scope, totalRows: 1 });
   if (summaryShape.current.scope !== scope) summaryShape.current = { scope, totalRows: 1 };
   if (summary) summaryShape.current = { scope, totalRows: Math.max(1, totals.length) };
@@ -398,7 +412,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     setExportError('');
     const nextRange = terminalSalesPeriodBounds(nextPeriod, periodDay, nextCustomRange ?? undefined);
     const nextRangeKey = nextRange ? `${nextRange.start}:${nextRange.end}` : 'all';
-    const identity = `${scope}:${nextPeriod}:${nextRangeKey}`;
+    const identity = `${scope}:${nextPeriod}:${nextRangeKey}|${filterKey}`;
     setPeriodError(false);
     if (identity === loadIdentity) { setPendingPeriod(null); return; }
     const prior = stateRef.current;
@@ -422,7 +436,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     if (cached) { commit(cached); return; }
     setPendingPeriod(nextPeriod);
     void Promise.all([
-      listTerminalSalesPage(walletId, network, { range: nextRange, limit: 50 }),
+      listTerminalSalesPage(walletId, network, { range: nextRange, limit: 50, ...(filter ? { filter } : {}) }),
       getTerminalSalesSummary(walletId, network, nextRange),
       getTerminalRefundTotal(walletId, network, nextRange),
     ]).then(([firstPage, summary, refundedSats]) => {
@@ -474,7 +488,19 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       {onOpenReports && reportOwner ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => { const selection = { period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now }; proGate.requirePro(() => onOpenReports(selection)); }} style={styles.reportsRow}>
         <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text>{pro.status === 'free' ? <TerminalProBadge /> : null}<Feather name="chevron-right" size={18} color={theme.colors.muted} />
       </TouchableOpacity> : null}
-      <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
+      <TerminalSearchInput label="Search sales" value={query} onChangeText={value => setSearch({ scope, query: value, status: statusFilter })} />
+      <View style={styles.statusFilters}>
+        {([{ label: 'All statuses' }, { label: 'Paid only', value: 'received' }, { label: 'Pending only', value: 'pending' }, { label: 'Not paid', value: 'unknown' }] as const).map(option => {
+          const value = 'value' in option ? option.value : undefined;
+          const selected = value === statusFilter;
+          return <TouchableOpacity key={option.label} accessibilityRole="button" accessibilityState={{ selected }}
+            onPress={() => setSearch({ scope, query, status: value })}
+            style={[styles.statusFilter, selected && styles.statusFilterSelected]}>
+            <Text style={styles.statusFilterText}>{option.label}</Text>
+          </TouchableOpacity>;
+        })}
+      </View>
+      <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{filter ? null : summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
     </> : null}
   </>;
 
@@ -529,6 +555,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       style={styles.scroll}
 
       scrollEventThrottle={16}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       data={error ? [] : shown}
       keyExtractor={item => item.request.id}
       ListHeaderComponent={header}
@@ -549,6 +577,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       ListEmptyComponent={<View style={styles.empty}>
         {error ? <><Feather name="alert-circle" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>Sales unavailable</Text><Text style={styles.emptyBody}>Couldn’t load saved sales. Try again.</Text><TouchableOpacity accessibilityRole="button" onPress={() => { void refresh(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></>
           : loading ? null
+            : filter ? <Text style={styles.emptyTitle}>No matching sales</Text>
             : <><Feather name="shopping-bag" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>{period === 'today' ? 'No sales today' : period === 'all' ? 'No sales yet' : 'No sales in this period'}</Text><Text style={styles.emptyBody}>{period === 'today' ? 'New payment requests will appear here.' : period === 'all' ? 'Payment requests from this wallet will appear here.' : 'Payment requests in this period will appear here.'}</Text></>}
       </View>}
       ListFooterComponent={state.identity === loadIdentity && state.pageLoading
@@ -586,6 +615,10 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     skeletonLabel: { width: 48, height: 18, borderRadius: 5, backgroundColor: colors.muted, opacity: 0.18 },
     skeletonAmount: { width: 88, height: 24, borderRadius: 6, backgroundColor: colors.muted, opacity: 0.18 },
     skeletonSectionCount: { width: 24, height: 11, borderRadius: 5, backgroundColor: colors.muted, opacity: 0.18 },
+    statusFilters: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginHorizontal: 24 },
+    statusFilter: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center', borderRadius: 8 },
+    statusFilterSelected: { backgroundColor: colors.surface },
+    statusFilterText: { color: colors.primary, fontSize: 12 },
     sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 24, marginTop: 35, marginBottom: 9 },
     sectionTitle: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
     sectionCount: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 11 },

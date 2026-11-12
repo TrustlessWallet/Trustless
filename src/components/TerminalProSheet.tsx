@@ -140,7 +140,7 @@ export default function TerminalProSheet({ visible, activation, onClose, onDismi
           </View> : null}
           <Text style={styles.sectionTitle}>{confirmed ? 'WHERE TO FIND YOUR FEATURES' : status === 'pro' ? 'INCLUDED WITH PRO' : 'PRO FEATURES'}</Text>
           <View style={styles.features}>
-            <FeatureRow title="Unlimited items" detail={confirmed ? 'Settings → Items' : 'Expand your catalog beyond 5 free items'} theme={theme} styles={styles} />
+            <FeatureRow title="Unlimited items" detail={confirmed ? 'Settings → Items' : 'Build and search a catalog beyond 5 free items'} theme={theme} styles={styles} />
             <FeatureRow title="Reports" detail={confirmed ? 'Sales → Reports' : 'Item reports and CSV export'} theme={theme} styles={styles} />
             <FeatureRow title="Receipt logos" detail={confirmed ? 'Settings → Receipts → Logo' : 'Add your logo to receipts'} theme={theme} styles={styles} />
             <FeatureRow title="Receipt templates" detail={confirmed ? 'Settings → Receipts → Save as template' : 'Save layouts for repeat use'} theme={theme} styles={styles} />

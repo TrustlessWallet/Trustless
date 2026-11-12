@@ -119,8 +119,10 @@ function validRange(range: unknown): range is TerminalRange {
     (value.end as number) > (value.start as number);
 }
 
+export type TerminalSalesFilter = { query?: string; status?: 'received' | 'pending' | 'unknown' };
+
 export function listTerminalSalesPage(walletId: string, network: string,
-  options: { range: TerminalRange; cursor?: TerminalSalesCursor | null; limit?: number }): Promise<{ items: TerminalSale[]; nextCursor: TerminalSalesCursor | null }> {
+  options: { range: TerminalRange; cursor?: TerminalSalesCursor | null; limit?: number; filter?: TerminalSalesFilter }): Promise<{ items: TerminalSale[]; nextCursor: TerminalSalesCursor | null }> {
   const identity = terminalScope(walletId, network), range = options?.range, cursor = options?.cursor ?? null, limit = options?.limit ?? 50;
   if (!validRange(range) || !Number.isInteger(limit) || limit < 1 || limit > 100 ||
       (cursor !== null && (!timestamp(cursor.at) || typeof cursor.id !== 'string' || !cursor.id))) return Promise.reject(new Error('Invalid Terminal sales page.'));
@@ -129,6 +131,15 @@ export function listTerminalSalesPage(walletId: string, network: string,
     const args: (string | number)[] = [identity.walletId, identity.network];
     if (range) { predicates.push('activity_at>=?', 'activity_at<?'); args.push(range.start, range.end); }
     if (cursor) { predicates.push('(activity_at,id)<(?,?)'); args.push(cursor.at, cursor.id); }
+    const status = options.filter?.status;
+    if (status) { predicates.push('status=?'); args.push(status); }
+    const query = options.filter?.query?.trim().toLowerCase();
+    if (query) {
+      predicates.push(`(instr(lower(id), ?) > 0 OR instr(lower(coalesce(payment_id, '')), ?) > 0
+        OR EXISTS (SELECT 1 FROM json_each(terminal_sales.payload, '$.request.basket.lines') AS line
+          WHERE instr(lower(json_extract(line.value, '$.name')), ?) > 0))`);
+      args.push(query, query, query);
+    }
     args.push(limit + 1);
     const rows = await db.getAllAsync<SaleRow & { activity_at: number; id: string }>(`SELECT payload,activity_at,id FROM terminal_sales
       WHERE ${predicates.join(' AND ')} ORDER BY activity_at DESC,id DESC LIMIT ?`, args);
