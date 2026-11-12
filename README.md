@@ -26,6 +26,7 @@ Hi! Trustless is a fully open-source, non-custodial (only you have access to you
 * **Terminal:** Accept Lightning payments, build orders from your item catalog, and track sales from your phone.
 
   <img width="250" alt="Terminal checkout with a keypad and Generate invoice button" src="./assets/Terminal-onboarding.png" />
+  <img width="250" alt="Terminal checkout in dark mode" src="./docs/images/terminal-dark.png" />
 
 * **BTC Map:** Find local and global shops that accept Bitcoin and Lightning payments directly within the app. All thanks to our friends from [BTC Map.](https://github.com/teambtcmap)
 
