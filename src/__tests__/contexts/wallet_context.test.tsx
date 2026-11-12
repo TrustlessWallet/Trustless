@@ -1,8 +1,10 @@
 import React from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { renderHook, waitFor, act } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WalletProvider, useWallet as use_wallet } from '../../contexts/WalletContext';
 import * as bitcoin_service from '../../services/bitcoin';
+import type { Wallet } from '../../types';
 
 import {
     dbGetWallets as db_get_wallets,
@@ -23,11 +25,39 @@ import {
 
 import * as keychain from 'react-native-keychain';
 
+jest.mock('crypto', () => require('node:crypto'));
+
+const testMnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+const mnemonicService = (id: string) => `com.btc.trustless.mnemonic.v2.${id}`;
+const keychainEntries = new Map<string, keychain.UserCredentials>();
+const keychainStorage = 'keychain' as keychain.STORAGE_TYPE;
+
 jest.mock('react-native-keychain', () => ({
     getGenericPassword: jest.fn(),
     setGenericPassword: jest.fn(),
     resetGenericPassword: jest.fn(),
 }));
+
+beforeEach(async () => {
+    await AsyncStorage.clear();
+    await AsyncStorage.setItem('@hasCompletedOnboarding', 'true');
+    keychainEntries.clear();
+    for (const id of ['wallet_1', 'wallet_2', 'wallet_tx_edge', 'wallet_gap_test']) {
+        const service = mnemonicService(id);
+        keychainEntries.set(service, { username: 'user', password: testMnemonic, service, storage: keychainStorage });
+    }
+    jest.mocked(keychain.getGenericPassword).mockReset().mockImplementation(async options =>
+        keychainEntries.get(options?.service ?? '') || false);
+    jest.mocked(keychain.setGenericPassword).mockReset().mockImplementation(async (username, password, options) => {
+        const service = options?.service ?? '';
+        keychainEntries.set(service, { username, password, service, storage: keychainStorage });
+        return { service, storage: keychainStorage };
+    });
+    jest.mocked(keychain.resetGenericPassword).mockReset().mockImplementation(async options => {
+        keychainEntries.delete(options?.service ?? '');
+        return true;
+    });
+});
 
 jest.mock('../../services/database', () => ({
     dbGetWallets: jest.fn(() => Promise.resolve([])),
@@ -138,7 +168,6 @@ describe('wallet_context_comprehensive_tests', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
-        (keychain.getGenericPassword as jest.Mock).mockResolvedValue({ password: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' });
         (db_get_wallets as jest.Mock).mockResolvedValue([]);
         (db_get_saved_addresses as jest.Mock).mockResolvedValue([]);
     });
@@ -157,8 +186,14 @@ describe('wallet_context_comprehensive_tests', () => {
     });
 
     it('adds_standard_wallet_and_updates_active_state', async () => {
-        const mock_new_wallet = { id: 'mocked_uuid_string', name: 'Wallet 1', type: 'standard', derivedReceiveAddresses: [], derivedChangeAddresses: [], derivedAddressInfoCache: [] };
-        (db_get_wallets as jest.Mock).mockResolvedValueOnce([]).mockResolvedValueOnce([mock_new_wallet]);
+        const mock_new_wallet: Wallet = {
+            id: 'mocked_uuid_string', name: 'Wallet 1', type: 'standard',
+            derivedReceiveAddresses: [], derivedChangeAddresses: [], derivedAddressInfoCache: [],
+            changeAddressIndex: 0, utxoLabels: {}, nextUtxoCount: 0,
+        };
+        jest.mocked(db_create_wallet).mockImplementationOnce(async () => {
+            jest.mocked(db_get_wallets).mockResolvedValue([mock_new_wallet]);
+        });
 
         const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
 
@@ -170,6 +205,7 @@ describe('wallet_context_comprehensive_tests', () => {
 
         expect(db_create_wallet).toHaveBeenCalled();
         expect(keychain.setGenericPassword).toHaveBeenCalled();
+        expect(result.current.activeWallet?.id).toBe(mock_new_wallet.id);
         unmount();
     });
 
@@ -223,7 +259,6 @@ describe('wallet_context_comprehensive_tests', () => {
     it('gets_mnemonic_for_wallet_successfully', async () => {
         const mock_wallet = { id: 'wallet_1', name: 'Wallet 1', type: 'standard' };
         (db_get_wallets as jest.Mock).mockResolvedValue([mock_wallet]);
-        (keychain.getGenericPassword as jest.Mock).mockResolvedValue({ password: 'test_mnemonic_string' });
 
         const { result, unmount } = renderHook(() => use_wallet(), { wrapper });
 
@@ -234,8 +269,8 @@ describe('wallet_context_comprehensive_tests', () => {
             retrieved_mnemonic = await result.current.getMnemonicForWallet('wallet_1');
         });
 
-        expect(keychain.getGenericPassword).toHaveBeenCalledWith({ service: 'com.btc.trustless.mnemonic.wallet_1' });
-        expect(retrieved_mnemonic).toBe('test_mnemonic_string');
+        expect(keychain.getGenericPassword).toHaveBeenCalledWith({ service: mnemonicService('wallet_1') });
+        expect(retrieved_mnemonic).toBe(testMnemonic);
         unmount();
     });
 
@@ -372,9 +407,6 @@ describe('wallet_context_comprehensive_tests', () => {
         (db_get_derived_addresses as jest.Mock).mockResolvedValue([
             { address: 'bc1qtest', index: 0 }
         ]);
-        (keychain.getGenericPassword as jest.Mock).mockResolvedValue({
-            password: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
-        });
         const fetch_spy = jest.spyOn(bitcoin_service, 'fetchUTXOs').mockResolvedValue([
             { tx_hash: 'mock_tx_id', tx_pos: 0, value: 1000, height: 100 } as any
         ]);
@@ -413,7 +445,15 @@ describe('wallet_context_comprehensive_tests', () => {
         let wallet_mnemonic = '';
 
         await act(async () => {
-            wallet_mnemonic = await result.current.generateMnemonic() || '';
+            const runtime = globalThis as typeof globalThis & { RN$Bridgeless?: boolean };
+            const previous = runtime.RN$Bridgeless;
+            try {
+                runtime.RN$Bridgeless = true;
+                wallet_mnemonic = await result.current.generateMnemonic() || '';
+            } finally {
+                if (previous === undefined) delete runtime.RN$Bridgeless;
+                else runtime.RN$Bridgeless = previous;
+            }
         });
 
         const word_count = wallet_mnemonic.split(' ').length;
@@ -598,8 +638,7 @@ describe('transaction_building_edge_cases', () => {
         });
 
         // Simulate keychain rejection
-        const keychain = require('react-native-keychain');
-        keychain.getGenericPassword.mockResolvedValueOnce(false);
+        keychainEntries.delete(mnemonicService('wallet_tx_edge'));
 
         await expect(
             result.current.createAndSignTransaction(valid_recipient, 10000, mock_utxos, 10)
