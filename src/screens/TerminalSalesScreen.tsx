@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import TerminalSheetHeader, { TerminalSheetInteractionContext } from './TerminalSheetHeader';
 import { Feather } from '@expo/vector-icons';
@@ -97,6 +97,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const styles = useMemo(() => makeStyles(theme.colors), [theme]);
   const scope = `${network}:${walletId}`;
   const { cashierState } = useWalletMode();
+  const { width, fontScale } = useWindowDimensions();
+  const stackItemPrices = fontScale >= 1.4 || width < 350;
   const pro = useTerminalPro();
   const reportOwner = activeWallet?.id === walletId && activeWallet.type !== 'watch-only' && cashierState === 'off';
   const proGate = useTerminalProGate({ allowed: visible && headerEnabled && reportOwner, scope });
@@ -490,40 +492,40 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     {detail ? <ScrollView style={styles.scroll} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.detailContent, { paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
       {header}
       <View style={styles.detailCard}>
-        <View style={styles.detailStatus}><View style={[styles.statusDot, isPaid(detail) && styles.paidDot]} /><Text style={[styles.statusText, isPaid(detail) && styles.paidText]}>{statusFor(detail, now).label}</Text></View>
-        <Text style={styles.detailAmount} adjustsFontSizeToFit numberOfLines={1}>{displayAmount(detail.request)}</Text>
-        {detail.request.fiat || detail.request.inputUnit === 'BTC' ? <Text style={styles.detailSats}>{formatTerminalSats(detail.request.amountSats)} sats</Text> : null}
+        <View style={styles.detailStatus}><View style={[styles.statusDot, isPaid(detail) && styles.paidDot]} /><Text allowFontScaling maxFontSizeMultiplier={2} style={[styles.statusText, isPaid(detail) && styles.paidText]}>{statusFor(detail, now).label}</Text></View>
+        <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.detailAmount} adjustsFontSizeToFit numberOfLines={1}>{displayAmount(detail.request)}</Text>
+        {detail.request.fiat || detail.request.inputUnit === 'BTC' ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.detailSats}>{formatTerminalSats(detail.request.amountSats)} sats</Text> : null}
       </View>
       {detail.request.basket ? <View style={styles.itemsDetail}>
-        <Text style={styles.fieldLabel}>ITEMS</Text>
-        {detail.request.basket.lines.map(line => <View key={line.itemId} style={styles.itemsDetailRow}>
-          <Text style={styles.itemsDetailName}>{line.name} × {line.quantity}</Text>
-          <Text style={styles.itemsDetailPrice}>{formatTerminalBasketAmount(line.total, detail.request.basket!.unit)}</Text>
+        <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.fieldLabel}>ITEMS</Text>
+        {detail.request.basket.lines.map(line => <View key={line.itemId} style={[styles.itemsDetailRow, stackItemPrices && styles.itemsDetailRowStacked]}>
+          <Text allowFontScaling maxFontSizeMultiplier={2} style={[styles.itemsDetailName, stackItemPrices && styles.itemsDetailNameStacked]}>{line.name} × {line.quantity}</Text>
+          <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.itemsDetailPrice}>{formatTerminalBasketAmount(line.total, detail.request.basket!.unit)}</Text>
         </View>)}
-        <View style={styles.itemsDetailRow}><Text style={styles.itemsDetailName}>Total</Text><Text style={styles.itemsDetailPrice}>{formatTerminalBasketAmount(detail.request.basket.total, detail.request.basket.unit)}</Text></View>
+        <View style={[styles.itemsDetailRow, stackItemPrices && styles.itemsDetailRowStacked]}><Text allowFontScaling maxFontSizeMultiplier={2} style={[styles.itemsDetailName, stackItemPrices && styles.itemsDetailNameStacked]}>Total</Text><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.itemsDetailPrice}>{formatTerminalBasketAmount(detail.request.basket.total, detail.request.basket.unit)}</Text></View>
       </View> : null}
       <View style={styles.detailsList}>
         <DetailField label="CREATED" value={formatLongDate(detail.request.createdAt)} styles={styles} />
         {detail.receivedAt ? <DetailField label="VERIFIED" value={formatLongDate(detail.receivedAt)} styles={styles} /> : null}
         <DetailField label="EXPIRES" value={formatLongDate(detail.request.expiresAt)} styles={styles} />
         {detail.paymentId ? <DetailField label="PAYMENT ID" value={detail.paymentId} styles={styles} selectable /> : null}
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Lightning invoice" accessibilityState={{ expanded: expandedInvoiceKey === detailKey }} onPress={() => setExpandedInvoiceKey(value => value === detailKey ? null : detailKey)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><Text style={styles.fieldLabel}>INVOICE</Text><Feather name={expandedInvoiceKey === detailKey ? 'chevron-up' : 'chevron-down'} size={18} color={theme.colors.muted} /></TouchableOpacity>
-        {expandedInvoiceKey === detailKey ? <Text selectable style={styles.fieldValue}>{detail.request.invoice}</Text> : null}
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Lightning invoice" accessibilityState={{ expanded: expandedInvoiceKey === detailKey }} onPress={() => setExpandedInvoiceKey(value => value === detailKey ? null : detailKey)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.fieldLabel}>INVOICE</Text><Feather name={expandedInvoiceKey === detailKey ? 'chevron-up' : 'chevron-down'} size={18} color={theme.colors.muted} /></TouchableOpacity>
+        {expandedInvoiceKey === detailKey ? <Text allowFontScaling maxFontSizeMultiplier={2} selectable style={styles.fieldValue}>{detail.request.invoice}</Text> : null}
       </View>
       {isPaid(detail) ? <View style={styles.checkArea}>
-        {refundState.scope === scope && refundState.error ? <><Text style={styles.checkError}>Refund records unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry refund records" onPress={() => { void refreshRefunds(); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Retry</Text></TouchableOpacity></> : null}
-        {refundsLoaded && refundRemaining === null ? <Text style={styles.checkError}>Refund records need attention. Refund and receipt are unavailable.</Text> : null}
+        {refundState.scope === scope && refundState.error ? <><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.checkError}>Refund records unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry refund records" onPress={() => { void refreshRefunds(); }} style={styles.secondaryButton}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.secondaryText}>Retry</Text></TouchableOpacity></> : null}
+        {refundsLoaded && refundRemaining === null ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.checkError}>Refund records need attention. Refund and receipt are unavailable.</Text> : null}
         {refundsReady ? <>
-          {refunds.length ? <View style={styles.refundSummary}><Text style={styles.fieldLabel}>REFUNDS</Text>{refunds.map(attempt => <Text key={attempt.id} style={styles.refundSummaryLine}>{formatTerminalSats(attempt.amountSats)} sats · {attempt.status === 'complete' ? 'Sent' : attempt.status === 'failed' ? 'Failed' : attempt.status === 'pending' ? 'Pending' : 'Outcome uncertain'}</Text>)}<Text style={styles.refundRemaining}>Refunded: {formatBigSats(completedRefund)}</Text>{reservedRefund > 0n ? <Text style={styles.refundRemaining}>Reserved: {formatBigSats(reservedRefund)}</Text> : null}<Text style={styles.refundRemaining}>Remaining: {formatTerminalSats(refundRemaining)} sats</Text></View> : null}
-          {receiptError ? <Text style={styles.checkError}>{receiptError}</Text> : null}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share PDF receipt" accessibilityState={{ disabled: sharingReceipt || !visible, busy: sharingReceipt }} disabled={sharingReceipt || !visible} onPress={() => { void shareReceipt('pdf'); }} style={styles.checkButton}>{sharingReceipt ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.checkText}>Share PDF receipt</Text>}</TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share text receipt" disabled={sharingReceipt || !visible} accessibilityState={{ disabled: sharingReceipt || !visible }} onPress={() => { void shareReceipt('text'); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>Share text receipt</Text></TouchableOpacity>
-          {detail.restored ? <Text style={styles.checkError}>Restored record. Refund from the original device; this backup may omit later refunds.</Text> : <TouchableOpacity accessibilityRole="button" accessibilityLabel="Refund sale" onPress={() => setRefundOpen(true)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Refund</Text></TouchableOpacity>}
-        </> : refundState.scope !== scope || refundState.loading ? <Text style={styles.checkError}>Loading refund records…</Text> : null}
+          {refunds.length ? <View style={styles.refundSummary}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.fieldLabel}>REFUNDS</Text>{refunds.map(attempt => <Text key={attempt.id} style={styles.refundSummaryLine}>{formatTerminalSats(attempt.amountSats)} sats · {attempt.status === 'complete' ? 'Sent' : attempt.status === 'failed' ? 'Failed' : attempt.status === 'pending' ? 'Pending' : 'Outcome uncertain'}</Text>)}<Text allowFontScaling maxFontSizeMultiplier={2} style={styles.refundRemaining}>Refunded: {formatBigSats(completedRefund)}</Text>{reservedRefund > 0n ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.refundRemaining}>Reserved: {formatBigSats(reservedRefund)}</Text> : null}<Text allowFontScaling maxFontSizeMultiplier={2} style={styles.refundRemaining}>Remaining: {formatTerminalSats(refundRemaining)} sats</Text></View> : null}
+          {receiptError ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.checkError}>{receiptError}</Text> : null}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share PDF receipt" accessibilityState={{ disabled: sharingReceipt || !visible, busy: sharingReceipt }} disabled={sharingReceipt || !visible} onPress={() => { void shareReceipt('pdf'); }} style={styles.checkButton}>{sharingReceipt ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.checkText}>Share PDF receipt</Text>}</TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share text receipt" disabled={sharingReceipt || !visible} accessibilityState={{ disabled: sharingReceipt || !visible }} onPress={() => { void shareReceipt('text'); }} style={styles.secondaryButton}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.secondaryText}>Share text receipt</Text></TouchableOpacity>
+          {detail.restored ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.checkError}>Restored record. Refund from the original device; this backup may omit later refunds.</Text> : <TouchableOpacity accessibilityRole="button" accessibilityLabel="Refund sale" onPress={() => setRefundOpen(true)} style={styles.secondaryButton}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.secondaryText}>Refund</Text></TouchableOpacity>}
+        </> : refundState.scope !== scope || refundState.loading ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.checkError}>Loading refund records…</Text> : null}
       </View> : null}
       {!isPaid(detail) ? <View style={styles.checkArea}>
-        {checkError ? <Text style={styles.checkError}>{checkError}</Text> : null}
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check payment" disabled={checking} style={[styles.checkButton, checking && styles.checkDisabled]} onPress={() => { void checkPayment(); }}><Text style={styles.checkText}>{checking ? 'Checking…' : 'Check payment'}</Text></TouchableOpacity>
+        {checkError ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.checkError}>{checkError}</Text> : null}
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Check payment" disabled={checking} style={[styles.checkButton, checking && styles.checkDisabled]} onPress={() => { void checkPayment(); }}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.checkText}>{checking ? 'Checking…' : 'Check payment'}</Text></TouchableOpacity>
       </View> : null}
     </ScrollView> : <FlatList
       style={styles.scroll}
@@ -562,7 +564,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
 }
 
 function DetailField({ label, value, styles, selectable = false }: { label: string; value: string; styles: ReturnType<typeof makeStyles>; selectable?: boolean }) {
-  return <View style={styles.detailField}><Text style={styles.fieldLabel}>{label}</Text><Text style={styles.fieldValue} selectable={selectable}>{value}</Text></View>;
+  return <View style={styles.detailField}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.fieldLabel}>{label}</Text><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.fieldValue} selectable={selectable}>{value}</Text></View>;
 }
 
 function makeStyles(colors: { background: string; primary: string; inversePrimary: string; surface: string; border: string; muted: string; bitcoin: string }) {
@@ -615,6 +617,8 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     detailSats: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginTop: 8 },
     itemsDetail: { marginHorizontal: 24, marginTop: 24, padding: 18, borderRadius: 12, backgroundColor: colors.surface },
     itemsDetailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 12 },
+    itemsDetailRowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 4 },
+    itemsDetailNameStacked: { flex: 0 },
     itemsDetailName: { color: colors.primary, fontSize: 13, flex: 1 },
     itemsDetailPrice: { color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 12, textAlign: 'right', flexShrink: 1 },
     detailsList: { marginHorizontal: 24, marginTop: 24 },
@@ -625,9 +629,9 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     checkError: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, lineHeight: 19, textAlign: 'center', marginBottom: 12 },
     checkButton: { backgroundColor: colors.primary, borderRadius: 8, minHeight: 52, width: '100%', alignItems: 'center', justifyContent: 'center' },
     checkDisabled: { opacity: 0.6 },
-    checkText: { color: colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 14 },
+    checkText: { color: colors.inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 14, textAlign: 'center' },
     secondaryButton: { borderColor: colors.border, borderWidth: 1, borderRadius: 8, minHeight: 48, width: '100%', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
-    secondaryText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12 },
+    secondaryText: { color: colors.primary, fontFamily: 'SpaceMono-Bold', fontSize: 12, textAlign: 'center' },
     refundSummary: { alignSelf: 'stretch', marginBottom: 22 },
     refundSummaryLine: { color: colors.primary, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginTop: 9 },
     refundRemaining: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 12, marginTop: 12 },

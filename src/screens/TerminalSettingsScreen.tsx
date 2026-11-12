@@ -75,33 +75,33 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
       <View style={styles.section}>
         {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' ? <View style={styles.rowWrapper}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Terminal Pro" onPress={proGate.openPro} style={styles.row}>
-            <View style={styles.rowEnd}><Text style={styles.rowLabel}>Terminal</Text><TerminalProBadge /></View><View style={styles.rowEnd}>{pro.status === 'loading' ? <ActivityIndicator accessibilityLabel="Checking subscription" size="small" color={theme.colors.bitcoin} /> : pro.status === 'pro' ? <Text style={styles.currentUnit}>Active</Text> : null}<Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
+            <View style={styles.rowTitle}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.rowLabel}>Terminal</Text><TerminalProBadge /></View><View style={styles.rowEnd}>{pro.status === 'loading' ? <ActivityIndicator accessibilityLabel="Checking subscription" size="small" color={theme.colors.bitcoin} /> : pro.status === 'pro' ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.currentUnit}>Active</Text> : null}<Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
           </TouchableOpacity>
         </View> : null}
         <View style={styles.rowWrapper}>
           <TouchableOpacity ref={rowRef} accessibilityRole="button" accessibilityLabel="Currency" accessibilityState={{ expanded: currencyOpen }} onPress={openCurrency} style={styles.row}>
-            <Text style={styles.rowLabel}>Currency</Text>
-            <View style={styles.rowEnd}><Text style={styles.currentUnit}>{unit}</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
+            <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.rowLabel}>Currency</Text>
+            <View style={styles.rowEnd}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.currentUnit}>{unit}</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
           </TouchableOpacity>
         </View>
         {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' && onOpenItems ? <View style={styles.rowWrapper}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Manage items" onPress={onOpenItems} style={styles.row}>
-            <Text style={styles.rowLabel}>Items</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.rowLabel}>Items</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} />
           </TouchableOpacity>
         </View> : null}
         {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' && onOpenReceipts ? <View style={styles.rowWrapper}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Receipt settings" onPress={onOpenReceipts} style={styles.row}>
-            <Text style={styles.rowLabel}>Receipts</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} />
+            <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.rowLabel}>Receipts</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} />
           </TouchableOpacity>
         </View> : null}
-        {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' && onOpenBackup ? <View style={styles.rowWrapper}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Terminal backup" onPress={onOpenBackup} style={styles.row}><Text style={styles.rowLabel}>Backup</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></TouchableOpacity></View> : null}
+        {activeWallet && activeWallet.type !== 'watch-only' && cashierState === 'off' && onOpenBackup ? <View style={styles.rowWrapper}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Terminal backup" onPress={onOpenBackup} style={styles.row}><Text allowFontScaling maxFontSizeMultiplier={2} style={styles.rowLabel}>Backup</Text><Feather name="chevron-right" size={24} color={theme.colors.primary} /></TouchableOpacity></View> : null}
         {activeWallet && activeWallet.type !== 'watch-only' ? <View style={styles.rowWrapper}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cashier mode" accessibilityState={{ disabled: cashierBusy }} disabled={cashierBusy} onPress={() => { void cashierPress(); }} style={styles.row}>
-            <Text style={styles.rowLabel}>Cashier mode</Text>
-            <View style={styles.rowEnd}>{cashierBusy ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text style={styles.currentUnit}>{cashierState === 'off' ? 'Off' : 'On'}</Text>}<Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
+            <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.rowLabel}>Cashier mode</Text>
+            <View style={styles.rowEnd}>{cashierBusy ? <ActivityIndicator size="small" color={theme.colors.bitcoin} /> : <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.currentUnit}>{cashierState === 'off' ? 'Off' : 'On'}</Text>}<Feather name="chevron-right" size={24} color={theme.colors.primary} /></View>
           </TouchableOpacity>
         </View> : null}
-        {cashierError ? <Text style={styles.settingError}>{cashierError}</Text> : null}
+        {cashierError ? <Text allowFontScaling maxFontSizeMultiplier={2} style={styles.settingError}>{cashierError}</Text> : null}
       </View>
     </Animated.ScrollView>
     <Modal visible={focused && currencyOpen} transparent animationType="none" onRequestClose={dismissCurrency}>
@@ -111,7 +111,7 @@ export default function TerminalSettingsScreen({ unit, onSelectUnit, onClose, on
           <GlassView width={204} height={140} borderRadius={24} shape="roundedRectangle" interactive style={styles.glass}>
             <View style={styles.currencyGrid}>{units.map(choice =>
               <TouchableOpacity key={choice} accessibilityRole="button" accessibilityState={{ selected: choice === unit }} accessibilityLabel={choice} style={styles.currencyOption} onPress={() => { if (!currencyContext.current.focused) return; onSelectUnit(choice); dismissCurrency(); }}>
-                <Text style={[styles.currencyText, choice === unit && styles.currencyTextSelected]}>{choice}</Text>
+                <Text allowFontScaling maxFontSizeMultiplier={1.5} style={[styles.currencyText, choice === unit && styles.currencyTextSelected]}>{choice}</Text>
               </TouchableOpacity>)}</View>
           </GlassView>
         </View>
@@ -129,8 +129,9 @@ function makeStyles(colors: { background: string; primary: string; surface: stri
     content: { paddingHorizontal: 24, paddingTop: 20 },
     section: { marginBottom: 32 },
     rowWrapper: { borderBottomWidth: 1, borderBottomColor: colors.border },
-    row: { paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    rowLabel: { color: colors.muted, fontSize: 16 },
+    row: { minHeight: 48, paddingVertical: 12, gap: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    rowTitle: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', flexShrink: 1, gap: 9 },
+    rowLabel: { flexShrink: 1, color: colors.muted, fontSize: 16 },
     rowEnd: { flexDirection: 'row', alignItems: 'center', gap: 9 },
     settingError: { color: colors.muted, fontSize: 12, marginTop: 12 },
     currentUnit: { color: colors.primary, fontSize: 16 },
