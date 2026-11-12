@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, FlatList, PanResponder, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { TerminalSearchInput, normalizeItemSearch } from '../components/TerminalSearchInput';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Platform, PanResponder, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/StyledText';
@@ -40,6 +41,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
   const dismiss = () => {
     if (closing.current) return;
     closing.current = true;
+    Keyboard.dismiss();
     Animated.parallel([
       Animated.timing(dragY, { toValue: sheetHeight, duration: 180, useNativeDriver: false }),
       Animated.timing(backdropOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
@@ -62,20 +64,25 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
     const ids = new Set(catalog.map(item => item.id));
     return [...catalog, ...lines.filter(line => !ids.has(line.itemId)).map(line => ({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }))];
   }, [catalog, lines, unit]);
-  return <View style={styles.overlay}>
+  const [query, setQuery] = useState('');
+  const term = normalizeItemSearch(query);
+  const matches = useMemo(() => term ? rows.filter(item => normalizeItemSearch(selectedById.get(item.id)?.name ?? item.name).includes(term)) : rows, [rows, selectedById, term]);
+  return <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'height' : undefined} style={styles.overlay}>
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#00000033', opacity: backdropOpacity }]} />
     <Pressable accessibilityRole="button" accessibilityLabel="Dismiss item picker" onPress={dismiss} style={StyleSheet.absoluteFill} />
     <Animated.View style={[styles.root, { height: sheetHeight, backgroundColor: theme.colors.background, bottom: Animated.multiply(dragY, -1) }]}>
     <View {...headerDrag.panHandlers}><TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={dismiss} /></View>
     {/* A native wrapper keeps react-native-screens from misplacing this list in an iOS formSheet. */}
     <View collapsable={false} style={styles.scrollContainer}>
-      <FlatList data={rows} keyExtractor={item => item.id} extraData={{ lines, unit, busy }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, { paddingBottom: Math.max(12, insets.bottom) }]}
+      {rows.length > 0 ? <TerminalSearchInput label="Search items" value={query} onChangeText={setQuery} /> : null}
+      <FlatList data={matches} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+        ListEmptyComponent={term ? <Text style={{ color: theme.colors.muted, textAlign: 'center', padding: 16 }}>No matching items</Text> : null} keyExtractor={item => item.id} extraData={{ lines, unit, busy }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, { paddingBottom: Math.max(12, insets.bottom) }]}
         renderItem={({ item }) => {
           const selected = selectedById.get(item.id);
           const unavailable = !selected && !!basketUnit && item.unit !== basketUnit;
           return <View key={item.id} style={[styles.row, { borderBottomColor: theme.colors.border }]}>
             <View style={styles.info}>
-              <Text style={[styles.name, { color: unavailable ? theme.colors.muted : theme.colors.primary }]} numberOfLines={1}>{selected?.name ?? item.name}</Text>
+              <Text style={[styles.name, { color: unavailable ? theme.colors.muted : theme.colors.primary }]} numberOfLines={2}>{selected?.name ?? item.name}</Text>
               <Text style={[styles.price, { color: theme.colors.muted }]}>{formatTerminalBasketAmount(selected?.unitPrice ?? item.unitPrice, selected ? unit : item.unit)}{selected ? ` · ${formatTerminalBasketAmount(selected.total, unit)}` : ''}</Text>
             </View>
             {selected ? <>
@@ -88,7 +95,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
       />
     </View>
     {error ? <View style={[styles.feedback, { paddingBottom: Math.max(12, insets.bottom) }]}><Text accessibilityRole="alert" style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text></View> : null}
-  </Animated.View></View>;
+  </Animated.View></KeyboardAvoidingView>;
 }
 
 const styles = StyleSheet.create({

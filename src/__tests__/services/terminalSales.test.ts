@@ -21,6 +21,27 @@ it('pages activity deterministically across timestamp ties and range boundaries'
   expect((await listTerminalSalesPage('wallet-a', 'mainnet', { range: { start: 2000, end: 2001 } })).items).toHaveLength(1);
 });
 
+it('searches recorded item names and references before paging, within the selected wallet and status', async () => {
+  const coffee = (id: string, walletId = 'wallet-a'): TerminalRequest => ({
+    ...request(id, 1000), walletId, invoice: `lnbc${id.replace(/-/g, '')}abc`, inputUnit: 'sats',
+    basket: { unit: 'sats', total: 1000, lines: [{ itemId: 'old-coffee', name: 'Coffee 100%', unitPrice: 1000, quantity: 1, total: 1000 }] },
+  });
+  for (const id of ['sale-one', 'sale-two']) {
+    await updateTerminalSalePayment(coffee(id), { status: 'received', paymentId: `payment-${id}` }, 2000);
+  }
+  await recordTerminalSale(coffee('unpaid'));
+  await updateTerminalSalePayment(coffee('other-wallet', 'wallet-b'), { status: 'received' }, 2000);
+  await updateTerminalSalePayment(request('recent', 3000), { status: 'received' }, 4000);
+  const options = { range: null, limit: 1, filter: { query: 'COFFEE 100%', status: 'received' as const } };
+  const first = await listTerminalSalesPage('wallet-a', 'mainnet', options);
+  expect(first.items.map(item => item.request.id)).toEqual(['sale-two']);
+  const second = await listTerminalSalesPage('wallet-a', 'mainnet', { ...options, cursor: first.nextCursor });
+  expect(second.items.map(item => item.request.id)).toEqual(['sale-one']);
+  expect(second.nextCursor).toBeNull();
+  const reference = await listTerminalSalesPage('wallet-a', 'mainnet', { range: null, filter: { query: 'payment-sale-one' } });
+  expect(reference.items.map(item => item.request.id)).toEqual(['sale-one']);
+});
+
 it('stores exact MAX_SAFE_INTEGER totals with SQL limbs', async () => {
   const max = Number.MAX_SAFE_INTEGER;
   for (const id of ['maxa', 'maxb']) await updateTerminalSalePayment(request(id, 1000, max), { status: 'received' }, 2000);

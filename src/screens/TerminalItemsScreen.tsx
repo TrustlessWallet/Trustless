@@ -1,3 +1,4 @@
+import { TerminalSearchInput, normalizeItemSearch } from '../components/TerminalSearchInput';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,6 +30,10 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   const [readError, setReadError] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState('');
+  const term = normalizeItemSearch(query);
+  const matches = term ? items.filter(item => normalizeItemSearch(item.name).includes(term)) : items;
+  useEffect(() => { setQuery(''); }, [walletId, network]);
   const busyRef = useRef(false);
   const loadRevision = useRef(0);
   const mounted = useRef(true);
@@ -74,9 +79,10 @@ export default function TerminalItemsScreen({ walletId, network, onClose, onEdit
   return <><View style={[styles.root, { backgroundColor: theme.colors.background }]}>
     <Animated.View pointerEvents="none" style={[styles.scrollFade, { opacity: fadeOpacity }]}><LinearGradient colors={[theme.colors.background, theme.colors.background + 'CC', theme.colors.background + '66', theme.colors.background + '00']} locations={[0, 0.4, 0.7, 1]} style={StyleSheet.absoluteFill} /></Animated.View>
     <TerminalSheetHeader title="Items" closeLabel="Close items" onClose={onClose} />
-    <Animated.FlatList data={readError ? [] : items} keyExtractor={item => item.id} extraData={busy} initialNumToRender={12} maxToRenderPerBatch={12} windowSize={5} style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, !readError && items.length === 0 && styles.emptyContent, { paddingBottom: 24 }]}
+    {!readError && items.length > 0 ? <TerminalSearchInput label="Search items" value={query} onChangeText={setQuery} /> : null}
+    <Animated.FlatList data={readError ? [] : matches} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" keyExtractor={item => item.id} extraData={busy} initialNumToRender={12} maxToRenderPerBatch={12} windowSize={5} style={styles.scroll} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.content, !readError && items.length === 0 && styles.emptyContent, { paddingBottom: 24 }]}
       ListEmptyComponent={readError ? <View><Text style={[styles.message, { color: theme.colors.muted }]}>Saved items are unavailable.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => { void load(); }}><Text style={[styles.link, { color: theme.colors.bitcoin }]}>Retry</Text></TouchableOpacity></View>
-        : loadedScope === screenScope ? <Text style={[styles.emptyText, { color: theme.colors.muted }]}>No items yet</Text> : null}
+        : loadedScope === screenScope ? <Text style={[styles.emptyText, { color: theme.colors.muted }]}>{term ? 'No matching items' : 'No items yet'}</Text> : null}
       renderItem={({ item }) => <View key={item.id} style={[styles.itemRow, { borderBottomColor: theme.colors.border }]}>
             <View style={styles.itemInfo}><Text style={[styles.itemName, { color: theme.colors.primary }]}>{item.name}</Text><Text style={[styles.itemPrice, { color: theme.colors.muted }]}>{formatTerminalBasketAmount(item.unitPrice, item.unit)}</Text></View>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Edit ${item.name}`} disabled={busy} onPress={() => { if (ownerCurrent()) onEdit(item); }} style={styles.iconButton}><Feather name="edit" size={18} color={theme.colors.primary} /></TouchableOpacity>
