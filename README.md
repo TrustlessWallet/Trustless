@@ -14,14 +14,18 @@ Hi! Trustless is a fully open-source, non-custodial (only you have access to you
 ## Main features
 * **Bitcoin wallet:** Import or create new wallets, send and receive Bitcoin. Trustless also supports pubkey imports for watch-only wallets and PSBT sigining.
 
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/d888a374-62b2-4a1b-a84e-33f600888ca6" />
-  <img width="250" alt="Wallet" src="https://github.com/user-attachments/assets/44bff39e-ebb7-4ba9-bff5-468240dbda1c" />
+  <img width="250" alt="Bitcoin wallet showing the on-chain balance" src="./assets/Wallet-onboarding.png" />
+  <img width="250" alt="Bitcoin wallet in dark mode" src="./docs/images/wallet-dark.png" />
 
 
 * **Lightning:** Switch between on-chain and lightning wallet with one button. You can top-up and withdraw from your Lightning balance at anytime. Lightning is powered by [Breez SDK](https://breez.technology/https://breez.technology/) that never has access to your seed phrase. Normal payments and withdrawals require service availability. Settings → Danger Zone → Unilateral exit provides a last-resort on-chain recovery flow; see [recovery and testing](docs/unilateral-exit.md) for its funding, backup and timelock requirements.
 
-  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/f06b089b-8ff5-455a-a663-06e25d59e1d0" />
-  <img width="250" alt="Lightning" src="https://github.com/user-attachments/assets/eb9725f0-f4d0-468e-ad8b-234f011d2ded" />
+  <img width="250" alt="Lightning wallet showing the balance in sats" src="./assets/Lightning-onboarding.png" />
+  <img width="250" alt="Lightning wallet in dark mode" src="./docs/images/lightning-dark.png" />
+
+* **Terminal:** Accept Lightning payments, build orders from your item catalog, and track sales from your phone.
+
+  <img width="250" alt="Terminal checkout with a keypad and Generate invoice button" src="./assets/Terminal-onboarding.png" />
 
 * **BTC Map:** Find local and global shops that accept Bitcoin and Lightning payments directly within the app. All thanks to our friends from [BTC Map.](https://github.com/teambtcmap)
 
