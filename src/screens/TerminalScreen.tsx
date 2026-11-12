@@ -21,6 +21,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearTerminalRequest, formatTerminalFiatDisplay, formatFiatMinor, formatTerminalAmount, formatTerminalBasketAmount, formatTerminalSats, loadTerminalRequest, parseFiatMinor, parseTerminalAmount, satsFromFiat, saveTerminalRequest, terminalNetwork, TerminalBasket, TerminalBasketLine, TerminalFiatQuote, TerminalRequest, TerminalUnit } from '../services/terminal';
 import { FiatCurrency, getTerminalRates, getTerminalReportingRate, TerminalRates, TerminalReportingRate } from '../services/terminalRates';
 import { recordTerminalSale, updateTerminalSalePayment, TerminalSale } from '../services/terminalSales';
+import { listTerminalRefundsForSale } from '../services/terminalRefunds';
+import { shareTerminalPdfReceipt } from '../services/terminalReceiptPdfShare';
 import TerminalSalesScreen from './TerminalSalesScreen';
 import TerminalReportsScreen, { TerminalReportSelection } from './TerminalReportsScreen';
 import TerminalSettingsScreen from './TerminalSettingsScreen';
@@ -137,6 +139,11 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const [checkoutFocused, setCheckoutFocused] = useState(true);
   const [invoiceFocused, setInvoiceFocused] = useState(false);
   const [endingRequest, setEndingRequest] = useState(false);
+  const [paidSale, setPaidSale] = useState<TerminalSale | null>(null);
+  const receiptFlight = useRef<TerminalSale | null>(null);
+  const [receiptState, setReceiptState] = useState<{ sale: TerminalSale; busy: boolean; error?: string } | null>(null);
+  const invoiceFocusedRef = useRef(invoiceFocused);
+  invoiceFocusedRef.current = invoiceFocused;
   const [transitioning, setTransitioning] = useState(false);
   const [invoiceAmountLayout, setInvoiceAmountLayout] = useState({ id: '', height: 0 });
   const checkoutNavigation = useRef<CheckoutNavigation | null>(null);
@@ -342,6 +349,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       if (sale.paymentId) knownPaymentId.current = sale.paymentId;
       if (sale.status === 'received') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+        setPaidSale(sale);
         setStage('received'); setError('');
       }
       else { setStage(request.expiresAt <= Date.now() ? 'expired' : 'waiting'); setError(''); }
@@ -577,6 +585,30 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     <View style={[styles.symbolRail, styles.suffixRail]}>{frozenSuffix ? <Text style={[styles.unitLabel, frozenSuffix === '₿' && styles.orangeSymbol]}>{frozenSuffix}</Text> : null}</View>
   </View>;
   const frozenSecondary = request?.fiat || request?.inputUnit === 'BTC' ? `${formatTerminalSats(request?.amountSats || 0)} sats` : '';
+  const sharePaidReceipt = async (sale: TerminalSale) => {
+    const { id, walletId, network: saleNetwork } = sale.request;
+    const capturedGeneration = generation.current;
+    const isCurrent = () => mounted.current && activeRef.current && invoiceFocusedRef.current &&
+      !busy.current && generation.current === capturedGeneration && scopeRef.current === `${saleNetwork}:${walletId}` &&
+      requestRef.current?.id === id;
+    if (!isCurrent() || receiptFlight.current === sale) return;
+    receiptFlight.current = sale;
+    setReceiptState({ sale, busy: true });
+    try {
+      const refunds = await listTerminalRefundsForSale(walletId, saleNetwork, id);
+      if (isCurrent()) await shareTerminalPdfReceipt(sale, refunds, isCurrent);
+    } catch {
+      if (isCurrent()) setReceiptState({ sale, busy: false, error: 'Couldn’t share the PDF receipt. Please try again.' });
+    } finally {
+      if (receiptFlight.current === sale) {
+        receiptFlight.current = null;
+        if (mounted.current) {
+          setReceiptState(current => current?.sale === sale && current.busy ? null : current);
+        }
+      }
+    }
+  };
+
   const entry = !!activeWallet && activeWallet.type !== 'watch-only';
   const renderInvoice = (sheetHeight: number, sheetWidth: number, dismiss: () => void) => {
     const qrSize = Math.max(140, Math.min(280, (sheetWidth || screenWidth) - 82, (sheetHeight || screenHeight * 0.9) - 330));
@@ -587,7 +619,20 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     if (stage === 'received') return <View style={styles.root}>
       <TerminalSheetHeader title="Invoice" closeLabel="Close invoice" disabled={endingRequest} onClose={dismiss} />
       <View style={{ flex: 1, justifyContent: 'center' }}><TerminalPaymentSuccess>{checkoutAmount(sheetWidth)}{frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}</TerminalPaymentSuccess></View>
-      <View style={[styles.actionBar, { paddingBottom: Math.max(24, insets.bottom + 16) }]}><TouchableOpacity accessibilityRole="button" accessibilityLabel="New sale" disabled={endingRequest} style={styles.primaryAction} onPress={dismiss}>{endingRequest ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>New sale</Text>}</TouchableOpacity></View>
+      <View style={[styles.actionBar, { paddingBottom: Math.max(24, insets.bottom + 16) }]}>
+        {paidSale && paidSale.request.id === request?.id ? <>
+          {receiptState?.sale === paidSale && receiptState.error ? <Text accessibilityRole="alert" style={styles.error}>{receiptState.error}</Text> : null}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share PDF receipt"
+            accessibilityState={{ busy: receiptState?.sale === paidSale && receiptState.busy }}
+            disabled={endingRequest || (receiptState?.sale === paidSale && receiptState.busy)}
+            style={[styles.secondary, styles.receiptAction]} onPress={() => { void sharePaidReceipt(paidSale); }}>
+            {receiptState?.sale === paidSale && receiptState.busy ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.secondaryText}>Share PDF receipt</Text>}
+          </TouchableOpacity>
+        </> : null}
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="New sale" disabled={endingRequest} style={styles.primaryAction} onPress={dismiss}>
+          {endingRequest ? <ActivityIndicator color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>New sale</Text>}
+        </TouchableOpacity>
+      </View>
     </View>;
     return <View style={styles.root}>
       <TerminalSheetHeader title="Invoice" closeLabel="Close invoice" disabled={endingRequest} onClose={dismiss} />
@@ -766,6 +811,7 @@ function makeStyles(background: string, primary: string, inversePrimary: string,
     primary: { backgroundColor: primary, borderRadius: 8, minHeight: 54, minWidth: 210, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, marginTop: 28 },
     primaryText: { color: inversePrimary, fontFamily: 'SpaceMono-Bold', fontSize: 15 },
     secondary: { borderColor: border, borderWidth: 1, borderRadius: 8, minHeight: 46, minWidth: 150, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, marginTop: 20 },
+    receiptAction: { marginTop: 8, marginBottom: 8 },
     secondaryText: { color: primary, fontFamily: 'SpaceMono-Bold', fontSize: 13 },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
     message: { color: primary, fontFamily: 'SpaceMono-Regular', fontSize: 15, textAlign: 'center', marginTop: 18 },
