@@ -7,6 +7,7 @@ import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-na
 import TerminalPaymentSuccess from '../components/TerminalPaymentSuccess';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
+import { useKeepAwake } from 'expo-keep-awake';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/StyledText';
 import { GlassView } from '../components/GlassView';
@@ -44,9 +45,15 @@ const TerminalStack = createNativeStackNavigator<TerminalStackParams>();
 type CheckoutNavigation = NativeStackNavigationProp<TerminalStackParams, 'Checkout'>;
 type InvoiceNavigation = NativeStackNavigationProp<TerminalStackParams, 'Invoice'>;
 
-function InvoiceRoute({ request, scope, onClose, onCanReplay, onCloseError, onFocusChange, children }: {
+function InvoiceKeepAwake() {
+  useKeepAwake(undefined, { suppressDeactivateWarnings: true });
+  return null;
+}
+
+function InvoiceRoute({ request, scope, keepAwake, onClose, onCanReplay, onCloseError, onFocusChange, children }: {
   request: TerminalRequest | null;
   scope: string;
+  keepAwake: boolean;
   onClose: () => Promise<boolean>;
   onCanReplay: () => boolean;
   onCloseError: () => void;
@@ -88,7 +95,10 @@ function InvoiceRoute({ request, scope, onClose, onCanReplay, onCloseError, onFo
       if (mounted.current && !removed.current && navigation.isFocused() && canDismiss()) navigation.goBack();
     });
   };
-  return <View style={{ flex: 1 }} onLayout={event => setSize(event.nativeEvent.layout)}>{children(size.height, size.width, dismiss)}</View>;
+  return <View style={{ flex: 1 }} onLayout={event => setSize(event.nativeEvent.layout)}>
+    {focused && keepAwake ? <InvoiceKeepAwake /> : null}
+    {children(size.height, size.width, dismiss)}
+  </View>;
 }
 
 function CheckoutVisibility({ onChange, children }: { onChange: (focused: boolean) => void; children: React.ReactNode }) {
@@ -610,9 +620,9 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const entry = !!activeWallet && activeWallet.type !== 'watch-only';
+  const showQr = !!request && validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired;
   const renderInvoice = (sheetHeight: number, sheetWidth: number, dismiss: () => void) => {
     const qrSize = Math.max(140, Math.min(280, (sheetWidth || screenWidth) - 82, (sheetHeight || screenHeight * 0.9) - 330));
-    const showQr = !!request && validated && (stage === 'waiting' || stage === 'verificationUnavailable') && !isExpired;
     const amountHeight = invoiceAmountLayout.id === request?.id ? invoiceAmountLayout.height : 0;
     // Center the QR itself in the measured sheet, reserving room for its amount above.
     const qrTop = Math.max(20, sheetHeight / 2 - 56 - amountHeight - 24 - (qrSize + 34) / 2);
@@ -745,7 +755,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       {({ navigation }) => activeWallet ? <TerminalBackupScreen walletId={activeWallet.id} network={network} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Invoice" options={sheetOptions}>
-      {() => <InvoiceRoute request={request} scope={scope} onClose={endRequest} onCanReplay={() => mounted.current && scopeRef.current === scope && requestRef.current === null} onCloseError={() => { if (mounted.current && scopeRef.current === scope) setError('Could not end the saved request. Please retry.'); }} onFocusChange={setInvoiceFocused}>{renderInvoice}</InvoiceRoute>}
+      {() => <InvoiceRoute request={request} scope={scope} keepAwake={showQr && visible && foreground && !endingRequest} onClose={endRequest} onCanReplay={() => mounted.current && scopeRef.current === scope && requestRef.current === null} onCloseError={() => { if (mounted.current && scopeRef.current === scope) setError('Could not end the saved request. Please retry.'); }} onFocusChange={setInvoiceFocused}>{renderInvoice}</InvoiceRoute>}
     </TerminalStack.Screen>
   </TerminalStack.Navigator>{proFallback.proSheet}</TerminalSheetInteractionContext.Provider></TerminalOwnerFocusContext.Provider>;
 }
