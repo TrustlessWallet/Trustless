@@ -122,10 +122,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const statusFilter = search.scope === scope ? search.status : undefined;
   const [debounced, setDebounced] = useState({ scope, query: '' });
   useEffect(() => {
-    const timer = setTimeout(() => setDebounced({ scope, query: query.trim() }), query.trim() ? 180 : 0);
+    const timer = setTimeout(() => setDebounced({ scope, query: query.trim() }), 180);
     return () => clearTimeout(timer);
   }, [query, scope]);
-  const searchTerm = debounced.scope === scope ? debounced.query : '';
+  const searchTerm = query.trim() && debounced.scope === scope ? debounced.query : '';
+  const searchPending = query.trim() !== searchTerm;
   const filter = useMemo(() => searchTerm || statusFilter ? { query: searchTerm, status: statusFilter } : undefined, [searchTerm, statusFilter]);
   const filterKey = filter ? JSON.stringify(filter) : '';
   const periodIdentity = `${scope}:${period}:${rangeKey}|`;
@@ -559,14 +560,14 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       scrollEventThrottle={16}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
-      data={error ? [] : shown}
+      data={error || searchPending ? [] : shown}
       keyExtractor={item => item.request.id}
       ListHeaderComponent={header}
       contentInsetAdjustmentBehavior="never"
       automaticallyAdjustContentInsets={false}
       contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 28 }]}
       refreshControl={<RefreshControl refreshing={state.identity === loadIdentity && state.refreshing} onRefresh={() => { ++pendingPeriodGeneration.current; setPendingPeriod(null); periodCache.current.clear(); void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={SHEET_HEADER_HEIGHT} />}
-      onEndReached={() => { void loadNextPage(); }}
+      onEndReached={() => { if (!searchPending) void loadNextPage(); }}
       onEndReachedThreshold={0.35}
       renderItem={({ item }) => {
         const status = statusFor(item, now);
@@ -577,12 +578,13 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         </TouchableOpacity>;
       }}
       ListEmptyComponent={<View style={styles.empty}>
-        {error ? <><Feather name="alert-circle" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>Sales unavailable</Text><Text style={styles.emptyBody}>Couldn’t load saved sales. Try again.</Text><TouchableOpacity accessibilityRole="button" onPress={() => { void refresh(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></>
+        {searchPending || (filter && loading) ? <ActivityIndicator accessibilityLabel="Searching sales" size="small" color={theme.colors.bitcoin} />
+          : error ? <><Feather name="alert-circle" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>Sales unavailable</Text><Text style={styles.emptyBody}>Couldn’t load saved sales. Try again.</Text><TouchableOpacity accessibilityRole="button" onPress={() => { void refresh(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></>
           : loading ? null
             : filter ? <Text style={styles.emptyTitle}>No matching sales</Text>
             : <><Feather name="shopping-bag" size={27} color={theme.colors.muted} /><Text style={styles.emptyTitle}>{period === 'today' ? 'No sales today' : period === 'all' ? 'No sales yet' : 'No sales in this period'}</Text><Text style={styles.emptyBody}>{period === 'today' ? 'New payment requests will appear here.' : period === 'all' ? 'Payment requests from this wallet will appear here.' : 'Payment requests in this period will appear here.'}</Text></>}
       </View>}
-      ListFooterComponent={state.identity === loadIdentity && state.pageLoading
+      ListFooterComponent={searchPending ? null : state.identity === loadIdentity && state.pageLoading
         ? <View style={styles.pageFooter}><ActivityIndicator size="small" color={theme.colors.bitcoin} /></View>
         : state.identity === loadIdentity && state.pageError
           ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading more sales" onPress={() => { void loadNextPage(); }} style={styles.pageFooter}><Feather name="refresh-cw" size={18} color={theme.colors.bitcoin} /></TouchableOpacity>

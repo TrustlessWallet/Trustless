@@ -225,3 +225,19 @@ it('keeps the current Sales period and totals when the next period fails to load
   expect(view.getByLabelText('Today sales').props.accessibilityState.selected).toBe(true);
   expect(view.getByText('200 sats')).toBeTruthy();
 });
+
+it('hides stale results as soon as the query changes and clears the search without waiting for debounce', async () => {
+  (listTerminalSalesPage as jest.Mock).mockImplementation(async (_wallet, _network, options) => ({
+    items: options.filter ? [sale('match', 2500)] : [sale('original', 1200)],
+    nextCursor: null,
+  }));
+  const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
+  await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
+  fireEvent.changeText(view.getByLabelText('Search sales'), 'match');
+  expect(view.queryByLabelText(/1 200 sats, Paid/)).toBeNull();
+  expect(view.getByLabelText('Searching sales')).toBeTruthy();
+  await waitFor(() => expect(view.getByLabelText(/2 500 sats, Paid/)).toBeTruthy());
+  fireEvent.press(view.getByLabelText('Clear search sales'));
+  expect(view.queryByLabelText(/2 500 sats, Paid/)).toBeNull();
+  await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
+});
