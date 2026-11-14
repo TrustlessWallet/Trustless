@@ -23,7 +23,8 @@ type Props = {
 export default function TerminalQuickItemsScreen({ error = '', catalog, lines, unit, busy, onAdd, onRemoveOne, onClose }: Props) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { height, width, fontScale } = useWindowDimensions();
+  const stackControls = fontScale >= 1.4 || width < 350;
   const sheetHeight = height * 0.5;
   // Animate layout so native glass keeps the same frame as its press target.
   const dragY = useRef(new Animated.Value(sheetHeight)).current;
@@ -76,25 +77,25 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
     <View collapsable={false} style={styles.scrollContainer}>
       {rows.length > 0 ? <TerminalSearchInput label="Search items" value={query} onChangeText={setQuery} /> : null}
       <FlatList data={matches} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
-        ListEmptyComponent={term ? <Text style={{ color: theme.colors.muted, textAlign: 'center', padding: 16 }}>No matching items</Text> : null} keyExtractor={item => item.id} extraData={{ lines, unit, busy }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, { paddingBottom: Math.max(12, insets.bottom) }]}
+        ListEmptyComponent={term ? <Text style={{ color: theme.colors.muted, textAlign: 'center', padding: 16 }}>No matching items</Text> : null} keyExtractor={item => item.id} extraData={{ lines, unit, busy, stackControls }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, { paddingBottom: Math.max(12, insets.bottom) }]}
         renderItem={({ item }) => {
           const selected = selectedById.get(item.id);
           const unavailable = !selected && !!basketUnit && item.unit !== basketUnit;
-          return <View key={item.id} style={[styles.row, { borderBottomColor: theme.colors.border }]}>
-            <View style={styles.info}>
-              <Text style={[styles.name, { color: unavailable ? theme.colors.muted : theme.colors.primary }]} numberOfLines={2}>{selected?.name ?? item.name}</Text>
-              <Text style={[styles.price, { color: theme.colors.muted }]}>{formatTerminalBasketAmount(selected?.unitPrice ?? item.unitPrice, selected ? unit : item.unit)}{selected ? ` · ${formatTerminalBasketAmount(selected.total, unit)}` : ''}</Text>
+          return <View key={item.id} style={[styles.row, stackControls && styles.stackedRow, { borderBottomColor: theme.colors.border }]}>
+            <View style={[styles.info, stackControls && styles.stackedInfo]}>
+              <Text allowFontScaling maxFontSizeMultiplier={2} style={[styles.name, { color: unavailable ? theme.colors.muted : theme.colors.primary }]} numberOfLines={stackControls ? undefined : 2}>{selected?.name ?? item.name}</Text>
+              <Text allowFontScaling maxFontSizeMultiplier={2} style={[styles.price, { color: theme.colors.muted }]}>{formatTerminalBasketAmount(selected?.unitPrice ?? item.unitPrice, selected ? unit : item.unit)}{selected ? ` · ${formatTerminalBasketAmount(selected.total, unit)}` : ''}</Text>
             </View>
-            {selected ? <>
+            <View style={styles.controls}>{selected ? <>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove one ${selected.name}`} disabled={busy} style={styles.control} onPress={() => onRemoveOne(selected)}><Feather name="minus" size={20} color={theme.colors.primary} /></TouchableOpacity>
-              <Text style={[styles.quantity, { color: theme.colors.primary }]}>{selected.quantity}</Text>
+              <Text allowFontScaling maxFontSizeMultiplier={2} style={[styles.quantity, { color: theme.colors.primary }]}>{selected.quantity}</Text>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add one ${selected.name}`} disabled={busy} style={styles.control} onPress={() => onAdd({ id: selected.itemId, name: selected.name, unit, unitPrice: selected.unitPrice })}><Feather name="plus" size={20} color={theme.colors.primary} /></TouchableOpacity>
-            </> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add ${item.name}`} accessibilityState={{ disabled: unavailable || busy }} disabled={unavailable || busy} style={styles.control} onPress={() => onAdd(item)}><Feather name="plus" size={20} color={unavailable ? theme.colors.muted : theme.colors.primary} /></TouchableOpacity>}
+            </> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Add ${item.name}`} accessibilityState={{ disabled: unavailable || busy }} disabled={unavailable || busy} style={styles.control} onPress={() => onAdd(item)}><Feather name="plus" size={20} color={unavailable ? theme.colors.muted : theme.colors.primary} /></TouchableOpacity>}</View>
           </View>;
         }}
       />
     </View>
-    {error ? <View style={[styles.feedback, { paddingBottom: Math.max(12, insets.bottom) }]}><Text accessibilityRole="alert" style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text></View> : null}
+    {error ? <View style={[styles.feedback, { paddingBottom: Math.max(12, insets.bottom) }]}><Text accessibilityRole="alert" allowFontScaling maxFontSizeMultiplier={2} style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text></View> : null}
   </Animated.View></KeyboardAvoidingView>;
 }
 
@@ -104,5 +105,8 @@ const styles = StyleSheet.create({
   feedback: { paddingHorizontal: 24, paddingTop: 12, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },
   scrollContainer: { flex: 1, minHeight: 0 }, scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }, row: { minHeight: 64, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   info: { flex: 1, minWidth: 0, paddingRight: 8 }, name: { fontSize: 14, lineHeight: 20 }, price: { fontSize: 12, lineHeight: 18, marginTop: 4 }, control: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  stackedRow: { flexDirection: 'column', alignItems: 'stretch' },
+  stackedInfo: { flex: 0, paddingRight: 0 },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
   quantity: { fontSize: 15, minWidth: 20, textAlign: 'center' },
 });
