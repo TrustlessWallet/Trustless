@@ -28,7 +28,7 @@ export default function WalletSetupSuccessScreen({
     };
   }, []));
 
-  return <View style={{ flex: 1, justifyContent: 'center', backgroundColor: theme.colors.background }}>
+  return <View style={{ height: 260, justifyContent: 'center', backgroundColor: theme.colors.background }}>
     {showCheck ? <AnimatedSuccess title={route.params.kind === 'created' ? 'Wallet created' : 'Wallet imported'} /> : null}
   </View>;
 }
