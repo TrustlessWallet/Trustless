@@ -116,6 +116,7 @@ export type RootStackParamList = {
   BackupIntro: undefined;
   ShowMnemonic: { mnemonic: string; mode?: string; walletId?: string };
   ShowMnemonicQR: { mnemonic: string; mode?: string; walletId?: string };
+  WalletSetupSuccess: { kind: 'created' | 'imported' };
   VerifyMnemonic: { mnemonic: string };
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;

@@ -61,7 +61,7 @@ const ShowMnemonicQRScreen = () => {
                         color={theme.colors.inversePrimary}
                     />
                     <Text style={styles.button_text}>
-                        {is_backup_mode && walletId ? 'I saved my recovery phrase' : is_backup_mode ? 'Done' : 'Continue to verification'}
+                        {is_backup_mode && walletId ? 'I saved my recovery phrase' : is_backup_mode ? 'Done' : 'Check recovery phrase'}
                     </Text>
                 </View>
             </TouchableOpacity>

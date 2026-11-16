@@ -78,9 +78,7 @@ const RecoverWalletScreen = () => {
             const new_wallet = await add_wallet({ mnemonic: trimmed_phrase });
             
             if (new_wallet) {
-                Alert.alert("Success", "Your wallet has been recovered and set as active.", [
-                    { text: "OK", onPress: () => navigation.popToTop() }
-                ]);
+                navigation.navigate('WalletSetupSuccess', { kind: 'imported' });
             }
         } catch (error) {
             Alert.alert("Error", error instanceof Error ? error.message : "An unexpected error occurred.");

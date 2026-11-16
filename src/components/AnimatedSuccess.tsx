@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { Text } from './StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 
-export default function TerminalPaymentSuccess({ children }: { children: React.ReactNode }) {
+export default function AnimatedSuccess({ title, children }: { title: string; children?: React.ReactNode }) {
   const { theme } = useTheme();
   const pop = useRef(new Animated.Value(0)).current;
   const ring = useRef(new Animated.Value(0)).current;
@@ -20,7 +20,7 @@ export default function TerminalPaymentSuccess({ children }: { children: React.R
       <Animated.View style={[styles.ring, { borderColor: theme.colors.primary, opacity: ring.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] }), transform: [{ scale: ring.interpolate({ inputRange: [0, 1], outputRange: [1, 1.55] }) }] }]} />
       <View style={[styles.circle, { backgroundColor: theme.colors.primary }]}><Feather name="check" size={44} color={theme.colors.inversePrimary} /></View>
     </Animated.View>
-    <Text accessibilityRole="header" style={[styles.title, { color: theme.colors.primary }]}>Payment received</Text>
+    <Text accessibilityRole="header" style={[styles.title, { color: theme.colors.primary }]}>{title}</Text>
     {children}
   </View>;
 }

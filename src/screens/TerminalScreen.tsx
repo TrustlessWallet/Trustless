@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
-import TerminalPaymentSuccess from '../components/TerminalPaymentSuccess';
+import AnimatedSuccess from '../components/AnimatedSuccess';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -651,7 +651,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     const qrTop = Math.max(20, sheetHeight / 2 - 56 - amountHeight - 24 - (qrSize + 34) / 2);
     if (stage === 'received') return <View style={styles.root}>
       <TerminalSheetHeader title="Invoice" closeLabel="Close invoice" disabled={endingRequest} onClose={dismiss} />
-      <View style={{ flex: 1, justifyContent: 'center' }}><TerminalPaymentSuccess>{checkoutAmount(sheetWidth)}{frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}</TerminalPaymentSuccess></View>
+      <View style={{ flex: 1, justifyContent: 'center' }}><AnimatedSuccess title="Payment received">{checkoutAmount(sheetWidth)}{frozenSecondary ? <Text style={styles.approx}>{frozenSecondary}</Text> : null}</AnimatedSuccess></View>
       <View style={[styles.actionBar, { paddingBottom: Math.max(24, insets.bottom + 16) }]}>
         {paidSale && paidSale.request.id === request?.id ? <>
           {receiptState?.sale === paidSale && receiptState.error ? <Text accessibilityRole="alert" style={styles.error}>{receiptState.error}</Text> : null}

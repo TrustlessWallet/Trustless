@@ -79,10 +79,7 @@ const ImportWatchOnlyScreen = () => {
             });
 
             if (wallet) {
-                navigation.reset({
-                    index: 0,
-                    routes: [{ name: 'MainTabs' }]
-                });
+                navigation.navigate('WalletSetupSuccess', { kind: 'imported' });
             }
         } catch (e) {
             console.error(e);
