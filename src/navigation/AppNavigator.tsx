@@ -422,13 +422,12 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
         }} />
         <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
 
-        <Stack.Screen name="WalletSetupSuccess" component={WalletSetupSuccessScreen}
-          options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: false }} />
-
         <Stack.Group screenOptions={{
           presentation: 'formSheet',
           ...android_sheet_options,
         }}>
+          <Stack.Screen name="WalletSetupSuccess" component={WalletSetupSuccessScreen}
+            options={{ headerShown: false, gestureEnabled: false, sheetGrabberVisible: false }} />
           <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
           <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
           <Stack.Screen name="ShowMnemonicQR" component={ShowMnemonicQRScreen} options={{ title: 'Recovery QR' }} />
