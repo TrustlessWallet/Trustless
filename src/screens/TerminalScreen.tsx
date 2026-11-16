@@ -131,7 +131,7 @@ function ReportsRoute({ walletId, network, rootVisible, selection, onClose }: { 
 type Stage = 'loading' | 'entry' | 'creating' | 'waiting' | 'received' | 'expired' | 'verificationUnavailable' | 'creationFailed' | 'walletChanged';
 
 export default function TerminalScreen({ visible = true, onExit }: { visible?: boolean; onExit?: () => void } = {}) {
-  const { activeWallet, isLightningInitialized, lightningInitAttempted, lightningInitError, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
+  const { activeWallet, isLightningInitialized, lightningInitAttempted, lightningInitError, retryLightning, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice } = useWallet();
   const { setMode, changing, cashierState, cashierBusy, consumeCashierTerminalDraft } = useWalletMode();
   const { refresh: refreshPro, activation: proActivation, abandonActivation } = useTerminalPro();
   const terminalFocused = useIsFocused();
@@ -149,6 +149,8 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const [checkoutFocused, setCheckoutFocused] = useState(true);
   const [invoiceFocused, setInvoiceFocused] = useState(false);
   const [endingRequest, setEndingRequest] = useState(false);
+  const [lightningRetryScope, setLightningRetryScope] = useState<string | null>(null);
+  const lightningRetryFlight = useRef<{ scope: string } | null>(null);
   const [paidSale, setPaidSale] = useState<TerminalSale | null>(null);
   const receiptFlight = useRef<TerminalSale | null>(null);
   const [receiptState, setReceiptState] = useState<{ sale: TerminalSale; busy: boolean; error?: string } | null>(null);
@@ -574,7 +576,28 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   try {
     hasValidAmount = (isFiat(unit) ? parseFiatMinor(entryAmount) : parseTerminalAmount(entryAmount, unit)) > 0;
   } catch { /* Empty, zero and incomplete keypad values keep Generate inactive. */ }
-  const requestDisabled = (stage === 'loading' && !hasRequest) || stage === 'creating' || endingRequest || (!hasRequest && !hydrationFailed && !hasValidAmount);
+  const canRetryLightning = !isLightningInitialized && !!lightningInitError;
+  const retryingLightning = lightningRetryScope === scope;
+  const retryCheckoutConnection = async () => {
+    if (!canRetryLightning || lightningRetryFlight.current?.scope === scope) return;
+    const flight = { scope };
+    lightningRetryFlight.current = flight;
+    setLightningRetryScope(scope);
+    setError('');
+    try {
+      await retryLightning();
+    } catch {
+      if (mounted.current && scopeRef.current === scope) setError('Couldn’t reconnect to Lightning. Try again.');
+    } finally {
+      if (lightningRetryFlight.current === flight) {
+        lightningRetryFlight.current = null;
+        if (mounted.current) setLightningRetryScope(null);
+      }
+    }
+  };
+  const retryEntry = !hasRequest && !hydrationFailed && (canRetryLightning || retryingLightning);
+  const requestDisabled = (stage === 'loading' && !hasRequest) || stage === 'creating' || endingRequest || retryingLightning ||
+    (!hasRequest && !hydrationFailed && !retryEntry && (!hasValidAmount || !isLightningInitialized));
   const settingsButton = <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" disabled={stage === 'creating' || endingRequest} style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
     <GlassView width={40} height={40} shape="circle" interactive={checkoutFocused && !transitioning && stage !== 'creating' && !endingRequest} style={styles.glassSurface}>
       {Platform.OS === 'ios' ? <SymbolView name="gearshape" size={21} tintColor={theme.colors.primary} /> : <Feather name="settings" size={21} color={theme.colors.primary} />}
@@ -705,15 +728,15 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       <View style={styles.checkoutGap}>
         <View style={styles.feedbackArea}>
           {error ? <Text numberOfLines={2} style={styles.error}>{error}</Text> : null}
-          {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{lightningInitAttempted ? (lightningInitError || 'Lightning is unavailable.') : 'Connecting to Lightning…'}</Text> : null}
+          {!error && !isLightningInitialized ? <Text numberOfLines={2} style={styles.error}>{canRetryLightning && !retryingLightning ? 'Lightning connection unavailable.' : 'Connecting to Lightning…'}</Text> : null}
           {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={styles.error}>Items unavailable · Retry</Text></TouchableOpacity> : null}
         </View>
         <View style={styles.itemsRow}>
           {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
         </View>
       </View>
-      <TouchableOpacity testID="terminal-request" disabled={requestDisabled} style={[styles.primaryAction, requestDisabled && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else void requestPayment(); }}>
-        {endingRequest || stage === 'creating' ? <ActivityIndicator accessibilityLabel={endingRequest ? 'Closing invoice' : 'Generating invoice'} color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>{hasRequest ? 'Resume invoice' : hydrationFailed ? 'Retry loading' : 'Generate invoice'}</Text>}
+      <TouchableOpacity testID="terminal-request" disabled={requestDisabled} style={[styles.primaryAction, requestDisabled && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else if (retryEntry) void retryCheckoutConnection(); else void requestPayment(); }}>
+        {endingRequest || stage === 'creating' || retryingLightning ? <ActivityIndicator accessibilityLabel={retryingLightning ? 'Reconnecting to Lightning' : endingRequest ? 'Closing invoice' : 'Generating invoice'} color={theme.colors.bitcoin} /> : <Text style={styles.primaryActionText}>{hasRequest ? 'Resume invoice' : hydrationFailed ? 'Retry loading' : retryEntry ? 'Retry Lightning' : 'Generate invoice'}</Text>}
       </TouchableOpacity>
     </View>}
   </View>;
