@@ -23,6 +23,7 @@ export function TerminalSearchInput({ label, value, onChangeText }: {
       autoCorrect={false}
       autoCapitalize="none"
       returnKeyType="search"
+      maxFontSizeMultiplier={2}
       maxLength={128}
     />
     {value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label.toLowerCase()}`}
