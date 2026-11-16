@@ -101,7 +101,13 @@ const WalletOptionsScreen = () => {
                                     placeholderTextColor={theme.colors.muted}
                                 />
                             ) : (
-                                <Text style={styles.wallet_name}>{wallet.name}</Text>
+                                <TouchableOpacity
+                                    accessibilityRole="button"
+                                    accessibilityHint="Edits the wallet name"
+                                    onPress={handle_start_editing_name}
+                                >
+                                    <Text style={styles.wallet_name}>{wallet.name}</Text>
+                                </TouchableOpacity>
                             )}
                         </View>
                         {!is_editing_name && (
