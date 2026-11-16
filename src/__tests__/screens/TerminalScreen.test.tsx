@@ -1081,3 +1081,22 @@ it('clears the basket with C and allows keypad entry to replace selected items',
  fireEvent.press(view.getByLabelText('Items'));
  expect(view.queryByLabelText('Remove one Coffee')).toBeNull();
 });
+
+it('retries a disconnected checkout without dropping the amount or creating an invoice', async () => {
+  const retryLightning = jest.fn().mockResolvedValue(undefined);
+  const disconnected = { activeWallet: wallet, isLightningInitialized: false, lightningInitAttempted: true,
+    lightningInitError: 'Connection unavailable', retryLightning, createTerminalInvoice, validateTerminalInvoice, verifyTerminalInvoice };
+  (useWallet as jest.Mock).mockReturnValue(disconnected);
+  const tree = <NavigationContainer><TerminalScreen /></NavigationContainer>;
+  const view = render(tree);
+  await waitFor(() => expect(view.getByText('Retry Lightning')).toBeTruthy());
+  fireEvent.press(view.getByText('3'));
+  await act(async () => { fireEvent.press(view.getByTestId('terminal-request')); });
+  expect(retryLightning).toHaveBeenCalledTimes(1);
+  expect(createTerminalInvoice).not.toHaveBeenCalled();
+  (useWallet as jest.Mock).mockReturnValue({ ...disconnected, isLightningInitialized: true, lightningInitError: null });
+  view.rerender(<NavigationContainer><TerminalScreen /></NavigationContainer>);
+  expect(view.getByTestId('terminal-amount').props.children).toBe('3');
+  expect(view.getByText('Generate invoice')).toBeTruthy();
+  expect(view.getByTestId('terminal-request').props.accessibilityState.disabled).toBe(false);
+});
