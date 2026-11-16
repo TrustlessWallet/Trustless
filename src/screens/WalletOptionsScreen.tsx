@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, TextInput, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useWallet } from '../contexts/WalletContext';
@@ -15,9 +15,10 @@ type route_prop_type = RouteProp<RootStackParamList, 'WalletOptions'>;
 const WalletOptionsScreen = () => {
     const navigation = useNavigation<navigation_prop>();
     const route = useRoute<route_prop_type>();
+    const focused = useIsFocused();
     const { wallet_id } = route.params;
 
-    const { wallets, removeWallet: remove_wallet, activeWallet: active_wallet, updateWalletName } = useWallet();
+    const { wallets, loading, removeWallet: remove_wallet, activeWallet: active_wallet, updateWalletName } = useWallet();
     const { theme, isDark } = useTheme();
     const styles = useMemo(() => get_styles(theme), [theme]);
     const [is_editing_name, set_is_editing_name] = useState(false);
@@ -31,6 +32,12 @@ const WalletOptionsScreen = () => {
             edit_input_ref.current?.focus();
         }
     }, [is_editing_name]);
+
+    useEffect(() => {
+        if (wallet || loading || !focused || !navigation.canGoBack()) return;
+        if (wallets.length === 0) navigation.popToTop();
+        else navigation.goBack();
+    }, [wallet, loading, focused, navigation, wallets.length]);
 
     const handle_show_public_key = () => {
         navigation.navigate('ShowPublicKey', { wallet_id });
@@ -63,14 +70,7 @@ const WalletOptionsScreen = () => {
                     style: "destructive",
                     onPress: async () => {
                         try {
-                            const is_last_wallet = wallets.length <= 1;
                             await remove_wallet(wallet.id);
-
-                            if (is_last_wallet) {
-                                navigation.popToTop();
-                            } else {
-                                navigation.goBack();
-                            }
                         } catch (error) {
                             Alert.alert("Error", error instanceof Error ? error.message : "Could not remove wallet.");
                         }
@@ -80,13 +80,7 @@ const WalletOptionsScreen = () => {
         );
     };
 
-    if (!wallet) {
-        return (
-            <View style={styles.container}>
-                <Text style={{ color: theme.colors.muted }}>Wallet not found.</Text>
-            </View>
-        );
-    }
+    if (!wallet) return <View style={styles.container} />;
 
     return (
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>

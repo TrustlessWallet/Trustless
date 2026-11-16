@@ -427,7 +427,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           ...android_sheet_options,
         }}>
           <Stack.Screen name="WalletSetupSuccess" component={WalletSetupSuccessScreen}
-            options={{ headerShown: false, gestureEnabled: false, sheetGrabberVisible: false }} />
+            options={{ headerShown: false, gestureEnabled: false, sheetGrabberVisible: false, sheetAllowedDetents: 'fitToContents' }} />
           <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
           <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
           <Stack.Screen name="ShowMnemonicQR" component={ShowMnemonicQRScreen} options={{ title: 'Recovery QR' }} />
