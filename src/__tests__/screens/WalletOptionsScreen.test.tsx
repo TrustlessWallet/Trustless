@@ -1,11 +1,11 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import WalletOptionsScreen from '../../screens/WalletOptionsScreen';
 
 const mockNavigation = { canGoBack: () => true, goBack: jest.fn(), popToTop: jest.fn() };
 let mockFocused = false;
 let mockLoading = false;
-let mockWallets: { id: string }[] = [];
+let mockWallets: { id: string; name?: string }[] = [];
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => mockNavigation,
@@ -19,6 +19,17 @@ jest.mock('../../contexts/ThemeContext', () => ({
   useTheme: () => ({ theme: { colors: {}, LAYOUT: {} } }),
 }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
+
+it('opens the prefilled name editor when the wallet name is pressed', () => {
+  mockWallets = [{ id: 'removed', name: 'My wallet' }];
+  mockFocused = true;
+  mockLoading = false;
+  const view = render(<WalletOptionsScreen />);
+
+  fireEvent.press(view.getByRole('button', { name: 'My wallet' }));
+
+  expect(view.getByDisplayValue('My wallet').props.autoFocus).toBe(true);
+});
 
 it.each([true, false])('closes missing wallet options on focus (other wallets: %s)', otherWallets => {
   jest.clearAllMocks();
