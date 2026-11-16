@@ -59,10 +59,10 @@ describe('backup display Done', () => {
     it('allows another verification attempt after returning to the phrase screen', () => {
         mockRouteParams = { ...mockRouteParams, mode: 'create' };
         const screen = render(<ShowMnemonicScreen />);
-        fireEvent.press(screen.getByText('Continue to verification'));
+        fireEvent.press(screen.getByText('Check recovery phrase'));
         expect(navigate).toHaveBeenCalledTimes(1);
         act(() => focus?.());
-        fireEvent.press(screen.getByText('Continue to verification'));
+        fireEvent.press(screen.getByText('Check recovery phrase'));
         expect(navigate).toHaveBeenCalledTimes(2);
         screen.unmount();
     });

@@ -73,7 +73,7 @@ const ShowMnemonicScreen = () => {
                         color={theme.colors.inversePrimary}
                     />
                     <Text style={styles.buttonText}>
-                        {isBackupMode && walletId ? 'I saved my recovery phrase' : isBackupMode ? 'Done' : 'Continue to verification'}
+                        {isBackupMode && walletId ? 'I saved my recovery phrase' : isBackupMode ? 'Done' : 'Check recovery phrase'}
                     </Text>
                 </View>
             </TouchableOpacity>

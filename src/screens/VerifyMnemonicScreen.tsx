@@ -50,9 +50,7 @@ const VerifyMnemonicScreen = () => {
                 // fails, keep the reminder rather than reporting creation failed.
                 try { await confirmWalletBackup(NETWORK_NAME, created.id); }
                 catch { /* The wallet remains usable; its backup reminder stays visible. */ }
-                Alert.alert("Success!", "Your wallet is now set up and secured.", [
-                    { text: "OK", onPress: () => navigation.popToTop() }
-                ]);
+                navigation.navigate('WalletSetupSuccess', { kind: 'created' });
             } catch (error) {
                 Alert.alert("Error", "Could not save the wallet.");
             } finally {

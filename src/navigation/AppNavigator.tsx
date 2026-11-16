@@ -22,6 +22,7 @@ import ImportWatchOnlyScreen from '../screens/ImportWatchOnlyScreen';
 import ReceiveScreen from '../screens/ReceiveScreen';
 import SendScreen from '../screens/SendScreen';
 import TransactionConfirmScreen from '../screens/TransactionConfirmScreen';
+import WalletSetupSuccessScreen from '../screens/WalletSetupSuccessScreen';
 import TransactionSuccessScreen from '../screens/TransactionSuccessScreen';
 import TransactionDetailsScreen from '../screens/TransactionDetailsScreen';
 import WalletSwitcherScreen from '../screens/WalletSwitcherScreen';
@@ -420,6 +421,9 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           contentStyle: { backgroundColor: theme.colors.background },
         }} />
         <Stack.Screen name="AuthCheck" component={AuthCheckScreen} options={{ headerShown: false }} />
+
+        <Stack.Screen name="WalletSetupSuccess" component={WalletSetupSuccessScreen}
+          options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'slide_from_bottom', gestureEnabled: false }} />
 
         <Stack.Group screenOptions={{
           presentation: 'formSheet',
