@@ -20,7 +20,7 @@ import { GlassView } from '../../components/GlassView';
 jest.mock('@react-navigation/native', () => ({ ...jest.requireActual('@react-navigation/native'), useIsFocused: () => true }));
 
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: jest.fn() }));
-jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
+jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { LAYOUT: { radius: 8, inputHeight: 56 }, colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
 jest.mock('../../components/GlassView', () => ({ GlassView: ({ children }: { children: React.ReactNode }) => children }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));

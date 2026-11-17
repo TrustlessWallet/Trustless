@@ -10,7 +10,7 @@ const mockSalesListeners = new Set<(wallet: string, network: string) => void>();
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 jest.mock('../../contexts/WalletContext', () => ({ useWallet: () => ({ activeWallet: { id: 'wallet-a' }, isLightningInitialized: true, validateTerminalInvoice: jest.fn(), verifyTerminalInvoice: jest.fn() }) }));
-jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
+jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { LAYOUT: { radius: 8, inputHeight: 56 }, colors: { background: '#fff', primary: '#000', inversePrimary: '#fff', surface: '#eee', muted: '#888', border: '#ccc', bitcoin: '#f90' } } }) }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('uuid', () => ({ v4: () => 'test-id' }));
@@ -233,11 +233,12 @@ it('hides stale results as soon as the query changes and clears the search witho
   }));
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
-  fireEvent.changeText(view.getByLabelText('Search sales'), 'match');
+  fireEvent.changeText(view.getByLabelText('Search all sales'), 'match');
   expect(view.queryByLabelText(/1 200 sats, Paid/)).toBeNull();
   expect(view.getByLabelText('Searching sales')).toBeTruthy();
   await waitFor(() => expect(view.getByLabelText(/2 500 sats, Paid/)).toBeTruthy());
-  fireEvent.press(view.getByLabelText('Clear search sales'));
+  expect(listTerminalSalesPage).toHaveBeenCalledWith('wallet-a', 'mainnet', expect.objectContaining({ range: null, filter: { query: 'match' } }));
+  fireEvent.press(view.getByLabelText('Clear search all sales'));
   expect(view.queryByLabelText(/2 500 sats, Paid/)).toBeNull();
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
 });

@@ -431,7 +431,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen name="BackupIntro" component={BackupIntroScreen} options={{ title: 'Create wallet' }} />
           <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
           <Stack.Screen name="ShowMnemonicQR" component={ShowMnemonicQRScreen} options={{ title: 'Recovery QR' }} />
-          <Stack.Screen name="VerifyMnemonic" component={VerifyMnemonicScreen} options={{ title: 'Verify phrase' }} />
+          <Stack.Screen name="VerifyMnemonic" component={VerifyMnemonicScreen} options={{ title: 'Check your backup' }} />
           <Stack.Screen name="RecoverWallet" component={RecoverWalletScreen} options={{ title: 'Recover wallet' }} />
           <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
@@ -444,7 +444,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen name="ImportPSBT" component={ImportPSBTScreen} options={{ title: 'Scan signed transaction', presentation: 'modal' }} />
           <Stack.Screen name="WalletSwitcher" component={WalletSwitcherScreen} options={{ title: 'Wallets' }} />
           <Stack.Screen name="WalletOptions" component={WalletOptionsScreen} options={{ title: 'Wallet options' }} />
-          <Stack.Screen name="AddWalletOptions" component={AddWalletOptionsScreen} options={{ title: 'Add wallet' }} />
+          <Stack.Screen name="AddWalletOptions" component={AddWalletOptionsScreen} options={{ title: 'Add wallet', sheetAllowedDetents: 'fitToContents' }} />
           <Stack.Screen name="BackupDisclaimer" component={BackupDisclaimerScreen} options={{ title: 'Backup wallet' }} />
           <Stack.Screen name="AddressBook" component={AddressBookScreen} options={{ title: 'Saved addresses' }} />
           <Stack.Screen name="AddSavedAddress" component={AddSavedAddressScreen} options={{ title: 'Add new address' }} />

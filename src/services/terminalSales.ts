@@ -135,10 +135,19 @@ export function listTerminalSalesPage(walletId: string, network: string,
     if (status) { predicates.push('status=?'); args.push(status); }
     const query = options.filter?.query?.trim().toLowerCase();
     if (query) {
-      predicates.push(`(instr(lower(id), ?) > 0 OR instr(lower(coalesce(payment_id, '')), ?) > 0
-        OR EXISTS (SELECT 1 FROM json_each(terminal_sales.payload, '$.request.basket.lines') AS line
-          WHERE instr(lower(json_extract(line.value, '$.name')), ?) > 0))`);
+      const compact = query.replace(/(?:sats?|btc|usd|eur|chf|[$€₿])/g, '').replace(/[\s\u00a0\u202f]/g, '');
+      const numeric = compact.includes('.') ? compact.replace(/,/g, '') : /^\d{1,3}(?:,\d{3})+$/.test(compact) ? compact.replace(/,/g, '') : compact.replace(',', '.');
+      const amountQuery = /^\d+(?:\.\d*)?$/.test(numeric) ? numeric : null;
+      const matches = ["instr(lower(id), ?) > 0", "instr(lower(coalesce(payment_id, '')), ?) > 0",
+        "EXISTS (SELECT 1 FROM json_each(terminal_sales.payload, '$.request.basket.lines') AS line WHERE instr(lower(json_extract(line.value, '$.name')), ?) > 0)"];
       args.push(query, query, query);
+      if (amountQuery !== null) {
+        matches.push("instr(CAST(json_extract(payload, '$.request.amountSats') AS TEXT), ?) > 0",
+          "instr(printf('%d.%08d', json_extract(payload, '$.request.amountSats') / 100000000, json_extract(payload, '$.request.amountSats') % 100000000), ?) > 0",
+          "instr(printf('%d.%02d', json_extract(payload, '$.request.fiat.amountMinor') / 100, json_extract(payload, '$.request.fiat.amountMinor') % 100), ?) > 0 AND input_is_fiat=1");
+        args.push(amountQuery, amountQuery, amountQuery);
+      }
+      predicates.push(`(${matches.join(' OR ')})`);
     }
     args.push(limit + 1);
     const rows = await db.getAllAsync<SaleRow & { activity_at: number; id: string }>(`SELECT payload,activity_at,id FROM terminal_sales

@@ -117,9 +117,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   const periodDay = useMemo(() => new Date(dayStart), [dayStart]);
   const range = useMemo(() => terminalSalesPeriodBounds(period, periodDay, customRange ?? undefined), [period, periodDay, customRange]);
   const rangeKey = range ? `${range.start}:${range.end}` : 'all';
-  const [search, setSearch] = useState({ scope, query: '', status: undefined as TerminalSalesFilter['status'] });
+  const [search, setSearch] = useState({ scope, query: '' });
   const query = search.scope === scope ? search.query : '';
-  const statusFilter = search.scope === scope ? search.status : undefined;
   const [debounced, setDebounced] = useState({ scope, query: '' });
   useEffect(() => {
     const timer = setTimeout(() => setDebounced({ scope, query: query.trim() }), 180);
@@ -127,7 +126,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   }, [query, scope]);
   const searchTerm = query.trim() && debounced.scope === scope ? debounced.query : '';
   const searchPending = query.trim() !== searchTerm;
-  const filter = useMemo(() => searchTerm || statusFilter ? { query: searchTerm, status: statusFilter } : undefined, [searchTerm, statusFilter]);
+  const filter = useMemo(() => searchTerm ? { query: searchTerm } : undefined, [searchTerm]);
   const filterKey = filter ? JSON.stringify(filter) : '';
   const periodIdentity = `${scope}:${period}:${rangeKey}|`;
   const loadIdentity = periodIdentity + filterKey;
@@ -191,7 +190,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     else setState(previous => previous.identity === identity ? { ...previous, pageLoading: false, pageError: false } : previous);
     try {
       const [firstPage, summary, refundedSats] = await Promise.all([
-        listTerminalSalesPage(walletId, network, { range, limit: 50, ...(filter ? { filter } : {}) }),
+        listTerminalSalesPage(walletId, network, { range: filter ? null : range, limit: 50, ...(filter ? { filter } : {}) }),
         getTerminalSalesSummary(walletId, network, range),
         getTerminalRefundTotal(walletId, network, range),
       ]);
@@ -200,7 +199,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       const ids = new Set(sales.map(sale => sale.request.id));
       let nextCursor = firstPage.nextCursor;
       while (!showLoading && sales.length < retainedCount && nextCursor) {
-        const page = await listTerminalSalesPage(walletId, network, { range, cursor: nextCursor, limit: 50, ...(filter ? { filter } : {}) });
+        const page = await listTerminalSalesPage(walletId, network, { range: filter ? null : range, cursor: nextCursor, limit: 50, ...(filter ? { filter } : {}) });
         if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
         for (const sale of page.items) if (!ids.has(sale.request.id)) { ids.add(sale.request.id); sales.push(sale); }
         nextCursor = page.nextCursor;
@@ -228,7 +227,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     pageBusy.current = true;
     setState(previous => previous.identity === identity ? { ...previous, pageLoading: true, pageError: false } : previous);
     try {
-      const page = await listTerminalSalesPage(walletId, network, { range, cursor, limit: 50, ...(filter ? { filter } : {}) });
+      const page = await listTerminalSalesPage(walletId, network, { range: filter ? null : range, cursor, limit: 50, ...(filter ? { filter } : {}) });
       if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
       setState(previous => {
         if (previous.identity !== identity) return previous;
@@ -405,7 +404,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     }
   };
 
-  const sectionTitle = period === 'today' ? 'TODAY’S ACTIVITY' : period === 'week' ? 'LAST 7 DAYS’ ACTIVITY' : period === 'month' ? 'THIS MONTH’S ACTIVITY' : period === 'custom' ? 'CUSTOM ACTIVITY' : 'ALL ACTIVITY';
+  const sectionTitle = query.trim() ? 'SEARCH RESULTS · ALL TIME' : period === 'today' ? 'TODAY’S ACTIVITY' : period === 'week' ? 'LAST 7 DAYS’ ACTIVITY' : period === 'month' ? 'THIS MONTH’S ACTIVITY' : period === 'custom' ? 'CUSTOM ACTIVITY' : 'ALL ACTIVITY';
 
   const selectLoadedPeriod = (nextPeriod: SalesPeriod, nextCustomRange: CustomSalesDateRange | null = customRange) => {
     const generation = ++pendingPeriodGeneration.current;
@@ -439,7 +438,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     if (cached) { commit(cached); return; }
     setPendingPeriod(nextPeriod);
     void Promise.all([
-      listTerminalSalesPage(walletId, network, { range: nextRange, limit: 50, ...(filter ? { filter } : {}) }),
+      listTerminalSalesPage(walletId, network, { range: filter ? null : nextRange, limit: 50, ...(filter ? { filter } : {}) }),
       getTerminalSalesSummary(walletId, network, nextRange),
       getTerminalRefundTotal(walletId, network, nextRange),
     ]).then(([firstPage, summary, refundedSats]) => {
@@ -469,6 +468,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   };
 
   const header = detailSale ? null : <>
+    {!detail ? <TerminalSearchInput label="Search all sales" value={query} onChangeText={value => setSearch({ scope, query: value })} /> : null}
     <TerminalSalesPeriodControls period={period} pendingPeriod={pendingPeriod} customRange={customRange} draft={editingCustom?.draft ?? null} day={day} disabled={!visible || !headerEnabled}
       detailCaption={detail ? formatLongDate(saleTime(detail)) : undefined}
       onSelect={value => {
@@ -491,18 +491,6 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       {onOpenReports && reportOwner ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => { const selection = { period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now }; proGate.requirePro(() => onOpenReports(selection)); }} style={styles.reportsRow}>
         <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text>{pro.status === 'free' ? <TerminalProBadge /> : null}<Feather name="chevron-right" size={18} color={theme.colors.muted} />
       </TouchableOpacity> : null}
-      <TerminalSearchInput label="Search sales" value={query} onChangeText={value => setSearch({ scope, query: value, status: statusFilter })} />
-      <View style={styles.statusFilters}>
-        {([{ label: 'All statuses' }, { label: 'Paid only', value: 'received' }, { label: 'Pending only', value: 'pending' }, { label: 'Not paid', value: 'unknown' }] as const).map(option => {
-          const value = 'value' in option ? option.value : undefined;
-          const selected = value === statusFilter;
-          return <TouchableOpacity key={option.label} accessibilityRole="button" accessibilityState={{ selected }}
-            onPress={() => setSearch({ scope, query, status: value })}
-            style={[styles.statusFilter, selected && styles.statusFilterSelected]}>
-            <Text style={styles.statusFilterText}>{option.label}</Text>
-          </TouchableOpacity>;
-        })}
-      </View>
       <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{filter ? null : summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
     </> : null}
   </>;
@@ -573,7 +561,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
         const status = statusFor(item, now);
         return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${displayAmount(item.request)}, ${status.label}, ${formatLongDate(saleTime(item))}`} style={styles.saleRow} onPress={() => { if (onOpenSale) { onOpenSale(item); return; } ++checkEpoch.current; checkBusy.current = false; setDetailState({ key: `${scope}:${item.request.id}`, sale: item }); setSelected({ scope, id: item.request.id }); }}>
           <View style={[styles.rowIcon, status.tone === 'paid' && styles.paidRowIcon]}><Feather name={status.tone === 'paid' ? 'check' : 'clock'} size={18} color={status.tone === 'paid' ? theme.colors.bitcoin : theme.colors.muted} /></View>
-          <View style={styles.rowMiddle}><Text style={styles.rowAmount} numberOfLines={1}>{displayAmount(item.request)}</Text><Text style={styles.rowMeta}>{period === 'today' ? formatTime(saleTime(item)) : `${formatDate(saleTime(item))} · ${formatTime(saleTime(item))}`}</Text></View>
+          <View style={styles.rowMiddle}><Text style={styles.rowAmount} numberOfLines={1}>{displayAmount(item.request)}</Text><Text style={styles.rowMeta}>{!query.trim() && period === 'today' ? formatTime(saleTime(item)) : `${formatDate(saleTime(item))} · ${formatTime(saleTime(item))}`}</Text></View>
           <View style={styles.rowEnd}><Text style={[styles.rowStatus, status.tone === 'paid' && styles.paidText]}>{status.label}</Text><Feather name="chevron-right" size={17} color={theme.colors.muted} /></View>
         </TouchableOpacity>;
       }}
@@ -619,10 +607,6 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     skeletonLabel: { width: 48, height: 18, borderRadius: 5, backgroundColor: colors.muted, opacity: 0.18 },
     skeletonAmount: { width: 88, height: 24, borderRadius: 6, backgroundColor: colors.muted, opacity: 0.18 },
     skeletonSectionCount: { width: 24, height: 11, borderRadius: 5, backgroundColor: colors.muted, opacity: 0.18 },
-    statusFilters: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginHorizontal: 24 },
-    statusFilter: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center', borderRadius: 8 },
-    statusFilterSelected: { backgroundColor: colors.surface },
-    statusFilterText: { color: colors.primary, fontSize: 12 },
     sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 24, marginTop: 35, marginBottom: 9 },
     sectionTitle: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
     sectionCount: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 11 },

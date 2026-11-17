@@ -1,35 +1,24 @@
+import { StyledInput } from './StyledInput';
 import React from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 
-export function TerminalSearchInput({ label, value, onChangeText }: {
+export function TerminalSearchInput({ label, value, onChangeText, onFocus }: {
+  onFocus?: () => void;
   label: string;
   value: string;
   onChangeText: (value: string) => void;
 }) {
   const { theme } = useTheme();
-  return <View style={{ marginHorizontal: 24, marginVertical: 8, paddingHorizontal: 12, minHeight: 44,
-    flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 8, borderWidth: 1,
-    borderColor: theme.colors.border, backgroundColor: theme.colors.surface }}>
-    <Feather name="search" size={16} color={theme.colors.muted} />
-    <TextInput
-      style={{ flex: 1, minHeight: 44, color: theme.colors.primary, fontFamily: 'SpaceMono-Regular' }}
-      placeholderTextColor={theme.colors.muted}
-      accessibilityLabel={label}
-      placeholder={label}
-      value={value}
-      onChangeText={onChangeText}
-      autoCorrect={false}
-      autoCapitalize="none"
-      returnKeyType="search"
-      maxFontSizeMultiplier={2}
-      maxLength={128}
+  return <View style={{ paddingHorizontal: 24, paddingVertical: 8 }}>
+    <StyledInput accessibilityLabel={label} placeholder={label} value={value} onChangeText={onChangeText}
+      onFocus={onFocus} autoCorrect={false} autoCapitalize="none" returnKeyType="search" maxLength={128}
+      rightElement={value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label.toLowerCase()}`}
+        onPress={() => onChangeText('')} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+        <Feather name="x" size={18} color={theme.colors.muted} />
+      </Pressable> : <Feather name="search" size={18} color={theme.colors.muted} />}
     />
-    {value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label.toLowerCase()}`}
-      onPress={() => onChangeText('')} hitSlop={10}>
-      <Feather name="x" size={18} color={theme.colors.muted} />
-    </Pressable> : null}
   </View>;
 }
 

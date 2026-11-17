@@ -141,3 +141,18 @@ it('rolls back failed writes, preserves identity and never downgrades receipt st
   expect((await listTerminalSalesPage('wallet-a', 'mainnet', { range })).items).toEqual([]);
   expect(await getTerminalSalesSummary('wallet-a', 'mainnet', range)).toMatchObject({ activityCount: 0 });
 });
+
+it('searches sats, BTC and fiat amounts before pagination', async () => {
+  await recordTerminalSale(request('small', 1000, 58));
+  await recordTerminalSale(request('large', 2000, 100000));
+  await recordTerminalSale({ ...request('fiat', 3000, 58000),
+    fiat: { currency: 'USD', amountMinor: 5800, rate: '100000', fetchedAt: 3000 } });
+  const search = async (query: string) => (await listTerminalSalesPage('wallet-a', 'mainnet', { range: null, filter: { query } })).items.map(sale => sale.request.id);
+  expect(await search('58')).toContain('small');
+  expect(await search('58 sats')).toContain('small');
+  expect(await search('0.00000058 BTC')).toEqual(['small']);
+  expect(await search('100 000')).toEqual(['large']);
+  expect(await search('100,000')).toEqual(['large']);
+  expect(await search('$58.00')).toEqual(['fiat']);
+  expect(await search('58,00')).toEqual(['fiat']);
+});

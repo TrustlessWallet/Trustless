@@ -1,10 +1,13 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import TerminalQuickItemsScreen from '../../screens/TerminalQuickItemsScreen';
-jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { colors: { background: '#fff', primary: '#000', muted: '#888', border: '#ccc' } } }) }));
+jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { LAYOUT: { radius: 8, inputHeight: 56 }, colors: { background: '#fff', primary: '#000', muted: '#888', border: '#ccc' } } }) }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('../../screens/TerminalSheetHeader', () => () => null);
+let mockPro = 'pro';
+jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => ({ status: mockPro }) }));
+beforeEach(() => { mockPro = 'pro'; });
 it('keeps renamed and deleted basket items at their original prices and quantities', () => {
   const line = { itemId: 'coffee', name: 'Original coffee', unitPrice: 100, quantity: 2, total: 200 };
   const removed = { itemId: 'deleted', name: 'Deleted tea', unitPrice: 250, quantity: 1, total: 250 };
@@ -40,4 +43,12 @@ it('filters accent-insensitively and restores basket controls when cleared', () 
   fireEvent.press(view.getByLabelText('Clear search items'));
   expect(view.getByLabelText('Add Tea')).toBeTruthy();
   expect(view.getByText('2')).toBeTruthy();
+});
+
+it('hides search for free users and keeps all items accessible', () => {
+  mockPro = 'free';
+  const view = render(<TerminalQuickItemsScreen catalog={[{ id: 'coffee', name: 'Coffee', unit: 'sats', unitPrice: 58 }]}
+    lines={[]} unit="sats" busy={false} onAdd={jest.fn()} onRemoveOne={jest.fn()} onClose={jest.fn()} />);
+  expect(view.queryByLabelText('Search items')).toBeNull();
+  expect(view.getByLabelText('Add Coffee')).toBeTruthy();
 });

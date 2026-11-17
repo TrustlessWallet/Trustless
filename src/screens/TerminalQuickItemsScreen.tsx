@@ -1,6 +1,7 @@
+import { useTerminalPro } from '../contexts/TerminalProContext';
 import { TerminalSearchInput, normalizeItemSearch } from '../components/TerminalSearchInput';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Platform, PanResponder, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, FlatList, Keyboard, Platform, PanResponder, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/StyledText';
@@ -22,10 +23,29 @@ type Props = {
 
 export default function TerminalQuickItemsScreen({ error = '', catalog, lines, unit, busy, onAdd, onRemoveOne, onClose }: Props) {
   const { theme } = useTheme();
+  const pro = useTerminalPro();
+  const [expanded, setExpanded] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const insets = useSafeAreaInsets();
   const { height, width, fontScale } = useWindowDimensions();
   const stackControls = fontScale >= 1.4 || width < 350;
   const sheetHeight = height * 0.5;
+  const visibleHeight = useRef(new Animated.Value(sheetHeight)).current;
+  const keyboardBottom = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow', event => {
+      setKeyboardHeight(Math.max(0, height - event.endCoordinates.screenY));
+    });
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, [height]);
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(visibleHeight, { toValue: Math.max(240, (expanded ? height - insets.top - 24 : sheetHeight) - keyboardHeight), duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
+      Animated.timing(keyboardBottom, { toValue: keyboardHeight, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
+    ]).start();
+    return () => { visibleHeight.stopAnimation(); keyboardBottom.stopAnimation(); };
+  }, [expanded, height, insets.top, sheetHeight, keyboardHeight, visibleHeight, keyboardBottom]);
   // Animate layout so native glass keeps the same frame as its press target.
   const dragY = useRef(new Animated.Value(sheetHeight)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -44,7 +64,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
     closing.current = true;
     Keyboard.dismiss();
     Animated.parallel([
-      Animated.timing(dragY, { toValue: sheetHeight, duration: 180, useNativeDriver: false }),
+      Animated.timing(dragY, { toValue: height, duration: 180, useNativeDriver: false }),
       Animated.timing(backdropOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
     ]).start(({ finished }) => { if (finished && mounted.current) onClose(); });
   };
@@ -66,16 +86,16 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
     return [...catalog, ...lines.filter(line => !ids.has(line.itemId)).map(line => ({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }))];
   }, [catalog, lines, unit]);
   const [query, setQuery] = useState('');
-  const term = normalizeItemSearch(query);
+  const term = pro.status === 'pro' ? normalizeItemSearch(query) : '';
   const matches = useMemo(() => term ? rows.filter(item => normalizeItemSearch(selectedById.get(item.id)?.name ?? item.name).includes(term)) : rows, [rows, selectedById, term]);
-  return <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'height' : undefined} style={styles.overlay}>
+  return <View style={styles.overlay}>
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#00000033', opacity: backdropOpacity }]} />
     <Pressable accessibilityRole="button" accessibilityLabel="Dismiss item picker" onPress={dismiss} style={StyleSheet.absoluteFill} />
-    <Animated.View style={[styles.root, { height: sheetHeight, backgroundColor: theme.colors.background, bottom: Animated.multiply(dragY, -1) }]}>
+    <Animated.View style={[styles.root, { height: visibleHeight, backgroundColor: theme.colors.background, bottom: Animated.subtract(keyboardBottom, dragY) }]}>
     <View {...headerDrag.panHandlers}><TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={dismiss} /></View>
     {/* A native wrapper keeps react-native-screens from misplacing this list in an iOS formSheet. */}
     <View collapsable={false} style={styles.scrollContainer}>
-      {rows.length > 0 ? <TerminalSearchInput label="Search items" value={query} onChangeText={setQuery} /> : null}
+      {pro.status === 'pro' && rows.length > 0 ? <TerminalSearchInput label="Search items" value={query} onChangeText={setQuery} onFocus={() => setExpanded(true)} /> : null}
       <FlatList data={matches} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
         ListEmptyComponent={term ? <Text style={{ color: theme.colors.muted, textAlign: 'center', padding: 16 }}>No matching items</Text> : null} keyExtractor={item => item.id} extraData={{ lines, unit, busy, stackControls }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, { paddingBottom: Math.max(12, insets.bottom) }]}
         renderItem={({ item }) => {
@@ -96,14 +116,14 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
       />
     </View>
     {error ? <View style={[styles.feedback, { paddingBottom: Math.max(12, insets.bottom) }]}><Text accessibilityRole="alert" allowFontScaling maxFontSizeMultiplier={2} style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text></View> : null}
-  </Animated.View></KeyboardAvoidingView>;
+  </Animated.View></View>;
 }
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   root: { position: 'absolute', left: 0, right: 0, flexShrink: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   feedback: { paddingHorizontal: 24, paddingTop: 12, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },
-  scrollContainer: { flex: 1, minHeight: 0 }, scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }, row: { minHeight: 64, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
+  scrollContainer: { flex: 1, minHeight: 0 }, scroll: { flex: 1, minHeight: 0 }, list: { paddingHorizontal: 24, paddingTop: 0, paddingBottom: 24 }, row: { minHeight: 64, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
   info: { flex: 1, minWidth: 0, paddingRight: 8 }, name: { fontSize: 14, lineHeight: 20 }, price: { fontSize: 12, lineHeight: 18, marginTop: 4 }, control: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   stackedRow: { flexDirection: 'column', alignItems: 'stretch' },
   stackedInfo: { flex: 0, paddingRight: 0 },

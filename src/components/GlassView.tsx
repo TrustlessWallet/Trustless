@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Platform, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Host, ZStack } from '@expo/ui/swift-ui';
 import {
@@ -74,6 +74,14 @@ export const GlassView: React.FC<GlassViewProps> = ({
     swiftModifiers.push(cornerRadiusModifier(borderRadius));
   }
 
+  // Keep the native glass host mounted across content updates so its release
+  // animation can finish when an icon or navigation focus changes.
+  const nativeGlass = useMemo(() => (
+    <Host style={StyleSheet.absoluteFill}>
+      <ZStack modifiers={swiftModifiers}><View /></ZStack>
+    </Host>
+  ), [width, height, variant, interactive, activeTintColor, glassShape, borderRadius, hasIndividualCorners, shape]);
+
   const isSupportedIOS = Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 26;
 
   const computedBorderRadius = shape === 'circle' || shape === 'capsule' 
@@ -118,11 +126,7 @@ export const GlassView: React.FC<GlassViewProps> = ({
         ]}
       >
         {isSupportedIOS ? (
-          <Host style={StyleSheet.absoluteFill}>
-            <ZStack modifiers={swiftModifiers}>
-              <View />
-            </ZStack>
-          </Host>
+          nativeGlass
         ) : (
           <View
             style={[

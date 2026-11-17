@@ -14,73 +14,25 @@ const AddWalletOptionsScreen = () => {
     const styles = useMemo(() => getStyles(theme), [theme]);
     return (
         <View style={styles.container}>
-            <TouchableOpacity style={styles.button} onPress={() => navigation.navigate('BackupIntro')}>
-                <Feather name="plus-circle" size={18} color={theme.colors.inversePrimary} />
-                <Text style={styles.buttonText}>Create a new wallet</Text>
-            </TouchableOpacity>
-            
-            <View style={{ width: '100%', gap: 12 }}>
-                <Text style={styles.orText}>Or</Text>
-                
-                <TouchableOpacity style={styles.recoverButton} onPress={() => navigation.navigate('RecoverWallet')}>
-                    <Feather name="refresh-ccw" size={18} color={theme.colors.primary} />
-                    <Text style={styles.recoverButtonText}>Import existing wallet</Text>
+            {([
+                ['plus-circle', 'Create wallet', 'BackupIntro'],
+                ['download', 'Import wallet', 'RecoverWallet'],
+                ['eye', 'Watch-only wallet', 'ImportWatchOnly'],
+            ] as const).map(([icon, label, screen]) => (
+                <TouchableOpacity key={screen} accessibilityRole="button" style={styles.row}
+                    onPress={() => navigation.navigate(screen)}>
+                    <Feather name={icon} size={22} color={theme.colors.primary} />
+                    <Text style={styles.label}>{label}</Text>
+                    <Feather name="chevron-right" size={20} color={theme.colors.muted} />
                 </TouchableOpacity>
-
-                <TouchableOpacity style={styles.recoverButton} onPress={() => navigation.navigate('ImportWatchOnly')}>
-                    <Feather name="eye" size={18} color={theme.colors.primary} />
-                    <Text style={styles.recoverButtonText}>Import watch-only wallet</Text>
-                </TouchableOpacity>
-            </View>
+            ))}
         </View>
     );
 };
 const getStyles = (theme: Theme) => StyleSheet.create({
-    container: { 
-      flex: 1, 
-      backgroundColor: theme.colors.background,
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      padding: 24,
-      gap: 8
-    },
-    button: { 
-      flexDirection: 'row', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      gap: 8, 
-      backgroundColor: theme.colors.primary,
-      paddingVertical: 16, 
-      borderRadius: 8, 
-      width: '100%' 
-    },
-    buttonText: { 
-      color: theme.colors.inversePrimary,
-      fontSize: 16, 
-      fontWeight: '600' 
-    },
-    orText: { 
-      fontSize: 16, 
-      color: theme.colors.muted,
-      textAlign: 'center',
-      marginVertical: 8
-    },
-    recoverButton: { 
-      flexDirection: 'row', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      gap: 8, 
-      backgroundColor: theme.colors.background,
-      paddingVertical: 16, 
-      borderRadius: 8, 
-      borderWidth: 1, 
-      borderColor: theme.colors.primary,
-      width: '100%' 
-    },
-    recoverButtonText: { 
-      color: theme.colors.primary,
-      fontSize: 16, 
-      fontWeight: '600' 
-    },
+    container: { backgroundColor: theme.colors.background, paddingHorizontal: 24, paddingBottom: 24 },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 72,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border },
+    label: { flex: 1, fontSize: 16, color: theme.colors.primary },
 });
 export default AddWalletOptionsScreen;

@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { useTheme } from '../contexts/ThemeContext'; 
-import { Theme } from '../constants/theme'; 
+import { useTheme } from '../contexts/ThemeContext';
+import { Theme } from '../constants/theme';
 import { NETWORK_NAME } from '../constants/network';
 import { confirmWalletBackup } from '../services/firstLaunchWallet';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ShowMnemonic'>;
@@ -14,14 +14,14 @@ type RoutePropType = RouteProp<RootStackParamList, 'ShowMnemonic'>;
 const ShowMnemonicScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<RoutePropType>();
-    const { mnemonic, mode, walletId } = route.params;
+    const { mnemonic, mode, walletId, name } = route.params;
     const words = mnemonic.split(' ');
     const wordCount = words.length;
     const isBackupMode = mode === 'backup';
     const confirmingRef = useRef(false);
     const [confirming, setConfirming] = useState(false);
-    const { theme } = useTheme(); 
-    const styles = useMemo(() => getStyles(theme), [theme]); 
+    const { theme } = useTheme();
+    const styles = useMemo(() => getStyles(theme), [theme]);
     useEffect(() => navigation.addListener?.('focus', () => {
         // The create flow returns here when verification is cancelled.
         confirmingRef.current = false;
@@ -38,13 +38,13 @@ const ShowMnemonicScreen = () => {
             }
             if (navigation.isFocused?.() !== false) navigation.popToTop();
         } else {
-            navigation.navigate('VerifyMnemonic', { mnemonic });
+            navigation.navigate('VerifyMnemonic', { mnemonic, name });
         }
     };
     const firstColumnWords = words.slice(0, Math.ceil(wordCount / 2));
     const secondColumnWords = words.slice(Math.ceil(wordCount / 2));
     return (
-        <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.container}>
             <Text style={styles.warning}>
                 Save these {wordCount} words in order and store them securely. This is the only way to recover your wallet.
             </Text>
@@ -73,25 +73,25 @@ const ShowMnemonicScreen = () => {
                         color={theme.colors.inversePrimary}
                     />
                     <Text style={styles.buttonText}>
-                        {isBackupMode && walletId ? 'I saved my recovery phrase' : isBackupMode ? 'Done' : 'Check recovery phrase'}
+                        {isBackupMode && walletId ? 'I saved my recovery phrase' : isBackupMode ? 'Done' : 'Check my backup'}
                     </Text>
                 </View>
             </TouchableOpacity>
-        </View>
+        </ScrollView>
     );
 };
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: {
-        flex: 1,
+        flexGrow: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 20,
-        backgroundColor: theme.colors.background 
+        padding: 24,
+        backgroundColor: theme.colors.background
     },
     warning: {
         fontSize: 16,
         lineHeight: 24,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
         textAlign: 'center',
         marginBottom: 24,
     },
@@ -103,20 +103,21 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         borderRadius: 8,
         marginBottom: 16,
         borderWidth: 1,
-        borderColor: theme.colors.primary, 
+        borderColor: theme.colors.border,
         width: '100%',
     },
     column: {
-        paddingHorizontal: 16,
+        flex: 1,
+        paddingHorizontal: 4,
     },
     word: {
         fontSize: 18,
         fontWeight: '600',
         paddingVertical: 8,
-        color: theme.colors.primary, 
+        color: theme.colors.primary,
     },
     button: {
-        backgroundColor: theme.colors.primary, 
+        backgroundColor: theme.colors.primary,
         paddingVertical: 16,
         paddingHorizontal: 32,
         borderRadius: 8,
@@ -124,7 +125,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
         alignItems: 'center'
     },
     buttonText: {
-        color: theme.colors.inversePrimary, 
+        color: theme.colors.inversePrimary,
         fontSize: 16,
         fontWeight: '600',
         letterSpacing: 0.5,
