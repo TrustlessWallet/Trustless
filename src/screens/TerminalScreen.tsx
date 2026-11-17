@@ -599,7 +599,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const requestDisabled = (stage === 'loading' && !hasRequest) || stage === 'creating' || endingRequest || retryingLightning ||
     (!hasRequest && !hydrationFailed && !retryEntry && (!hasValidAmount || !isLightningInitialized));
   const settingsButton = <Pressable accessibilityRole="button" accessibilityLabel="Terminal settings" disabled={stage === 'creating' || endingRequest} style={styles.glassControl} onPress={() => checkoutNavigation.current?.navigate('Settings')}>
-    <GlassView width={40} height={40} shape="circle" interactive={checkoutFocused && !transitioning && stage !== 'creating' && !endingRequest} style={styles.glassSurface}>
+    <GlassView width={40} height={40} shape="circle" interactive={true} style={styles.glassSurface}>
       {Platform.OS === 'ios' ? <SymbolView name="gearshape" size={21} tintColor={theme.colors.primary} /> : <Feather name="settings" size={21} color={theme.colors.primary} />}
     </GlassView>
   </Pressable>;

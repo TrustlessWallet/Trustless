@@ -114,10 +114,10 @@ export type RootStackParamList = {
   AuthCheck: undefined;
   AddAddress: undefined;
   BackupIntro: undefined;
-  ShowMnemonic: { mnemonic: string; mode?: string; walletId?: string };
+  ShowMnemonic: { mnemonic: string; mode?: string; walletId?: string; name?: string };
   ShowMnemonicQR: { mnemonic: string; mode?: string; walletId?: string };
   WalletSetupSuccess: { kind: 'created' | 'imported' };
-  VerifyMnemonic: { mnemonic: string };
+  VerifyMnemonic: { mnemonic: string; name?: string };
   RecoverWallet: undefined;
   ImportWatchOnly: undefined;
   LightningTopUp: undefined;
