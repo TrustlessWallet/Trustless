@@ -76,14 +76,6 @@ jest.mock('../../services/bitcoin', () => ({
     DUST_THRESHOLD: 546,
 }));
 
-jest.mock('../../hooks/useKeyboardScroll', () => ({
-    useKeyboardScroll: () => ({
-        scrollViewRef: null,
-        paddingBottom: 0,
-        handleInputFocus: jest.fn()
-    })
-}));
-
 jest.mock('@expo/vector-icons', () => ({
     Feather: 'Feather',
 }));
@@ -172,7 +164,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'lightning' } });
         mockPayLightningInvoice.mockResolvedValue({ paymentHash: 'amountless' });
         const { getByPlaceholderText, getByText } = renderSendScreen();
-        fireEvent.changeText(getByPlaceholderText('BOLT11 / LNURL / Lightning address'), 'lnbc1mockinvoice');
+        fireEvent.changeText(getByPlaceholderText('Invoice or Lightning address'), 'lnbc1mockinvoice');
         fireEvent.changeText(getByPlaceholderText('0'), '500');
         fireEvent.press(getByText('Pay invoice'));
         await waitFor(() => expect(mockPayLightningInvoice).toHaveBeenCalledWith('lnbc1mockinvoice', 500));
@@ -186,7 +178,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
             .mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve; }))
             .mockResolvedValueOnce({ tag: 'payRequest', minSendable: 1000, maxSendable: 10000, callback: 'https://new.example/pay' });
         const { getByPlaceholderText, getByText, queryByText } = renderSendScreen();
-        const recipient = getByPlaceholderText('BOLT11 / LNURL / Lightning address');
+        const recipient = getByPlaceholderText('Invoice or Lightning address');
 
         fireEvent.changeText(recipient, 'alice@');
         fireEvent.changeText(recipient, 'alice@example');
@@ -212,7 +204,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'lightning' } });
         (resolveLnurlOrAddress as jest.Mock).mockImplementation(() => new Promise(() => {}));
         const screen = renderSendScreen();
-        const recipient = screen.getByPlaceholderText('BOLT11 / LNURL / Lightning address');
+        const recipient = screen.getByPlaceholderText('Invoice or Lightning address');
         fireEvent.changeText(recipient, 'alice@example.com');
         await waitForResolutionDelay();
         const signal = (resolveLnurlOrAddress as jest.Mock).mock.calls[0][1].signal;
@@ -229,7 +221,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         (useRoute as jest.Mock).mockImplementation(() => route);
         (resolveLnurlOrAddress as jest.Mock).mockImplementation(() => new Promise(() => {}));
         const screen = renderSendScreen();
-        fireEvent.changeText(screen.getByPlaceholderText('BOLT11 / LNURL / Lightning address'), 'alice@example.com');
+        fireEvent.changeText(screen.getByPlaceholderText('Invoice or Lightning address'), 'alice@example.com');
         await waitForResolutionDelay();
         const signal = (resolveLnurlOrAddress as jest.Mock).mock.calls[0][1].signal;
         route.params.mode = 'onchain';
@@ -252,7 +244,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
         (resolveLnurlOrAddress as jest.Mock).mockResolvedValue({ tag: 'payRequest', minSendable: 1000, maxSendable: 2000, callback: 'https://example.com/cb' });
         const { getByPlaceholderText, queryByText } = renderSendScreen();
         const input = 'lnurlp://example.com/pay?email=alice@example.com';
-        fireEvent.changeText(getByPlaceholderText('BOLT11 / LNURL / Lightning address'), input);
+        fireEvent.changeText(getByPlaceholderText('Invoice or Lightning address'), input);
         await waitForResolutionDelay();
         expect(resolveLnurlOrAddress).toHaveBeenCalledWith(input, expect.objectContaining({ signal: expect.any(Object) }));
         await waitFor(() => expect(queryByText('Paying to example.com')).not.toBeNull());
@@ -264,7 +256,7 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
             .mockRejectedValueOnce(new Error('Provider unavailable'))
             .mockResolvedValueOnce({ tag: 'payRequest', minSendable: 1000, maxSendable: 2000, callback: 'https://example.com/cb' });
         const { getByPlaceholderText, getByText, queryByText } = renderSendScreen();
-        fireEvent.changeText(getByPlaceholderText('BOLT11 / LNURL / Lightning address'), 'alice@example.com');
+        fireEvent.changeText(getByPlaceholderText('Invoice or Lightning address'), 'alice@example.com');
         await waitForResolutionDelay();
         await waitFor(() => expect(getByText('Provider unavailable')).toBeTruthy());
         fireEvent.press(getByText('Retry'));

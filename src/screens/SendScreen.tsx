@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput, Keyboard } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, TextInput, Keyboard, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
@@ -18,8 +18,6 @@ import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AddressText } from '../components/AddressText';
-import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import * as Clipboard from 'expo-clipboard';
 import { resolveLnurlOrAddress, fetchLnurlInvoice, isLightningAddress } from '../services/lnurl';
 import { authenticate_transaction_action } from '../services/authState';
@@ -103,10 +101,7 @@ const SendScreen = () => {
     const navigation = useNavigation<NavigationProp>();
     const route = useRoute<SendScreenRouteProp>();
     const isFocused = useIsFocused();
-    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
-        basePaddingBottom: 32,
-        animateLayoutChanges: true,
-    });
+    const actionLock = useRef(false);
 
     const {
         activeWallet,
@@ -124,7 +119,6 @@ const SendScreen = () => {
     const mode = route.params?.mode || 'onchain';
 
     const [recipientAddress, setRecipientAddress] = useState('');
-    const [isRecipientAddressFocused, setIsRecipientAddressFocused] = useState(false);
     const [amount, setAmount] = useState('');
     const [unit, setUnit] = useState<Unit>('BTC');
 
@@ -411,7 +405,7 @@ const SendScreen = () => {
             triggerRefresh();
 
             const totalSelectedValue = utxosToUse.reduce((sum, u) => sum + u.value, 0);
-            const { fee } = calculateTransactionMetrics(
+            const metrics = calculateTransactionMetrics(
                 utxosToUse.length,
                 amountSatoshis,
                 totalSelectedValue,
@@ -422,7 +416,7 @@ const SendScreen = () => {
                 txid: txId,
                 type: 'send',
                 amount: amountSatoshis,
-                fee: fee,
+                fee: metrics.numOutputs === 1 ? totalSelectedValue - amountSatoshis : metrics.fee,
                 status: { confirmed: false, block_time: Math.floor(Date.now() / 1000) }
             };
 
@@ -441,6 +435,7 @@ const SendScreen = () => {
     };
 
     const handleConfirmPress = async () => {
+        if (actionLock.current) return;
         const trimmedRecipient = recipientAddress.trim();
         if (!validateBitcoinAddress(trimmedRecipient)) {
             Alert.alert('Invalid address', 'Please enter a valid bitcoin address.');
@@ -466,6 +461,8 @@ const SendScreen = () => {
             return;
         }
 
+        actionLock.current = true;
+        Keyboard.dismiss();
         try {
             setLoading(true);
             let utxosForTx: UTXO[];
@@ -479,12 +476,8 @@ const SendScreen = () => {
                 } catch (e) { }
             }
 
-            if (isWatchOnly && estimates) {
-                if (selectedFee === 'custom') {
-                    rate = parseInt(customRate, 10) || 1;
-                } else {
-                    rate = estimates[selectedFee];
-                }
+            if (isWatchOnly) {
+                rate = selectedFee === 'custom' ? parseInt(customRate, 10) : estimates?.[selectedFee] ?? rate;
             } else if (estimates) {
                 rate = estimates.normal;
             }
@@ -517,7 +510,7 @@ const SendScreen = () => {
             }
 
             const totalSelectedValue = utxosForTx.reduce((sum, u) => sum + u.value, 0);
-            const { vsize, fee, change, numOutputs } = calculateTransactionMetrics(
+            const { fee, change, numOutputs } = calculateTransactionMetrics(
                 utxosForTx.length,
                 amountSatoshis,
                 totalSelectedValue,
@@ -548,7 +541,6 @@ const SendScreen = () => {
                         onConfirm: (finalFeeRate) => handleTransaction(finalFeeRate ?? rate, utxosForTx),
                         loading: false,
                         fee,
-                        feeVSize: vsize,
                         selectedRate: rate,
                         feeOptions: options,
                         onSelectFeeOption: () => { },
@@ -557,7 +549,12 @@ const SendScreen = () => {
                 }
             };
 
-            if (numOutputs === 1 && change > 0 && change <= DUST_THRESHOLD) {
+            if (change < 0) {
+                Alert.alert('Insufficient for fees', 'The selected coins don’t cover the amount and network fee.');
+                return;
+            }
+
+            if (isWatchOnly && numOutputs === 1 && change > 0 && change <= DUST_THRESHOLD) {
                 setLoading(false);
                 Alert.alert(
                     'Dust change detected',
@@ -580,11 +577,14 @@ const SendScreen = () => {
         } catch (err) {
             setLoading(false);
             Alert.alert('Error', err instanceof Error ? err.message : 'Failed to prepare transaction.');
+        } finally {
+            actionLock.current = false;
+            setLoading(false);
         }
     };
 
     const handlePayLightning = async (skipAuth: boolean = false) => {
-        if (!canPayLightning) return;
+        if (actionLock.current || !canPayLightning) return;
         if (!lightningInvoice.trim()) {
             Alert.alert('Invalid input', 'Please enter a valid lightning invoice or address.');
             return;
@@ -599,13 +599,11 @@ const SendScreen = () => {
         // The SDK validates the actual quote and balance. A cached UI balance
         // may not yet include an incoming payment.
 
-        if (!skipAuth) {
-            const authenticated = await authenticate_transaction_action('Authorize Lightning payment');
-            if (!authenticated) return;
-        }
-
+        actionLock.current = true;
+        Keyboard.dismiss();
         setLoading(true);
         try {
+            if (!skipAuth && !await authenticate_transaction_action('Authorize Lightning payment')) return;
             const paymentRequest = currentLnurlData
                 ? await fetchLnurlInvoice(currentLnurlData.callback, sats * 1000)
                 : lightningInvoice.trim();
@@ -615,22 +613,19 @@ const SendScreen = () => {
             console.error("Lightning payment failed:", error);
             Alert.alert('Payment error', error.message || 'Failed to process lightning payment.');
         } finally {
+            actionLock.current = false;
             setLoading(false);
         }
     };
 
     const handleOpenCoinControl = () => {
         Keyboard.dismiss();
-        setTimeout(() => {
-            const cleanAmount = amount.replace(',', '.');
-            const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
-            navigation.navigate('CoinControl', {
-                targetAmount: amountSatoshis,
-                onSelect: (utxos: UTXO[]) => {
-                    setSelectedUtxos(utxos);
-                }
-            });
-        }, 200);
+        const cleanAmount = amount.replace(',', '.');
+        const amountSatoshis = unit === 'BTC' ? Math.round(parseFloat(cleanAmount) * 100000000) : parseInt(cleanAmount, 10);
+        navigation.navigate('CoinControl', {
+            targetAmount: amountSatoshis,
+            onSelect: setSelectedUtxos,
+        });
     };
 
     const handleScanPress = () => {
@@ -659,331 +654,279 @@ const SendScreen = () => {
     const is_fee_valid = !isWatchOnly || (selectedFee !== 'custom' || parseInt(customRate, 10) > 0);
     const is_onchain_form_valid = is_amount_entered && is_address_entered && is_fee_valid;
 
+    const changeUnit = (nextUnit: Unit) => {
+        if (nextUnit === unit) return;
+        if (amount.trim()) {
+            const value = amount.replace(',', '.');
+            const valid = unit === 'BTC' ? /^(?:\d+(?:\.\d{0,8})?|\.\d{1,8})$/.test(value) : /^\d+$/.test(value);
+            const sats = unit === 'BTC' ? Math.round(Number(value) * 100000000) : Number(value);
+            if (!valid || !Number.isSafeInteger(sats)) return;
+            setAmount(nextUnit === 'sats' ? String(sats) : (sats / 100000000).toFixed(8).replace(/\.?0+$/, ''));
+        }
+        setUnit(nextUnit);
+    };
+
+    const actionDisabled = loading || (mode === 'lightning' ? !canPayLightning || !lnAmount : !is_onchain_form_valid);
     const displayBalance = mode === 'lightning' ? lightningBalance : balance;
 
     return (
-        <ScrollView
-            ref={scrollViewRef}
-            style={styles.container}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom }]}
-            keyboardShouldPersistTaps="handled"
-            bounces={false}
-        >
+        <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <ScrollView
+                style={styles.container}
+                contentContainerStyle={styles.scrollContent}
+                keyboardDismissMode="on-drag"
+                keyboardShouldPersistTaps="handled"
+                bounces={false}
+            >
 
-            <View style={styles.balanceContainer}>
-                <Text style={styles.balanceLabel}>Available to send</Text>
-                <TouchableOpacity
-                    onPress={() => mode === 'onchain' && navigation.navigate('BalanceDetail', { utxos: utxos })}
-                    disabled={mode === 'lightning'}
-                >
-                    <Text style={styles.balanceText}>
-                        {hideBalance ? '*******' : (
-                            <>{formatBalance(displayBalance)} {(mode === 'lightning' || unit === 'sats') ? 'sats' : <Text style={styles.orangeSymbol}>₿</Text>}</>
-                        )}
-                    </Text>
-                </TouchableOpacity>
-            </View>
+                <View style={styles.balanceContainer}>
+                    <Text style={styles.balanceLabel}>Available to send</Text>
+                    <TouchableOpacity
+                        onPress={() => mode === 'onchain' && navigation.navigate('BalanceDetail', { utxos: utxos })}
+                        disabled={mode === 'lightning'}
+                    >
+                        <Text style={styles.balanceText}>
+                            {hideBalance ? '*******' : (
+                                <>{formatBalance(displayBalance)} {(mode === 'lightning' || unit === 'sats') ? 'sats' : <Text style={styles.orangeSymbol}>₿</Text>}</>
+                            )}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
 
-            {mode === 'onchain' ? (
-                <>
-                    <Text style={styles.label}>Recipient address</Text>
-                    <View style={styles.inputSpacing}>
-                        <View style={[styles.addressInputWrapper, isRecipientAddressFocused && styles.addressInputWrapperFocused]}>
-                            <TextInput
-                                style={styles.addressInput}
-                                multiline={true}
+                {mode === 'onchain' ? (
+                    <>
+                        <Text style={styles.label}>Recipient address</Text>
+                        <View style={styles.inputSpacing}>
+                            <StyledInput
+                                accessibilityLabel="Recipient address"
+                                multiline
                                 numberOfLines={2}
-                                scrollEnabled={true}
-                                placeholder="Enter a bitcoin address"
-                                placeholderTextColor={theme.colors.muted}
+                                style={styles.addressInput}
+                                containerStyle={styles.recipientField}
+                                placeholder="Bitcoin address"
                                 value={recipientAddress}
                                 onChangeText={setRecipientAddress}
-                                onFocus={() => {
-                                    setIsRecipientAddressFocused(true);
-                                    handleInputFocus();
-                                }}
-                                onBlur={() => setIsRecipientAddressFocused(false)}
                                 autoCapitalize="none"
                                 autoCorrect={false}
                                 spellCheck={false}
-                                keyboardAppearance={isDark ? 'dark' : 'light'}
+                                editable={!loading}
+                                rightElement={
+                                    <View style={styles.row}>
+                                        <TouchableOpacity onPress={handlePasteFromClipboard} disabled={loading} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Paste address">
+                                            <Feather name="clipboard" size={19} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} disabled={loading} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Open address book">
+                                            <Feather name="book-open" size={19} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={handleScanPress} disabled={loading} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Scan QR code">
+                                            <Feather name="camera" size={19} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                    </View>
+                                }
                             />
-                            <View style={styles.addressInputRightElements}>
-                                <TouchableOpacity onPress={handlePasteFromClipboard} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Paste address">
-                                    <Feather name="clipboard" size={20} color={theme.colors.primary} />
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => navigation.navigate('AddressBook', { returnScreen: 'Send' })} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Open address book">
-                                    <Feather name="book-open" size={20} color={theme.colors.primary} />
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={handleScanPress} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Scan QR code">
-                                    <Feather name="camera" size={20} color={theme.colors.primary} />
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </View>
-
-                    <Text style={styles.label}>Amount</Text>
-                    <StyledInput
-                        placeholder="0.00"
-                        value={amount}
-                        onChangeText={setAmount}
-                        keyboardType="numeric"
-                        onFocus={handleInputFocus}
-                        rightElement={
-                            <View style={styles.unitSelector}>
-                                <TouchableOpacity onPress={() => setUnit('BTC')} style={[styles.unitButton, unit === 'BTC' && styles.unitButtonActive]}>
-                                    <Text style={[styles.unitText, unit === 'BTC' && styles.unitTextActive]}>BTC</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => setUnit('sats')} style={[styles.unitButton, unit === 'sats' && styles.unitButtonActive]}>
-                                    <Text style={[styles.unitText, unit === 'sats' && styles.unitTextActive]}>sats</Text>
-                                </TouchableOpacity>
-                            </View>
-                        }
-                    />
-
-                    {isWatchOnly ? (
-                        <View style={styles.feeSelectorContainer}>
-                            <Text style={[styles.label, { marginTop: 16 }]}>Fee rate</Text>
-                            <View style={styles.feeOptionsRow}>
-                                {(['slow', 'normal', 'fast'] as const).map((key) => (
-                                    <TouchableOpacity
-                                        key={key}
-                                        onPress={() => setSelectedFee(key)}
-                                        style={[styles.feeOption, selectedFee === key && styles.feeOptionActive]}
-                                    >
-                                        <Text style={[styles.feeOptionText, selectedFee === key ? styles.feeOptionTextActive : {}]}>
-                                            {key.charAt(0).toUpperCase() + key.slice(1)}
-                                        </Text>
-                                        <Text style={[styles.feeOptionRate, selectedFee === key ? styles.feeOptionRateActive : {}]}>
-                                            {feeOptions?.[key] || '-'} s/vB
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                                <TouchableOpacity
-                                    onPress={() => setSelectedFee('custom')}
-                                    style={[styles.feeOption, selectedFee === 'custom' && styles.feeOptionActive]}
-                                >
-                                    <Text style={[styles.feeOptionText, selectedFee === 'custom' ? styles.feeOptionTextActive : {}]}>Custom</Text>
-                                    <Text style={[styles.feeOptionRate, selectedFee === 'custom' ? styles.feeOptionRateActive : {}]}>Edit</Text>
-                                </TouchableOpacity>
-                            </View>
-                            {selectedFee === 'custom' && (
-                                <View style={styles.customFeeContainer}>
-                                    <Text style={styles.customFeeLabel}>Rate (sat/vB):</Text>
-                                    <TextInput
-                                        style={styles.customFeeInput}
-                                        keyboardType="numeric"
-                                        value={customRate}
-                                        onChangeText={setCustomRate}
-                                        onFocus={handleInputFocus}
-                                        placeholder="0"
-                                        keyboardAppearance={isDark ? 'dark' : 'light'}
-                                        placeholderTextColor={theme.colors.muted}
-                                    />
-                                </View>
-                            )}
-                        </View>
-                    ) : (
-                        <View style={styles.feeEstimateRow}>
-                            <View style={styles.feeEstimateContent}>
-                                <Feather name="zap" size={14} color={theme.colors.muted} />
-                                <Text style={styles.feeEstimateText}>
-                                    {feeOptions?.normal ? `Fees: ~${feeOptions.normal} sat/vB` : 'Estimating fees...'}
-                                </Text>
-                            </View>
-                        </View>
-                    )}
-
-                    <View style={styles.coinControlBanner}>
-                        <View style={styles.coinControlHeader}>
-                            <View style={styles.row}>
-                                <Feather name="layers" size={16} color={theme.colors.primary} />
-                                <Text style={styles.coinControlTitle}>Coin control</Text>
-                            </View>
-                            <TouchableOpacity
-                                onPress={handleOpenCoinControl}
-                                style={[styles.selectButton, !is_amount_entered && styles.buttonDisabled]}
-                                disabled={!is_amount_entered}
-                            >
-                                <Text style={styles.selectButtonText}>
-                                    {isCoinControlActive ? 'Change' : 'Select UTXOs'}
-                                </Text>
-                            </TouchableOpacity>
                         </View>
 
-                        {isCoinControlActive && (
-                            <View style={styles.selectedUtxosRow}>
-                                <Text style={styles.selectedUtxosText}>
-                                    {selectedUtxos.length} UTXO{selectedUtxos.length !== 1 ? 's' : ''} selected ({formatBalance(selectedUtxos.reduce((s, u) => s + u.value, 0))} {unit})
-                                </Text>
-                            </View>
-                        )}
-                    </View>
-
-                    <TouchableOpacity
-                        onPress={handleConfirmPress}
-                        style={[styles.sendButton, (loading || !is_onchain_form_valid) && styles.buttonDisabled]}
-                        disabled={loading || !is_onchain_form_valid}
-                    >
-                        {loading ? <ActivityIndicator color={theme.colors.bitcoin} /> : (
-                            <View style={styles.buttonContentRowCentered}>
-                                <Feather name={isWatchOnly ? "upload" : "arrow-up-circle"} size={18} color={theme.colors.inversePrimary} />
-                                <Text style={styles.sendButtonText}>
-                                    {isWatchOnly ? 'Export transaction' : 'View transaction'}
-                                </Text>
-                            </View>
-                        )}
-                    </TouchableOpacity>
-                </>
-            ) : (
-                <>
-                    <Text style={styles.label}>{lnurlDomain ? `Paying to ${lnurlDomain}` : 'Lightning invoice'}</Text>
-                    <View style={styles.inputSpacing}>
+                        <Text style={styles.label}>Amount</Text>
                         <StyledInput
-                            placeholder="BOLT11 / LNURL / Lightning address"
-                            value={lightningInvoice}
-                            onChangeText={setLightningInvoice}
-                            autoCapitalize="none"
-                            onFocus={handleInputFocus}
-                            spellCheck={false}
-                            autoCorrect={false}
+                            placeholder={unit === 'BTC' ? '0.00' : '0'}
+                            editable={!loading}
+                            value={amount}
+                            onChangeText={setAmount}
+                            keyboardType={unit === 'BTC' ? 'decimal-pad' : 'number-pad'}
                             rightElement={
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <TouchableOpacity onPress={async () => {
-                                        const text = await Clipboard.getStringAsync();
-                                        if (text) setLightningInvoice(text);
-                                    }} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Paste invoice">
-                                        <Feather name="clipboard" size={20} color={theme.colors.primary} />
+                                <View style={styles.unitSelector}>
+                                    <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: unit === 'BTC' }} disabled={loading} onPress={() => changeUnit('BTC')} style={[styles.unitButton, unit === 'BTC' && styles.unitButtonActive]}>
+                                        <Text style={[styles.unitText, unit === 'BTC' && styles.unitTextActive]}>BTC</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity onPress={handleScanPress} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Scan QR code">
-                                        <Feather name="camera" size={20} color={theme.colors.primary} />
+                                    <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: unit === 'sats' }} disabled={loading} onPress={() => changeUnit('sats')} style={[styles.unitButton, unit === 'sats' && styles.unitButtonActive]}>
+                                        <Text style={[styles.unitText, unit === 'sats' && styles.unitTextActive]}>sats</Text>
                                     </TouchableOpacity>
                                 </View>
                             }
                         />
-                    </View>
 
-                    {!!resolutionError && resolvedLightningInput === currentLightningInput && (
-                        <View style={{ marginBottom: 12 }}>
-                            <Text style={{ color: theme.colors.error }}>{resolutionError}</Text>
-                            <TouchableOpacity onPress={() => setResolutionRetry(value => value + 1)} accessibilityRole="button" accessibilityLabel="Retry recipient resolution" style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
-                                <Text style={{ color: theme.colors.primary }}>Retry</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-
-                    <Text style={styles.label}>Amount</Text>
-                    <StyledInput
-                        placeholder="0"
-                        value={lnAmount}
-                        onChangeText={setLnAmount}
-                        keyboardType="numeric"
-                        onFocus={handleInputFocus}
-                        editable={!(hasFixedAmount && resolvedLightningInput === currentLightningInput)}
-                        style={hasFixedAmount && resolvedLightningInput === currentLightningInput ? styles.inputDisabled : {}}
-                        rightElement={<Text style={styles.currencyLabel}>sats</Text>}
-                    />
-
-                    <View style={styles.feeEstimateRow}>
-                        <View style={styles.feeEstimateContent}>
-                            <Feather name="zap" size={14} color={theme.colors.muted} />
-                            <Text style={styles.feeEstimateText}>
-                                {estimatingLnFee
-                                    ? 'Estimating routing fee...'
-                                    : (lnFeeEstimate !== null
-                                        ? `Routing fee: ~${lnFeeEstimate} sats`
-                                        : 'Routing fee: -')}
-                            </Text>
-                        </View>
-                    </View>
-
-                    <TouchableOpacity
-                        onPress={() => handlePayLightning()}
-                        style={[styles.sendButton, { marginTop: 8 }, (loading || !canPayLightning || !lnAmount) && styles.buttonDisabled]}
-                        disabled={loading || !canPayLightning || !lnAmount}
-                    >
-                        {loading ? <ActivityIndicator color={theme.colors.bitcoin} /> : (
-                            <View style={styles.buttonContentRowCentered}>
-                                <Feather name="zap" size={18} color={theme.colors.inversePrimary} />
-                                <Text style={styles.sendButtonText}>Pay invoice</Text>
+                        {isWatchOnly ? (
+                            <View style={styles.feeSelectorContainer}>
+                                <Text style={[styles.label, { marginTop: 16 }]}>Fee rate</Text>
+                                <View style={styles.feeOptionsRow}>
+                                    {(['slow', 'normal', 'fast'] as const).map((key) => (
+                                        <TouchableOpacity
+                                            key={key}
+                                            onPress={() => setSelectedFee(key)}
+                                            style={[styles.feeOption, selectedFee === key && styles.feeOptionActive]}
+                                        >
+                                            <Text style={[styles.feeOptionText, selectedFee === key ? styles.feeOptionTextActive : {}]}>
+                                                {key.charAt(0).toUpperCase() + key.slice(1)}
+                                            </Text>
+                                            <Text style={[styles.feeOptionRate, selectedFee === key ? styles.feeOptionRateActive : {}]}>
+                                                {feeOptions?.[key] || '-'} s/vB
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                    <TouchableOpacity
+                                        onPress={() => setSelectedFee('custom')}
+                                        style={[styles.feeOption, selectedFee === 'custom' && styles.feeOptionActive]}
+                                    >
+                                        <Text style={[styles.feeOptionText, selectedFee === 'custom' ? styles.feeOptionTextActive : {}]}>Custom</Text>
+                                        <Text style={[styles.feeOptionRate, selectedFee === 'custom' ? styles.feeOptionRateActive : {}]}>Edit</Text>
+                                    </TouchableOpacity>
+                                </View>
+                                {selectedFee === 'custom' && (
+                                    <View style={styles.customFeeContainer}>
+                                        <Text style={styles.customFeeLabel}>Rate (sat/vB):</Text>
+                                        <TextInput
+                                            style={styles.customFeeInput}
+                                            keyboardType="numeric"
+                                            value={customRate}
+                                            onChangeText={setCustomRate}
+                                            placeholder="0"
+                                            keyboardAppearance={isDark ? 'dark' : 'light'}
+                                            placeholderTextColor={theme.colors.muted}
+                                        />
+                                    </View>
+                                )}
+                            </View>
+                        ) : (
+                            <View style={styles.feeEstimateRow}>
+                                <View style={styles.feeEstimateContent}>
+                                    <Feather name="zap" size={14} color={theme.colors.muted} />
+                                    <Text style={styles.feeEstimateText}>
+                                        {feeOptions?.normal ? `Fees: ~${feeOptions.normal} sat/vB` : 'Estimating fees...'}
+                                    </Text>
+                                </View>
                             </View>
                         )}
-                    </TouchableOpacity>
-                </>
-            )}
-        </ScrollView>
+
+                        <TouchableOpacity
+                            style={[styles.coinControlRow, !is_amount_entered && styles.buttonDisabled]}
+                            onPress={handleOpenCoinControl}
+                            disabled={loading || !is_amount_entered}
+                            accessibilityRole="button"
+                            accessibilityState={{ disabled: loading || !is_amount_entered }}
+                        >
+                            <Feather name="layers" size={17} color={theme.colors.primary} />
+                            <Text style={styles.coinControlTitle}>Coin control</Text>
+                            <Text style={styles.coinControlValue}>
+                                {isCoinControlActive ? `${selectedUtxos.length} selected` : 'Automatic'}
+                                {isCoinControlActive && !hideBalance ? (
+                                    <Text style={styles.coinControlAmount}>{'\n'}{formatBalance(selectedUtxos.reduce((sum, coin) => sum + coin.value, 0))} {unit}</Text>
+                                ) : null}
+                            </Text>
+                            <Feather name="chevron-right" size={18} color={theme.colors.muted} />
+                        </TouchableOpacity>
+                    </>
+                ) : (
+                    <>
+                        <Text style={styles.label}>{lnurlDomain ? `Paying to ${lnurlDomain}` : 'Lightning invoice'}</Text>
+                        <View style={styles.inputSpacing}>
+                            <StyledInput
+                                accessibilityLabel="Lightning recipient"
+                                placeholder="Invoice or Lightning address"
+                                editable={!loading}
+                                value={lightningInvoice}
+                                onChangeText={setLightningInvoice}
+                                autoCapitalize="none"
+                                    spellCheck={false}
+                                autoCorrect={false}
+                                rightElement={
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <TouchableOpacity onPress={async () => {
+                                            const text = await Clipboard.getStringAsync();
+                                            if (text) setLightningInvoice(text);
+                                        }} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Paste invoice">
+                                            <Feather name="clipboard" size={20} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={handleScanPress} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Scan QR code">
+                                            <Feather name="camera" size={20} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                    </View>
+                                }
+                            />
+                        </View>
+
+                        {!!resolutionError && resolvedLightningInput === currentLightningInput && (
+                            <View style={{ marginBottom: 12 }}>
+                                <Text style={{ color: theme.colors.error }}>{resolutionError}</Text>
+                                <TouchableOpacity onPress={() => setResolutionRetry(value => value + 1)} accessibilityRole="button" accessibilityLabel="Retry recipient resolution" style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+                                    <Text style={{ color: theme.colors.primary }}>Retry</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
+                        <Text style={styles.label}>Amount</Text>
+                        <StyledInput
+                            placeholder="0"
+                            value={lnAmount}
+                            onChangeText={setLnAmount}
+                            keyboardType="numeric"
+                            editable={!loading && !(hasFixedAmount && resolvedLightningInput === currentLightningInput)}
+                            style={hasFixedAmount && resolvedLightningInput === currentLightningInput ? styles.inputDisabled : {}}
+                            rightElement={<Text style={styles.currencyLabel}>sats</Text>}
+                        />
+
+                        <View style={styles.feeEstimateRow}>
+                            <View style={styles.feeEstimateContent}>
+                                <Feather name="zap" size={14} color={theme.colors.muted} />
+                                <Text style={styles.feeEstimateText}>
+                                    {estimatingLnFee
+                                        ? 'Estimating routing fee...'
+                                        : (lnFeeEstimate !== null
+                                            ? `Routing fee: ~${lnFeeEstimate} sats`
+                                            : 'Routing fee: -')}
+                                </Text>
+                            </View>
+                        </View>
+
+                    </>
+                )}
+            </ScrollView>
+            <View style={styles.footer}>
+                <TouchableOpacity
+                    onPress={mode === 'lightning' ? () => { void handlePayLightning(); } : handleConfirmPress}
+                    style={[styles.sendButton, actionDisabled && styles.buttonDisabled]}
+                    disabled={actionDisabled}
+                    accessibilityRole="button"
+                    accessibilityState={{ busy: loading }}
+                >
+                    {loading ? <ActivityIndicator color={theme.colors.bitcoin} /> : (
+                        <Text style={styles.sendButtonText}>
+                            {mode === 'lightning' ? 'Pay invoice' : isWatchOnly ? 'Export transaction' : 'Review payment'}
+                        </Text>
+                    )}
+                </TouchableOpacity>
+            </View>
+        </KeyboardAvoidingView>
     );
 };
 
 const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
-    scrollContent: { padding: 24 },
-    balanceContainer: { alignItems: 'center', marginBottom: 24, paddingVertical: 8 },
+    scrollContent: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 12 },
+    balanceContainer: { alignItems: 'center', marginBottom: 20, gap: 4 },
     balanceLabel: { fontSize: 16, color: theme.colors.muted },
-    balanceText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary, padding: 0 },
+    balanceText: { fontSize: 28, fontWeight: 'bold', color: theme.colors.primary, padding: 0 },
     label: { fontSize: 16, fontWeight: '500', marginBottom: 8, color: theme.colors.primary },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     inputSpacing: { marginBottom: 16 },
-    addressInputWrapper: {
-        flexDirection: 'row',
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        borderRadius: 8,
-        backgroundColor: theme.colors.surface || theme.colors.background,
-        height: 100
-    },
-    addressInputWrapperFocused: {
-        borderColor: theme.colors.bitcoin,
-    },
-    addressInput: {
-        flex: 1,
-        paddingHorizontal: 16,
-        paddingVertical: 16,
-        fontSize: 16,
-        fontFamily: 'SpaceMono-Regular',
-        color: theme.colors.primary,
-        textAlignVertical: 'top'
-    },
-    inputText: {
-        color: theme.colors.primary,
-    },
-    addressInputRightElements: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        paddingRight: 8,
-        paddingTop: 8
-    },
+    recipientField: { height: 72 },
+    addressInput: { paddingVertical: 12 },
     iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     unitSelector: { flexDirection: 'row', backgroundColor: theme.colors.border, borderRadius: 6, marginRight: 8, padding: 2 },
     unitButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
     unitButtonActive: { backgroundColor: theme.colors.primary },
     unitText: { fontWeight: '600', color: theme.colors.muted },
     unitTextActive: { color: theme.colors.inversePrimary },
-    coinControlBanner: {
-        backgroundColor: theme.colors.surface,
-        borderRadius: 8,
-        minHeight: 56,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        justifyContent: 'center',
-        marginBottom: 24,
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    coinControlHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 },
-    coinControlTitle: { fontSize: 16, fontWeight: '500', color: theme.colors.primary },
-    selectButton: { backgroundColor: theme.colors.primary, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
-    selectButtonText: { color: theme.colors.inversePrimary, fontSize: 12, fontWeight: '600' },
-    selectedUtxosRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.colors.border },
-    selectedUtxosText: { fontSize: 13, color: theme.colors.primary },
+    coinControlRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border },
+    coinControlTitle: { fontSize: 14, color: theme.colors.primary, flexShrink: 1 },
+    coinControlAmount: { fontSize: 12 },
+    coinControlValue: { flex: 1, textAlign: 'right', fontSize: 12, color: theme.colors.muted },
+    footer: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24 },
     feeEstimateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16, marginTop: 8 },
     feeEstimateText: { fontSize: 14, color: theme.colors.muted },
     feeEstimateContent: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     sendButton: { backgroundColor: theme.colors.primary, paddingVertical: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', minHeight: 56 },
     buttonDisabled: { opacity: 0.5 },
-    sendButtonText: { color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '600' },
-    buttonContentRowCentered: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+    sendButtonText: { color: theme.colors.inversePrimary, fontSize: 16, fontWeight: 'bold' },
     orangeSymbol: { color: theme.colors.bitcoin, fontWeight: 'bold' },
     feeSelectorContainer: {
         marginBottom: 16,

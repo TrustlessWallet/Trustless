@@ -438,7 +438,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
           <Stack.Screen name="UnilateralExit" component={UnilateralExitScreen} options={{ title: 'Unilateral exit' }} />
           <Stack.Screen name="WithdrawToOnchain" component={WithdrawToOnchainScreen} options={{ title: 'Withdraw to on-chain' }} />
-          <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
+          <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Review payment' }} />
           <Stack.Screen name="TransactionSuccess" component={TransactionSuccessScreen} options={{ headerShown: false }} />
           <Stack.Screen name="ExportPSBT" component={ExportPSBTScreen} options={{ title: 'Export transaction' }} />
           <Stack.Screen name="ImportPSBT" component={ImportPSBTScreen} options={{ title: 'Scan signed transaction', presentation: 'modal' }} />
