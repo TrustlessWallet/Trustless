@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, TextInput, Keyboard } from 'react-native';
 import { Text } from '../components/StyledText';
+import { StyledInput } from '../components/StyledInput';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,7 +22,7 @@ const VerifyMnemonicScreen = () => {
     const originalWords = mnemonic.split(' ');
     const { addWallet } = useWallet();
     const [loading, setLoading] = useState(false);
-    const { theme, isDark } = useTheme();
+    const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
 
     const inputs = useRef<(TextInput | null)[]>([]);
@@ -86,10 +87,10 @@ const VerifyMnemonicScreen = () => {
                 {wordsToVerify.map((wordIndex, i) => (
                     <View key={wordIndex} style={styles.inputGroup}>
                         <Text style={styles.label}>Word #{wordIndex + 1}</Text>
-                        <TextInput
+                        <StyledInput
                             ref={input => { inputs.current[i] = input; }}
                             accessibilityLabel={`Word ${wordIndex + 1}`}
-                            style={[styles.input, invalid.includes(i) && styles.invalidInput]}
+                            containerStyle={invalid.includes(i) ? styles.invalidInput : undefined}
                             autoFocus={i === 0}
                             returnKeyType={i < 2 ? "next" : "done"}
                             blurOnSubmit={i === 2}
@@ -100,8 +101,6 @@ const VerifyMnemonicScreen = () => {
                             autoCorrect={false}
                             autoComplete="off"
                             spellCheck={false}
-                            keyboardAppearance={isDark ? 'dark' : 'light'}
-                            placeholderTextColor={theme.colors.muted}
                             placeholder={`Enter word #${wordIndex + 1}`}
                             editable={!loading}
                         />
@@ -126,9 +125,6 @@ const VerifyMnemonicScreen = () => {
 };
 const getStyles = (theme: Theme) => StyleSheet.create({
     footer: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24 },
-    input: { height: 56, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.border,
-        backgroundColor: theme.colors.surface, paddingHorizontal: 16, fontSize: 16,
-        fontFamily: 'SpaceMono-Regular', color: theme.colors.primary },
     invalidInput: { borderColor: theme.colors.bitcoin },
     error: { color: theme.colors.muted, marginTop: 4, fontSize: 12 },
     scrollView: {

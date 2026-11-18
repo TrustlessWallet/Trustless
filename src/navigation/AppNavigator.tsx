@@ -38,7 +38,6 @@ import AuthCheckScreen from '../screens/AuthCheckScreen';
 import OnboardingWelcomeScreen from '../screens/OnboardingWelcomeScreen';
 import OnboardingWalletScreen, { OnboardingWalletRoot } from '../screens/OnboardingWalletScreen';
 import AddressDetailsScreen from '../screens/AddressDetailsScreen';
-import CustomNodeScreen from '../screens/CustomNodeScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import SupportScreen from '../screens/SupportScreen';
@@ -439,14 +438,10 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
           <Stack.Screen name="UnilateralExit" component={UnilateralExitScreen} options={{ title: 'Unilateral exit' }} />
           <Stack.Screen name="WithdrawToOnchain" component={WithdrawToOnchainScreen} options={{ title: 'Withdraw to on-chain' }} />
-          <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Review payment' }} />
+          <Stack.Screen name="TransactionConfirm" component={TransactionConfirmScreen} options={{ title: 'Confirm transaction' }} />
           <Stack.Screen name="TransactionSuccess" component={TransactionSuccessScreen} options={{ headerShown: false }} />
           <Stack.Screen name="ExportPSBT" component={ExportPSBTScreen} options={{ title: 'Export transaction' }} />
           <Stack.Screen name="ImportPSBT" component={ImportPSBTScreen} options={{ title: 'Scan signed transaction', presentation: 'modal' }} />
-          <Stack.Screen name="CustomNode" component={CustomNodeScreen} options={({ navigation }) => ({
-            title: 'Custom node',
-            headerRight: () => <CloseButton onPress={() => navigation.goBack()} />,
-          })} />
           <Stack.Screen name="WalletSwitcher" component={WalletSwitcherScreen} options={{ title: 'Wallets' }} />
           <Stack.Screen name="WalletOptions" component={WalletOptionsScreen} options={{ title: 'Wallet options' }} />
           <Stack.Screen name="AddWalletOptions" component={AddWalletOptionsScreen} options={{ title: 'Add wallet', sheetAllowedDetents: 'fitToContents' }} />

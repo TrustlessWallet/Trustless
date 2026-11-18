@@ -9,21 +9,18 @@ import * as bitcoin from 'bitcoinjs-lib';
 
 export let IS_TESTNET = false;
 const SETTINGS_NETWORK_KEY = '@network_preference';
-export const CUSTOM_ELECTRUM_NODE_KEY = '@customElectrumNode'; // Legacy JSON preference
-export const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
+const CUSTOM_ELECTRUM_NODE_KEY = '@customElectrumNode'; // Legacy JSON preference
+const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
 // This preference is only for the user's explicitly selected custom node.
 export const CUSTOM_NODE_ALLOW_SELF_SIGNED_KEY = '@allowSelfSigned';
 
-export function parseCustomNode(value: string): { host: string; port: number; protocol: 'tls' | 'tcp' } | null {
-  const trimmed = value.trim();
-  const parts = trimmed.split(':');
-  let parsed;
-  if (trimmed.startsWith('{')) {
-    try { parsed = JSON.parse(trimmed); } catch { return null; }
-  } else if (parts.length >= 2 && parts.length <= 3) {
-    parsed = { host: parts[0], port: Number(parts[1]), protocol: parts[2]?.toLowerCase() || 'tls' };
-  }
-  if (!parsed || typeof parsed.host !== 'string' || !parsed.host.trim() || /[\s/@?#]/u.test(parsed.host.trim()) || !Number.isInteger(parsed.port)
+function parseCustomNode(value: string): { host: string; port: number; protocol: 'tls' | 'tcp' } | null {
+  const parts = value.trim().split(':');
+  const parsed = value.trim().startsWith('{') ? JSON.parse(value)
+    : parts.length >= 2 && parts.length <= 3
+      ? { host: parts[0], port: Number(parts[1]), protocol: parts[2]?.toLowerCase() || 'tls' }
+      : null;
+  if (!parsed || typeof parsed.host !== 'string' || !parsed.host.trim() || !Number.isInteger(parsed.port)
     || parsed.port < 1 || parsed.port > 65535 || !['tls', 'tcp'].includes(parsed.protocol)) return null;
   return { ...parsed, host: parsed.host.trim() };
 }
@@ -273,7 +270,6 @@ export class CustomElectrumClient {
 
 let client: CustomElectrumClient | null = null;
 let connectionPromise: Promise<CustomElectrumClient> | null = null;
-let connectionGeneration = 0;
 
 const peerCooldowns = new Map<string, number>();
 const COOLDOWN_MS = 5 * 60 * 1000;
@@ -288,7 +284,12 @@ function shuffle(array: any[]) {
 
 AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
   if (nextAppState.match(/inactive|background/)) {
-    if (client || connectionPromise) resetElectrumClient();
+    if (client) {
+      console.log('  💤 App going to background, closing active socket.');
+      client.forceClose();
+      client = null;
+      connectionPromise = null;
+    }
   } else if (nextAppState === 'active') {
     if (!client && !connectionPromise) {
       console.log('  🚀 App active, reconnecting...');
@@ -346,16 +347,9 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
     return connectionPromise;
   }
 
-  const generation = connectionGeneration;
-  const assertCurrent = (candidate?: CustomElectrumClient) => {
-    if (connectionGeneration === generation) return;
-    candidate?.forceClose();
-    throw new Error('Electrum connection settings changed.');
-  };
   connectionPromise = (async () => {
     try {
       const netStr = await AsyncStorage.getItem(SETTINGS_NETWORK_KEY);
-      assertCurrent();
       IS_TESTNET = netStr === 'testnet';
 
       const allowSelfSignedStr = await AsyncStorage.getItem(CUSTOM_NODE_ALLOW_SELF_SIGNED_KEY);
@@ -363,7 +357,6 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
 
       const customNodeStr = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY) || await AsyncStorage.getItem(CUSTOM_ELECTRUM_NODE_KEY);
 
-      assertCurrent();
       if (customNodeStr) {
         try {
           const parsed = parseCustomNode(customNodeStr);
@@ -371,7 +364,6 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
             console.log(`  🔌 Attempting custom node ${parsed.host}...`);
             const cl = new CustomElectrumClient(parsed.host, parsed.port, parsed.protocol, allowSelfSigned);
             await cl.connect(5000);
-            assertCurrent(cl);
             client = cl;
 
             cl.onCloseCallback = () => {
@@ -384,7 +376,6 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
             return cl;
           }
         } catch (e) {
-          assertCurrent();
           console.warn('  ⚠️ Custom node failed. Falling back to public peers.', e);
         }
       }
@@ -421,7 +412,6 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
         const batch = freshCandidates.splice(0, 3);
         try {
           const winner = await raceConnections(batch);
-          assertCurrent(winner);
           client = winner;
 
           winner.onCloseCallback = () => {
@@ -436,14 +426,13 @@ export const getElectrumClient = async (): Promise<CustomElectrumClient> => {
 
           return winner;
         } catch (err) {
-          assertCurrent();
           console.warn(`  ⚠️ Batch failed. Trying next batch if available...`);
         }
       }
 
       throw new Error("All peers exhausted or blocked.");
     } catch (error) {
-      if (connectionGeneration === generation) connectionPromise = null;
+      connectionPromise = null;
       throw error;
     }
   })();
@@ -470,11 +459,11 @@ export const getActiveHostName = (): string | null => {
 };
 
 export const resetElectrumClient = () => {
-  connectionGeneration++;
-  const previous = client;
+  if (client) {
+    client.forceClose();
+  }
   client = null;
   connectionPromise = null;
-  previous?.forceClose();
 };
 
 export const resetActiveConnection = () => {

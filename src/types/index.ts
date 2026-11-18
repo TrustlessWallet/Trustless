@@ -119,7 +119,6 @@ export type RootStackParamList = {
   WalletSetupSuccess: { kind: 'created' | 'imported' };
   VerifyMnemonic: { mnemonic: string; name?: string };
   RecoverWallet: undefined;
-  CustomNode: undefined;
   ImportWatchOnly: undefined;
   LightningTopUp: undefined;
   WithdrawToOnchain: undefined;
