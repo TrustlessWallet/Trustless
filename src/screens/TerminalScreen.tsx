@@ -112,7 +112,7 @@ function SalesRoute({ walletId, network, rootVisible, onClose, onOpenReports, on
   return <TerminalSalesScreen walletId={walletId} network={network} visible={rootVisible && focused} onClose={onClose} onOpenReports={onOpenReports} onOpenSale={onOpenSale} detailSale={sale} />;
 }
 
-function ReportsRoute({ walletId, network, rootVisible, selection, onClose }: { walletId: string; network: ReturnType<typeof terminalNetwork>; rootVisible: boolean; selection: TerminalReportSelection; onClose: () => void }) {
+function ReportsRoute({ walletId, network, rootVisible, selection, settingsUnit, onClose }: { walletId: string; network: ReturnType<typeof terminalNetwork>; rootVisible: boolean; selection: TerminalReportSelection; settingsUnit: TerminalUnit | null | undefined; onClose: () => void }) {
   const focused = useIsFocused();
   const { activeWallet } = useWallet();
   const { cashierState } = useWalletMode();
@@ -120,8 +120,11 @@ function ReportsRoute({ walletId, network, rootVisible, selection, onClose }: { 
   const pro = useTerminalPro();
   const allowed = rootVisible && focused && activeWallet?.id === walletId && activeWallet.type !== 'watch-only' && cashierState === 'off';
   const proGate = useTerminalProGate({ allowed, scope: `${network}:${walletId}` });
+  if (pro.status === 'pro' && settingsUnit === undefined) {
+    return <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} />;
+  }
   return <><View pointerEvents={proGate.isOpen ? 'none' : 'auto'} style={{ flex: 1, backgroundColor: theme.colors.background }}>
-    {pro.status === 'pro' ? <TerminalReportsScreen walletId={walletId} network={network} initialSelection={selection} visible={allowed} onClose={onClose} /> : <>
+    {pro.status === 'pro' ? <TerminalReportsScreen walletId={walletId} network={network} initialSelection={{ ...selection, defaultUnit: settingsUnit === 'BTC' ? 'sats' : settingsUnit }} visible={allowed} onClose={onClose} /> : <>
       <TerminalSheetHeader title="Reports" closeLabel="Close reports" onClose={onClose} />
       <View style={{ padding: 24 }}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Unlock reports" disabled={!allowed} onPress={proGate.openPro} style={{ minHeight: 50, backgroundColor: theme.colors.primary, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: theme.colors.inversePrimary, fontWeight: '700' }}>Terminal Pro</Text></TouchableOpacity></View>
     </>}
@@ -146,6 +149,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const [catalogError, setCatalogError] = useState(false);
   const [catalogRevision, reloadCatalog] = useState(0);
   const [unit, setUnit] = useState<TerminalUnit>('sats');
+  const [settingsUnit, setSettingsUnit] = useState<TerminalUnit | null>();
   const [checkoutFocused, setCheckoutFocused] = useState(true);
   const [invoiceFocused, setInvoiceFocused] = useState(false);
   const [endingRequest, setEndingRequest] = useState(false);
@@ -247,13 +251,15 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
 
   useEffect(() => {
     void AsyncStorage.getItem(PREFERRED_UNIT_KEY).then(saved => {
-      if (!userSelectedUnit.current && !userEditedAmount.current && !basketRef.current.length && (saved === 'sats' || saved === 'BTC' || isFiat(saved as TerminalUnit))) {
+      const valid = (saved === 'sats' || saved === 'BTC' || isFiat(saved as TerminalUnit));
+      setSettingsUnit(current => current === undefined ? (valid ? saved as TerminalUnit : null) : current);
+      if (valid && !userSelectedUnit.current && !userEditedAmount.current && !basketRef.current.length) {
         preferredUnit.current = saved as TerminalUnit;
         if (mounted.current && !userSelectedUnit.current && !userEditedAmount.current && !basketRef.current.length && !hasRequestRef.current) {
           setUnit(saved as TerminalUnit);
         }
       }
-    }).catch(() => undefined);
+    }).catch(() => setSettingsUnit(current => current ?? null));
   }, []);
 
   const refreshRates = useCallback(async () => {
@@ -511,20 +517,24 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   };
 
   const selectUnit = (next: TerminalUnit) => {
-    if (busy.current || request || next === unit) return;
-    const apply = () => {
-      const hadBasket = basketRef.current.length > 0;
-      if (hadBasket) { basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setAmount(''); }
-      if (!hadBasket && !isFiat(unit) && !isFiat(next)) {
+    if (busy.current || request) return;
+    if (next === unit && settingsUnit === next) return;
+    if (next !== unit) {
+      if (basketRef.current.length) {
+        basketRef.current = [];
+        basketUnitRef.current = null;
+        setBasketLines([]);
+        setAmount('');
+      } else if (!isFiat(unit) && !isFiat(next)) {
         try { setAmount(formatTerminalAmount(parseTerminalAmount(amount, unit), next)); }
         catch { setAmount(''); }
       } else setAmount('');
-      userSelectedUnit.current = true;
-      preferredUnit.current = next;
-      setUnit(next); setError(''); setBasketError('');
-      void AsyncStorage.setItem(PREFERRED_UNIT_KEY, next).catch(() => setError('Could not save preferred currency.'));
-    };
-    apply();
+    }
+    setSettingsUnit(next);
+    userSelectedUnit.current = true;
+    preferredUnit.current = next;
+    setUnit(next); setError(''); setBasketError('');
+    void AsyncStorage.setItem(PREFERRED_UNIT_KEY, next).catch(() => setError('Could not save preferred currency.'));
   };
 
   const key = (digit: string) => {
@@ -760,7 +770,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       {({ navigation, route }) => activeWallet?.id === route.params.walletId && network === route.params.network ? <SalesRoute walletId={route.params.walletId} network={route.params.network} sale={route.params.sale} rootVisible={visible} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Reports" options={sheetOptions}>
-      {({ navigation, route }) => activeWallet?.id === route.params.walletId && network === route.params.network ? <ReportsRoute walletId={route.params.walletId} network={route.params.network} rootVisible={visible} selection={route.params.selection} onClose={() => navigation.goBack()} /> : null}
+      {({ navigation, route }) => activeWallet?.id === route.params.walletId && network === route.params.network ? <ReportsRoute walletId={route.params.walletId} network={route.params.network} rootVisible={visible} selection={route.params.selection} settingsUnit={settingsUnit} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Items" options={sheetOptions}>
       {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onEdit={item => navigation.navigate('ItemEditor', { item })} onClose={() => navigation.goBack()} /> : null}

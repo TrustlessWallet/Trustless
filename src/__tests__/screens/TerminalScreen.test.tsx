@@ -982,6 +982,19 @@ it.each(['sats', 'BTC', 'USD'])('keeps Generate inactive for an empty or zero %s
   expect(view.queryByText(/Enter an amount|Enter a valid amount|Enter BTC/)).toBeNull();
 });
 
+it('opens item reports in the saved settings currency after adding a differently priced item', async () => {
+  await AsyncStorage.setItem('@terminalPreferredUnit', 'EUR');
+  await AsyncStorage.setItem('@terminalItems:v1:mainnet:wallet-a', JSON.stringify({ version: 1, walletId: 'wallet-a', network: 'mainnet', items: [{ id: 'tea', name: 'Tea', unit: 'sats', unitPrice: 58 }] }));
+  const view = renderWithCurrencyMeasurement();
+  fireEvent.press(await view.findByLabelText('Items'));
+  fireEvent.press(await view.findByLabelText('Add Tea'));
+  fireEvent.press(view.getByLabelText('Close item picker'));
+  fireEvent.press(await view.findByLabelText('Sales'));
+  fireEvent.press(await view.findByLabelText('Open reports'));
+  fireEvent.press(await view.findByLabelText('Item reports'));
+  expect(await view.findByLabelText('Item currency EUR')).toBeTruthy();
+});
+
 it('opens Reports as its own sheet and preserves the Sales filter on return', async () => {
   const view = renderWithCurrencyMeasurement();
   await waitFor(() => expect(view.getByLabelText('Sales')).toBeTruthy());

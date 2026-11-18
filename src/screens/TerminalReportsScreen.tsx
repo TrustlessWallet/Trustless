@@ -16,7 +16,7 @@ import { getTerminalRefundTotal, subscribeTerminalRefunds } from '../services/te
 import { createTerminalItemPerformanceSnapshot, readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot } from '../services/terminalItemPerformance';
 import { CustomSalesDateRange, localSalesDateKey, previousTerminalSalesPeriodBounds, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 
-export type TerminalReportSelection = { period: SalesPeriod; customRange?: CustomSalesDateRange; day: number };
+export type TerminalReportSelection = { period: SalesPeriod; customRange?: CustomSalesDateRange; day: number; defaultUnit?: TerminalReportPreset['unit'] };
 type Props = { walletId: string; network: TerminalNetwork; initialSelection: TerminalReportSelection; onClose: () => void; visible?: boolean };
 type FilterState = { scope: string; period: SalesPeriod; customRange: CustomSalesDateRange | null; draft: CustomSalesDateRange | null; tab: 'overview' | 'items'; unit: 'USD' | 'EUR' | 'CHF' | 'sats' | null; sort: 'quantity' | 'gross' };
 type PreparedOverview = { identity: string; summary: TerminalSalesSummary; refunds: bigint; comparison?: Awaited<ReturnType<typeof getTerminalSalesComparison>> };
@@ -27,7 +27,7 @@ const localDayStart = (value: number) => {
 };
 const initialFilter = (scope: string, selection: TerminalReportSelection): FilterState => {
   const validCustom = selection.period === 'custom' && selection.customRange;
-  return { scope, period: validCustom ? 'custom' : selection.period === 'custom' ? 'today' : selection.period, customRange: validCustom ? { ...selection.customRange! } : null, draft: null, tab: 'overview', unit: null, sort: 'quantity' };
+  return { scope, period: validCustom ? 'custom' : selection.period === 'custom' ? 'today' : selection.period, customRange: validCustom ? { ...selection.customRange! } : null, draft: null, tab: 'overview', unit: selection.defaultUnit ?? null, sort: 'quantity' };
 };
 
 export default function TerminalReportsScreen({ walletId, network, initialSelection, onClose, visible = true }: Props) {
@@ -184,7 +184,7 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
   const applyPreset = (value: TerminalReportPreset) => {
     if (!visible) return;
     const presetDay = localDayStart(Date.now());
-    stageFilter({ scope, period: value.period, customRange: value.customRange ?? null, draft: null, tab: value.tab, unit: value.unit, sort: value.sort }, presetDay);
+    stageFilter({ scope, period: value.period, customRange: value.customRange ?? null, draft: null, tab: value.tab, unit: value.tab === 'items' ? value.unit : filter.unit, sort: value.tab === 'items' ? value.sort : filter.sort }, presetDay);
   };
   const consumePreparedItems = useCallback(() => { pendingToken.current = null; setPreparedItems(null); }, []);
   const reportHeader = <>

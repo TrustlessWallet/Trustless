@@ -97,6 +97,7 @@ const WalletScreen = () => {
     const [hideBalance, setHideBalance] = useState(false);
     const [balancePreferenceReady, setBalancePreferenceReady] = useState(false);
     const [modePreferenceReady, setModePreferenceReady] = useState(false);
+    const modeChosenByUser = useRef(false);
     const [isLightningMode, setIsLightningMode] = useState(false);
     const [isManualRefreshing, setIsManualRefreshing] = useState(false);
     const [isSheetMounted, setIsSheetMounted] = useState(false);
@@ -467,7 +468,7 @@ const WalletScreen = () => {
     useEffect(() => {
         const loadInitialWalletMode = async () => {
             const savedMode = await AsyncStorage.getItem(DEFAULT_WALLET_MODE_KEY);
-            if (savedMode === 'Lightning') setIsLightningMode(true);
+            if (!modeChosenByUser.current && savedMode === 'Lightning') setIsLightningMode(true);
         };
         void loadInitialWalletMode().catch(() => {}).finally(() => setModePreferenceReady(true));
     }, []);
@@ -494,9 +495,9 @@ const WalletScreen = () => {
         manualRefreshRef.current = false;
         setIsManualRefreshing(false);
         refreshDrag.current = { armed: false, dragging: false, distance: 0, releasedAt: 0 };
-        scrollY.setValue(0);
         return () => { ++refreshEpoch.current; };
-    }, [activeWallet?.id, isLightningMode, scrollY]);
+    }, [activeWallet?.id, isLightningMode]);
+    useEffect(() => { scrollY.setValue(0); }, [activeWallet?.id, scrollY]);
 
     const onRefresh = useCallback(async () => {
         // Ignore refresh events caused by inset/layout changes or a tiny pull.
@@ -528,7 +529,10 @@ const WalletScreen = () => {
     }, [isLightningMode, isFocused, triggerRefresh, refetchTxs, isWalletSwitching]);
 
 
-    const toggleMode = () => setIsLightningMode(currentMode => !currentMode);
+    const toggleMode = () => {
+        modeChosenByUser.current = true;
+        setIsLightningMode(currentMode => !currentMode);
+    };
 
     const renderTransactionItem = useCallback(({ item }: { item: any }) => {
         const isLightning = 'paymentHash' in item;
@@ -697,7 +701,7 @@ const WalletScreen = () => {
             </Animated.View>
 
             <Animated.FlatList
-                key={`${activeWallet.id}:${isLightningMode ? 'lightning' : 'onchain'}`}
+                key={activeWallet.id}
                 testID="wallet-transactions"
                 contentInsetAdjustmentBehavior="never"
                 automaticallyAdjustContentInsets={false}
@@ -741,6 +745,8 @@ const WalletScreen = () => {
                                 <TouchableOpacity
                                     activeOpacity={1}
                                     style={styles.toggleTouchable}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={isLightningMode ? 'Switch to on-chain' : 'Switch to Lightning'}
                                     onPress={toggleMode}
                                     disabled={isToggleDisabled}
                                 >

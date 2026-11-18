@@ -91,6 +91,25 @@ it('keeps receive and send immediately available after focus returns', async () 
     expect(navigate).toHaveBeenCalledWith('Receive', { mode: 'onchain' });
     expect(navigate).toHaveBeenCalledWith('Send', { mode: 'onchain' });
 });
+it('keeps the pressed switch mounted across both wallet modes', async () => {
+    const screen = render(<WalletScreen />);
+    await act(async () => {});
+    const control = screen.getByLabelText('Switch to Lightning');
+    fireEvent.press(control);
+    expect(screen.getByLabelText('Switch to on-chain')).toBe(control);
+    fireEvent.press(control);
+    expect(screen.getByLabelText('Switch to Lightning')).toBe(control);
+});
+it('keeps the latest tap when the launch preference arrives late', async () => {
+    let resolveMode!: (mode: string) => void;
+    (AsyncStorage.getItem as jest.Mock).mockImplementation(key => key === '@defaultWalletMode'
+        ? new Promise(resolve => { resolveMode = resolve; }) : Promise.resolve(null));
+    const screen = render(<WalletScreen />);
+    fireEvent.press(screen.getByLabelText('Switch to Lightning'));
+    fireEvent.press(screen.getByLabelText('Switch to on-chain'));
+    await act(async () => { resolveMode('Lightning'); });
+    expect(screen.getByLabelText('Switch to Lightning')).toBeTruthy();
+});
 it('ignores synthetic refresh callbacks and slight pulls, but refreshes on a deliberate drag', async () => {
     const screen = render(<WalletScreen />);
     await act(async () => {});

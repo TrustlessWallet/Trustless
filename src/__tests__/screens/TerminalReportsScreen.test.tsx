@@ -53,6 +53,17 @@ it.each([0n, 58n])('only separates currency totals when present (%s sats)', asyn
   expect(Boolean(view.queryByTestId('overview-currency-divider'))).toBe(bitcoinSats > 0n);
 });
 
+it('starts Items with the configured currency and respects an explicit All currencies selection', async () => {
+  const view = render(<TerminalReportsScreen walletId="shop" network="mainnet" initialSelection={{ ...initialSelection, defaultUnit: 'CHF' }} onClose={jest.fn()} />);
+  fireEvent.press(view.getByLabelText('Item reports'));
+  await waitFor(() => expect(createTerminalItemPerformanceSnapshot).toHaveBeenCalledWith('shop', 'mainnet', expect.anything(), { unit: 'CHF', sort: 'quantity' }));
+  fireEvent.press(view.getByLabelText('Item currency CHF'));
+  fireEvent.press(view.getByLabelText('Item currency option All currencies'));
+  fireEvent.press(view.getByLabelText('Overview reports'));
+  fireEvent.press(view.getByLabelText('Item reports'));
+  expect(view.getByLabelText('Item currency All currencies')).toBeTruthy();
+});
+
 it('mounts and queries only the active report tab', async () => {
   const view = render(<TerminalReportsScreen walletId="wallet-a" network="mainnet" initialSelection={initialSelection} onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('2')).toBeTruthy());
