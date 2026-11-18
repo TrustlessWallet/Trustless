@@ -5,6 +5,7 @@ import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SendScreen from '../../screens/SendScreen';
 import { useWallet } from '../../contexts/WalletContext';
+import { validateBitcoinAddress } from '../../services/bitcoin';
 import { resolveLnurlOrAddress, fetchLnurlInvoice } from '../../services/lnurl';
 
 // SendScreen pulls in useWalletUTXOs (react-query) via useBalance.ts, so every
@@ -91,14 +92,14 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 // Mock custom components to simplify assertions and avoid import chain issues
 jest.mock('../../components/StyledInput', () => {
-    const { TextInput } = require('react-native');
+    const { TextInput, View } = require('react-native');
     return {
-        StyledInput: (props: any) => (
-            <TextInput
+        StyledInput: ({ rightElement, ...props }: any) => (
+            <View><TextInput
                 {...props}
                 testID="styled-input"
                 editable={props.editable !== false && !props.style?.opacity}
-            />
+            />{rightElement}</View>
         )
     };
 });
@@ -154,6 +155,19 @@ describe('SendScreen - Lightning Auto-Pay Logic', () => {
 
     afterEach(() => {
         jest.restoreAllMocks();
+    });
+
+    it('fills the recipient and amount from a fixed-amount Bitcoin QR', () => {
+        (useRoute as jest.Mock).mockReturnValue({ params: { mode: 'onchain' } });
+        (validateBitcoinAddress as jest.Mock).mockReturnValueOnce(true);
+        const address = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu';
+        const screen = renderSendScreen();
+        // The scanner removes the bitcoin: prefix before delivering the result.
+        fireEvent.press(screen.getByRole('button', { name: 'Scan QR code' }));
+        const { onScanSuccess } = mockNavigate.mock.calls[0][1];
+        act(() => onScanSuccess(`${address}?amount=0.00000123`));
+        expect(screen.getByDisplayValue(address)).toBeTruthy();
+        expect(screen.getByDisplayValue('0.00000123')).toBeTruthy();
     });
 
     const waitForResolutionDelay = () => act(async () => {
