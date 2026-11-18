@@ -41,7 +41,9 @@ jest.mock('expo-local-authentication', () => ({
 jest.mock('../../services/electrum', () => ({
     getElectrumClient: jest.fn(() => Promise.resolve({ close: jest.fn() })),
     resetActiveConnection: jest.fn(),
-    getActiveHostName: jest.fn(() => 'test-node'),
+    CUSTOM_NODE_URL_KEY: '@customNodeUrl',
+    CUSTOM_ELECTRUM_NODE_KEY: '@customElectrumNode',
+    CUSTOM_NODE_ALLOW_SELF_SIGNED_KEY: '@allowSelfSigned',
     test_custom_node_connection: jest.fn(() => Promise.resolve(true)),
 }));
 
@@ -149,6 +151,24 @@ describe('SettingsScreen - Biometrics toggle sync', () => {
         await waitFor(() => expect(view.getByTestId('toggle-show-terminal')).toBeTruthy());
         expect(view.getByText('Lightning status')).toBeTruthy();
         expect(view.queryByText(/unilateral exit/i)).toBeNull();
+    });
+
+    it('keeps Lightning diagnostics collapsed and retries the active wallet', async () => {
+        const retryLightning = jest.fn().mockRejectedValue(new Error('Retry failed'));
+        (useWallet as jest.Mock).mockReturnValue({
+            activeWallet: { id: 'wallet1', type: 'standard' }, isLightningInitialized: false,
+            lightningInitAttempted: true, lightningInitError: 'Initial connection failed', retryLightning,
+        });
+        const view = render(<WalletModeProvider><SettingsScreen /></WalletModeProvider>);
+        expect(await view.findByText('Needs attention')).toBeTruthy();
+        fireEvent.press(view.getByText('Lightning status'));
+        expect(view.queryByText('Initial connection failed')).toBeNull();
+
+        fireEvent.press(view.getByRole('button', { name: 'Retry Lightning connection' }));
+        await view.findByText('Could not connect. Try again in a moment.');
+        expect(retryLightning).toHaveBeenCalledTimes(1);
+        fireEvent.press(view.getByText('Diagnostics'));
+        expect(view.getByText('Initial connection failed')).toBeTruthy();
     });
 
     it('shows the Terminal entry by default and persists an explicit choice', async () => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator, Linking, Animated } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Linking, Animated } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useWallet } from '../contexts/WalletContext';
@@ -12,8 +12,7 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { NETWORK_NAME, IS_TESTNET, setNetwork } from '../constants/network';
-import { StyledInput } from '../components/StyledInput';
-import { getElectrumClient, resetActiveConnection, getActiveHostName, test_custom_node_connection } from '../services/electrum';
+import { CUSTOM_ELECTRUM_NODE_KEY, CUSTOM_NODE_URL_KEY, CUSTOM_NODE_ALLOW_SELF_SIGNED_KEY, resetActiveConnection } from '../services/electrum';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import build_info from '../constants/build.json';
@@ -27,8 +26,6 @@ const AUTO_LOCK_TIME_KEY = '@autoLockTime';
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 const DEFAULT_SCREEN_KEY = '@defaultScreen';
 const NETWORK_PREF_KEY = '@network_preference';
-const CUSTOM_NODE_URL_KEY = '@customNodeUrl';
-const ALLOW_SELF_SIGNED_KEY = '@allowSelfSigned';
 const DEFAULT_WALLET_MODE_KEY = '@defaultWalletMode';
 const TAP_TO_PAY_LIMIT_KEY = '@tapToPayLimit';
 
@@ -52,11 +49,12 @@ const get_auto_lock_label = (value: string | number): string => {
 const SettingsScreen = () => {
   const {
     resetWallet,
-    triggerRefresh,
     activeWallet,
     isLightningInitialized,
     lightningInitAttempted,
     lightningInitError,
+    retryLightning,
+    isWalletSwitching,
   } = useWallet();
   const { theme, isDark, toggleTheme } = useTheme();
   const { showTerminal: show_terminal, setShowTerminal } = useWalletMode();
@@ -83,12 +81,32 @@ const SettingsScreen = () => {
   const tap_step_interval_ref = useRef<ReturnType<typeof setInterval> | null>(null);
   const tap_step_speedup_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [custom_node_url, set_custom_node_url] = useState('');
-  const [allow_self_signed, set_allow_self_signed] = useState(false);
-  const [is_editing_node, set_is_editing_node] = useState(false);
-  const [connection_status, set_connection_status] = useState<'idle' | 'testing' | 'connected' | 'failed'>('idle');
-  const [active_host, set_active_host] = useState<string | null>(null);
+  const [hasCustomNode, setHasCustomNode] = useState<boolean | null>(null);
   const [is_viewing_lightning_status, set_is_viewing_lightning_status] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<{ walletId: string; message: string } | null>(null);
+  const retryLock = useRef(false);
+  const canRetryLightning = !!activeWallet && activeWallet.type !== 'watch-only' && !isWalletSwitching && !isLightningInitialized;
+  const lightningStatus = !activeWallet ? 'No wallet' : activeWallet.type === 'watch-only' ? 'Unavailable'
+    : retrying || isWalletSwitching ? 'Connecting' : isLightningInitialized ? 'Ready'
+    : lightningInitError || retryError?.walletId === activeWallet.id ? 'Needs attention'
+    : lightningInitAttempted ? 'Connecting' : 'Not connected';
+
+  const reconnectLightning = async () => {
+    if (!canRetryLightning || retryLock.current || !activeWallet) return;
+    retryLock.current = true;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      await retryLightning();
+    } catch (error) {
+      setRetryError({ walletId: activeWallet.id, message: error instanceof Error ? error.message : 'Connection failed.' });
+    } finally {
+      retryLock.current = false;
+      setRetrying(false);
+    }
+  };
 
   const is_focused = useIsFocused();
   const is_toggling_ref = useRef(false);
@@ -143,29 +161,24 @@ const SettingsScreen = () => {
         set_tap_to_pay_limit(clamped.toString());
       }
 
-      const saved_node = await AsyncStorage.getItem(CUSTOM_NODE_URL_KEY);
-      const saved_self_signed = await AsyncStorage.getItem(ALLOW_SELF_SIGNED_KEY);
-
-      if (saved_node) {
-        set_custom_node_url(saved_node);
-        set_connection_status('connected');
-      }
-
-      if (saved_self_signed === 'true') {
-        set_allow_self_signed(true);
-      }
-
-      set_active_host(getActiveHostName());
     };
     load_settings();
   }, []);
 
   useEffect(() => {
-    if (is_focused) {
-      check_biometric_status();
-      set_active_host(getActiveHostName());
-    }
+    if (!is_focused) return;
+    let current = true;
+    check_biometric_status();
+    void Promise.all([AsyncStorage.getItem(CUSTOM_NODE_URL_KEY), AsyncStorage.getItem(CUSTOM_ELECTRUM_NODE_KEY)])
+      .then(([node, legacy]) => { if (current) setHasCustomNode(!!(node || legacy)); })
+      .catch(() => { if (current) setHasCustomNode(null); });
+    return () => { current = false; };
   }, [is_focused, check_biometric_status]);
+
+  useEffect(() => {
+    setShowDiagnostics(false);
+    setRetryError(null);
+  }, [activeWallet?.id]);
 
   // Make sure any in-flight press-and-hold timers don't outlive the screen
   useEffect(() => {
@@ -252,14 +265,13 @@ const SettingsScreen = () => {
                 AUTO_LOCK_TIME_KEY,
                 HIDE_WALLET_BALANCE_KEY,
                 CUSTOM_NODE_URL_KEY,
-                ALLOW_SELF_SIGNED_KEY,
+                CUSTOM_ELECTRUM_NODE_KEY,
+                CUSTOM_NODE_ALLOW_SELF_SIGNED_KEY,
                 NETWORK_PREF_KEY,
                 '@lastActiveTime'
               ]);
 
-              set_custom_node_url('');
-              set_allow_self_signed(false);
-              set_connection_status('idle');
+              setHasCustomNode(false);
               set_default_wallet_mode('On-chain');
               resetActiveConnection();
 
@@ -392,58 +404,6 @@ const SettingsScreen = () => {
     );
   };
 
-  const handle_save_node_url = async () => {
-    const trimmed = custom_node_url.trim().replace(/^https?:\/\//, '');
-
-    if (trimmed.length === 0) {
-      await AsyncStorage.removeItem(CUSTOM_NODE_URL_KEY);
-      await AsyncStorage.removeItem('@customElectrumNode');
-      await AsyncStorage.removeItem(ALLOW_SELF_SIGNED_KEY);
-      set_connection_status('idle');
-      set_is_editing_node(false);
-      resetActiveConnection();
-      triggerRefresh();
-      setTimeout(() => set_active_host(getActiveHostName()), 1500);
-      Alert.alert("Reset", "Custom node removed. Reverted to default providers.");
-      return;
-    }
-
-    const parts = trimmed.split(':');
-    if (parts.length < 2) {
-      Alert.alert(
-        "Invalid Format",
-        "Please use the format: host:port:protocol\n\nExample:\n192.168.1.50:50002:tls"
-      );
-      return;
-    }
-
-    set_connection_status('testing');
-
-    const is_connected = await test_custom_node_connection(trimmed, allow_self_signed);
-
-    if (is_connected) {
-      await AsyncStorage.setItem(CUSTOM_NODE_URL_KEY, trimmed);
-      await AsyncStorage.removeItem('@customElectrumNode');
-      await AsyncStorage.setItem(ALLOW_SELF_SIGNED_KEY, allow_self_signed ? 'true' : 'false');
-
-      resetActiveConnection();
-      await getElectrumClient();
-
-      set_connection_status('connected');
-      set_is_editing_node(false);
-      Keyboard.dismiss();
-      triggerRefresh();
-      set_active_host(getActiveHostName());
-      Alert.alert("Success", "Connected to custom node successfully.");
-    } else {
-      set_connection_status('failed');
-      Alert.alert(
-        "Connection Failed",
-        `Could not connect to ${trimmed}.\n\nThe node might be offline, or you have a typo. The app will continue using the active node.`
-      );
-    }
-  };
-
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -541,44 +501,43 @@ const SettingsScreen = () => {
         <View style={styles.section}>
           <Text style={styles.section_title}>Security & Network</Text>
 
-          <View style={styles.col}>
-            <TouchableOpacity
-              style={styles.row_no_border}
-              onPress={() => set_is_viewing_lightning_status(!is_viewing_lightning_status)}
-            >
+          <View style={styles.row_wrapper}>
+            <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: is_viewing_lightning_status }}
+              style={styles.connection_row} onPress={() => set_is_viewing_lightning_status(value => !value)}>
               <Text style={styles.row_label}>Lightning status</Text>
-              <Feather
-                name={is_viewing_lightning_status ? 'chevron-up' : 'chevron-down'}
-                size={24}
-                color={theme.colors.primary}
-              />
+              <Text style={styles.connection_status}>{lightningStatus}</Text>
+              <Feather name={is_viewing_lightning_status ? 'chevron-up' : 'chevron-down'} size={20} color={theme.colors.primary} />
             </TouchableOpacity>
-
             {is_viewing_lightning_status && (
               <View style={styles.lightning_details_container}>
-                <Text style={styles.lightning_details_text}>
-                  Status: {(() => {
-                    if (!activeWallet) return 'No wallet';
-                    if (activeWallet.type === 'watch-only') return 'Disabled';
-                    if (isLightningInitialized) return 'Working';
-                    if (lightningInitError) return 'Needs attention';
-                    if (!lightningInitAttempted) return 'Not started';
-                    return 'Not ready';
-                  })()}
-                </Text>
-                <Text style={styles.lightning_details_text}>
-                  Wallet: {activeWallet ? (activeWallet.type === 'watch-only' ? 'Watch-only' : 'Standard') : 'None'}
-                </Text>
-                <Text style={styles.lightning_details_text}>
-                  Initialized: {isLightningInitialized ? 'Yes' : 'No'}
-                </Text>
-                <Text style={styles.lightning_details_text}>
-                  Init attempted: {lightningInitAttempted ? 'Yes' : 'No'}
-                </Text>
-                {!!lightningInitError && (
-                  <Text style={styles.lightning_details_text} numberOfLines={4}>
-                    Error: {lightningInitError}
+                {!activeWallet || activeWallet.type === 'watch-only' ? (
+                  <Text style={styles.lightning_details_text}>
+                    {activeWallet ? 'Watch-only wallets can’t use Lightning.' : 'Open a wallet to connect to Lightning.'}
                   </Text>
+                ) : (
+                  <>
+                    {canRetryLightning && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry Lightning connection"
+                      accessibilityState={{ disabled: retrying, busy: retrying }} disabled={retrying}
+                      style={styles.connection_action} onPress={reconnectLightning}>
+                      {retrying ? <ActivityIndicator color={theme.colors.bitcoin} /> :
+                        <Text style={styles.connection_action_text}>{lightningInitError || lightningInitAttempted ? 'Retry connection' : 'Connect'}</Text>}
+                    </TouchableOpacity>}
+                    {!retrying && !isLightningInitialized && retryError?.walletId === activeWallet.id && (
+                      <Text style={styles.lightning_details_text} accessibilityRole="alert">Could not connect. Try again in a moment.</Text>
+                    )}
+                    <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: showDiagnostics }}
+                      onPress={() => setShowDiagnostics(value => !value)} style={styles.connection_row}>
+                      <Text style={styles.lightning_details_text}>Diagnostics</Text>
+                      <Feather name={showDiagnostics ? 'chevron-up' : 'chevron-down'} size={16} color={theme.colors.muted} />
+                    </TouchableOpacity>
+                    {showDiagnostics && <>
+                      <Text style={styles.lightning_details_text}>Initialized: {isLightningInitialized ? 'Yes' : 'No'}</Text>
+                      <Text style={styles.lightning_details_text}>Connection attempted: {lightningInitAttempted ? 'Yes' : 'No'}</Text>
+                      {!!(lightningInitError || retryError?.walletId === activeWallet.id) && !isLightningInitialized && (
+                        <Text selectable style={styles.lightning_details_text}>{lightningInitError || retryError?.message}</Text>
+                      )}
+                    </>}
+                  </>
                 )}
               </View>
             )}
@@ -621,87 +580,12 @@ const SettingsScreen = () => {
             </View>
           </View>
 
-          <View style={styles.col}>
-            <TouchableOpacity
-              style={styles.row_no_border}
-              onPress={() => set_is_editing_node(!is_editing_node)}
-            >
-              <View style={styles.row_header_group}>
-                <Text style={styles.row_label}>Custom Node URL</Text>
-                <View style={styles.status_row}>
-                  {connection_status === 'testing' && (
-                    <View style={styles.testing_container}>
-                      <ActivityIndicator size="small" color={theme.colors.bitcoin} />
-                      <Text style={styles.status_text}>Testing...</Text>
-                    </View>
-                  )}
-                  {connection_status === 'connected' && <Text style={[styles.status_text, { color: theme.colors.bitcoin }]}>● Connected</Text>}
-                  {connection_status === 'failed' && <Text style={[styles.status_text, { color: theme.colors.error }]}>● Failed</Text>}
-                </View>
-              </View>
-              <Feather
-                name={is_editing_node ? "chevron-up" : "chevron-down"}
-                size={24}
-                color={theme.colors.primary}
-              />
+          <View style={styles.row_wrapper}>
+            <TouchableOpacity accessibilityRole="button" style={styles.connection_row} onPress={() => navigation.navigate('CustomNode')}>
+              <Text style={styles.row_label}>Custom node</Text>
+              <Text style={styles.connection_status}>{hasCustomNode === null ? '' : hasCustomNode ? 'Configured' : 'Default'}</Text>
+              <Feather name="chevron-right" size={20} color={theme.colors.primary} />
             </TouchableOpacity>
-
-            {is_editing_node && (
-              <View style={styles.node_input_container}>
-
-                <Text style={styles.helper_text}>
-                  Connect to your own Electrum server or a public node.
-                </Text>
-
-                <StyledInput
-                  containerStyle={styles.input_spacing}
-                  value={custom_node_url}
-                  onChangeText={(text) => {
-                    set_custom_node_url(text);
-                    if (connection_status === 'failed') set_connection_status('idle');
-                  }}
-                  placeholder="host:port:protocol"
-                  placeholderTextColor={theme.colors.muted}
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  spellCheck={false}
-                  textContentType="none"
-                  autoCorrect={false}
-                  keyboardAppearance={isDark ? 'dark' : 'light'}
-                />
-
-                <View style={styles.status_banner}>
-                  <Text style={styles.banner_text}>Active node: {active_host || 'Disconnected'}</Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.checkbox_row}
-                  onPress={() => {
-                    if (allow_self_signed) { set_allow_self_signed(false); return; }
-                    Alert.alert('Unverified node certificate', 'Only enable this for a custom node you trust on a secure network. An intercepted connection can expose address queries and falsify balances or history.', [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Allow for my node', onPress: () => set_allow_self_signed(true) },
-                    ]);
-                  }}
-                >
-                  <Feather
-                    name={allow_self_signed ? "check-square" : "square"}
-                    size={20}
-                    color={theme.colors.primary}
-                  />
-                  <Text style={styles.checkbox_label}>Allow self-signed certificates</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.save_button, connection_status === 'testing' && styles.disabled_button]}
-                  onPress={handle_save_node_url}
-                  disabled={connection_status === 'testing'}
-                >
-                  <Feather name="save" size={16} color={theme.colors.inversePrimary} />
-                  <Text style={styles.save_button_text}>Save & apply</Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </View>
 
           <View style={styles.row_wrapper}>
@@ -881,16 +765,6 @@ const get_styles = (theme: Theme) => StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
   },
-  row_no_border: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  col: {
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
   row_label: {
     fontSize: 16,
     color: theme.colors.muted,
@@ -906,86 +780,15 @@ const get_styles = (theme: Theme) => StyleSheet.create({
     textAlign: 'center',
     color: theme.colors.primary,
   },
-  node_input_container: {
-    marginTop: 4,
-    marginBottom: 16,
+  connection_row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  connection_status: { flex: 1, fontSize: 13, color: theme.colors.muted, textAlign: 'right' },
+  connection_action: {
+    minHeight: 48, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: theme.colors.primary, borderRadius: 8,
   },
-  status_banner: {
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginBottom: 8,
-  },
-  banner_text: {
-    fontSize: 12,
-    color: theme.colors.muted,
-    fontFamily: 'monospace',
-  },
-  helper_text: {
-    fontSize: 12,
-    color: theme.colors.muted,
-    marginBottom: 8,
-    fontFamily: 'monospace',
-  },
-  input_spacing: {
-    marginBottom: 1,
-  },
-  checkbox_row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
-  },
-  checkbox_label: {
-    fontSize: 14,
-    color: theme.colors.primary,
-  },
-  save_button: {
-    alignSelf: 'flex-start',
-    backgroundColor: theme.colors.primary,
-    borderRadius: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  disabled_button: {
-    opacity: 0.5,
-  },
-  save_button_text: {
-    color: theme.colors.inversePrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  row_header_group: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  status_row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  testing_container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  status_text: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: theme.colors.muted,
-  },
-  lightning_details_container: {
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  lightning_details_text: {
-    fontSize: 12,
-    color: theme.colors.muted,
-    fontFamily: 'monospace',
-    marginBottom: 6,
-  },
+  connection_action_text: { fontSize: 14, fontWeight: '600', color: theme.colors.inversePrimary },
+  lightning_details_container: { paddingBottom: 8 },
+  lightning_details_text: { fontSize: 13, color: theme.colors.muted, marginBottom: 4 },
   version_container: {
     alignItems: 'center',
     marginTop: 16,

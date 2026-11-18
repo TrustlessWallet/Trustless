@@ -112,6 +112,27 @@ describe('Electrum Service', () => {
     });
 
     describe('getElectrumClient', () => {
+        it('keeps the new connection when an earlier settings read finishes after reset', async () => {
+            let completeOldRead!: (value: string | null) => void;
+            (AsyncStorage.getItem as jest.Mock)
+                .mockImplementation(async key => key === '@customNodeUrl' ? 'new.node:50002:tls' : null)
+                .mockImplementationOnce(() => new Promise(resolve => { completeOldRead = resolve; }));
+
+            const old = getElectrumClient();
+            const rejected = expect(old).rejects.toThrow('connection settings changed');
+            resetActiveConnection();
+            const fresh = getElectrumClient();
+            await flushPromises();
+            jest.advanceTimersByTime(20);
+            mockSocket.emitData('{"jsonrpc":"2.0","id":1,"result":"1.4"}\n');
+            expect((await fresh).host).toBe('new.node');
+
+            completeOldRead(null);
+            await rejected;
+            expect(getActiveHostName()).toBe('new.node');
+            expect(mockTcp.connectTLS).toHaveBeenCalledTimes(1);
+        });
+
         it('only uses validated TLS for automatic peers, even with legacy permissive preferences', async () => {
             (AsyncStorage.getItem as jest.Mock).mockImplementation(async key => key === '@allow_self_signed_certs' || key === '@allowSelfSigned' ? 'true' : null);
             const task = getElectrumClient();

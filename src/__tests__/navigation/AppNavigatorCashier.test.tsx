@@ -34,6 +34,7 @@ jest.mock('../../screens/SendScreen', () => () => null);
 jest.mock('../../screens/TransactionConfirmScreen', () => () => null);
 jest.mock('../../screens/TransactionSuccessScreen', () => () => null);
 jest.mock('../../screens/TransactionDetailsScreen', () => () => null);
+jest.mock('../../screens/CustomNodeScreen', () => () => null);
 jest.mock('../../screens/WalletSwitcherScreen', () => () => null);
 jest.mock('../../screens/WalletOptionsScreen', () => () => null);
 jest.mock('../../screens/ShowPublicKeyScreen', () => () => null);
