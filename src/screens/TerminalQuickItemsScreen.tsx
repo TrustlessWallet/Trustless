@@ -41,15 +41,17 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
   const dismiss = () => {
     if (closing.current) return;
     closing.current = true;
+    dragY.stopAnimation();
+    backdropOpacity.stopAnimation();
     Animated.parallel([
       Animated.timing(dragY, { toValue: height, duration: 180, useNativeDriver: false }),
       Animated.timing(backdropOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
-    ]).start(({ finished }) => { if (finished && mounted.current) onClose(); });
+    ]).start(() => { if (mounted.current) onClose(); });
   };
   const closeRef = useRef(onClose);
   closeRef.current = dismiss;
   const headerDrag = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_event, gesture) => gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx),
+    onMoveShouldSetPanResponder: (_event, gesture) => !closing.current && gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx),
     onPanResponderMove: (_event, gesture) => dragY.setValue(Math.max(0, gesture.dy)),
     onPanResponderRelease: (_event, gesture) => {
       if (gesture.dy > 80 || gesture.vy > 0.8) closeRef.current();
