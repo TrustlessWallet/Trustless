@@ -10,11 +10,13 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 
 interface StyledInputProps extends TextInputProps {
+  ref?: React.Ref<TextInput>;
   containerStyle?: ViewStyle;
   rightElement?: React.ReactNode;
 }
 
 export const StyledInput: React.FC<StyledInputProps> = ({
+  ref,
   onFocus,
   onBlur,
   style,
@@ -72,6 +74,7 @@ const baseContainerStyle: ViewStyle = {
       />
       
       <TextInput
+        ref={ref}
         allowFontScaling={false}
         onFocus={handleFocus}
         onBlur={handleBlur}

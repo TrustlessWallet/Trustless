@@ -56,10 +56,11 @@ const BackupIntroScreen = () => {
 const getStyles = (theme: Theme) => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
     content: { padding: 24 },
-    label: { fontSize: 14, color: theme.colors.muted, marginBottom: 8 },
+    label: { fontSize: 14, fontWeight: 'bold', color: theme.colors.primary, marginBottom: 8 },
     section: { marginTop: 24 },
     choices: { flexDirection: 'row', gap: 8 },
-    choice: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 8, backgroundColor: theme.colors.surface },
+    choice: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: theme.LAYOUT.radius, borderWidth: 1,
+        borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
     selected: { backgroundColor: theme.colors.primary },
     choiceText: { fontSize: 14, color: theme.colors.primary },
     selectedText: { color: theme.colors.inversePrimary },
