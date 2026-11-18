@@ -1,683 +1,195 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import {
-    View,
-    StyleSheet,
-    TouchableOpacity,
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    Keyboard
-} from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Alert, Keyboard, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
-import { Text } from '../components/StyledText';
-import { StyledInput } from '../components/StyledInput';
-import { useWallet } from '../contexts/WalletContext';
-import { useTheme } from '../contexts/ThemeContext';
-import { Theme } from '../constants/theme';
-import { validateBitcoinAddress } from '../services/bitcoin';
-import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
 import * as Clipboard from 'expo-clipboard';
+import { AddressText } from '../components/AddressText';
+import { StyledInput } from '../components/StyledInput';
+import { NETWORK_NAME } from '../constants/network';
+import { useTheme } from '../contexts/ThemeContext';
+import { useWallet } from '../contexts/WalletContext';
 import { authenticate_transaction_action } from '../services/authState';
+import { validateBitcoinAddress } from '../services/bitcoin';
+import type { RootStackParamList } from '../types';
+import { cleanSats, feeLabels, feeTiers, formatSats, LightningTransferForm, TransferChoices, TransferDisclosure } from './LightningTransferForm';
+import type { FeeTier } from './LightningTransferForm';
 
-
-export const WithdrawToOnchainScreen: React.FC = () => {
-    const navigation = useNavigation<any>();
-    const { theme } = useTheme();
-    const styles = useMemo(() => getStyles(theme), [theme]);
-
-    const { scrollViewRef, paddingBottom, handleInputFocus } = useKeyboardScroll({
-        basePaddingBottom: styles.scrollContent.paddingBottom,
-    });
-
-    const MIN_WITHDRAW_SATS = 1000;
-
-    const {
-        activeWallet,
-        isLightningInitialized,
-        lightningBalance,
-        prepareWithdrawToOnchain,
-        withdrawToOnchain,
-        triggerRefresh
-    } = useWallet();
-
-    const [amountStr, setAmountStr] = useState('');
-    const [destMode, setDestMode] = useState<'own' | 'custom'>('own');
-    const [ownAddress, setOwnAddress] = useState<string>('');
-    const [customAddress, setCustomAddress] = useState<string>('');
-    const [selectedFeeTier, setSelectedFeeTier] = useState<'slow' | 'normal' | 'fast'>('normal');
-
-    const [reviewStatus, setReviewStatus] = useState<'idle' | 'reviewing' | 'reviewed'>('idle');
-    const [executing, setExecuting] = useState(false);
-
-    const [localValidationErr, setLocalValidationErr] = useState<string | null>(null);
-    const [calculationError, setCalculationError] = useState<string | null>(null);
-    const [feeEstimates, setFeeEstimates] = useState<{ slow: number; normal: number; fast: number } | null>(null);
-
-    const [txMetrics, setTxMetrics] = useState<{ totalFeeSats: number; prepareResponse: any } | null>(null);
-
-    useEffect(() => {
-        if (activeWallet) {
-            setOwnAddress(activeWallet.address);
-        }
-    }, [activeWallet]);
-
-    useEffect(() => {
-        const fetchFeeEstimates = async () => {
-            if (!activeWallet || !isLightningInitialized) return;
-
-            try {
-                const sampleAmount = 10000;
-                const sampleAddress = activeWallet.address;
-
-                const estimates = await Promise.all([
-                    prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'slow').catch(() => null),
-                    prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'normal').catch(() => null),
-                    prepareWithdrawToOnchain(sampleAddress, sampleAmount, 'fast').catch(() => null)
-                ]);
-
-                // Find the first request that successfully returned data
-                const validEstimate = estimates.find(e => e && e.prepareResponse);
-                if (!validEstimate) return;
-
-                const quote = validEstimate.prepareResponse?.paymentMethod?.inner?.feeQuote;
-
-                // Extract all three tiers from the single successful payload
-                setFeeEstimates({
-                    slow: Number(quote?.speedSlow?.l1BroadcastFeeSat || 0),
-                    normal: Number(quote?.speedMedium?.l1BroadcastFeeSat || 0),
-                    fast: Number(quote?.speedFast?.l1BroadcastFeeSat || 0)
-                });
-            } catch (error) {
-                console.error('Failed to fetch fee estimates:', error);
-            }
-        };
-
-        fetchFeeEstimates();
-    }, [activeWallet, isLightningInitialized]);
-
-    useEffect(() => {
-        if (reviewStatus === 'reviewed') {
-            setTimeout(() => {
-                if (scrollViewRef.current) {
-                    scrollViewRef.current.scrollToEnd({ animated: true });
-                }
-            }, 150);
-        }
-    }, [reviewStatus]);
-
-    const activeDestination = destMode === 'own' ? ownAddress : customAddress;
-
-    const resetReviewState = () => {
-        setTxMetrics(null);
-        setCalculationError(null);
-        setReviewStatus('idle');
-    };
-
-    const handleAmountChange = (val: string) => {
-        const numericStr = val.replace(/[^0-9]/g, '');
-        setAmountStr(numericStr);
-        resetReviewState();
-
-        setLocalValidationErr(null);
-    };
-
-    const handleReview = async () => {
-        Keyboard.dismiss();
-        if (!activeWallet || !activeDestination) return;
-        const amountSats = parseInt(amountStr, 10);
-
-        if (isNaN(amountSats) || amountSats <= 0 || localValidationErr) {
-            return;
-        }
-
-        if (!validateBitcoinAddress(activeDestination)) {
-            setCalculationError("Address is invalid");
-            return;
-        }
-
-        setReviewStatus('reviewing');
-        setCalculationError(null);
-
-        try {
-            const estimate = await prepareWithdrawToOnchain(activeDestination, amountSats, selectedFeeTier);
-
-            let totalFeeSats = Math.ceil((estimate.senderFeeMsat + estimate.recipientFeeMsat) / 1000);
-
-            if (totalFeeSats === 0 && estimate.prepareResponse) {
-                const pr = estimate.prepareResponse;
-                const pm = pr.paymentMethod?.inner || pr.paymentMethod;
-
-                let tierKey = 'speedMedium';
-                if (selectedFeeTier === 'fast') tierKey = 'speedFast';
-                if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
-
-                const possibleFees = [
-                    pm?.feeQuote?.[tierKey]?.totalFeeSat,
-                    pm?.feeQuote?.[tierKey]?.fee,
-                    pr.feeSats, pr.feesFeeSats, pr.fee, pr.fees,
-                    pm?.fee, pm?.totalFeeSat, pm?.fees, pm?.lightningFeeSats
-                ];
-
-                for (const fee of possibleFees) {
-                    if (fee !== undefined && fee !== null) {
-                        const parsedFee = Number(fee);
-                        if (parsedFee > 0) {
-                            totalFeeSats = parsedFee;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // The SDK quote validates spendability; the displayed balance may be stale.
-            setTxMetrics({ totalFeeSats, prepareResponse: estimate.prepareResponse });
-            setReviewStatus('reviewed');
-        } catch (err: any) {
-            let errorMsg = err.message || "Could not prepare the withdrawal transaction.";
-            if (errorMsg.toLowerCase().includes("invalidinput") || errorMsg.toLowerCase().includes("invalid input")) {
-                errorMsg = "Amount is too low";
-            }
-            setCalculationError(errorMsg);
-            setReviewStatus('idle');
-        }
-    };
-
-    const handleExecuteWithdrawal = async () => {
-        if (!txMetrics || !activeWallet || !activeDestination) return;
-
-        const authenticated = await authenticate_transaction_action('Authorize Lightning to On-Chain swap');
-        if (!authenticated) return;
-
-        setExecuting(true);
-        try {
-            await withdrawToOnchain(txMetrics.prepareResponse, selectedFeeTier);
-            triggerRefresh();
-            Alert.alert(
-                "Withdrawal initiated",
-                "Your swap is in progress. Funds will appear in the on-chain balance shortly.",
-                [{ text: "OK", onPress: () => navigation.goBack() }]
-            );
-        } catch (err: any) {
-            Alert.alert("Withdrawal failed", err.message || "Failed to execute swap.");
-        } finally {
-            setExecuting(false);
-        }
-    };
-
-    const renderAddressChunks = (address: string) => {
-        if (!address) return null;
-        const chunks = address.match(/.{1,6}/g) || [address];
-        return (
-            <Text style={styles.addressPreview} selectable>
-                {chunks.map((chunk, index) => {
-                    const isEdge = index === 0 || index === chunks.length - 1;
-                    return (
-                        <Text key={index} style={isEdge ? styles.orangeSymbol : undefined}>
-                            {chunk}{index < chunks.length - 1 ? ' ' : ''}
-                        </Text>
-                    );
-                })}
-            </Text>
-        );
-    };
-
-    const getMinerFee = () => {
-        if (!txMetrics) return 0;
-        const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
-        let tierKey = 'speedMedium';
-        if (selectedFeeTier === 'fast') tierKey = 'speedFast';
-        if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
-        return Number(quote?.[tierKey]?.l1BroadcastFeeSat || 0);
-    };
-
-    const getLspFee = () => {
-        if (!txMetrics) return 0;
-        const quote = txMetrics.prepareResponse?.paymentMethod?.inner?.feeQuote;
-        let tierKey = 'speedMedium';
-        if (selectedFeeTier === 'fast') tierKey = 'speedFast';
-        if (selectedFeeTier === 'slow') tierKey = 'speedSlow';
-        return Number(quote?.[tierKey]?.userFeeSat || 0);
-    };
-
-    const displayError = localValidationErr || calculationError;
-    const canReview = amountStr.length > 0 && !localValidationErr && activeDestination && parseInt(amountStr, 10) >= MIN_WITHDRAW_SATS;
-
-    return (
-        <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <View style={{ flex: 1 }}>
-                <ScrollView
-                    ref={scrollViewRef}
-                    contentContainerStyle={[styles.scrollContent]}
-                    keyboardShouldPersistTaps="handled"
-                    showsVerticalScrollIndicator={true}
-                    bounces={false}
-                >
-
-                    <View style={styles.balanceContainer}>
-                        <Text style={styles.balanceLabel}>Available to withdraw</Text>
-                        <Text style={styles.balanceText}>
-                            {new Intl.NumberFormat('en-US').format(lightningBalance)} sats
-                        </Text>
-                    </View>
-
-                    <View style={styles.section}>
-                        <Text style={styles.label}>Withdraw to</Text>
-                        <View style={styles.toggleContainer}>
-                            <TouchableOpacity
-                                style={[styles.toggleButton, destMode === 'own' && styles.toggleButtonActive]}
-                                onPress={() => { setDestMode('own'); resetReviewState(); }}
-                            >
-                                <Text style={[styles.toggleText, destMode === 'own' && styles.toggleTextActive]}>My wallet</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.toggleButton, destMode === 'custom' && styles.toggleButtonActive]}
-                                onPress={() => { setDestMode('custom'); resetReviewState(); }}
-                            >
-                                <Text style={[styles.toggleText, destMode === 'custom' && styles.toggleTextActive]}>External</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        {destMode === 'own' ? (
-                            <View style={styles.ownAddressContainer}>
-                                <Text style={styles.label}>Address</Text>
-                                <View style={styles.addressWrapper}>
-                                    {renderAddressChunks(ownAddress)}
-                                </View>
-                                <Text style={styles.derivationPathText}>
-                                    Derivation path: {activeWallet?.derivation_path || "m/84'/0'/0'"}/0/{activeWallet?.receiveAddressIndex}
-                                </Text>
-                            </View>
-                        ) : (
-                            <View style={styles.customAddressWrapper}>
-                                <Text style={styles.label}>Address</Text>
-                                <StyledInput
-                                    value={customAddress}
-                                    onChangeText={(t) => { setCustomAddress(t); resetReviewState(); }}
-                                    placeholder="bc1q..."
-                                    autoCapitalize="none"
-                                    autoCorrect={false}
-                                    spellCheck={false}
-                                    rightElement={
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <TouchableOpacity
-                                                onPress={async () => {
-                                                    const text = await Clipboard.getStringAsync();
-                                                    if (text) {
-                                                        setCustomAddress(text);
-                                                        resetReviewState();
-                                                    }
-                                                }}
-                                                style={styles.iconButton}
-                                            >
-                                                <Feather name="clipboard" size={20} color={theme.colors.primary} />
-                                            </TouchableOpacity>
-
-                                            <TouchableOpacity onPress={() => {
-                                                const params = {
-                                                    onScanSuccess: (data: string) => {
-                                                        setCustomAddress(data);
-                                                        resetReviewState();
-                                                    }
-                                                };
-                                                navigation.navigate('QRScanner', params);
-                                            }} style={styles.iconButton}>
-                                                <Feather name="camera" size={20} color={theme.colors.primary} />
-                                            </TouchableOpacity>
-                                        </View>
-                                    }
-                                />
-                                {customAddress.length > 0 && (
-                                    <View style={{ marginTop: 8 }}>
-                                        {renderAddressChunks(customAddress)}
-                                    </View>
-                                )}
-                            </View>
-                        )}
-                    </View>
-
-                    <View style={styles.feeSelectorContainer}>
-                        <Text style={styles.label}>On-chain settlement priority</Text>
-                        <View style={styles.feeOptionsContainer}>
-                            <View style={styles.feeOptionsRow}>
-                                {(['slow', 'normal', 'fast'] as const).map((key) => (
-                                    <TouchableOpacity
-                                        key={key}
-                                        onPress={() => { setSelectedFeeTier(key); resetReviewState(); }}
-                                        style={[styles.feeOption, selectedFeeTier === key && styles.feeOptionActive]}
-                                        disabled={executing || reviewStatus === 'reviewing'}
-                                    >
-                                        <Text style={[styles.feeOptionText, selectedFeeTier === key ? styles.feeOptionTextActive : {}]}>
-                                            {key.charAt(0).toUpperCase() + key.slice(1)}
-                                        </Text>
-                                        <Text style={[styles.feeOptionRate, selectedFeeTier === key ? styles.feeOptionRateActive : {}]}>
-                                            {feeEstimates ? `${feeEstimates[key].toLocaleString()} sats` : '~ sats'}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
-                    </View>
-
-                    <View style={[styles.section, styles.amountSection]}>
-                        <Text style={styles.label}>Amount</Text>
-                        <StyledInput
-                            keyboardType="numeric"
-                            value={amountStr}
-                            onChangeText={handleAmountChange}
-                            onFocus={handleInputFocus}
-                            placeholder="0.00"
-                            editable={!executing && reviewStatus !== 'reviewing'}
-                            rightElement={<Text style={styles.currencyLabel}>sats</Text>}
-                            blurOnSubmit={false}
-                        />
-
-                        <View style={styles.staticErrorContainer}>
-                            {!displayError && (!amountStr || parseInt(amountStr, 10) < MIN_WITHDRAW_SATS) && reviewStatus !== 'reviewed' && (
-                                <>
-                                    <Feather name="info" size={14} color={theme.colors.muted} />
-                                    <Text style={styles.statusText}> Minimum {MIN_WITHDRAW_SATS} sats</Text>
-                                </>
-                            )}
-                            {displayError && (
-                                <>
-                                    <Feather name="alert-circle" size={14} color={theme.colors.muted} />
-                                    <Text style={styles.statusText}> {displayError}</Text>
-                                </>
-                            )}
-                        </View>
-                    </View>
-
-                    <View style={styles.summaryBoxWithBorder}>
-                        <View style={styles.expandedSummary}>
-                            <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>Amount</Text>
-                                <View style={styles.valueContainer}>
-                                    <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
-                                        {reviewStatus === 'reviewed' && txMetrics ? amountStr : '--'} sats
-                                    </Text>
-                                </View>
-                            </View>
-                            <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>Miner fee</Text>
-                                <View style={styles.valueContainer}>
-                                    <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
-                                        {reviewStatus === 'reviewed' && txMetrics ? getMinerFee().toLocaleString() : '--'} sats
-                                    </Text>
-                                </View>
-                            </View>
-                            <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>LSP fee</Text>
-                                <View style={styles.valueContainer}>
-                                    <Text style={[styles.value, reviewStatus !== 'reviewed' && styles.valueMuted]}>
-                                        {reviewStatus === 'reviewed' && txMetrics ? getLspFee().toLocaleString() : '--'} sats
-                                    </Text>
-                                </View>
-                            </View>
-                            <View style={styles.detailRow}>
-                                <Text style={styles.totalLabel}>Total</Text>
-                                <Text style={[styles.totalValue, reviewStatus !== 'reviewed' && styles.valueMuted]}>
-                                    {reviewStatus === 'reviewed' && txMetrics && amountStr
-                                        ? (parseInt(amountStr, 10) + txMetrics.totalFeeSats).toLocaleString()
-                                        : '--'} sats
-                                </Text>
-                            </View>
-                        </View>
-
-                        {reviewStatus === 'idle' && (
-                            <TouchableOpacity
-                                style={[styles.confirmButton, (!canReview || !isLightningInitialized) && styles.buttonDisabled]}
-                                onPress={handleReview}
-                                disabled={!canReview || !isLightningInitialized}
-                            >
-                                <View style={styles.buttonContentRowCentered}>
-                                    <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
-                                    <Text style={styles.buttonText}>Review withdrawal</Text>
-                                </View>
-                            </TouchableOpacity>
-                        )}
-
-                        {reviewStatus === 'reviewing' && (
-                            <View style={styles.confirmButton}>
-                                <ActivityIndicator color={theme.colors.bitcoin} />
-                            </View>
-                        )}
-
-                        {reviewStatus === 'reviewed' && txMetrics && (
-                            <TouchableOpacity
-                                style={styles.confirmButton}
-                                onPress={handleExecuteWithdrawal}
-                                disabled={executing}
-                            >
-                                {executing ? (
-                                    <ActivityIndicator color={theme.colors.bitcoin} />
-                                ) : (
-                                    <View style={styles.buttonContentRowCentered}>
-                                        <Feather name="arrow-down-circle" size={18} color={theme.colors.inversePrimary} />
-                                        <Text style={styles.buttonText}>Confirm withdrawal</Text>
-                                    </View>
-                                )}
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                </ScrollView>
-            </View>
-        </SafeAreaView>
-    );
+const MIN_WITHDRAW_SATS = 1000;
+const quoteKeys = { fast: 'speedFast', normal: 'speedMedium', slow: 'speedSlow' } as const;
+type Destination = 'own' | 'external';
+type Prepared = {
+    scope: string;
+    amount: number;
+    minerFee: number;
+    providerFee: number;
+    response: Awaited<ReturnType<ReturnType<typeof useWallet>['prepareWithdrawToOnchain']>>['prepareResponse'];
+    tier: FeeTier;
+    expiresAt: number;
 };
 
-const getStyles = (theme: Theme) => StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: theme.colors.background,
-    },
-    scrollContent: {
-        padding: 24,
-        paddingBottom: 400,
-        flexGrow: 1,
-    },
-    balanceContainer: {
-        alignItems: 'center',
-        paddingTop: 16,
-        paddingBottom: 32,
-    },
-    balanceLabel: {
-        fontSize: 16,
-        color: theme.colors.muted,
-    },
-    balanceText: {
-        fontSize: 36,
-        fontFamily: 'SpaceMono-Bold',
-        fontWeight: 'bold',
-        color: theme.colors.primary,
-        includeFontPadding: false,
-        textAlignVertical: 'center'
-    },
-    section: {
-        marginBottom: 24,
-    },
-    amountSection: {
-        marginBottom: 0,
-    },
-    label: {
-        fontSize: 16,
-        fontWeight: '500',
-        color: theme.colors.primary,
-        marginBottom: 8,
-    },
-    currencyLabel: {
-        fontSize: 16,
-        color: theme.colors.primary,
-        fontFamily: 'SpaceMono-Bold',
-        marginRight: 16,
-    },
-    toggleContainer: {
-        flexDirection: 'row',
-        backgroundColor: theme.colors.surface,
-        borderRadius: 8,
-        padding: 4,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    toggleButton: {
-        flex: 1,
-        paddingVertical: 12,
-        alignItems: 'center',
-        borderRadius: 6,
-    },
-    toggleButtonActive: {
-        backgroundColor: theme.colors.primary,
-    },
-    toggleText: {
-        color: theme.colors.muted,
-        fontWeight: '600',
-        fontSize: 14,
-    },
-    toggleTextActive: {
-        color: theme.colors.inversePrimary,
-    },
-    ownAddressContainer: {
-        marginTop: 4,
-    },
-    addressWrapper: {
-        backgroundColor: theme.colors.surface,
-        padding: 16,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        marginBottom: 10,
-    },
-    customAddressWrapper: {
-        marginTop: 4,
-    },
-    iconButton: {
-        padding: 8,
-    },
-    addressPreview: {
-        fontSize: 14,
-        fontFamily: 'monospace',
-        color: theme.colors.primary,
-        lineHeight: 22,
-    },
-    derivationPathText: {
-        fontSize: 12,
-        color: theme.colors.muted,
-        fontFamily: 'monospace',
-    },
-    feeSelectorContainer: {
-        marginBottom: 24,
-    },
-    feeOptionsContainer: {
-        backgroundColor: theme.colors.surface,
-        borderRadius: 8,
-        padding: 4,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    feeOptionsRow: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    feeOption: {
-        flex: 1,
-        paddingVertical: 8,
-        paddingHorizontal: 2,
-        borderRadius: 8,
-        backgroundColor: theme.colors.surface,
-        alignItems: 'center',
-    },
-    feeOptionActive: {
-        backgroundColor: theme.colors.primary,
-    },
-    feeOptionText: {
-        color: theme.colors.primary,
-        fontWeight: '600',
-        fontSize: 12,
-    },
-    feeOptionTextActive: {
-        color: theme.colors.inversePrimary,
-    },
-    feeOptionRate: {
-        color: theme.colors.muted,
-        fontSize: 11,
-        marginTop: 2,
-    },
-    feeOptionRateActive: {
-        color: theme.colors.inversePrimary,
-    },
-    confirmButton: {
-        backgroundColor: theme.colors.primary,
-        paddingVertical: 16,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 56,
-    },
-    staticErrorContainer: {
-        minHeight: 24,
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 6,
-    },
-    statusText: {
-        fontSize: 14,
-        color: theme.colors.muted,
-    },
-    summaryBoxWithBorder: {
-        marginTop: 6,
-        paddingTop: 24,
-        borderTopWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    expandedSummary: {
-        marginBottom: 4,
-    },
-    detailRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    value: {
-        fontSize: 16,
-        color: theme.colors.primary,
-        fontFamily: 'monospace',
-    },
-    valueMuted: {
-        color: theme.colors.muted,
-    },
-    valueContainer: {
-        alignItems: 'flex-end',
-    },
-    totalLabel: {
-        fontSize: 16,
-        color: theme.colors.primary,
-    },
-    totalValue: {
-        fontSize: 16,
-        color: theme.colors.primary,
-        fontFamily: 'monospace',
-    },
-    orangeSymbol: {
-        color: theme.colors.bitcoin,
-        fontWeight: 'bold',
-    },
-    buttonDisabled: {
-        opacity: 0.5,
-    },
-    buttonText: {
-        color: theme.colors.inversePrimary,
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    buttonContentRowCentered: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-    }
+export const WithdrawToOnchainScreen = () => {
+    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    const { theme } = useTheme();
+    const { activeWallet, isLightningInitialized, lightningBalance, prepareWithdrawToOnchain, withdrawToOnchain, triggerRefresh } = useWallet();
+    const [amount, setAmount] = useState('');
+    const [destination, setDestination] = useState<Destination>('own');
+    const [customAddress, setCustomAddress] = useState('');
+    const [tier, setTier] = useState<FeeTier>('normal');
+    const [destinationOpen, setDestinationOpen] = useState(false);
+    const [priorityOpen, setPriorityOpen] = useState(false);
+    const [working, setWorking] = useState(false);
+    const [completed, setCompleted] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [prepared, setPrepared] = useState<Prepared | null>(null);
+    const locked = useRef(false);
+    const addressRevision = useRef(0);
+    const address = destination === 'own' ? activeWallet?.address ?? '' : customAddress.trim();
+    const network = NETWORK_NAME;
+    const scope = `${network}:${activeWallet?.id ?? ''}:${isLightningInitialized}:${address}:${amount}:${tier}`;
+    const currentScope = useRef(scope);
+    currentScope.current = scope;
+    const quote = prepared?.scope === scope ? prepared : null;
+
+    const amountSats = Number(amount);
+    const amountError = amount && (!/^\d+$/u.test(amount) || !Number.isSafeInteger(amountSats))
+        ? 'Enter a whole amount in sats.' : null;
+    const canReview = !!activeWallet && isLightningInitialized && !!address && !amountError && amountSats >= MIN_WITHDRAW_SATS;
+    const invalidate = () => { setPrepared(null); setError(null); };
+    const isCurrent = () => scope === currentScope.current && network === NETWORK_NAME && navigation.isFocused();
+
+    const changeAddress = (value: string) => {
+        if (locked.current) return;
+        addressRevision.current++;
+        setCustomAddress(value);
+        invalidate();
+    };
+
+    const paste = async () => {
+        const revision = ++addressRevision.current;
+        try {
+            const text = await Clipboard.getStringAsync();
+            if (revision === addressRevision.current && isCurrent() && text.trim()) changeAddress(text);
+        } catch {
+            if (revision === addressRevision.current && isCurrent() && !locked.current) setError('Could not paste the address.');
+        }
+    };
+
+    const scan = () => {
+        const revision = ++addressRevision.current;
+        Keyboard.dismiss();
+        navigation.navigate('QRScanner', { onScanSuccess: text => {
+            if (addressRevision.current === revision && scope === currentScope.current) changeAddress(text);
+        } });
+    };
+
+    const review = async () => {
+        if (!canReview || locked.current) return;
+        if (!validateBitcoinAddress(address)) {
+            setError('Enter a valid Bitcoin address for this network.');
+            return;
+        }
+
+        locked.current = true;
+        addressRevision.current++;
+        setWorking(true);
+        Keyboard.dismiss();
+        invalidate();
+        try {
+            const { prepareResponse } = await prepareWithdrawToOnchain(address, amountSats, tier);
+            const payment = prepareResponse?.paymentMethod;
+            const feeQuote = payment?.tag === 'BitcoinAddress' ? payment.inner?.feeQuote : undefined;
+            const fees = feeQuote?.[quoteKeys[tier]];
+            const minerFee = Number(fees?.l1BroadcastFeeSat ?? NaN);
+            const providerFee = Number(fees?.userFeeSat ?? NaN);
+            if (!Number.isSafeInteger(minerFee) || !Number.isSafeInteger(providerFee) || minerFee < 0 || providerFee < 0
+                || !Number.isSafeInteger(amountSats + minerFee + providerFee)) {
+                throw new Error('The fee quote is unavailable. Review the withdrawal again.');
+            }
+            if (isCurrent()) setPrepared({ scope, amount: amountSats, minerFee, providerFee, response: prepareResponse, tier, expiresAt: Number(feeQuote?.expiresAt ?? 0) });
+        } catch (cause) {
+            if (isCurrent()) setError(cause instanceof Error ? cause.message : 'Could not prepare the withdrawal.');
+        } finally {
+            locked.current = false;
+            setWorking(false);
+        }
+    };
+
+    const confirm = async () => {
+        if (!quote || completed || locked.current || !isCurrent()) return;
+        locked.current = true;
+        setWorking(true);
+        Keyboard.dismiss();
+        try {
+            if (!await authenticate_transaction_action('Authorize Lightning to On-Chain swap') || !isCurrent()) return;
+            if (quote.expiresAt > 0 && Date.now() >= quote.expiresAt * 1000) {
+                setPrepared(null);
+                setError('The fee quote expired. Review the withdrawal again.');
+                return;
+            }
+            await withdrawToOnchain(quote.response, quote.tier);
+            setCompleted(true);
+            triggerRefresh();
+            Alert.alert('Withdrawal initiated', 'Your withdrawal is in progress.',
+                [{ text: 'OK', onPress: () => { if (navigation.isFocused()) navigation.goBack(); } }]);
+        } catch (cause) {
+            if (isCurrent()) {
+                setPrepared(null);
+                setError(cause instanceof Error ? cause.message : 'Could not complete the withdrawal.');
+            }
+        } finally {
+            locked.current = false;
+            setWorking(false);
+        }
+    };
+
+    const busy = working || completed;
+    return <LightningTransferForm from="Lightning wallet" to={destination === 'own' ? 'On-chain wallet' : 'External Bitcoin address'}
+        balance={lightningBalance} amount={amount} onAmountChange={text => { setAmount(cleanSats(text)); invalidate(); }}
+        amountHint={`Minimum ${formatSats(MIN_WITHDRAW_SATS)}`}
+        error={amountError || error || (!isLightningInitialized ? 'Lightning is unavailable.' : null)}
+        busy={busy} disabled={!canReview} action={quote ? 'Confirm withdrawal' : 'Review withdrawal'}
+        onAction={quote ? confirm : review}
+        onEdit={invalidate} quote={quote ? {
+            amount: quote.amount,
+            address: destination === 'external' ? address : undefined,
+            fees: [{ label: 'Miner fee', amount: quote.minerFee }, { label: 'Provider fee', amount: quote.providerFee }],
+        } : null}>
+        <TransferDisclosure label="Destination" detail={destination === 'own' ? 'My wallet' : 'External address'}
+            open={destinationOpen} onPress={() => setDestinationOpen(!destinationOpen)} disabled={busy} />
+        {destinationOpen && (
+            <TransferChoices<Destination> options={[{ key: 'own', label: 'My wallet' }, { key: 'external', label: 'External address' }]}
+                selected={destination} disabled={busy} onSelect={key => {
+                    addressRevision.current++;
+                    setDestination(key);
+                    invalidate();
+                }} />
+        )}
+        {destination === 'own' && destinationOpen && address ? (
+            <AddressText selectable address={address} style={{ color: theme.colors.primary, marginBottom: 8 }} />
+        ) : null}
+        {destination === 'external' && (
+            <StyledInput accessibilityLabel="Bitcoin address" value={customAddress} onChangeText={changeAddress}
+                placeholder="Bitcoin address" multiline containerStyle={styles.addressInput}
+                autoCapitalize="none" autoCorrect={false} spellCheck={false} editable={!busy}
+                rightElement={<View style={styles.actions}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Paste address" disabled={busy} style={styles.icon} onPress={paste}>
+                        <Feather name="clipboard" size={19} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Scan address" disabled={busy} style={styles.icon} onPress={scan}>
+                        <Feather name="camera" size={19} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                </View>} />
+        )}
+        <TransferDisclosure label="Settlement speed" detail={feeLabels[tier]} open={priorityOpen}
+            onPress={() => setPriorityOpen(!priorityOpen)} disabled={busy} />
+        {priorityOpen && <TransferChoices options={feeTiers.map(key => ({ key, label: feeLabels[key] }))}
+            selected={tier} onSelect={key => { setTier(key); invalidate(); }} disabled={busy} />}
+    </LightningTransferForm>;
+};
+
+const styles = StyleSheet.create({
+    addressInput: { height: 72, marginVertical: 8 },
+    actions: { flexDirection: 'row' },
+    icon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 });
