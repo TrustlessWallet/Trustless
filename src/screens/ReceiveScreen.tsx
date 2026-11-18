@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Pressable, Modal, ScrollView, TextInput, Keyboard, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Pressable, Modal, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
-import SheetHeader from '../components/SheetHeader';
 import { StyledInput } from '../components/StyledInput';
 import QRCode from 'react-native-qrcode-svg';
 import { useWallet } from '../contexts/WalletContext';
@@ -11,7 +10,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme';
-import { EXPLORER_UI_URL, IS_TESTNET, NETWORK_NAME } from '../constants/network';
+import { EXPLORER_UI_URL, COIN_TYPE, IS_TESTNET } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -20,14 +19,11 @@ import { GlassView } from '../components/GlassView';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 type ReceiveScreenRouteProp = RouteProp<RootStackParamList, 'Receive'>;
 
-const MAX_QR_SIZE = 256;
-const SATS_PER_BTC = 100_000_000;
-const MAX_REQUEST_SATS = 21_000_000 * SATS_PER_BTC;
-const satsFormatter = new Intl.NumberFormat('en-US');
+const QR_SIZE = 240;
 const UNUSED_BUFFER_SIZE = 20;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
-const format_btc = (sats: number) => (sats / SATS_PER_BTC).toFixed(8);
+const format_btc = (sats: number) => (sats / 100000000).toFixed(8);
 
 const ReceiveScreen = () => {
   const route = useRoute<ReceiveScreenRouteProp>();
@@ -48,31 +44,27 @@ const ReceiveScreen = () => {
   } = useWallet();
 
   const { theme, isDark } = useTheme();
-  const styles = useMemo(() => getStyles(theme), [theme]);
-  const { width } = useWindowDimensions();
-  const qrSize = Math.min(MAX_QR_SIZE, Math.max(120, width - 80));
+  const styles = useMemo(() => getStyles(theme, isDark), [theme, isDark]);
 
   const mode = route.params?.mode || 'onchain';
 
-  const [copiedRequest, setCopiedRequest] = useState('');
+  const [copied, set_copied] = useState(false);
   const [address_offset, set_address_offset] = useState(0);
   const [hideBalance, setHideBalance] = useState(false);
+  const scroll_ref = useRef<ScrollView>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [invoiceResult, setInvoiceResult] = useState<{ key: string; value?: string; error?: string } | null>(null);
+  const [lightningInvoice, setLightningInvoice] = useState<string>('');
+  const [isGeneratingLightning, setIsGeneratingLightning] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [invoiceRetry, setInvoiceRetry] = useState(0);
   const invoiceRequestRef = useRef(0);
   const [isAmountModalVisible, setIsAmountModalVisible] = useState(false);
   const [modalAmountStr, setModalAmountStr] = useState('');
-  const scope = `${NETWORK_NAME}:${activeWallet?.id ?? ''}:${mode}`;
-  const [requestAmount, setRequestAmount] = useState({ scope, sats: 0 });
-  const appliedAmountSats = requestAmount.scope === scope ? requestAmount.sats : 0;
-  const invoiceKey = `${scope}:${appliedAmountSats}:${invoiceRetry}`;
-  const useLightningAddress = appliedAmountSats === 0 && !!lightningAddress;
+  const [appliedAmountSats, setAppliedAmountSats] = useState<number>(0);
 
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [labelInput, setLabelInput] = useState('');
-  const labelTarget = useRef<{ address: string; scope: string; defaultName: string } | null>(null);
 
   const [isAddressModalVisible, setIsAddressModalVisible] = useState(false);
   const [addressUsername, setAddressUsername] = useState('');
@@ -81,7 +73,7 @@ const ReceiveScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable accessibilityRole="button" accessibilityLabel="Close receive" hitSlop={8} onPress={() => navigation.goBack()}>
+        <Pressable onPress={() => navigation.goBack()}>
           <GlassView
             width={32}
             height={32}
@@ -117,34 +109,46 @@ const ReceiveScreen = () => {
   }, [isFocused]);
 
   useEffect(() => {
-    setIsAmountModalVisible(false);
-    setIsAddressModalVisible(false);
+    setAppliedAmountSats(0);
     setModalAmountStr('');
-    setRequestAmount({ scope, sats: 0 });
-    setInvoiceResult(null);
-    setIsEditingLabel(false);
-    labelTarget.current = null;
-  }, [scope]);
+    setLightningInvoice('');
+    setInvoiceError(null);
+    ++invoiceRequestRef.current;
+  }, [mode, activeWallet?.id]);
 
-  const cachedInvoice = appliedAmountSats === 0 ? defaultLightningInvoice : '';
   useEffect(() => {
     const request = ++invoiceRequestRef.current;
-    if (mode !== 'lightning' || !isLightningInitialized || useLightningAddress || cachedInvoice) {
-      setInvoiceResult(null);
+    let cancelled = false;
+    setInvoiceError(null);
+    setLightningInvoice('');
+    if (mode !== 'lightning' || !isLightningInitialized) {
+      setIsGeneratingLightning(false);
       return;
     }
-    let cancelled = false;
-
-    getLightningInvoice(appliedAmountSats).then(value => {
-      if (!value) throw new Error('Unable to create invoice.');
-      if (!cancelled && request === invoiceRequestRef.current) setInvoiceResult({ key: invoiceKey, value });
+    if (appliedAmountSats === 0 && defaultLightningInvoice) {
+      setLightningInvoice(defaultLightningInvoice);
+      setIsGeneratingLightning(false);
+      return;
+    }
+    setIsGeneratingLightning(true);
+    getLightningInvoice(appliedAmountSats).then(invoice => {
+      if (!cancelled && request === invoiceRequestRef.current) setLightningInvoice(invoice);
     }).catch(error => {
-      if (!cancelled && request === invoiceRequestRef.current) {
-        setInvoiceResult({ key: invoiceKey, error: error instanceof Error ? error.message : 'Unable to create invoice.' });
-      }
+      if (!cancelled && request === invoiceRequestRef.current) setInvoiceError(error.message || 'Unable to create invoice.');
+    }).finally(() => {
+      if (!cancelled && request === invoiceRequestRef.current) setIsGeneratingLightning(false);
     });
     return () => { cancelled = true; };
-  }, [mode, isLightningInitialized, useLightningAddress, cachedInvoice, getLightningInvoice, appliedAmountSats, invoiceKey]);
+  }, [mode, activeWallet?.id, isLightningInitialized, getLightningInvoice, appliedAmountSats,
+    appliedAmountSats === 0 ? defaultLightningInvoice : '', invoiceRetry]);
+
+  const path_prefix = useMemo(() => {
+    if (activeWallet?.derivation_path) return activeWallet.derivation_path.replace(/h/g, "'");
+    if (activeWallet?.scriptType === 'p2sh-p2wpkh') {
+      return `m/49'/${COIN_TYPE}/0'`;
+    }
+    return `m/84'/${COIN_TYPE}/0'`;
+  }, [activeWallet?.derivation_path, activeWallet?.scriptType]);
 
   const all_unused_addresses = useMemo(() => {
     if (!activeWallet) return [];
@@ -158,7 +162,7 @@ const ReceiveScreen = () => {
   }, [activeWallet]);
 
   useEffect(() => {
-    if (mode !== 'onchain' || wallet_loading || !activeWallet) return;
+    if (wallet_loading || !activeWallet) return;
     if (all_unused_addresses.length < UNUSED_BUFFER_SIZE) {
       const last_derived = activeWallet.derivedReceiveAddresses[activeWallet.derivedReceiveAddresses.length - 1];
       if (last_derived) {
@@ -166,7 +170,7 @@ const ReceiveScreen = () => {
           .catch(err => console.error("Failed to generate buffer address:", err));
       }
     }
-  }, [mode, all_unused_addresses.length, activeWallet, wallet_loading, getOrCreateNextUnusedReceiveAddress]);
+  }, [all_unused_addresses.length, activeWallet, wallet_loading, getOrCreateNextUnusedReceiveAddress]);
 
   const displayable_addresses = useMemo(() => {
     return all_unused_addresses.slice(0, UNUSED_BUFFER_SIZE);
@@ -177,6 +181,7 @@ const ReceiveScreen = () => {
       return {
         address: activeWallet?.address || '',
         index: activeWallet?.receiveAddressIndex || 0,
+        path: `${path_prefix}/0/${activeWallet?.receiveAddressIndex || 0}`,
         label: undefined
       };
     }
@@ -184,16 +189,17 @@ const ReceiveScreen = () => {
     return {
       address: item.address,
       index: item.index,
+      path: `${path_prefix}/0/${item.index}`,
       label: item.label
     };
-  }, [activeWallet, displayable_addresses, address_offset]);
+  }, [activeWallet, displayable_addresses, address_offset, path_prefix]);
 
   const copy_to_clipboard = (text: string) => {
     if (text) {
       Clipboard.setString(text);
-      setCopiedRequest(text);
+      set_copied(true);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setCopiedRequest(''), 1500);
+      timeoutRef.current = setTimeout(() => set_copied(false), 1500);
     }
   };
 
@@ -202,7 +208,7 @@ const ReceiveScreen = () => {
       try {
         await Share.share({ message: text });
       } catch (error) {
-        Alert.alert("Error", "Could not share the payment request.");
+        Alert.alert("Error", "Could not share the address.");
       }
     }
   };
@@ -212,21 +218,32 @@ const ReceiveScreen = () => {
     setIsAmountModalVisible(true);
   };
 
-  const amountDraft = modalAmountStr.trim();
-  const draftSats = Number(amountDraft);
-  const isAmountValid = (!amountDraft || /^\d+$/u.test(amountDraft))
-    && Number.isSafeInteger(draftSats) && draftSats <= MAX_REQUEST_SATS;
-
-  const closeAmountModal = () => {
-    Keyboard.dismiss();
+  const handleSaveAmount = async () => {
+    const cleanAmount = modalAmountStr.replace(',', '.');
+    const amountNum = parseFloat(cleanAmount);
+    if (!modalAmountStr || isNaN(amountNum) || amountNum <= 0) {
+      setAppliedAmountSats(0);
+      setIsAmountModalVisible(false);
+      if (mode === 'lightning' && isLightningInitialized) {
+        setLightningInvoice(defaultLightningInvoice);
+        setIsGeneratingLightning(false);
+      }
+      return;
+    }
+    const sats = parseInt(cleanAmount, 10);
+    setAppliedAmountSats(sats);
     setIsAmountModalVisible(false);
+
+    // The guarded effect generates the invoice for the selected amount.
   };
 
-  const handleSaveAmount = () => {
-    if (!isAmountValid) return;
-    if (draftSats !== appliedAmountSats) setInvoiceResult(null);
-    setRequestAmount({ scope, sats: draftSats });
-    closeAmountModal();
+  const handleDiscardAmount = () => {
+    setAppliedAmountSats(0);
+    setModalAmountStr('');
+    if (mode === 'lightning' && isLightningInitialized) {
+      setLightningInvoice(defaultLightningInvoice);
+      setIsGeneratingLightning(false);
+    }
   };
 
   const handleRegisterAddress = async () => {
@@ -270,23 +287,17 @@ const ReceiveScreen = () => {
   }, [current_display_data.index]);
 
   const startEditingLabel = () => {
-    labelTarget.current = { address: current_display_data.address, scope, defaultName: defaultAddressName };
     setLabelInput(current_display_data.label || defaultAddressName);
     setIsEditingLabel(true);
   };
 
   const saveLabel = async () => {
-    const target = labelTarget.current;
-    labelTarget.current = null;
-    setIsEditingLabel(false);
-    if (!target || target.scope !== scope || !target.address || !updateAddressLabel) return;
-
-    const cleanLabel = labelInput.trim();
-    try {
-      await updateAddressLabel(target.address, cleanLabel === target.defaultName ? '' : cleanLabel);
-    } catch {
-      Alert.alert('Address label', 'Could not save the label. Please try again.');
+    if (updateAddressLabel && current_display_data.address) {
+      const cleanLabel = labelInput.trim();
+      const finalLabel = cleanLabel === defaultAddressName || cleanLabel === '' ? '' : cleanLabel;
+      await updateAddressLabel(current_display_data.address, finalLabel);
     }
+    setIsEditingLabel(false);
   };
 
   const used_addresses = useMemo(() => {
@@ -311,28 +322,42 @@ const ReceiveScreen = () => {
       .sort((a, b) => a.index - b.index);
   }, [activeWallet]);
 
-  const isOnchain = mode === 'onchain';
-  const onchainAddress = current_display_data.address;
-  const onchainRequest = appliedAmountSats && onchainAddress
-    ? `bitcoin:${onchainAddress}?amount=${format_btc(appliedAmountSats)}` : onchainAddress;
-  const resolvedInvoice = invoiceResult?.key === invoiceKey ? invoiceResult : null;
-  const lightningRequest = isLightningInitialized
-    ? useLightningAddress ? lightningAddress : cachedInvoice || resolvedInvoice?.value || ''
-    : '';
-  const payload = isOnchain ? onchainRequest : lightningRequest;
-  const qrPayload = !isOnchain && useLightningAddress && payload ? `lightning:${payload}` : payload;
-  const invoiceError = !isOnchain && !useLightningAddress && !cachedInvoice ? resolvedInvoice?.error : undefined;
+  const loading_info = wallet_loading || !activeWallet;
+  const currentLnString = (appliedAmountSats === 0 && lightningAddress) ? lightningAddress : lightningInvoice;
+  const qrEncodeString = (appliedAmountSats === 0 && lightningAddress) ? `lightning:${lightningAddress}` : lightningInvoice;
+
+  const rawAmountNum = parseFloat(modalAmountStr.replace(',', '.'));
+  const isAmountValid = !isNaN(rawAmountNum) && rawAmountNum >= 0;
   const isAddressValid = addressUsername.trim().length > 0 && (!lightningAddress || addressUsername.trim().toLowerCase() !== lightningAddress.split('@')[0]);
-  const canSetAmount = isOnchain ? !!onchainAddress : isLightningInitialized;
 
-  const qr = useMemo(() => qrPayload ? (
-    <QRCode value={qrPayload} size={qrSize} backgroundColor="#FFFFFF" color="#000000" />
-  ) : null, [qrPayload, qrSize]);
+  const memoizedOnchainQR = useMemo(() => {
+    if (!current_display_data?.address) return null;
+    return (
+      <QRCode
+        value={current_display_data.address}
+        size={QR_SIZE}
+        backgroundColor={theme.colors.background}
+        color={theme.colors.primary}
+      />
+    );
+  }, [current_display_data?.address, theme.colors.background, theme.colors.primary]);
 
-  if (!activeWallet) {
+  const memoizedLightningQR = useMemo(() => {
+    if (!qrEncodeString) return null;
+    return (
+      <QRCode
+        value={qrEncodeString}
+        size={QR_SIZE}
+        backgroundColor={theme.colors.background}
+        color={theme.colors.primary}
+      />
+    );
+  }, [qrEncodeString, theme.colors.background, theme.colors.primary]);
+
+  if (loading_info) {
     return (
       <View style={styles.centeredContainer}>
-        <ActivityIndicator color={theme.colors.bitcoin} />
+        <ActivityIndicator size="large" color={theme.colors.bitcoin} />
       </View>
     );
   }
@@ -342,41 +367,52 @@ const ReceiveScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
-      <Modal visible={isAmountModalVisible} transparent animationType="fade" onRequestClose={closeAmountModal}>
-        <KeyboardAvoidingView style={styles.amountOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={closeAmountModal} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
-          <View style={styles.amountSheet} accessibilityViewIsModal>
-            <SheetHeader title="Request amount" trailing={
-              <Pressable accessibilityRole="button" accessibilityLabel="Close amount editor" hitSlop={8} onPress={closeAmountModal}>
-                <GlassView width={32} height={32} shape="circle" interactive style={{ overflow: 'visible' }}>
-                  <Feather name="x" size={20} color={theme.colors.primary} />
-                </GlassView>
-              </Pressable>
-            } />
-            <View style={styles.amountSheetContent}>
+      <Modal visible={isAmountModalVisible} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => setIsAmountModalVisible(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'position' : undefined}
+            style={styles.keyboardAvoidingView}
+          >
+            <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Set request amount</Text>
+                <Pressable onPress={() => setIsAmountModalVisible(false)}>
+                  <GlassView
+                    width={32}
+                    height={32}
+                    shape="circle"
+                    interactive={true}
+                    style={{ overflow: 'visible' }}
+                  >
+                    <Feather name="x" size={20} color={theme.colors.primary} />
+                  </GlassView>
+                </Pressable>
+              </View>
+
               <StyledInput
-                accessibilityLabel="Request amount in sats"
                 placeholder="0"
                 value={modalAmountStr}
                 onChangeText={setModalAmountStr}
-                keyboardType="number-pad"
+                keyboardType="numeric"
                 autoFocus
-                rightElement={<Text style={styles.currencyLabel}>sats</Text>}
+                rightElement={
+                  <Text style={styles.currencyLabel}>sats</Text>
+                }
               />
-              {!isAmountValid && <Text accessibilityRole="alert" style={styles.lnErrorText}>
-                Enter a whole amount in sats up to 21 million BTC.
-              </Text>}
-              <TouchableOpacity accessibilityRole="button"
+
+              <TouchableOpacity
                 style={[styles.modalButtonPrimary, !isAmountValid && styles.modalButtonDisabled]}
-                onPress={handleSaveAmount} disabled={!isAmountValid}>
-                <Text style={styles.modalButtonTextPrimary}>{appliedAmountSats > 0 && draftSats === 0 ? 'Clear amount' : 'Save amount'}</Text>
+                onPress={handleSaveAmount}
+                disabled={!isAmountValid}
+              >
+                <Text style={styles.modalButtonTextPrimary}>Save amount</Text>
               </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
       </Modal>
 
-      <Modal visible={isAddressModalVisible} transparent animationType="fade" onRequestClose={() => !isRegisteringAddress && setIsAddressModalVisible(false)}>
+      <Modal visible={isAddressModalVisible} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => !isRegisteringAddress && setIsAddressModalVisible(false)}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -387,6 +423,9 @@ const ReceiveScreen = () => {
                 <View>
                   <Text style={styles.modalTitle}>
                     {lightningAddress ? 'Change lightning address' : 'Claim lightning address'}
+                  </Text>
+                  <Text style={{ fontSize: 14, color: theme.colors.muted, marginTop: 4 }}>
+                    You can always change it later
                   </Text>
                 </View>
                 <Pressable
@@ -435,141 +474,292 @@ const ReceiveScreen = () => {
         </Pressable>
       </Modal>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" bounces={false}>
-        <View style={styles.qrContainer}>
-          {payload ? (
-            <Pressable
-              style={[styles.qrCodeWrapper, { width: qrSize + 32, height: qrSize + 32 }]}
-              accessibilityRole="button"
-              accessibilityLabel={appliedAmountSats > 0 ? 'Copy payment request' : isOnchain ? 'Copy Bitcoin address' : 'Copy Lightning payment details'}
-              onPress={() => copy_to_clipboard(payload)}
-            >
-              {qr}
-              {copiedRequest === payload && (
-                <View style={styles.copiedOverlay} pointerEvents="none">
-                  <Feather name="check" size={28} color={theme.colors.primary} />
-                  <Text style={styles.copiedText}>Copied</Text>
+      <ScrollView
+        ref={scroll_ref}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+        bounces={false}
+      >
+        {mode === 'onchain' ? (
+          <>
+            <View style={styles.qrContainer}>
+              <Text style={styles.derivationPathDisplay}>{current_display_data.path}</Text>
+
+              <Pressable
+                style={({ pressed }) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]}
+                onPress={() => copy_to_clipboard(current_display_data.address)}
+              >
+                {copied && (
+                  <View style={styles.copiedOverlay} pointerEvents="none">
+                    <Feather name="copy" size={32} color={theme.colors.primary} />
+                    <Text style={styles.copiedText}>Copied!</Text>
+                  </View>
+                )}
+                {current_display_data.address ? memoizedOnchainQR : null}
+              </Pressable>
+
+              {IS_TESTNET && (
+                <View style={styles.warningBanner}>
+                  <Feather name="alert-triangle" size={14} color={theme.colors.muted} />
+                  <Text style={styles.warningText}>Send only testnet coins.</Text>
                 </View>
               )}
-            </Pressable>
-          ) : (
-            <View style={[styles.qrCodeWrapper, styles.qrPlaceholder, { width: qrSize + 32, height: qrSize + 32 }]}>
-              {invoiceError || (!isOnchain && lightningInitError)
-                ? <View style={styles.requestError}>
-                    <Text style={styles.lnErrorText} accessibilityLiveRegion="polite">{invoiceError || lightningInitError}</Text>
-                    <TouchableOpacity accessibilityRole="button" style={styles.iconAction}
-                      onPress={() => {
-                        if (invoiceError) setInvoiceRetry(value => value + 1);
-                        else void retryLightning().catch(error => Alert.alert('Lightning', error.message));
-                      }}>
-                      <Text style={styles.actionButtonText}>Retry</Text>
-                    </TouchableOpacity>
-                  </View>
-                : <ActivityIndicator accessibilityLabel="Preparing payment request" color={theme.colors.bitcoin} />}
-            </View>
-          )}
 
-          {IS_TESTNET && isOnchain && (
-            <View style={styles.warningBanner}>
-              <Feather name="alert-triangle" size={14} color={theme.colors.muted} />
-              <Text style={styles.warningText}>Send only testnet coins.</Text>
-            </View>
-          )}
+              <AddressText
+                style={styles.addressText}
+                selectable
+                address={current_display_data.address}
+                groupSize={6}
+                padLastLine
+              />
 
-          {appliedAmountSats > 0 && (
-            <Text style={styles.requestAmount}>{satsFormatter.format(appliedAmountSats)} <Text style={styles.requestUnit}>sats</Text></Text>
-          )}
-          {isOnchain && <AddressText style={styles.addressText} selectable address={onchainAddress} groupSize={6} padLastLine />}
-        </View>
-
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity accessibilityRole="button" style={[styles.actionButton, !payload && styles.actionButtonDisabled]}
-            disabled={!payload} onPress={() => copy_to_clipboard(payload)}>
-            <Feather name="copy" size={22} color={theme.colors.primary} />
-            <Text style={styles.actionButtonText}>Copy</Text>
-          </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" style={[styles.actionButton, !canSetAmount && styles.actionButtonDisabled]}
-            disabled={!canSetAmount} onPress={handleOpenAmountModal}>
-            <Feather name="edit" size={22} color={theme.colors.primary} />
-            <Text style={styles.actionButtonText}>{appliedAmountSats > 0 ? 'Edit amount' : 'Set amount'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" style={[styles.actionButton, !payload && styles.actionButtonDisabled]}
-            disabled={!payload} onPress={() => on_share(payload)}>
-            <Feather name="share-2" size={22} color={theme.colors.primary} />
-            <Text style={styles.actionButtonText}>Share</Text>
-          </TouchableOpacity>
-        </View>
-
-        {isOnchain && !!onchainAddress && (
-          <View style={styles.addressActions}>
-            <View style={styles.addressActionsRow}>
-              {isEditingLabel ? (
-                <TextInput accessibilityLabel="Address label" style={styles.addressLabelInput} value={labelInput}
-                  onChangeText={setLabelInput} onBlur={saveLabel} onSubmitEditing={saveLabel}
-                  autoFocus returnKeyType="done" selectTextOnFocus keyboardAppearance={isDark ? 'dark' : 'light'} />
-              ) : (
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit address label"
-                  style={styles.labelAction} onPress={startEditingLabel}>
-                  <Text style={styles.addressLabelListText} numberOfLines={1}>{current_display_data.label || defaultAddressName}</Text>
-                  <Feather name="edit" size={15} color={theme.colors.muted} />
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Address details"
-                style={styles.iconAction} onPress={() => handle_view_details(onchainAddress)}>
-                <Feather name="info" size={19} color={theme.colors.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel="New address"
-                style={[styles.iconAction, styles.newAddress, displayable_addresses.length < 2 && styles.actionButtonDisabled]}
-                disabled={isEditingLabel || displayable_addresses.length < 2} onPress={handle_next_address}>
-                <Feather name="refresh-cw" size={16} color={theme.colors.primary} />
-                <Text style={styles.addressLabelListText}>New address</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {!isOnchain && isLightningInitialized && (
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={lightningAddress ? 'Edit Lightning address' : 'Claim Lightning address'}
-            style={styles.lightningAddressRow} onPress={() => {
-              setAddressUsername(lightningAddress ? lightningAddress.split('@')[0] : '');
-              setIsAddressModalVisible(true);
-            }}>
-            <Text style={styles.addressLabelListText} numberOfLines={1} ellipsizeMode="middle">
-              {lightningAddress || 'Claim Lightning address'}
-            </Text>
-            <Feather name="edit" size={15} color={theme.colors.muted} />
-          </TouchableOpacity>
-        )}
-
-        {isOnchain && used_addresses.length > 0 && <>
-          <View style={styles.listHeaderContainer}>
-            <Text style={styles.listHeader}>Used addresses</Text>
-            {wallet_loading && <ActivityIndicator color={theme.colors.bitcoin} />}
-          </View>
-          {used_addresses.map(item => (
-            <View key={item.address} style={styles.row}>
-              <TouchableOpacity accessibilityRole="button" style={styles.addressContainer} onPress={() => handle_view_details(item.address)}>
-                <Text style={styles.addressLabelListText}>{item.label || `Address ${item.index}`}</Text>
-                <Text style={styles.addressShortText}>{formatBitcoinAddressShort(item.address)}</Text>
-              </TouchableOpacity>
-              <View style={styles.balanceContainer}>
-                <Text style={styles.balanceText}>
-                  {hideBalance ? '*******' : <>{format_btc(item.balance)} <Text style={styles.orangeSymbol}>₿</Text></>}
-                </Text>
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open address in block explorer"
-                  style={styles.iconAction} onPress={() => handle_open_explorer(item.address)}>
-                  <Feather name="external-link" size={18} color={theme.colors.primary} />
-                </TouchableOpacity>
+              <View
+                style={{
+                  marginTop: 16
+                }}
+              >
+                <GlassView
+                  width={272}
+                  height={40}
+                  shape="capsule"
+                  interactive={true}
+                  style={{ overflow: 'visible' }}
+                >
+                  {isEditingLabel ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }}>
+                      <TextInput
+                        style={styles.addressLabelInput}
+                        value={labelInput}
+                        onChangeText={setLabelInput}
+                        onBlur={saveLabel}
+                        onSubmitEditing={saveLabel}
+                        autoFocus
+                        returnKeyType="done"
+                        selectTextOnFocus
+                        keyboardAppearance={isDark ? 'dark' : 'light'}
+                        placeholderTextColor={theme.colors.muted}
+                      />
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }}
+                      onPress={startEditingLabel}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.colors.primary }} numberOfLines={1} ellipsizeMode="middle">
+                        {current_display_data.label || defaultAddressName}
+                      </Text>
+                      <Feather name="edit" size={14} color={theme.colors.primary} />
+                    </Pressable>
+                  )}
+                </GlassView>
               </View>
             </View>
-          ))}
-        </>}
+
+            <View style={styles.actionsContainer}>
+              <TouchableOpacity style={styles.actionButton} onPress={() => copy_to_clipboard(current_display_data.address)}>
+                <Feather name="copy" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionButtonText}>Copy</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionButton, loading_info && styles.actionButtonDisabled]}
+                onPress={handle_next_address}
+                disabled={loading_info}
+              >
+                <Feather name="refresh-cw" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionButtonText}>New address</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionButton} onPress={() => on_share(current_display_data.address)}>
+                <Feather name="share-2" size={24} color={theme.colors.primary} />
+                <Text style={styles.actionButtonText}>Share</Text>
+              </TouchableOpacity>
+            </View>
+
+            {used_addresses.length > 0 && <>
+              <View style={styles.listHeaderContainer}>
+                <Text style={styles.listHeader}>Used addresses</Text>
+                {wallet_loading && <ActivityIndicator color={theme.colors.bitcoin} />}
+              </View>
+
+              {used_addresses.map((item) => {
+                const balance = item.balance;
+                return (
+                  <TouchableOpacity
+                    key={item.index.toString()}
+                    style={styles.row}
+                    onPress={() => handle_view_details(item.address)}
+                  >
+                    <View style={styles.addressContainer}>
+                      <Text style={styles.addressLabelListText}>{item.label || `Address ${item.index}`}</Text>
+                      <Text style={styles.addressShortText}>{formatBitcoinAddressShort(item.address)}</Text>
+                      <Text style={styles.derivationPath}>{path_prefix}/0/{item.index}</Text>
+                    </View>
+                    <View style={styles.balanceContainer}>
+                      <Text style={styles.balanceText}>
+                        {hideBalance ? '*******' : (
+                          <>{format_btc(balance)} <Text style={styles.orangeSymbol}> </Text></>
+                        )}
+                      </Text>
+                      <TouchableOpacity onPress={() => handle_open_explorer(item.address)}>
+                        <Feather name="external-link" size={18} color={theme.colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </>}
+          </>
+        ) : (
+          <View style={styles.lnContainer}>
+            <View style={styles.lnContainer}>
+              {invoiceError && (
+                <TouchableOpacity onPress={() => setInvoiceRetry(value => value + 1)}>
+                  <Text style={styles.lnErrorText}>{invoiceError} Tap to retry.</Text>
+                </TouchableOpacity>
+              )}
+              {!isLightningInitialized ? (
+                <View style={styles.lnError}>
+                  <Feather name="alert-circle" size={48} color={theme.colors.error} style={{ marginBottom: 16 }} />
+                  <Text style={styles.lnErrorText}>{lightningInitError || 'Connecting to Lightning…'}</Text>
+                  {!!lightningInitError && <TouchableOpacity onPress={() => { void retryLightning().catch(error => Alert.alert('Lightning', error.message)); }}>
+                    <Text style={styles.actionButtonText}>Retry Lightning connection</Text>
+                  </TouchableOpacity>}
+                </View>
+              ) : (
+                <>
+                  <View style={styles.qrContainer}>
+                    <Text style={styles.derivationPathDisplay}>
+                      {appliedAmountSats === 0 ? (lightningAddress ? 'Lightning address' : 'BOLT11 invoice') : 'BOLT11 invoice'}
+                    </Text>
+
+                    <Pressable
+                      style={({ pressed }) => [styles.qrCodeWrapper, { opacity: pressed ? 0.8 : 1 }]}
+                      onPress={() => !isGeneratingLightning && copy_to_clipboard(currentLnString)}
+                      disabled={isGeneratingLightning || !currentLnString}
+                    >
+                      {copied && (
+                        <View style={styles.copiedOverlay} pointerEvents="none">
+                          <Feather name="copy" size={32} color={theme.colors.primary} />
+                          <Text style={styles.copiedText}>Copied!</Text>
+                        </View>
+                      )}
+                      {isGeneratingLightning ? (
+                        <View style={{ height: QR_SIZE, width: QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
+                          <ActivityIndicator size="large" color={theme.colors.bitcoin} />
+                          <Text style={{ color: theme.colors.muted, marginTop: 12 }}>Generating...</Text>
+                        </View>
+                      ) : currentLnString ? memoizedLightningQR : null}
+                    </Pressable>
+
+                    {appliedAmountSats === 0 && !isGeneratingLightning ? (
+                      <Pressable
+                        style={{
+                          marginTop: 16,
+                          shadowColor: theme.colors.primary,
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: 0.25,
+                          shadowRadius: 2,
+                        }}
+                        onPress={() => {
+                          if (lightningAddress) {
+                            setAddressUsername(lightningAddress.split('@')[0]);
+                          } else {
+                            setAddressUsername('');
+                          }
+                          setIsAddressModalVisible(true);
+                        }}
+                      >
+                        <GlassView
+                          width={272}
+                          height={40}
+                          shape="capsule"
+                          interactive={true}
+                          style={{ overflow: 'visible' }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }}>
+                            {lightningAddress ? (
+                              <Text style={{ fontSize: 14, fontWeight: 'bold' }} numberOfLines={1} ellipsizeMode="middle">
+                                <Text style={{ color: theme.colors.bitcoin }}>{lightningAddress.split('@')[0]}</Text>
+                                <Text style={{ color: theme.colors.primary }}>@{lightningAddress.split('@').slice(1).join('@')}</Text>
+                              </Text>
+                            ) : (
+                              <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.colors.primary }} numberOfLines={1} ellipsizeMode="middle">
+                                Claim lightning address
+                              </Text>
+                            )}
+                            <Feather name="edit" size={14} color={theme.colors.primary} />
+                          </View>
+                        </GlassView>
+                      </Pressable>
+                    ) : null}
+
+                    {appliedAmountSats > 0 && !isGeneratingLightning ? (
+                      <View
+                        style={{
+                          marginTop: 16,
+                          shadowColor: theme.colors.primary,
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: 0.25,
+                          shadowRadius: 2,
+                        }}
+                      >
+                        <GlassView
+                          width={272}
+                          height={40}
+                          shape="capsule"
+                          interactive={true}
+                          style={{ overflow: 'visible' }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, height: '100%', width: '100%' }}>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold' }} numberOfLines={1} ellipsizeMode="middle">
+                              <Text style={{ color: theme.colors.bitcoin }}>{appliedAmountSats.toLocaleString()}</Text>
+                              <Text style={{ color: theme.colors.primary }}> sats</Text>
+                            </Text>
+                            <Pressable hitSlop={8} onPress={handleDiscardAmount}>
+                              <Feather name="x" size={14} color={theme.colors.primary} />
+                            </Pressable>
+                          </View>
+                        </GlassView>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.actionsContainer}>
+                    <TouchableOpacity
+                      style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]}
+                      onPress={() => copy_to_clipboard(currentLnString)}
+                      disabled={isGeneratingLightning || !currentLnString}
+                    >
+                      <Feather name="copy" size={24} color={theme.colors.primary} />
+                      <Text style={styles.actionButtonText}>Copy</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.actionButton} onPress={handleOpenAmountModal}>
+                      <Feather name="edit" size={24} color={theme.colors.primary} />
+                      <Text style={styles.actionButtonText}>Set amount</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.actionButton, isGeneratingLightning && styles.actionButtonDisabled]}
+                      onPress={() => on_share(currentLnString)}
+                      disabled={isGeneratingLightning || !currentLnString}
+                    >
+                      <Feather name="share-2" size={24} color={theme.colors.primary} />
+                      <Text style={styles.actionButtonText}>Share</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 };
 
-const getStyles = (theme: Theme) => StyleSheet.create({
+const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
   centeredContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -589,43 +779,41 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     borderColor: theme.colors.border,
   },
   qrCodeWrapper: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: theme.colors.background,
+    borderRadius: 8,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: isDark ? 0.3 : 0.1,
+    shadowRadius: 3,
+    elevation: 3,
     borderWidth: 1,
     borderColor: theme.colors.border,
-  },
-  qrPlaceholder: { backgroundColor: theme.colors.surface },
-  requestError: { gap: 8, padding: 16, alignItems: 'center' },
-  requestAmount: { fontSize: 27, fontWeight: 'bold', color: theme.colors.primary, marginTop: 12 },
-  requestUnit: { fontSize: 15, fontWeight: 'normal', color: theme.colors.muted },
-  addressActions: { paddingHorizontal: 20, marginTop: 8 },
-  addressActionsRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border, paddingVertical: 4,
-  },
-  labelAction: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  iconAction: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  newAddress: { flexDirection: 'row', gap: 6 },
-  lightningAddressRow: {
-    minHeight: 44, alignSelf: 'center', maxWidth: '85%', paddingHorizontal: 12,
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 0,
   },
   addressLabelInput: {
     color: theme.colors.primary,
     fontSize: 14,
     fontWeight: '600',
     fontFamily: 'SpaceMono-Regular',
-    flex: 1,
-    minHeight: 44,
+    minWidth: 100,
+    textAlign: 'center',
     padding: 0,
     margin: 0,
   },
   addressLabelListText: {
     fontSize: 14,
     color: theme.colors.primary,
-    flexShrink: 1,
+  },
+  amountUnit: {
+    fontSize: 20,
+    fontWeight: 'normal',
+    color: theme.colors.primary,
+  },
+  amountBitcoin: {
+    fontSize: 20,
+    fontWeight: 'normal',
+    color: theme.colors.bitcoin,
   },
   addressText: {
     fontSize: 14,
@@ -633,7 +821,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     color: theme.colors.primary,
     lineHeight: 24,
     marginTop: 8,
-    paddingHorizontal: 24,
+    paddingHorizontal: 72,
+  },
+  derivationPathDisplay: {
+    fontSize: 14,
+    color: theme.colors.muted,
+    marginBottom: 8
   },
   copiedOverlay: {
     position: 'absolute',
@@ -703,6 +896,10 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 14,
     color: theme.colors.muted,
   },
+  derivationPath: {
+    fontSize: 14,
+    color: theme.colors.muted,
+  },
   balanceContainer: {
     flex: 2,
     flexDirection: 'row',
@@ -737,14 +934,21 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     color: theme.colors.muted,
     fontWeight: '400',
   },
+  lnContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+  },
+  lnError: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 60,
+  },
   lnErrorText: {
     color: theme.colors.error,
     fontSize: 16,
     textAlign: 'center',
   },
-  amountOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  amountSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden', backgroundColor: theme.colors.background },
-  amountSheetContent: { gap: 4, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
