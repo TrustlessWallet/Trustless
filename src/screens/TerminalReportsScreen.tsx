@@ -242,13 +242,14 @@ function ReportsOverview({ walletId, network, scope, period, customRange, day, r
     : state.identity === identity ? state : state.identity.startsWith(displayIdentity) ? { ...state, identity, loading: true, error: false }
       : { identity, loading: true, error: false, summary: null, refunds: null };
   const previous = useMemo(() => previousTerminalSalesPeriodBounds(period, day, customRange ?? undefined), [period, day, customRange]);
+  const totals = current.summary ? overviewTotals(current.summary) : [];
   return <View style={styles.overview} accessibilityLabel="Reports overview">
     <View style={styles.blockHeading}><Text style={styles.blockTitle}>PAID SALES</Text>{current.loading ? <ActivityIndicator accessibilityLabel="Loading reports overview" size="small" color={theme.colors.bitcoin} /> : null}</View>
     {current.error ? <View style={styles.errorRow}><Text style={styles.smallNote}>Reports unavailable</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry reports overview" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
     {current.summary && current.refunds !== null ? <>
       <Text style={styles.paidCount}>{current.summary.receivedCount}</Text>
-      <View style={styles.rule} />
-      {overviewTotals(current.summary).map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.value}</Text></View>)}
+      {totals.length > 0 ? <View testID="overview-currency-divider" style={styles.rule} /> : null}
+      {totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.value}</Text></View>)}
       <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatSats(current.refunds)}</Text></View>
       {range && previous ? <TerminalPeriodComparison walletId={walletId} network={network} scope={scope} periodDay={day} currentRange={range} previousRange={previous} currentSummary={current.summary} currentRefunds={current.refunds} prepared={prepared?.identity === identity ? prepared.comparison : undefined} /> : null}
     </> : null}

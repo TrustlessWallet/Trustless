@@ -5,9 +5,6 @@ jest.mock('../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { LA
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('../../screens/TerminalSheetHeader', () => () => null);
-let mockPro = 'pro';
-jest.mock('../../contexts/TerminalProContext', () => ({ useTerminalPro: () => ({ status: mockPro }) }));
-beforeEach(() => { mockPro = 'pro'; });
 it('keeps renamed and deleted basket items at their original prices and quantities', () => {
   const line = { itemId: 'coffee', name: 'Original coffee', unitPrice: 100, quantity: 2, total: 200 };
   const removed = { itemId: 'deleted', name: 'Deleted tea', unitPrice: 250, quantity: 1, total: 250 };
@@ -28,25 +25,7 @@ it('updates virtualized controls when the payment becomes busy', () => {
   expect(add).not.toHaveBeenCalled();
 });
 
-it('filters accent-insensitively and restores basket controls when cleared', () => {
-  const coffee = { id: 'coffee', name: 'Caffè', unit: 'USD' as const, unitPrice: 100 };
-  const tea = { id: 'tea', name: 'Tea', unit: 'USD' as const, unitPrice: 200 };
-  const view = render(<TerminalQuickItemsScreen catalog={[coffee, tea]}
-    lines={[{ itemId: coffee.id, name: coffee.name, unitPrice: 100, quantity: 2, total: 200 }]}
-    unit="USD" busy={false} onAdd={jest.fn()} onRemoveOne={jest.fn()} onClose={jest.fn()} />);
-  fireEvent.changeText(view.getByLabelText('Search items'), 'tea');
-  expect(view.queryByLabelText('Remove one Caffè')).toBeNull();
-  fireEvent.changeText(view.getByLabelText('Search items'), 'CAFFE');
-  expect(view.getByLabelText('Remove one Caffè')).toBeTruthy();
-  expect(view.getByText('2')).toBeTruthy();
-  expect(view.queryByLabelText('Add Tea')).toBeNull();
-  fireEvent.press(view.getByLabelText('Clear search items'));
-  expect(view.getByLabelText('Add Tea')).toBeTruthy();
-  expect(view.getByText('2')).toBeTruthy();
-});
-
-it('hides search for free users and keeps all items accessible', () => {
-  mockPro = 'free';
+it('shows the catalog directly without a search field', () => {
   const view = render(<TerminalQuickItemsScreen catalog={[{ id: 'coffee', name: 'Coffee', unit: 'sats', unitPrice: 58 }]}
     lines={[]} unit="sats" busy={false} onAdd={jest.fn()} onRemoveOne={jest.fn()} onClose={jest.fn()} />);
   expect(view.queryByLabelText('Search items')).toBeNull();

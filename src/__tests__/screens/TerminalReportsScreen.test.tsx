@@ -46,6 +46,13 @@ beforeEach(() => {
   (readTerminalItemPerformancePage as jest.Mock).mockResolvedValue({ items: [], nextSeq: null });
 });
 
+it.each([0n, 58n])('only separates currency totals when present (%s sats)', async bitcoinSats => {
+  (getTerminalSalesSummary as jest.Mock).mockResolvedValue({ ...summary(bitcoinSats ? 1 : 0), bitcoinSats });
+  const view = render(<TerminalReportsScreen walletId="wallet-a" network="mainnet" initialSelection={initialSelection} onClose={jest.fn()} />);
+  await view.findByText('REFUNDED');
+  expect(Boolean(view.queryByTestId('overview-currency-divider'))).toBe(bitcoinSats > 0n);
+});
+
 it('mounts and queries only the active report tab', async () => {
   const view = render(<TerminalReportsScreen walletId="wallet-a" network="mainnet" initialSelection={initialSelection} onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByText('2')).toBeTruthy());
