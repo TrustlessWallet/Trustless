@@ -23,7 +23,3 @@ export function TerminalSearchInput({ label, value, onChangeText, onFocus, compa
     />
   </View>;
 }
-
-export function normalizeItemSearch(value: string) {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-}

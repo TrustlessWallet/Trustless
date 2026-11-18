@@ -16,7 +16,7 @@ import { getTerminalRefundTotal, subscribeTerminalRefunds } from '../services/te
 import { createTerminalItemPerformanceSnapshot, readTerminalItemPerformancePage, removeTerminalItemPerformanceSnapshot } from '../services/terminalItemPerformance';
 import { CustomSalesDateRange, localSalesDateKey, previousTerminalSalesPeriodBounds, SalesPeriod, terminalSalesPeriodBounds } from '../services/terminalSalesPeriod';
 
-export type TerminalReportSelection = { period: SalesPeriod; customRange?: CustomSalesDateRange; day: number };
+export type TerminalReportSelection = { period: SalesPeriod; customRange?: CustomSalesDateRange; day: number; defaultUnit?: TerminalReportPreset['unit'] };
 type Props = { walletId: string; network: TerminalNetwork; initialSelection: TerminalReportSelection; onClose: () => void; visible?: boolean };
 type FilterState = { scope: string; period: SalesPeriod; customRange: CustomSalesDateRange | null; draft: CustomSalesDateRange | null; tab: 'overview' | 'items'; unit: 'USD' | 'EUR' | 'CHF' | 'sats' | null; sort: 'quantity' | 'gross' };
 type PreparedOverview = { identity: string; summary: TerminalSalesSummary; refunds: bigint; comparison?: Awaited<ReturnType<typeof getTerminalSalesComparison>> };
@@ -27,7 +27,7 @@ const localDayStart = (value: number) => {
 };
 const initialFilter = (scope: string, selection: TerminalReportSelection): FilterState => {
   const validCustom = selection.period === 'custom' && selection.customRange;
-  return { scope, period: validCustom ? 'custom' : selection.period === 'custom' ? 'today' : selection.period, customRange: validCustom ? { ...selection.customRange! } : null, draft: null, tab: 'overview', unit: null, sort: 'quantity' };
+  return { scope, period: validCustom ? 'custom' : selection.period === 'custom' ? 'today' : selection.period, customRange: validCustom ? { ...selection.customRange! } : null, draft: null, tab: 'overview', unit: selection.defaultUnit ?? null, sort: 'quantity' };
 };
 
 export default function TerminalReportsScreen({ walletId, network, initialSelection, onClose, visible = true }: Props) {
@@ -184,7 +184,7 @@ export default function TerminalReportsScreen({ walletId, network, initialSelect
   const applyPreset = (value: TerminalReportPreset) => {
     if (!visible) return;
     const presetDay = localDayStart(Date.now());
-    stageFilter({ scope, period: value.period, customRange: value.customRange ?? null, draft: null, tab: value.tab, unit: value.unit, sort: value.sort }, presetDay);
+    stageFilter({ scope, period: value.period, customRange: value.customRange ?? null, draft: null, tab: value.tab, unit: value.tab === 'items' ? value.unit : filter.unit, sort: value.tab === 'items' ? value.sort : filter.sort }, presetDay);
   };
   const consumePreparedItems = useCallback(() => { pendingToken.current = null; setPreparedItems(null); }, []);
   const reportHeader = <>
@@ -242,13 +242,14 @@ function ReportsOverview({ walletId, network, scope, period, customRange, day, r
     : state.identity === identity ? state : state.identity.startsWith(displayIdentity) ? { ...state, identity, loading: true, error: false }
       : { identity, loading: true, error: false, summary: null, refunds: null };
   const previous = useMemo(() => previousTerminalSalesPeriodBounds(period, day, customRange ?? undefined), [period, day, customRange]);
+  const totals = current.summary ? overviewTotals(current.summary) : [];
   return <View style={styles.overview} accessibilityLabel="Reports overview">
     <View style={styles.blockHeading}><Text style={styles.blockTitle}>PAID SALES</Text>{current.loading ? <ActivityIndicator accessibilityLabel="Loading reports overview" size="small" color={theme.colors.bitcoin} /> : null}</View>
     {current.error ? <View style={styles.errorRow}><Text style={styles.smallNote}>Reports unavailable</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry reports overview" onPress={() => { void load(); }} style={styles.retry}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
     {current.summary && current.refunds !== null ? <>
       <Text style={styles.paidCount}>{current.summary.receivedCount}</Text>
-      <View style={styles.rule} />
-      {overviewTotals(current.summary).map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.value}</Text></View>)}
+      {totals.length > 0 ? <View testID="overview-currency-divider" style={styles.rule} /> : null}
+      {totals.map(total => <View key={total.label} style={styles.totalRow}><Text style={styles.totalLabel}>{total.label}</Text><Text style={styles.totalAmount}>{total.value}</Text></View>)}
       <View style={styles.refundedRow}><Text style={styles.totalLabel}>REFUNDED</Text><Text style={styles.totalAmount}>{formatSats(current.refunds)}</Text></View>
       {range && previous ? <TerminalPeriodComparison walletId={walletId} network={network} scope={scope} periodDay={day} currentRange={range} previousRange={previous} currentSummary={current.summary} currentRefunds={current.refunds} prepared={prepared?.identity === identity ? prepared.comparison : undefined} /> : null}
     </> : null}
