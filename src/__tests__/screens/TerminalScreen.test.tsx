@@ -384,6 +384,9 @@ it('does not let a delayed preferred currency reinterpret an active basket', asy
     await act(async () => { finishPreference('USD'); });
     expect(view.getByTestId('terminal-amount').props.children).toBe('250');
     expect(view.getByText('sats')).toBeTruthy();
+    fireEvent.press(view.getByText('C'));
+    expect(view.getByTestId('terminal-amount').props.children).toBe('0');
+    expect(view.getByText('$')).toBeTruthy();
   } finally { getItem.mockImplementation(priorGetItem); }
 });
 
