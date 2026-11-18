@@ -94,7 +94,7 @@ const WalletScreen = () => {
         isWalletSwitching
     } = useWallet();
 
-    const [hideBalance, setHideBalance] = useState(false);
+    const [hideBalance, setHideBalance] = useState(true);
     const [balancePreferenceReady, setBalancePreferenceReady] = useState(false);
     const [modePreferenceReady, setModePreferenceReady] = useState(false);
     const modeChosenByUser = useRef(false);
@@ -151,6 +151,7 @@ const WalletScreen = () => {
     const {
         data: onchainTransactions,
         isLoading: loadingTxs,
+        isError: transactionsUnavailable,
         refetch: refetchTxs,
     } = useWalletTransactions(
         activeWallet?.id,
@@ -435,13 +436,15 @@ const WalletScreen = () => {
     }, [activeWallet]);
 
     useEffect(() => {
+        let current = true;
         const loadPreference = async () => {
             const savedPref = await AsyncStorage.getItem(HIDE_WALLET_BALANCE_KEY);
-            setHideBalance(savedPref === 'true');
+            if (current) setHideBalance(savedPref === 'true');
         };
         if (isFocused) {
-            void loadPreference().catch(() => {}).finally(() => setBalancePreferenceReady(true));
+            void loadPreference().catch(() => {}).finally(() => { if (current) setBalancePreferenceReady(true); });
         }
+        return () => { current = false; };
     }, [isFocused]);
 
     // Safety net: whenever this screen regains focus (closing Send, Receive,
@@ -876,9 +879,9 @@ const WalletScreen = () => {
                     </View>
                 }
                 ListEmptyComponent={
-                    (!isLightningMode && loadingTxs) ?
+                    (isLightningMode ? isLightningLoading : loadingTxs) ?
                         <ActivityIndicator style={styles.loadingIndicator} color={theme.colors.bitcoin} /> :
-                        <Text style={styles.noTxText}>No transactions yet</Text>
+                        <Text style={styles.noTxText}>{(isLightningMode ? lightningInitError : transactionsUnavailable) ? 'Transaction history unavailable' : 'No transactions yet'}</Text>
                 }
                 ListFooterComponent={
                     <View>

@@ -110,6 +110,31 @@ it('keeps the latest tap when the launch preference arrives late', async () => {
     await act(async () => { resolveMode('Lightning'); });
     expect(screen.getByLabelText('Switch to Lightning')).toBeTruthy();
 });
+it('shows an empty Lightning history only after initialization succeeds', async () => {
+    const wallet = (useWallet as jest.Mock)();
+    (useWallet as jest.Mock).mockReturnValue({ ...wallet, isLightningInitialized: false });
+    const view = render(<WalletScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByLabelText('Switch to Lightning'));
+    expect(view.queryByText('No transactions yet')).toBeNull();
+    (useWallet as jest.Mock).mockReturnValue({ ...wallet, isLightningInitialized: false, lightningInitError: 'Offline' });
+    view.rerender(<WalletScreen />);
+    expect(view.getByText('Transaction history unavailable')).toBeTruthy();
+    (useWallet as jest.Mock).mockReturnValue(wallet);
+    view.rerender(<WalletScreen />);
+    expect(view.getByText('No transactions yet')).toBeTruthy();
+});
+
+it('masks amounts while the saved balance visibility is being read', async () => {
+    let finish!: (value: string) => void;
+    (AsyncStorage.getItem as jest.Mock).mockImplementation(key => key === '@hideWalletBalance'
+        ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(null));
+    const view = render(<WalletScreen />);
+    expect(view.getByText('*******')).toBeTruthy();
+    await act(async () => { finish('false'); });
+    expect(view.queryByText('*******')).toBeNull();
+});
+
 it('ignores synthetic refresh callbacks and slight pulls, but refreshes on a deliberate drag', async () => {
     const screen = render(<WalletScreen />);
     await act(async () => {});

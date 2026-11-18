@@ -227,7 +227,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   useEffect(() => {
     setEndingRequest(false); setTransitioning(false);
     // Manual checkout amounts belong to the wallet that entered them, like basket lines.
-    setAmount('');
+    setAmount(''); setUnit(preferredUnit.current); userEditedAmount.current = false;
     basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setCatalog(activeWallet ? getCachedTerminalItems(activeWallet.id, network) ?? [] : []); setCatalogError(false);
     presentedRequestId.current = null;
   }, [scope]);
@@ -253,7 +253,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     void AsyncStorage.getItem(PREFERRED_UNIT_KEY).then(saved => {
       const valid = (saved === 'sats' || saved === 'BTC' || isFiat(saved as TerminalUnit));
       setSettingsUnit(current => current === undefined ? (valid ? saved as TerminalUnit : null) : current);
-      if (valid && !userSelectedUnit.current && !userEditedAmount.current && !basketRef.current.length) {
+      if (valid && !userSelectedUnit.current) {
         preferredUnit.current = saved as TerminalUnit;
         if (mounted.current && !userSelectedUnit.current && !userEditedAmount.current && !basketRef.current.length && !hasRequestRef.current) {
           setUnit(saved as TerminalUnit);
@@ -314,7 +314,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
         const draft = consumeCashierTerminalDraft(activeWallet.id, network);
         if (draft) {
           const lines = draft.basketLines.map(line => ({ ...line }));
-          userSelectedUnit.current = true; userEditedAmount.current = true; preferredUnit.current = draft.unit;
+          userEditedAmount.current = true;
           basketRef.current = lines; basketUnitRef.current = lines.length ? draft.unit : null;
           setBasketLines(lines); setUnit(draft.unit); setAmount(draft.manualAmount);
         }
@@ -484,6 +484,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       knownPaymentId.current = undefined;
       busy.current = false;
       requestRef.current = null;
+      userEditedAmount.current = false;
       setRequest(null); setStage('entry'); setAmount(''); setUnit(preferredUnit.current); setError('');
       basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError('');
       setValidated(false);
@@ -542,10 +543,10 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     const hadBasket = basketRef.current.length > 0;
     if (hadBasket || digit === 'clear') { basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setAmount(''); }
     Haptics.selectionAsync().catch(() => undefined);
-    userEditedAmount.current = true;
+    userEditedAmount.current = digit !== 'clear';
     setError('');
-    if (digit === 'clear') { setAmount(''); return; }
-    if (digit === '.' && (unit === 'sats' || amount.includes('.'))) return;
+    if (digit === 'clear') { setUnit(preferredUnit.current); return; }
+    if (digit === '.' && (unit === 'sats' || (!hadBasket && amount.includes('.')))) return;
     setAmount(v => {
       if (v.length >= 20 || (v.includes('.') && v.split('.')[1].length >= (isFiat(unit) ? 2 : 8))) return v;
       if (v === '' && digit === '.') return '0.';
@@ -570,8 +571,8 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     const sum = next.reduce((total, line) => total + BigInt(line.total), 0n);
     if (sum > BigInt(Number.MAX_SAFE_INTEGER) || next.some(line => !Number.isSafeInteger(line.total))) { setBasketError('Basket total is too large.'); return; }
     userEditedAmount.current = true;
-    if (!current.length && next.length) { basketUnitRef.current = item.unit; userSelectedUnit.current = true; preferredUnit.current = item.unit; setUnit(item.unit); setAmount(''); }
-    if (!next.length) basketUnitRef.current = null;
+    if (!current.length && next.length) { basketUnitRef.current = item.unit; setUnit(item.unit); setAmount(''); }
+    if (!next.length) { basketUnitRef.current = null; userEditedAmount.current = false; setUnit(preferredUnit.current); }
     basketRef.current = next; setBasketLines(next); setBasketError(''); setError('');
   };
   const hasRequest = !!request;
