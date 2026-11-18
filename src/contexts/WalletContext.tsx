@@ -208,7 +208,7 @@ interface WalletContextType {
     hasMoreLightningTransactions: boolean;
     loadMoreLightningTransactions: () => Promise<void>;
     generateMnemonic: (strength?: number) => Promise<string | null>;
-    addWallet: (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; }) => Promise<Wallet | null>;
+    addWallet: (params: { mnemonic?: string; xpub?: string; type?: 'standard' | 'watch-only'; name?: string; fingerprint?: string; derivation_path?: string; }, options?: { freshlyGenerated?: boolean }) => Promise<Wallet | null>;
     switchWallet: (walletId: string) => Promise<void>;
     updateWalletName: (walletId: string, newName: string) => Promise<void>;
     removeWallet: (walletId: string) => Promise<void>;
@@ -1885,14 +1885,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             await Keychain.setGenericPassword('user', newWalletId, { service: ACTIVE_WALLET_KEY });
             await loadAndSetActiveWallet(newWalletId, skipDiscovery);
         } else {
-            await switchWallet(newWalletId);
+            await switchWallet(newWalletId, skipDiscovery);
         }
         return newWallets.find(w => w.id === newWalletId) || null;
     };
 
-    const addWallet = (params: AddWalletParams): Promise<Wallet | null> =>
+    const addWallet = (params: AddWalletParams, options?: { freshlyGenerated?: boolean }): Promise<Wallet | null> =>
         serializeWalletMutation(async () => {
-            const created = await addWalletInternal(params);
+            const skipDiscovery = options?.freshlyGenerated === true && !!params.mnemonic && params.type !== 'watch-only';
+            const created = await addWalletInternal(params, undefined, skipDiscovery);
             if (created) {
                 try { await markFirstLaunchUsed(NETWORK_NAME, created.id, uuidv4); }
                 catch (error) { console.warn('Could not record first-launch wallet state:', error); }
@@ -1900,14 +1901,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             return created;
         });
 
-    const switchWallet = async (walletId: string) => {
+    const switchWallet = async (walletId: string, skipDiscovery = false) => {
         if (switchingRef.current) throw new Error('A wallet switch is already in progress.');
         if (paymentInFlightRef.current) throw new Error('Please wait for the payment to finish before switching wallets.');
         if (activeWalletIdRef.current === walletId) return;
         switchingRef.current = true;
         setIsWalletSwitching(true);
         try {
-            const loaded = await loadAndSetActiveWallet(walletId);
+            const loaded = await loadAndSetActiveWallet(walletId, skipDiscovery);
             if (!loaded) throw new Error(`Could not load wallet ${walletId}`);
             await Keychain.setGenericPassword('user', walletId, { service: ACTIVE_WALLET_KEY });
         } catch (error) {

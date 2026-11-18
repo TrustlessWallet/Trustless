@@ -54,7 +54,7 @@ it('preserves entries after a mismatch and creates only one named wallet after c
     fireEvent(fields[fields.length - 1], 'submitEditing');
   });
   expect(mockAdd).toHaveBeenCalledTimes(1);
-  expect(mockAdd).toHaveBeenCalledWith(mockParams);
+  expect(mockAdd).toHaveBeenCalledWith(mockParams, { freshlyGenerated: true });
   await act(async () => finish({ id: 'new' }));
   expect(mockNavigate).toHaveBeenCalledWith('WalletSetupSuccess', { kind: 'created' });
 });
