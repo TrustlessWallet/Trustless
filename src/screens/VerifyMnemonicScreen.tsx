@@ -47,7 +47,7 @@ const VerifyMnemonicScreen = () => {
             setLoading(true);
             Keyboard.dismiss();
             try {
-                const created = await addWallet({ mnemonic, name });
+                const created = await addWallet({ mnemonic, name }, { freshlyGenerated: true });
                 if (!created) return;
                 // Wallet creation has already committed. If this optional marker
                 // fails, keep the reminder rather than reporting creation failed.

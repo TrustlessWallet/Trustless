@@ -238,6 +238,7 @@ it('hides stale results as soon as the query changes and clears the search witho
   expect(view.getByLabelText('Searching sales')).toBeTruthy();
   await waitFor(() => expect(view.getByLabelText(/2 500 sats, Paid/)).toBeTruthy());
   expect(listTerminalSalesPage).toHaveBeenCalledWith('wallet-a', 'mainnet', expect.objectContaining({ range: null, filter: { query: 'match' } }));
+  expect(getTerminalSalesSummary).toHaveBeenCalledTimes(1);
   fireEvent.press(view.getByLabelText('Clear search all sales'));
   expect(view.queryByLabelText(/2 500 sats, Paid/)).toBeNull();
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());

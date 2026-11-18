@@ -177,6 +177,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     refreshInFlight.current = generation;
     const identity = loadIdentity;
     const prior = stateRef.current;
+    const reuseSummary = showLoading && !userInitiated && prior.identity !== identity &&
+      prior.identity.startsWith(periodIdentity) && prior.summary !== null && prior.refundedSats !== null && !prior.error;
     const retainedCount = !showLoading && prior.identity === identity ? Math.max(50, prior.sales.length) : 50;
     pageBusy.current = false;
     if (showLoading) setState(previous => ({
@@ -191,8 +193,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     try {
       const [firstPage, summary, refundedSats] = await Promise.all([
         listTerminalSalesPage(walletId, network, { range: filter ? null : range, limit: 50, ...(filter ? { filter } : {}) }),
-        getTerminalSalesSummary(walletId, network, range),
-        getTerminalRefundTotal(walletId, network, range),
+        reuseSummary ? prior.summary : getTerminalSalesSummary(walletId, network, range),
+        reuseSummary ? prior.refundedSats : getTerminalRefundTotal(walletId, network, range),
       ]);
       if (generation !== loadGeneration.current || identity !== currentLoadIdentity.current) return;
       const sales = [...firstPage.items];
@@ -468,7 +470,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   };
 
   const header = detailSale ? null : <>
-    {!detail ? <TerminalSearchInput label="Search all sales" value={query} onChangeText={value => setSearch({ scope, query: value })} /> : null}
+    {!detail ? <TerminalSearchInput compact label="Search all sales" value={query} onChangeText={value => setSearch({ scope, query: value })} /> : null}
     <TerminalSalesPeriodControls period={period} pendingPeriod={pendingPeriod} customRange={customRange} draft={editingCustom?.draft ?? null} day={day} disabled={!visible || !headerEnabled}
       detailCaption={detail ? formatLongDate(saleTime(detail)) : undefined}
       onSelect={value => {
