@@ -432,7 +432,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen name="ShowMnemonic" component={ShowMnemonicScreen} options={{ title: 'Recovery phrase' }} />
           <Stack.Screen name="ShowMnemonicQR" component={ShowMnemonicQRScreen} options={{ title: 'Recovery QR' }} />
           <Stack.Screen name="VerifyMnemonic" component={VerifyMnemonicScreen} options={{ title: 'Check your backup' }} />
-          <Stack.Screen name="RecoverWallet" component={RecoverWalletScreen} options={{ title: 'Recover wallet' }} />
+          <Stack.Screen name="RecoverWallet" component={RecoverWalletScreen} options={{ title: 'Import wallet' }} />
           <Stack.Screen name="ImportWatchOnly" component={ImportWatchOnlyScreen} options={{ title: 'Import watch-only' }} />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: 'Send bitcoin' }} />
           <Stack.Screen name="LightningTopUp" component={LightningTopUpScreen} options={{ title: 'Lightning top up' }} />
