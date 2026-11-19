@@ -609,25 +609,33 @@ const WalletScreen = () => {
         : (onchainTransactions || []);
     const recentTransactions = displayTransactions.slice(0, 3);
 
+    const modeGlassScale = useRef(new Animated.Value(1)).current;
+    const animateModeGlass = (pressed: boolean) => {
+        Animated.spring(modeGlassScale, {
+            toValue: pressed ? 1.09 : 1, stiffness: 300, damping: 23, mass: 0.8, useNativeDriver: true,
+        }).start();
+    };
     const toggleIconElement = (
-        <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
-                <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
-                    <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
+        <Animated.View style={{ transform: [{ scale: modeGlassScale }] }}>
+            <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={false}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
+                    <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
+                        <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />
+                    </View>
+                    <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
+                        {isLightningLoading ? (
+                            <ActivityIndicator
+                                size={18}
+                                color={theme.colors.bitcoin}
+                                style={{ transform: [{ scale: 0.8 }] }}
+                            />
+                        ) : (
+                            <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
+                        )}
+                    </View>
                 </View>
-                <View style={[styles.iconWrapper, isLightningMode && styles.iconWrapperActive]}>
-                    {isLightningLoading ? (
-                        <ActivityIndicator
-                            size={18}
-                            color={theme.colors.bitcoin}
-                            style={{ transform: [{ scale: 0.8 }] }}
-                        />
-                    ) : (
-                        <MaterialIcons name="bolt" size={18} color={isLightningMode ? theme.colors.inversePrimary : (!isLightningInitialized ? theme.colors.border : theme.colors.muted)} />
-                    )}
-                </View>
-            </View>
-        </GlassView>
+            </GlassView>
+        </Animated.View>
     );
 
     const { openTerminal, busy: terminalChanging } = useTerminalEntry(activeWallet, modeChanging, setAppMode, isFocused);
@@ -750,6 +758,8 @@ const WalletScreen = () => {
                                     style={styles.toggleTouchable}
                                     accessibilityRole="button"
                                     accessibilityLabel={isLightningMode ? 'Switch to on-chain' : 'Switch to Lightning'}
+                                    onPressIn={() => animateModeGlass(true)}
+                                    onPressOut={() => animateModeGlass(false)}
                                     onPress={toggleMode}
                                     disabled={isToggleDisabled}
                                 >

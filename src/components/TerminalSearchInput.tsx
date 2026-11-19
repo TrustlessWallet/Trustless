@@ -4,7 +4,8 @@ import { Pressable, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 
-export function TerminalSearchInput({ label, value, onChangeText, onFocus, compact = false }: {
+export function TerminalSearchInput({ label, value, onChangeText, onFocus, onBlur, compact = false }: {
+  onBlur?: () => void;
   onFocus?: () => void;
   compact?: boolean;
   label: string;
@@ -15,7 +16,7 @@ export function TerminalSearchInput({ label, value, onChangeText, onFocus, compa
   return <View style={{ paddingHorizontal: 24, paddingVertical: compact ? 4 : 8 }}>
     <StyledInput accessibilityLabel={label} placeholder={label} value={value} onChangeText={onChangeText}
       containerStyle={compact ? { height: 44 } : undefined}
-      onFocus={onFocus} autoCorrect={false} autoCapitalize="none" returnKeyType="search" maxLength={128}
+      onFocus={onFocus} onBlur={onBlur} autoCorrect={false} autoCapitalize="none" returnKeyType="search" maxLength={128}
       rightElement={value ? <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label.toLowerCase()}`}
         onPress={() => onChangeText('')} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
         <Feather name="x" size={18} color={theme.colors.muted} />

@@ -1,7 +1,7 @@
 import { TerminalSearchInput } from '../components/TerminalSearchInput';
 import type { TerminalSalesFilter } from '../services/terminalSales';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import TerminalSheetHeader, { TerminalSheetInteractionContext } from './TerminalSheetHeader';
 import { Feather } from '@expo/vector-icons';
@@ -124,6 +124,13 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
     const timer = setTimeout(() => setDebounced({ scope, query: query.trim() }), 180);
     return () => clearTimeout(timer);
   }, [query, scope]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  useEffect(() => {
+    if (!searchFocused) return;
+    const subscription = Keyboard.addListener('keyboardDidHide', () => setSearchFocused(false));
+    return () => subscription.remove();
+  }, [searchFocused]);
+  const showSearchResults = searchFocused || !!query.trim();
   const searchTerm = query.trim() && debounced.scope === scope ? debounced.query : '';
   const searchPending = query.trim() !== searchTerm;
   const filter = useMemo(() => searchTerm ? { query: searchTerm } : undefined, [searchTerm]);
@@ -470,14 +477,15 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
   };
 
   const header = detailSale ? null : <>
-    {!detail ? <TerminalSearchInput compact label="Search all sales" value={query} onChangeText={value => setSearch({ scope, query: value })} /> : null}
-    <TerminalSalesPeriodControls period={period} pendingPeriod={pendingPeriod} customRange={customRange} draft={editingCustom?.draft ?? null} day={day} disabled={!visible || !headerEnabled}
+    {!detail ? <TerminalSearchInput compact label="Search all sales" value={query} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onChangeText={value => setSearch({ scope, query: value })} /> : null}
+    {!showSearchResults || detail ? <TerminalSalesPeriodControls period={period} pendingPeriod={pendingPeriod} customRange={customRange} draft={editingCustom?.draft ?? null} day={day} disabled={!visible || !headerEnabled}
       detailCaption={detail ? formatLongDate(saleTime(detail)) : undefined}
       onSelect={value => {
         if (value === 'custom') { openCustomEditor(); return; }
         ++checkEpoch.current; checkBusy.current = false; setSelected(null); setCustomEditor(null); selectLoadedPeriod(value);
-      }} onDraftChange={draft => setCustomEditor({ scope, draft })} onApply={applyCustomRange} onCancel={() => setCustomEditor(null)} />
+      }} onDraftChange={draft => setCustomEditor({ scope, draft })} onApply={applyCustomRange} onCancel={() => setCustomEditor(null)} /> : null}
     {!detail ? <>
+      {!showSearchResults ? <>
       {periodError ? <Text accessibilityRole="alert" style={styles.exportError}>Couldn’t open that period. Try again.</Text> : null}
       {exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}
       <View style={styles.summary} accessibilityLabel={summarySkeleton ? loading ? 'Loading sales summary' : 'Sales summary unavailable' : 'Sales summary'}>
@@ -493,7 +501,8 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       {onOpenReports && reportOwner ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open reports" disabled={!visible || !headerEnabled} onPress={() => { const selection = { period, ...(customRange ? { customRange: { ...customRange } } : {}), day: now }; proGate.requirePro(() => onOpenReports(selection)); }} style={styles.reportsRow}>
         <Feather name="bar-chart-2" size={18} color={theme.colors.primary} /><Text style={styles.reportsText}>Reports</Text>{pro.status === 'free' ? <TerminalProBadge /> : null}<Feather name="chevron-right" size={18} color={theme.colors.muted} />
       </TouchableOpacity> : null}
-      <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{filter ? null : summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
+      </> : null}
+      <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>{sectionTitle}</Text>{query.trim() ? null : summary ? <Text style={styles.sectionCount}>{summary.activityCount}</Text> : <View accessibilityLabel={loading ? 'Loading activity count' : 'Activity count unavailable'} style={styles.skeletonSectionCount} />}</View>
     </> : null}
   </>;
 
@@ -548,6 +557,7 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       style={styles.scroll}
 
       scrollEventThrottle={16}
+      automaticallyAdjustKeyboardInsets
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       data={error || searchPending ? [] : shown}
