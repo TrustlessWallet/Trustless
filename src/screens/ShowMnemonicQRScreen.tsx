@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, useWindowDimensions } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -20,6 +20,7 @@ const ShowMnemonicQRScreen = () => {
     const is_backup_mode = mode === 'backup';
     const confirming_ref = useRef(false);
     const [confirming, set_confirming] = useState(false);
+    const { width } = useWindowDimensions();
     const { theme, isDark } = useTheme(); 
     const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]); 
 
@@ -39,17 +40,17 @@ const ShowMnemonicQRScreen = () => {
     };
 
     return (
-        <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.container}>
             <Text style={styles.warning}>
-                Scan this QR code to import your recovery phrase. Do not share it with anyone.
+                This code contains your recovery phrase. Scan it only on a device you trust.
             </Text>
             
             <View style={styles.qr_wrapper}>
                 <QRCode
                     value={mnemonic}
-                    size={250}
-                    color={theme.colors.primary}
-                    backgroundColor={theme.colors.background}
+                    size={Math.min(250, width - 98)}
+                    color="#000000"
+                    backgroundColor="#ffffff"
                 />
             </View>
 
@@ -61,17 +62,17 @@ const ShowMnemonicQRScreen = () => {
                         color={theme.colors.inversePrimary}
                     />
                     <Text style={styles.button_text}>
-                        {is_backup_mode && walletId ? 'I saved my recovery phrase' : is_backup_mode ? 'Done' : 'Check recovery phrase'}
+                        {is_backup_mode && walletId ? 'I saved my recovery phrase' : is_backup_mode ? 'Done' : 'Check my backup'}
                     </Text>
                 </View>
             </TouchableOpacity>
-        </View>
+        </ScrollView>
     );
 };
 
 const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     container: {
-        flex: 1,
+        flexGrow: 1,
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
@@ -86,7 +87,7 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     },
     qr_wrapper: {
         padding: 24,
-        backgroundColor: theme.colors.background,
+        backgroundColor: '#ffffff',
         borderRadius: 8,
         shadowColor: theme.colors.primary,
         shadowOffset: { width: 0, height: 0 },
@@ -95,7 +96,7 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
         elevation: 3,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        marginBottom: 48,
+        marginBottom: 24,
     },
     button: {
         backgroundColor: theme.colors.primary, 

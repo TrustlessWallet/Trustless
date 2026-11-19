@@ -46,16 +46,14 @@ const ShowMnemonicScreen = () => {
     return (
         <ScrollView contentContainerStyle={styles.container}>
             <Text style={styles.warning}>
-                Save these {wordCount} words in order and store them securely. This is the only way to recover your wallet.
+                Write down all {wordCount} words in order. Keep your copy private.
             </Text>
             <View style={styles.mnemonicContainer}>
-                {}
                 <View style={styles.column}>
                     {firstColumnWords.map((word: string, index: number) => (
                         <Text key={index} style={styles.word}>{index + 1}. {word}</Text>
                     ))}
                 </View>
-                {}
                 <View style={styles.column}>
                     {secondColumnWords.map((word: string, index: number) => {
                         const wordNumber = index + firstColumnWords.length + 1;

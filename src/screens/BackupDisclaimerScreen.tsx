@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState, ScrollView } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -18,13 +18,6 @@ type route_prop_type = RouteProp<RootStackParamList, 'BackupDisclaimer'>;
 
 const BIOMETRICS_ENABLED_KEY = '@biometricsEnabled';
 
-const BulletPoint = ({ text, theme }: { text: string, theme: Theme }) => (
-    <View style={get_styles(theme).bullet_container}>
-        <Text style={get_styles(theme).bullet}>•</Text>
-        <Text style={get_styles(theme).bullet_text}>{text}</Text>
-    </View>
-);
-
 const BackupDisclaimerScreen = () => {
     const navigation = useNavigation<navigation_prop>();
     const route = useRoute<route_prop_type>();
@@ -42,6 +35,8 @@ const BackupDisclaimerScreen = () => {
     useFocusEffect(
         React.useCallback(() => {
             focused.current = true;
+            set_is_loading_phrase(false);
+            set_is_loading_qr(false);
             return () => {
                 focused.current = false;
                 ++request_id.current;
@@ -131,13 +126,13 @@ const BackupDisclaimerScreen = () => {
     };
 
     return (
-        <View style={styles.container}>
-            <View style={styles.bullets_wrapper}>
-                <BulletPoint text="You are about to view your secret recovery phrase." theme={theme} />
-                <BulletPoint text="Ensure no one else is looking at your screen." theme={theme} />
-                <BulletPoint text="This phrase is the only way to recover your funds." theme={theme} />
+        <ScrollView contentContainerStyle={styles.container}>
+            <View style={styles.intro}>
+                <Feather name="lock" size={24} color={theme.colors.primary} />
+                <Text style={styles.heading}>Keep a private copy</Text>
+                <Text style={styles.description}>Your recovery phrase restores this wallet. Anyone with the words or QR code can spend your bitcoin.</Text>
+                <Text style={styles.description}>Find a private place and write the words down in order.</Text>
             </View>
-            
             <View style={styles.buttons_wrapper}>
                 <TouchableOpacity 
                     style={styles.button_primary} 
@@ -169,39 +164,20 @@ const BackupDisclaimerScreen = () => {
                     )}
                 </TouchableOpacity>
             </View>
-        </View>
+        </ScrollView>
     );
 };
 
 const get_styles = (theme: Theme) => StyleSheet.create({
     container: { 
-      flex: 1, 
+      flexGrow: 1,
       justifyContent: 'center', 
       padding: 24, 
       backgroundColor: theme.colors.background
     },
-    bullets_wrapper: { 
-      alignSelf: 'center', 
-      marginBottom: 32, 
-      width: '90%' 
-    },
-    bullet_container: { 
-      flexDirection: 'row', 
-      alignItems: 'flex-start', 
-      marginBottom: 16 
-    },
-    bullet: { 
-      fontSize: 22, 
-      marginRight: 12, 
-      lineHeight: 28,
-      color: theme.colors.primary
-    },
-    bullet_text: { 
-      flex: 1, 
-      fontSize: 18, 
-      color: theme.colors.primary,
-      lineHeight: 28 
-    },
+    intro: { gap: 12, marginBottom: 28 },
+    heading: { fontSize: 22, fontFamily: 'SpaceMono-Bold', color: theme.colors.primary },
+    description: { fontSize: 16, lineHeight: 24, color: theme.colors.primary },
     buttons_wrapper: {
       gap: 16,
       width: '100%',

@@ -233,13 +233,18 @@ it('hides stale results as soon as the query changes and clears the search witho
   }));
   const view = render(<TerminalSalesScreen walletId="wallet-a" network="mainnet" onClose={jest.fn()} />);
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
+  fireEvent(view.getByLabelText('Search all sales'), 'focus', {});
+  expect(view.queryByLabelText('Sales summary')).toBeNull();
   fireEvent.changeText(view.getByLabelText('Search all sales'), 'match');
   expect(view.queryByLabelText(/1 200 sats, Paid/)).toBeNull();
   expect(view.getByLabelText('Searching sales')).toBeTruthy();
   await waitFor(() => expect(view.getByLabelText(/2 500 sats, Paid/)).toBeTruthy());
   expect(listTerminalSalesPage).toHaveBeenCalledWith('wallet-a', 'mainnet', expect.objectContaining({ range: null, filter: { query: 'match' } }));
   expect(getTerminalSalesSummary).toHaveBeenCalledTimes(1);
+  fireEvent(view.getByLabelText('Search all sales'), 'blur', {});
+  expect(view.queryByLabelText('Sales summary')).toBeNull();
   fireEvent.press(view.getByLabelText('Clear search all sales'));
+  expect(view.getByLabelText('Sales summary')).toBeTruthy();
   expect(view.queryByLabelText(/2 500 sats, Paid/)).toBeNull();
   await waitFor(() => expect(view.getByLabelText(/1 200 sats, Paid/)).toBeTruthy());
 });

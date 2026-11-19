@@ -210,7 +210,7 @@ it('locks the item draft during saving and preserves it for correction and retry
   } finally { saving.mockRestore(); }
 });
 
-it('focuses the new item name after the sheet opens and leaves editing unfocused', async () => {
+it('focuses the new item name immediately and preserves the field when the sheet finishes opening', async () => {
   const view = renderWithCurrencyMeasurement();
   await waitFor(() => expect(view.getByText('Generate invoice')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Terminal settings'));
@@ -218,9 +218,9 @@ it('focuses the new item name after the sheet opens and leaves editing unfocused
   await waitFor(() => expect(view.getByLabelText('Add item')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Add item'));
   const name = view.getByLabelText('Item name');
-  expect(name.props.autoFocus).toBe(false);
+  expect(name.props.autoFocus).toBe(true);
   fireEvent(nativeScreen(name), 'onAppear');
-  expect(view.getByLabelText('Item name').props.autoFocus).toBe(true);
+  expect(view.getByLabelText('Item name')).toBe(name);
   fireEvent.changeText(view.getByLabelText('Item name'), 'Tea');
   fireEvent.changeText(view.getByLabelText('Item price'), '250');
   fireEvent.press(view.getByLabelText('Save item'));

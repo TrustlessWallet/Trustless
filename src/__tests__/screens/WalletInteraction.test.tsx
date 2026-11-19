@@ -61,7 +61,7 @@ jest.mock('react-native-safe-area-context', () => ({
 
 
 import { act } from '@testing-library/react-native';
-import { Alert, Dimensions, Platform, RefreshControl, StyleSheet } from 'react-native';
+import { Alert, Animated, Dimensions, Platform, RefreshControl, StyleSheet } from 'react-native';
 const originalPlatform = Platform.OS;
 afterEach(() => { Platform.OS = originalPlatform; });
 const refresh = jest.fn<Promise<void>, []>(() => Promise.resolve());
@@ -91,14 +91,22 @@ it('keeps receive and send immediately available after focus returns', async () 
     expect(navigate).toHaveBeenCalledWith('Receive', { mode: 'onchain' });
     expect(navigate).toHaveBeenCalledWith('Send', { mode: 'onchain' });
 });
-it('keeps the pressed switch mounted across both wallet modes', async () => {
+it('springs the same glass surface back to rest across a mode change', async () => {
     const screen = render(<WalletScreen />);
     await act(async () => {});
     const control = screen.getByLabelText('Switch to Lightning');
-    fireEvent.press(control);
-    expect(screen.getByLabelText('Switch to on-chain')).toBe(control);
-    fireEvent.press(control);
-    expect(screen.getByLabelText('Switch to Lightning')).toBe(control);
+    const spring = jest.spyOn(Animated, 'spring');
+    try {
+        fireEvent(control, 'pressIn');
+        const [scale, expansion] = spring.mock.calls[spring.mock.calls.length - 1];
+        expect(expansion.toValue).toBeGreaterThan(1);
+        fireEvent.press(control);
+        expect(screen.getByLabelText('Switch to on-chain')).toBe(control);
+        fireEvent(control, 'pressOut');
+        expect(spring).toHaveBeenLastCalledWith(scale, expect.objectContaining({ toValue: 1, useNativeDriver: true }));
+        fireEvent.press(control);
+        expect(screen.getByLabelText('Switch to Lightning')).toBe(control);
+    } finally { spring.mockRestore(); }
 });
 it('keeps the latest tap when the launch preference arrives late', async () => {
     let resolveMode!: (mode: string) => void;

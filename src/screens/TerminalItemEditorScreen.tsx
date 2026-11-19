@@ -43,15 +43,8 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
   const [unit, setUnit] = useState<TerminalUnit>(initialItem?.unit ?? preferredUnit);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [nameFocusReady, setNameFocusReady] = useState(false);
   const busyRef = useRef(false);
   useLayoutEffect(() => { navigation.setOptions({ gestureEnabled: !busy }); }, [navigation, busy]);
-  useEffect(() => {
-    if (initialItem) return;
-    return navigation.addListener('transitionEnd', event => {
-      if (!event.data.closing) setNameFocusReady(true);
-    });
-  }, [initialItem, navigation]);
   const ownerRef = useRef(false);
   const scopeRef = useRef(`${network}:${walletId}`);
   scopeRef.current = `${network}:${walletId}`;
@@ -86,7 +79,7 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
     <TerminalSheetHeader title={initialItem ? 'Edit item' : 'Add item'} closeLabel="Close item editor" disabled={busy} onClose={() => { if (!busyRef.current) onClose(); }} />
     {ownerAllowed ? <ScrollView ref={scrollViewRef} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom }]}>
       <Text style={[styles.fieldLabel, { color: theme.colors.muted }]}>Name</Text>
-      <StyledInput key={nameFocusReady ? 'ready' : 'opening'} accessibilityLabel="Item name" value={name} editable={!busy} onChangeText={value => { if (!busyRef.current) setName(value); }} maxLength={60} autoFocus={!initialItem && nameFocusReady} autoCapitalize="sentences" />
+      <StyledInput accessibilityLabel="Item name" value={name} editable={!busy} onChangeText={value => { if (!busyRef.current) setName(value); }} maxLength={60} autoFocus={!initialItem} autoCapitalize="sentences" />
       <Text style={[styles.fieldLabel, { color: theme.colors.muted }]}>Price</Text>
       <StyledInput accessibilityLabel="Item price" value={price} editable={!busy} onChangeText={value => { if (!busyRef.current) setPrice(value); }} keyboardType="decimal-pad" onFocus={handleInputFocus} />
       <View style={styles.units}>{units.map(choice => <TouchableOpacity key={choice} accessibilityRole="button" accessibilityLabel={`Price in ${choice}`} accessibilityState={{ selected: unit === choice, disabled: busy }} disabled={busy} onPress={() => { if (!busyRef.current && choice !== unit) { setUnit(choice); setPrice(''); } }} style={[styles.unit, { borderColor: unit === choice ? theme.colors.bitcoin : theme.colors.border }]}><Text style={{ color: theme.colors.primary }}>{choice}</Text></TouchableOpacity>)}</View>
