@@ -36,12 +36,12 @@ it('only offers item creation to owners with a confirmed empty catalog', () => {
   const props = { catalog: [], lines: [], unit: 'sats' as const, busy: false, onAdd: jest.fn(), onRemoveOne: jest.fn(), onClose: jest.fn() };
   const view = render(<TerminalQuickItemsScreen {...props} />);
   expect(view.getByText('No items yet')).toBeTruthy();
-  expect(view.queryByText('Add item')).toBeNull();
+  expect(view.queryByText('Add the first item')).toBeNull();
   const retry = jest.fn();
   view.rerender(<TerminalQuickItemsScreen {...props} catalogPending onCreate={jest.fn()} />);
   expect(view.queryByText('No items yet')).toBeNull();
   view.rerender(<TerminalQuickItemsScreen {...props} onRetry={retry} onCreate={jest.fn()} />);
   fireEvent.press(view.getByText('Items unavailable · Retry'));
   expect(retry).toHaveBeenCalledTimes(1);
-  expect(view.queryByText('Add item')).toBeNull();
+  expect(view.queryByText('Add the first item')).toBeNull();
 });

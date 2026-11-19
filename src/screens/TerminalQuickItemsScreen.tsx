@@ -7,7 +7,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { formatTerminalBasketAmount, TerminalBasketLine, TerminalUnit } from '../services/terminal';
 import { TerminalItem } from '../services/terminalItems';
 import TerminalSheetHeader from './TerminalSheetHeader';
-import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 
 type Props = {
   error?: string;
@@ -78,13 +77,14 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, catalogP
     {/* A native wrapper keeps react-native-screens from misplacing this list in an iOS formSheet. */}
     <View collapsable={false} style={styles.scrollContainer}>
       {showCreate ? <ScrollView contentContainerStyle={styles.emptySetup} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} bounces={false}>
-        <View style={{ height: (sheetHeight - SHEET_HEADER_HEIGHT - 24) / 2, flexShrink: 1 }} />
-        <Text style={[styles.emptyTitle, { color: theme.colors.muted }]}>No items yet</Text>
+        <View style={styles.emptyMessage}>
+          <Text style={[styles.emptyTitle, { color: theme.colors.muted }]}>No items yet</Text>
+        </View>
         <View style={[styles.footer, { paddingBottom: Math.max(16, insets.bottom) }]}>
           <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={onCreate} style={[styles.create, { backgroundColor: theme.colors.primary }]}>
-            <Text style={{ color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '700' }}>Add item</Text>
+            <Text style={{ color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '700' }}>Add the first item</Text>
           </TouchableOpacity>
-          <Text style={[styles.hint, { color: theme.colors.muted }]}>Add more items in Terminal settings.</Text>
+          <Text style={[styles.hint, { color: theme.colors.muted }]}>You can add more items in Terminal settings</Text>
         </View>
       </ScrollView> : <FlatList data={rows} keyExtractor={item => item.id} extraData={{ lines, unit, busy, stackControls }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, !rows.length && styles.emptyList, { paddingBottom: rows.length ? Math.max(12, insets.bottom) : 0 }]}
         ListEmptyComponent={onRetry ? <TouchableOpacity accessibilityRole="button" onPress={onRetry} style={styles.control}><Text>Items unavailable · Retry</Text></TouchableOpacity>
@@ -114,7 +114,8 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, catalogP
 const styles = StyleSheet.create({
   emptyList: { flexGrow: 1, justifyContent: 'center' },
   emptySetup: { flexGrow: 1, paddingHorizontal: 24 },
-  footer: { marginTop: 'auto', paddingTop: 12 },
+  emptyMessage: { flexGrow: 1, justifyContent: 'center' },
+  footer: { paddingTop: 12 },
   emptyTitle: { fontSize: 16, lineHeight: 24, textAlign: 'center' },
   create: { minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   hint: { fontSize: 12, textAlign: 'center', marginTop: 12 },

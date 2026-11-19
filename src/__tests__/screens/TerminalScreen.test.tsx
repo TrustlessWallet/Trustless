@@ -156,14 +156,15 @@ it('shows warmed quick items on the first render before background revalidation 
 it('creates the first quick item from checkout and returns it to the open picker', async () => {
   const view = renderWithCurrencyMeasurement();
   fireEvent.press(view.getByLabelText('Items'));
-  fireEvent.press(await view.findByRole('button', { name: 'Add item' }));
+  expect(await view.findByText('You can add more items in Terminal settings')).toBeTruthy();
+  fireEvent.press(view.getByRole('button', { name: 'Add the first item' }));
   fireEvent.changeText(view.getByLabelText('Item name'), 'Coffee');
   fireEvent.changeText(view.getByLabelText('Item price'), '58');
   fireEvent.press(view.getByLabelText('Save item'));
   fireEvent.press(await view.findByLabelText('Add Coffee'));
   expect(view.getByLabelText('Remove one Coffee')).toBeTruthy();
   expect(view.queryByText('No items yet')).toBeNull();
-  expect(view.queryByText('Add more items in Terminal settings.')).toBeNull();
+  expect(view.queryByText('You can add more items in Terminal settings')).toBeNull();
 });
 
 it('lets the owner save an item from Terminal Settings and use it at checkout', async () => {
