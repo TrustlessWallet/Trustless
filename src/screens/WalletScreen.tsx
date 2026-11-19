@@ -610,8 +610,9 @@ const WalletScreen = () => {
     const recentTransactions = displayTransactions.slice(0, 3);
 
     const modeGlassScale = useRef(new Animated.Value(1)).current;
-    const animateModeGlass = (pressed: boolean) => {
-        Animated.spring(modeGlassScale, {
+    const nameGlassScale = useRef(new Animated.Value(1)).current;
+    const animateGlass = (scale: Animated.Value, pressed: boolean) => {
+        Animated.spring(scale, {
             toValue: pressed ? 1.025 : 1, stiffness: 300, damping: 23, mass: 0.8, useNativeDriver: true,
         }).start();
     };
@@ -758,26 +759,31 @@ const WalletScreen = () => {
                                     style={styles.toggleTouchable}
                                     accessibilityRole="button"
                                     accessibilityLabel={isLightningMode ? 'Switch to on-chain' : 'Switch to Lightning'}
-                                    onPressIn={() => animateModeGlass(true)}
-                                    onPressOut={() => animateModeGlass(false)}
+                                    onPressIn={() => animateGlass(modeGlassScale, true)}
+                                    onPressOut={() => animateGlass(modeGlassScale, false)}
                                     onPress={toggleMode}
                                     disabled={isToggleDisabled}
                                 >
                                     {activeWallet?.type !== 'watch-only' && toggleIconElement}
                                 </TouchableOpacity>
 
-                                <TouchableOpacity activeOpacity={1} onPress={() => navigation.navigate('WalletSwitcher')}>
-                                    <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={true}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
-                                            <Text
-                                                style={[styles.walletName]}
-                                                numberOfLines={1}
-                                                ellipsizeMode="middle"
-                                            >
-                                                {activeWallet?.name || 'Wallet'}
-                                            </Text>
-                                        </View>
-                                    </GlassView>
+                                <TouchableOpacity activeOpacity={1}
+                                    onPressIn={() => animateGlass(nameGlassScale, true)}
+                                    onPressOut={() => animateGlass(nameGlassScale, false)}
+                                    onPress={() => navigation.navigate('WalletSwitcher')}>
+                                    <Animated.View style={{ transform: [{ scale: nameGlassScale }] }}>
+                                        <GlassView style={{ overflow: 'visible' }} width={128} height={36} shape="capsule" interactive={true}>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12 }}>
+                                                <Text
+                                                    style={[styles.walletName]}
+                                                    numberOfLines={1}
+                                                    ellipsizeMode="middle"
+                                                >
+                                                    {activeWallet?.name || 'Wallet'}
+                                                </Text>
+                                            </View>
+                                        </GlassView>
+                                    </Animated.View>
                                 </TouchableOpacity>
 
                                 {terminalEntryElement}
