@@ -15,7 +15,7 @@ jest.mock('../../contexts/WalletContext', () => ({
   useWallet: () => ({ wallets: [{ id: 'existing' }], generateMnemonic: mockGenerate, addWallet: mockAdd }),
 }));
 jest.mock('../../contexts/ThemeContext', () => ({
-  useTheme: () => ({ theme: { colors: {}, LAYOUT: {} }, isDark: false }),
+  useTheme: () => ({ theme: { colors: { primary: '#121212', border: '#cccccc' }, LAYOUT: {} }, isDark: false }),
 }));
 jest.mock('../../services/firstLaunchWallet', () => ({ confirmWalletBackup: jest.fn() }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
@@ -27,7 +27,11 @@ it('passes the selected phrase length and trimmed name and ignores repeated gene
   mockGenerate.mockReturnValue(new Promise(resolve => { finish = resolve; }));
   const view = render(<BackupIntroScreen />);
   fireEvent.changeText(view.getByLabelText('Wallet name'), '  Savings  ');
+  const lengths = view.getAllByRole('radio');
+  expect(lengths[0]).toHaveStyle({ borderColor: '#121212', backgroundColor: '#121212' });
   fireEvent.press(view.getByText('24 words'));
+  expect(lengths[0]).toHaveStyle({ borderColor: '#cccccc' });
+  expect(lengths[2]).toHaveStyle({ borderColor: '#121212', backgroundColor: '#121212' });
   fireEvent.press(view.getByText('Show recovery phrase'));
   expect(mockGenerate).toHaveBeenCalledTimes(1);
   expect(mockGenerate).toHaveBeenCalledWith(256);

@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -8,7 +8,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../constants/theme'; 
 import { NETWORK_NAME } from '../constants/network';
 import { confirmWalletBackup } from '../services/firstLaunchWallet';
-import QRCode from 'react-native-qrcode-svg';
+import { WalletQRCode, walletQRCardStyle } from '../components/WalletQRCode';
 
 type navigation_prop = NativeStackNavigationProp<any>;
 type route_prop_type = RouteProp<any>;
@@ -20,7 +20,6 @@ const ShowMnemonicQRScreen = () => {
     const is_backup_mode = mode === 'backup';
     const confirming_ref = useRef(false);
     const [confirming, set_confirming] = useState(false);
-    const { width } = useWindowDimensions();
     const { theme, isDark } = useTheme(); 
     const styles = useMemo(() => get_styles(theme, isDark), [theme, isDark]); 
 
@@ -46,12 +45,7 @@ const ShowMnemonicQRScreen = () => {
             </Text>
             
             <View style={styles.qr_wrapper}>
-                <QRCode
-                    value={mnemonic}
-                    size={Math.min(250, width - 98)}
-                    color="#000000"
-                    backgroundColor="#ffffff"
-                />
+                <WalletQRCode value={mnemonic} />
             </View>
 
             <TouchableOpacity style={styles.button} onPress={handle_continue} disabled={confirming}>
@@ -85,19 +79,7 @@ const get_styles = (theme: Theme, isDark: boolean) => StyleSheet.create({
         textAlign: 'center',
         marginBottom: 32,
     },
-    qr_wrapper: {
-        padding: 24,
-        backgroundColor: '#ffffff',
-        borderRadius: 8,
-        shadowColor: theme.colors.primary,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: isDark ? 0.3 : 0.1,
-        shadowRadius: 3,
-        elevation: 3,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        marginBottom: 24,
-    },
+    qr_wrapper: { ...walletQRCardStyle(theme, isDark), marginBottom: 24 },
     button: {
         backgroundColor: theme.colors.primary, 
         paddingVertical: 16,

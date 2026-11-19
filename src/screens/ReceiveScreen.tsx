@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Share, Alert, Clipboard, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Pressable, Modal, ScrollView, TextInput } from 'react-native';
 import { Text } from '../components/StyledText';
 import { StyledInput } from '../components/StyledInput';
-import QRCode from 'react-native-qrcode-svg';
+import { WalletQRCode, walletQRCardStyle, WALLET_QR_SIZE } from '../components/WalletQRCode';
 import { useWallet } from '../contexts/WalletContext';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useIsFocused, useRoute, RouteProp } from '@react-navigation/native';
@@ -19,7 +19,7 @@ import { GlassView } from '../components/GlassView';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
 type ReceiveScreenRouteProp = RouteProp<RootStackParamList, 'Receive'>;
 
-const QR_SIZE = 240;
+
 const UNUSED_BUFFER_SIZE = 20;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
 
@@ -333,24 +333,14 @@ const ReceiveScreen = () => {
   const memoizedOnchainQR = useMemo(() => {
     if (!current_display_data?.address) return null;
     return (
-      <QRCode
-        value={current_display_data.address}
-        size={QR_SIZE}
-        backgroundColor={theme.colors.background}
-        color={theme.colors.primary}
-      />
+      <WalletQRCode value={current_display_data.address} />
     );
   }, [current_display_data?.address, theme.colors.background, theme.colors.primary]);
 
   const memoizedLightningQR = useMemo(() => {
     if (!qrEncodeString) return null;
     return (
-      <QRCode
-        value={qrEncodeString}
-        size={QR_SIZE}
-        backgroundColor={theme.colors.background}
-        color={theme.colors.primary}
-      />
+      <WalletQRCode value={qrEncodeString} />
     );
   }, [qrEncodeString, theme.colors.background, theme.colors.primary]);
 
@@ -645,7 +635,7 @@ const ReceiveScreen = () => {
                         </View>
                       )}
                       {isGeneratingLightning ? (
-                        <View style={{ height: QR_SIZE, width: QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
+                        <View style={{ height: WALLET_QR_SIZE, width: WALLET_QR_SIZE, justifyContent: 'center', alignItems: 'center' }}>
                           <ActivityIndicator size="large" color={theme.colors.bitcoin} />
                           <Text style={{ color: theme.colors.muted, marginTop: 12 }}>Generating...</Text>
                         </View>
@@ -778,19 +768,7 @@ const getStyles = (theme: Theme, isDark: boolean) => StyleSheet.create({
     borderBottomWidth: 0,
     borderColor: theme.colors.border,
   },
-  qrCodeWrapper: {
-    padding: 16,
-    backgroundColor: theme.colors.background,
-    borderRadius: 8,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: isDark ? 0.3 : 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    marginBottom: 0,
-  },
+  qrCodeWrapper: walletQRCardStyle(theme, isDark),
   addressLabelInput: {
     color: theme.colors.primary,
     fontSize: 14,
