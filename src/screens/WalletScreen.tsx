@@ -617,7 +617,7 @@ const WalletScreen = () => {
     };
     const toggleIconElement = (
         <Animated.View style={{ transform: [{ scale: modeGlassScale }] }}>
-            <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={false}>
+            <GlassView style={{ overflow: 'visible' }} width={68} height={36} shape="capsule" interactive={true}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', paddingHorizontal: 2, justifyContent: 'space-between' }}>
                     <View style={[styles.iconWrapper, !isLightningMode && styles.iconWrapperActive]}>
                         <MaterialIcons name="link" size={18} color={!isLightningMode ? theme.colors.inversePrimary : theme.colors.muted} />

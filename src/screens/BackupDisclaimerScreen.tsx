@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState } from 'react-native';
 import { Text } from '../components/StyledText';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -125,97 +125,36 @@ const BackupDisclaimerScreen = () => {
         }
     };
 
+    const busy = is_loading_phrase || is_loading_qr;
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <View style={styles.intro}>
-                <Feather name="lock" size={24} color={theme.colors.primary} />
-                <Text style={styles.heading}>Keep a private copy</Text>
-                <Text style={styles.description}>Your recovery phrase restores this wallet. Anyone with the words or QR code can spend your bitcoin.</Text>
-                <Text style={styles.description}>Find a private place and write the words down in order.</Text>
-            </View>
-            <View style={styles.buttons_wrapper}>
-                <TouchableOpacity 
-                    style={styles.button_primary} 
-                    onPress={() => authenticate_and_fetch('ShowMnemonic')} 
-                    disabled={is_loading_phrase || is_loading_qr}
-                >
-                    {is_loading_phrase ? (
-                        <ActivityIndicator color={theme.colors.bitcoin} />
-                    ) : (
-                        <View style={styles.button_content_row_centered}>
-                            <Feather name="eye" size={18} color={theme.colors.inversePrimary} />
-                            <Text style={styles.button_text_primary}>Show phrase</Text>
-                        </View>
-                    )}
+        <View style={styles.container}>
+            <Text style={styles.instruction}>Write down your recovery phrase in private.</Text>
+            <Text style={styles.warning}>Anyone with the words or QR code can spend your bitcoin.</Text>
+            {([
+                ['eye', 'Show phrase', 'ShowMnemonic', is_loading_phrase],
+                ['grid', 'Show QR code', 'ShowMnemonicQR', is_loading_qr],
+            ] as const).map(([icon, label, destination, loading], index) => (
+                <TouchableOpacity key={destination} accessibilityRole="button" accessibilityLabel={label}
+                    accessibilityState={{ disabled: busy, busy: loading }} disabled={busy}
+                    style={[styles.row, index === 0 && styles.divider]}
+                    onPress={() => authenticate_and_fetch(destination)}>
+                    <Feather name={icon} size={22} color={theme.colors.primary} />
+                    <Text style={styles.label}>{label}</Text>
+                    {loading ? <ActivityIndicator color={theme.colors.bitcoin} /> :
+                        <Feather name="chevron-right" size={20} color={theme.colors.muted} />}
                 </TouchableOpacity>
-
-                <TouchableOpacity 
-                    style={styles.button_secondary} 
-                    onPress={() => authenticate_and_fetch('ShowMnemonicQR')} 
-                    disabled={is_loading_phrase || is_loading_qr}
-                >
-                    {is_loading_qr ? (
-                        <ActivityIndicator color={theme.colors.bitcoin} />
-                    ) : (
-                        <View style={styles.button_content_row_centered}>
-                            <Feather name="grid" size={18} color={theme.colors.primary} />
-                            <Text style={styles.button_text_secondary}>Show QR code</Text>
-                        </View>
-                    )}
-                </TouchableOpacity>
-            </View>
-        </ScrollView>
+            ))}
+        </View>
     );
 };
 
 const get_styles = (theme: Theme) => StyleSheet.create({
-    container: { 
-      flexGrow: 1,
-      justifyContent: 'center', 
-      padding: 24, 
-      backgroundColor: theme.colors.background
-    },
-    intro: { gap: 12, marginBottom: 28 },
-    heading: { fontSize: 22, fontFamily: 'SpaceMono-Bold', color: theme.colors.primary },
-    description: { fontSize: 16, lineHeight: 24, color: theme.colors.primary },
-    buttons_wrapper: {
-      gap: 16,
-      width: '100%',
-    },
-    button_primary: { 
-      backgroundColor: theme.colors.primary,
-      paddingVertical: 16, 
-      borderRadius: 8, 
-      width: '100%',
-      minHeight: 56
-    },
-    button_secondary: {
-      backgroundColor: 'transparent',
-      borderColor: theme.colors.primary,
-      borderWidth: 1,
-      paddingVertical: 16, 
-      borderRadius: 8, 
-      width: '100%',
-      minHeight: 56
-    },
-    button_text_primary: { 
-      color: theme.colors.inversePrimary,
-      fontSize: 16, 
-      fontWeight: '600', 
-      textAlign: 'center' 
-    },
-    button_text_secondary: { 
-      color: theme.colors.primary,
-      fontSize: 16, 
-      fontWeight: '600', 
-      textAlign: 'center' 
-    },
-    button_content_row_centered: { 
-      flexDirection: 'row', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      gap: 8 
-    },
+    container: { backgroundColor: theme.colors.background, padding: 24 },
+    instruction: { fontSize: 16, lineHeight: 24, color: theme.colors.primary },
+    warning: { fontSize: 14, lineHeight: 21, color: theme.colors.muted, marginTop: 8, marginBottom: 16 },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 64 },
+    divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border },
+    label: { flex: 1, fontSize: 16, color: theme.colors.primary },
 });
 
 export default BackupDisclaimerScreen;

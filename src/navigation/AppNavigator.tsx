@@ -445,7 +445,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
           <Stack.Screen name="WalletSwitcher" component={WalletSwitcherScreen} options={{ title: 'Wallets' }} />
           <Stack.Screen name="WalletOptions" component={WalletOptionsScreen} options={{ title: 'Wallet options' }} />
           <Stack.Screen name="AddWalletOptions" component={AddWalletOptionsScreen} options={{ title: 'Add wallet', sheetAllowedDetents: 'fitToContents' }} />
-          <Stack.Screen name="BackupDisclaimer" component={BackupDisclaimerScreen} options={{ title: 'Backup wallet' }} />
+          <Stack.Screen name="BackupDisclaimer" component={BackupDisclaimerScreen} options={{ title: 'Back up wallet', sheetAllowedDetents: 'fitToContents' }} />
           <Stack.Screen name="AddressBook" component={AddressBookScreen} options={{ title: 'Saved addresses' }} />
           <Stack.Screen name="AddSavedAddress" component={AddSavedAddressScreen} options={{ title: 'Add new address' }} />
           <Stack.Screen name="CoinControl" component={CoinControlScreen} options={{ title: 'Select coins to spend' }} />

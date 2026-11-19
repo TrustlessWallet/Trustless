@@ -61,7 +61,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     choices: { flexDirection: 'row', gap: 8 },
     choice: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: theme.LAYOUT.radius, borderWidth: 1,
         borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
-    selected: { backgroundColor: theme.colors.primary },
+    selected: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
     choiceText: { fontSize: 14, color: theme.colors.primary },
     selectedText: { color: theme.colors.inversePrimary },
     button: { backgroundColor: theme.colors.primary, borderRadius: 8, minHeight: 56, justifyContent: 'center', alignItems: 'center', marginTop: 32 },

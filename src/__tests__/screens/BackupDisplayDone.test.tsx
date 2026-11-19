@@ -1,4 +1,5 @@
 import React from 'react';
+import QRCode from 'react-native-qrcode-svg';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { useNavigation } from '@react-navigation/native';
 import { get_biometric_prompt_shown } from '../../services/authState';
@@ -12,8 +13,9 @@ jest.mock('@react-navigation/native', () => ({
     useNavigation: jest.fn(),
     useRoute: () => ({ params: mockRouteParams }),
 }));
+let mockDark = true;
 jest.mock('../../contexts/ThemeContext', () => ({
-    useTheme: () => ({ theme: { colors: { background: '#000', primary: '#fff', inversePrimary: '#000', border: '#888' } }, isDark: true }),
+    useTheme: () => ({ theme: { colors: { background: mockDark ? '#000' : '#fff', primary: mockDark ? '#fff' : '#000', inversePrimary: '#000', border: '#888' } }, isDark: mockDark }),
 }));
 jest.mock('@expo/vector-icons', () => ({ Feather: () => null }));
 jest.mock('react-native-qrcode-svg', () => () => null);
@@ -24,9 +26,19 @@ describe('backup display Done', () => {
     let focus: (() => void) | undefined;
     beforeEach(() => {
         jest.clearAllMocks();
+        mockDark = true;
         mockRouteParams = { ...mockRouteParams, mode: 'backup', walletId: undefined };
         focus = undefined;
         (useNavigation as jest.Mock).mockReturnValue({ popToTop, navigate, addListener: (_event: string, listener: () => void) => { focus = listener; return jest.fn(); } });
+    });
+
+    it.each([false, true])('renders the recovery QR with wallet theme colors (dark = %s)', dark => {
+        mockDark = dark;
+        const screen = render(<ShowMnemonicQRScreen />);
+        expect(screen.UNSAFE_getByType(QRCode).props).toMatchObject({
+            value: mockRouteParams.mnemonic, size: 240,
+            color: dark ? '#fff' : '#000', backgroundColor: dark ? '#000' : '#fff',
+        });
     });
 
     it.each([
