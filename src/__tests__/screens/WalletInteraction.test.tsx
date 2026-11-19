@@ -100,6 +100,14 @@ it('springs the same glass surface back to rest across a mode change', async () 
         fireEvent(control, 'pressIn');
         const [scale, expansion] = spring.mock.calls[spring.mock.calls.length - 1];
         expect(expansion.toValue).toBeGreaterThan(1);
+        const name = screen.getByText('Wallet');
+        fireEvent(name, 'pressIn');
+        const [nameScale, nameExpansion] = spring.mock.calls[spring.mock.calls.length - 1];
+        expect(nameScale).not.toBe(scale);
+        expect(nameExpansion).toEqual(expansion);
+        fireEvent(name, 'pressOut');
+        expect(spring).toHaveBeenLastCalledWith(nameScale, expect.objectContaining({ toValue: 1 }));
+
         fireEvent.press(control);
         expect(screen.getByLabelText('Switch to on-chain')).toBe(control);
         fireEvent(control, 'pressOut');
