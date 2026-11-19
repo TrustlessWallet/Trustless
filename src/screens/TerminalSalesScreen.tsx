@@ -7,7 +7,6 @@ import TerminalSheetHeader, { TerminalSheetInteractionContext } from './Terminal
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GlassIconButton from '../components/GlassIconButton';
-import { SHEET_HEADER_HEIGHT } from '../constants/theme';
 import { Text } from '../components/StyledText';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWallet } from '../contexts/WalletContext';
@@ -563,10 +562,11 @@ export default function TerminalSalesScreen({ walletId, network, onClose, visibl
       data={error || searchPending ? [] : shown}
       keyExtractor={item => item.request.id}
       ListHeaderComponent={header}
+      ListHeaderComponentStyle={{ backgroundColor: theme.colors.background }}
       contentInsetAdjustmentBehavior="never"
       automaticallyAdjustContentInsets={false}
       contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 28 }]}
-      refreshControl={<RefreshControl refreshing={state.identity === loadIdentity && state.refreshing} onRefresh={() => { ++pendingPeriodGeneration.current; setPendingPeriod(null); periodCache.current.clear(); void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} progressViewOffset={SHEET_HEADER_HEIGHT} />}
+      refreshControl={<RefreshControl refreshing={state.identity === loadIdentity && state.refreshing} onRefresh={() => { ++pendingPeriodGeneration.current; setPendingPeriod(null); periodCache.current.clear(); void refresh(true, true); }} tintColor={theme.colors.bitcoin} colors={[theme.colors.bitcoin]} />}
       onEndReached={() => { if (!searchPending) void loadNextPage(); }}
       onEndReachedThreshold={0.35}
       renderItem={({ item }) => {
@@ -622,7 +622,7 @@ function makeStyles(colors: { background: string; primary: string; inversePrimar
     sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 24, marginTop: 35, marginBottom: 9 },
     sectionTitle: { color: colors.muted, fontFamily: 'SpaceMono-Bold', fontSize: 10, letterSpacing: 1.5 },
     sectionCount: { color: colors.muted, fontFamily: 'SpaceMono-Regular', fontSize: 11 },
-    listContent: { paddingTop: 20 },
+    listContent: { paddingTop: 24 },
     saleRow: { minHeight: 82, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border },
     rowIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginRight: 15 },
     paidRowIcon: { backgroundColor: colors.bitcoin + '20' },

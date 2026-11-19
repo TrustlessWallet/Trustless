@@ -612,7 +612,7 @@ const WalletScreen = () => {
     const modeGlassScale = useRef(new Animated.Value(1)).current;
     const animateModeGlass = (pressed: boolean) => {
         Animated.spring(modeGlassScale, {
-            toValue: pressed ? 1.09 : 1, stiffness: 300, damping: 23, mass: 0.8, useNativeDriver: true,
+            toValue: pressed ? 1.025 : 1, stiffness: 300, damping: 23, mass: 0.8, useNativeDriver: true,
         }).start();
     };
     const toggleIconElement = (
