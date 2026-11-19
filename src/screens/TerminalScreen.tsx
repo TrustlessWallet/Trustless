@@ -145,12 +145,18 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   const [amount, setAmount] = useState('');
   const [basketError, setBasketError] = useState('');
   const [basketLines, setBasketLines] = useState<TerminalBasketLine[]>([]);
-  const [catalog, setCatalog] = useState<TerminalItem[]>(() => activeWallet ? getCachedTerminalItems(activeWallet.id, NETWORK_NAME) ?? [] : []);
+  const [catalog, setCatalog] = useState<TerminalItem[] | null>(() => activeWallet ? getCachedTerminalItems(activeWallet.id, NETWORK_NAME) : null);
   const [catalogError, setCatalogError] = useState(false);
   const [catalogRevision, reloadCatalog] = useState(0);
   const [unit, setUnit] = useState<TerminalUnit>('sats');
   const [settingsUnit, setSettingsUnit] = useState<TerminalUnit | null>();
   const [checkoutFocused, setCheckoutFocused] = useState(true);
+  const checkoutWasFocused = useRef(true);
+  const onCheckoutFocus = useCallback((focused: boolean) => {
+    if (focused && !checkoutWasFocused.current) reloadCatalog(v => v + 1);
+    checkoutWasFocused.current = focused;
+    setCheckoutFocused(focused);
+  }, []);
   const [invoiceFocused, setInvoiceFocused] = useState(false);
   const [endingRequest, setEndingRequest] = useState(false);
   const [lightningRetryScope, setLightningRetryScope] = useState<string | null>(null);
@@ -228,7 +234,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     setEndingRequest(false); setTransitioning(false);
     // Manual checkout amounts belong to the wallet that entered them, like basket lines.
     setAmount(''); setUnit(preferredUnit.current); userEditedAmount.current = false;
-    basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setCatalog(activeWallet ? getCachedTerminalItems(activeWallet.id, network) ?? [] : []); setCatalogError(false);
+    basketRef.current = []; basketUnitRef.current = null; setBasketLines([]); setBasketError(''); setCatalog(activeWallet ? getCachedTerminalItems(activeWallet.id, network) : null); setCatalogError(false);
     presentedRequestId.current = null;
   }, [scope]);
 
@@ -241,13 +247,13 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   }, [request?.id, visible, checkoutFocused]);
 
   useEffect(() => {
-    if (!visible || !checkoutFocused || !activeWallet || activeWallet.type === 'watch-only') return;
+    if (!visible || !activeWallet || activeWallet.type === 'watch-only') return;
     let current = true;
     void listTerminalItems(activeWallet.id, network).then(items => {
       if (current && scopeRef.current === scope) { setCatalog(items); setCatalogError(false); }
     }).catch(() => { if (current && scopeRef.current === scope) { setCatalog([]); setCatalogError(true); } });
     return () => { current = false; };
-  }, [scope, visible, checkoutFocused, catalogRevision]);
+  }, [scope, visible, catalogRevision]);
 
   useEffect(() => {
     void AsyncStorage.getItem(PREFERRED_UNIT_KEY).then(saved => {
@@ -743,7 +749,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
           {!error && isLightningInitialized && catalogError ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry items" onPress={() => reloadCatalog(v => v + 1)}><Text style={styles.error}>Items unavailable · Retry</Text></TouchableOpacity> : null}
         </View>
         <View style={styles.itemsRow}>
-          {catalog.length || basketLines.length ? <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel="Items" disabled={stage === 'creating'} style={styles.itemsCapsule} onPress={() => checkoutNavigation.current?.navigate('QuickItems')}><GlassView width={80} height={36} shape="capsule" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}><Text style={styles.salesLabel}>Items</Text></GlassView></Pressable>
         </View>
       </View>
       <TouchableOpacity testID="terminal-request" disabled={requestDisabled} style={[styles.primaryAction, requestDisabled && styles.disabled]} onPress={() => { if (busy.current) return; if (request) { checkoutNavigation.current?.navigate('Invoice'); return; } if (hydrationFailed) { setError(''); reload(v => v + 1); } else if (retryEntry) void retryCheckoutConnection(); else void requestPayment(); }}>
@@ -758,7 +764,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
         checkoutNavigation.current = navigation;
-        return <CheckoutVisibility onChange={setCheckoutFocused}>{checkout}</CheckoutVisibility>;
+        return <CheckoutVisibility onChange={onCheckoutFocus}>{checkout}</CheckoutVisibility>;
       }}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="Settings" options={sheetOptions}>
@@ -777,10 +783,11 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       {({ navigation }) => activeWallet ? <TerminalItemsScreen walletId={activeWallet.id} network={network} preferredUnit={unit} onEdit={item => navigation.navigate('ItemEditor', { item })} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="QuickItems" options={quickItemsSheetOptions}>
-      {({ navigation }) => <TerminalQuickItemsScreen error={basketError} catalog={catalog} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onClose={() => navigation.goBack()} />}
+      {({ navigation }) => <TerminalQuickItemsScreen error={basketError} catalog={catalog ?? []} catalogPending={catalog === null} onRetry={catalogError ? () => reloadCatalog(v => v + 1) : undefined}
+        onCreate={cashierState === 'off' && activeWallet && activeWallet.type !== 'watch-only' ? () => navigation.navigate('ItemEditor') : undefined} lines={basketLines} unit={unit} busy={stage === 'creating'} onAdd={item => updateBasket(item, 1)} onRemoveOne={line => updateBasket({ id: line.itemId, name: line.name, unit, unitPrice: line.unitPrice }, -1)} onClose={() => navigation.goBack()} />}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="ItemEditor" options={sheetOptions}>
-      {({ navigation, route }) => activeWallet ? <TerminalItemEditorScreen walletId={activeWallet.id} network={network} preferredUnit={unit} initialItem={route.params?.item} onClose={() => navigation.goBack()} /> : null}
+      {({ navigation, route }) => activeWallet ? <TerminalItemEditorScreen walletId={activeWallet.id} network={network} preferredUnit={unit} initialItem={route.params?.item} onSaved={setCatalog} onClose={() => navigation.goBack()} /> : null}
     </TerminalStack.Screen>
     <TerminalStack.Screen name="ReceiptSettings" options={sheetOptions}>
       {({ navigation }) => activeWallet ? <TerminalReceiptSettingsScreen walletId={activeWallet.id} network={network} onClose={() => navigation.goBack()} /> : null}

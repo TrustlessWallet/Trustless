@@ -13,7 +13,7 @@ export function TerminalSearchInput({ label, value, onChangeText, onFocus, onBlu
   onChangeText: (value: string) => void;
 }) {
   const { theme } = useTheme();
-  return <View style={{ paddingHorizontal: 24, paddingVertical: compact ? 4 : 8 }}>
+  return <View style={{ paddingHorizontal: 24, paddingTop: compact ? 0 : 8, paddingBottom: compact ? 4 : 8 }}>
     <StyledInput accessibilityLabel={label} placeholder={label} value={value} onChangeText={onChangeText}
       containerStyle={compact ? { height: 44 } : undefined}
       onFocus={onFocus} onBlur={onBlur} autoCorrect={false} autoCapitalize="none" returnKeyType="search" maxLength={128}

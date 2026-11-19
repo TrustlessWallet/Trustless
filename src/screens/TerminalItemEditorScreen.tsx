@@ -15,7 +15,7 @@ import { formatFiatMinor, formatTerminalAmount, parseFiatMinor, parseTerminalAmo
 import { saveTerminalItem, TerminalItem } from '../services/terminalItems';
 import TerminalSheetHeader from './TerminalSheetHeader';
 
-type Props = { walletId: string; network: TerminalNetwork; preferredUnit: TerminalUnit; initialItem?: TerminalItem; onClose: () => void };
+type Props = { walletId: string; network: TerminalNetwork; preferredUnit: TerminalUnit; initialItem?: TerminalItem; onSaved?: (items: TerminalItem[]) => void; onClose: () => void };
 const units: TerminalUnit[] = ['USD', 'EUR', 'CHF', 'sats', 'BTC'];
 
 function priceText(item?: TerminalItem) {
@@ -25,7 +25,7 @@ function priceText(item?: TerminalItem) {
   return formatFiatMinor(item.unitPrice);
 }
 
-export default function TerminalItemEditorScreen({ walletId, network, preferredUnit, initialItem, onClose }: Props) {
+export default function TerminalItemEditorScreen({ walletId, network, preferredUnit, initialItem, onSaved, onClose }: Props) {
   const { theme } = useTheme();
   const activeWallet = useActiveWallet();
   const { cashierState } = useWalletMode();
@@ -65,8 +65,8 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
     } catch (failure) { setError((failure as Error).message); return; }
     busyRef.current = true; setBusy(true); setError('');
     try {
-      await saveTerminalItem(walletId, network, item, ownerCurrent, () => proRef.current === 'pro');
-      if (ownerCurrent()) onClose();
+      const saved = await saveTerminalItem(walletId, network, item, ownerCurrent, () => proRef.current === 'pro');
+      if (ownerCurrent()) { onSaved?.(saved); onClose(); }
     } catch (failure) {
       if (ownerCurrent()) {
         if ((failure as { code?: string }).code === 'TERMINAL_ITEM_PRO_REQUIRED') proGate.openPro();
@@ -78,9 +78,9 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
   return <><View style={[styles.root, { backgroundColor: theme.colors.background }]}>
     <TerminalSheetHeader title={initialItem ? 'Edit item' : 'Add item'} closeLabel="Close item editor" disabled={busy} onClose={() => { if (!busyRef.current) onClose(); }} />
     {ownerAllowed ? <ScrollView ref={scrollViewRef} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom }]}>
-      <Text style={[styles.fieldLabel, { color: theme.colors.muted }]}>Name</Text>
+      <Text style={[styles.fieldLabel, { color: theme.colors.primary }]}>Name</Text>
       <StyledInput accessibilityLabel="Item name" value={name} editable={!busy} onChangeText={value => { if (!busyRef.current) setName(value); }} maxLength={60} autoFocus={!initialItem} autoCapitalize="sentences" />
-      <Text style={[styles.fieldLabel, { color: theme.colors.muted }]}>Price</Text>
+      <Text style={[styles.fieldLabel, { color: theme.colors.primary }]}>Price</Text>
       <StyledInput accessibilityLabel="Item price" value={price} editable={!busy} onChangeText={value => { if (!busyRef.current) setPrice(value); }} keyboardType="decimal-pad" onFocus={handleInputFocus} />
       <View style={styles.units}>{units.map(choice => <TouchableOpacity key={choice} accessibilityRole="button" accessibilityLabel={`Price in ${choice}`} accessibilityState={{ selected: unit === choice, disabled: busy }} disabled={busy} onPress={() => { if (!busyRef.current && choice !== unit) { setUnit(choice); setPrice(''); } }} style={[styles.unit, { borderColor: unit === choice ? theme.colors.bitcoin : theme.colors.border }]}><Text style={{ color: theme.colors.primary }}>{choice}</Text></TouchableOpacity>)}</View>
       {error ? <Text style={[styles.message, { color: theme.colors.muted }]}>{error}</Text> : null}
@@ -92,7 +92,7 @@ export default function TerminalItemEditorScreen({ walletId, network, preferredU
 const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { flex: 1, minHeight: 0 }, content: { paddingHorizontal: 24, paddingTop: 20 },
-  fieldLabel: { fontSize: 12, marginTop: 14, marginBottom: 8 },
+  fieldLabel: { fontSize: 16, fontWeight: '700', marginTop: 14, marginBottom: 8 },
   units: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 16 },
   unit: { minHeight: 36, minWidth: 55, paddingHorizontal: 8, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   message: { fontSize: 12, marginTop: 12 },

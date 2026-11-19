@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, FlatList, PanResponder, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, FlatList, PanResponder, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/StyledText';
@@ -11,6 +11,9 @@ import TerminalSheetHeader from './TerminalSheetHeader';
 type Props = {
   error?: string;
   catalog: TerminalItem[];
+  catalogPending?: boolean;
+  onCreate?: () => void;
+  onRetry?: () => void;
   lines: TerminalBasketLine[];
   unit: TerminalUnit;
   busy: boolean;
@@ -19,12 +22,12 @@ type Props = {
   onClose: () => void;
 };
 
-export default function TerminalQuickItemsScreen({ error = '', catalog, lines, unit, busy, onAdd, onRemoveOne, onClose }: Props) {
+export default function TerminalQuickItemsScreen({ error = '', catalog, catalogPending, onCreate, onRetry, lines, unit, busy, onAdd, onRemoveOne, onClose }: Props) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { height, width, fontScale } = useWindowDimensions();
   const stackControls = fontScale >= 1.4 || width < 350;
-  const sheetHeight = height * 0.5;
+  const sheetHeight = height * 0.55;
   // Animate layout so native glass keeps the same frame as its press target.
   const dragY = useRef(new Animated.Value(sheetHeight)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -72,7 +75,14 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
     <View {...headerDrag.panHandlers}><TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={dismiss} /></View>
     {/* A native wrapper keeps react-native-screens from misplacing this list in an iOS formSheet. */}
     <View collapsable={false} style={styles.scrollContainer}>
-      <FlatList data={rows} keyExtractor={item => item.id} extraData={{ lines, unit, busy, stackControls }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, { paddingBottom: Math.max(12, insets.bottom) }]}
+      <FlatList data={rows} keyExtractor={item => item.id} extraData={{ lines, unit, busy, stackControls }} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} style={styles.scroll} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} contentContainerStyle={[styles.list, !rows.length && styles.emptyList, { paddingBottom: Math.max(12, insets.bottom) }]}
+        ListEmptyComponent={onRetry ? <TouchableOpacity accessibilityRole="button" onPress={onRetry} style={styles.control}><Text>Items unavailable · Retry</Text></TouchableOpacity>
+          : catalogPending ? <ActivityIndicator accessibilityLabel="Loading items" color={theme.colors.bitcoin} />
+          : <View style={styles.empty}><Text style={[styles.emptyTitle, { color: theme.colors.muted }]}>No items yet</Text>
+            {onCreate && <><TouchableOpacity accessibilityRole="button" disabled={busy} onPress={onCreate} style={[styles.create, { backgroundColor: theme.colors.primary }]}>
+              <Text style={{ color: theme.colors.inversePrimary, fontSize: 16, fontWeight: '700' }}>Add item</Text>
+            </TouchableOpacity><Text style={[styles.hint, { color: theme.colors.muted }]}>Add more items in Terminal settings.</Text></>}
+          </View>}
         renderItem={({ item }) => {
           const selected = selectedById.get(item.id);
           const unavailable = !selected && !!basketUnit && item.unit !== basketUnit;
@@ -95,6 +105,11 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, lines, u
 }
 
 const styles = StyleSheet.create({
+  emptyList: { flexGrow: 1, justifyContent: 'center' },
+  empty: { paddingVertical: 16 },
+  emptyTitle: { fontSize: 16, textAlign: 'center', marginBottom: 20 },
+  create: { minHeight: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  hint: { fontSize: 12, textAlign: 'center', marginTop: 12 },
   overlay: { flex: 1, justifyContent: 'flex-end' },
   root: { position: 'absolute', left: 0, right: 0, flexShrink: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   feedback: { paddingHorizontal: 24, paddingTop: 12, justifyContent: 'center' }, feedbackText: { fontSize: 12, lineHeight: 18 },

@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useLayoutEffect, useCallback, ReactNode } from 'react';
+import { Appearance, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LIGHT_THEME, DARK_THEME, Theme } from '../constants/theme';
 
@@ -19,6 +20,9 @@ interface ThemeProviderProps {
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, initialIsDark }) => {
   const [isDark, setIsDark] = useState<boolean>(initialIsDark);
 
+  useLayoutEffect(() => {
+    if (Platform.OS === 'ios') Appearance.setColorScheme(isDark ? 'dark' : 'light');
+  }, [isDark]);
 
   const toggleTheme = useCallback(() => {
     setIsDark((prevMode) => {
