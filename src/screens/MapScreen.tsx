@@ -31,7 +31,6 @@ export default function MapScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const pendingPanCollapse = useRef(false);
   const mapRef = useRef<MapView>(null);
   const [sheetIndex, setSheetIndex] = useState(1);
   const [closingSheet, setClosingSheet] = useState(false);
@@ -155,10 +154,6 @@ export default function MapScreen() {
   };
 
   const handleRegionChangeComplete = (newRegion: Region) => {
-    if (pendingPanCollapse.current) {
-      pendingPanCollapse.current = false;
-      handleMapInteraction();
-    }
     setRegion(newRegion);
     regionRef.current = newRegion;
     updateClusters(newRegion);
@@ -177,12 +172,11 @@ export default function MapScreen() {
   const toggleMapType = () => setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
 
   const handleMapInteraction = () => {
-    if (selectedMerchant && !closingSheet) setSheetIndex(0);
+    if (selectedMerchant && sheetIndex > 0 && !closingSheet) setSheetIndex(0);
   };
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
     if (closingSheet) return;
-    pendingPanCollapse.current = false;
     setSelectedMerchant(merchant);
     setSheetIndex(1);
 
@@ -248,7 +242,7 @@ export default function MapScreen() {
           onRegionChangeComplete={handleRegionChangeComplete}
           initialRegion={region}
           onPress={handleMapInteraction}
-          onPanDrag={() => { pendingPanCollapse.current = !!selectedMerchant && sheetIndex > 0 && !closingSheet; }}
+          onPanDrag={handleMapInteraction}
         >
           {(clusterResult?.elements === elements && clusterResult?.filterId === activeFilter
             ? clusterResult.clusters : []).map((cluster) => {

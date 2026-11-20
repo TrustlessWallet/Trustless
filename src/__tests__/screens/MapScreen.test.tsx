@@ -202,7 +202,7 @@ describe('MapScreen Component', () => {
     expect(sheet()).toMatchObject({ merchant: restaurant, index: 1 });
     act(() => sheet().onIndexChange(2));
     fireEvent(view.getByTestId('map-view'), 'panDrag');
-    expect(sheet().index).toBe(2);
+    expect(sheet()).toMatchObject({ merchant: restaurant, index: 0, closing: false });
     fireEvent(view.getByTestId('map-view'), 'regionChangeComplete', { latitude: 40, longitude: -74, latitudeDelta: 0.08, longitudeDelta: 0.08 });
     expect(sheet()).toMatchObject({ merchant: restaurant, index: 0, closing: false });
     fireEvent.press(view.getByLabelText('Change map type'));
