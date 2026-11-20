@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, ScrollView, StyleSheet, TouchableOpacity, 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Text } from '../components/StyledText';
+import SmallNativeSheetOutline from '../components/SmallNativeSheetOutline';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatTerminalBasketAmount, TerminalBasketLine, TerminalUnit } from '../services/terminal';
 import { TerminalItem } from '../services/terminalItems';
@@ -70,6 +71,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, catalogP
       />}
     </View>
     {error ? <View style={[styles.feedback, { paddingBottom: Math.max(12, insets.bottom) }]}><Text accessibilityRole="alert" allowFontScaling maxFontSizeMultiplier={2} style={[styles.feedbackText, { color: theme.colors.muted }]}>{error}</Text></View> : null}
+    <SmallNativeSheetOutline />
   </View>;
 }
 

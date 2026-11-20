@@ -1,3 +1,4 @@
+import { SMALL_NATIVE_SHEET_CORNER_RADIUS } from '../constants/theme';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -763,6 +764,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     presentation: 'formSheet' as const,
     animation: 'default' as const,
     sheetAllowedDetents: [0.55],
+    ...(Platform.OS === 'ios' && { sheetCornerRadius: SMALL_NATIVE_SHEET_CORNER_RADIUS }),
     // iOS form sheets omit the wrapper's bottom constraint for content-sized sheets.
     // This sheet has a fixed detent, so its list and footer need the full viewport.
     contentStyle: { backgroundColor: theme.colors.background, ...(Platform.OS === 'ios' && { bottom: 0 }) },

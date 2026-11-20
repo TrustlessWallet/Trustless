@@ -15,6 +15,7 @@ export const LAYOUT = {
   spacing: 16,
   inputHeight: 56,
 };
+export const SMALL_NATIVE_SHEET_CORNER_RADIUS = 36;
 export const SHEET_HEADER_HEIGHT = 58;
 export const SHEET_HEADER_SIDE_WIDTH = 48;
 export const SHEET_HEADER_HORIZONTAL_PADDING = 16;
