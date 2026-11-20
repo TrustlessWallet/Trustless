@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useMemo } from 'react';
 import { StyleSheet, View, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from 'react-native';
 import MapView, { Region } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -16,7 +16,9 @@ import MerchantBottomSheet from '../components/Map/MerchantBottomSheet';
 import { BTC_MAP_API_URL, btcMapFetcher, BtcMapElement } from '../services/btcmap';
 import { FILTER_GROUPS, getMapIndex, peekMapIndex } from '../services/mapIndex';
 import { GlassView } from '../components/GlassView';
-import { useIsFocused } from '@react-navigation/native';
+import type { NativeBottomTabNavigationProp } from '@react-navigation/bottom-tabs/unstable';
+import type { TabParamList } from '../types';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 
 const getBounds = (region: Region): [number, number, number, number] => [
   region.longitude - region.longitudeDelta / 2,
@@ -33,7 +35,10 @@ export default function MapScreen() {
 
   const mapRef = useRef<MapView>(null);
   const [sheetIndex, setSheetIndex] = useState(1);
-  const [closingSheet, setClosingSheet] = useState(false);
+  const [sheetState, setSheetState] = useState<'open' | 'collapsing' | 'collapsed' | 'closing'>('open');
+  const closingSheet = sheetState === 'closing' || sheetState === 'collapsing';
+  const supportsAccessory = Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 26;
+  const navigation = useNavigation<NativeBottomTabNavigationProp<TabParamList, 'Map'>>();
 
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [selectedMerchant, setSelectedMerchant] = useState<BtcMapElement | null>(null);
@@ -89,12 +94,32 @@ export default function MapScreen() {
   }, [elements, activeFilter]);
 
   const isFocused = useIsFocused();
-  useEffect(() => {
-    if (!isFocused && closingSheet) {
+  const finishDismissal = () => {
+    if (sheetState === 'collapsing') {
+      setSheetState('collapsed');
+    } else {
       setSelectedMerchant(null);
-      setClosingSheet(false);
+      setSheetState('open');
     }
-  }, [isFocused, closingSheet]);
+  };
+
+  useEffect(() => {
+    if (!isFocused && closingSheet) finishDismissal();
+  }, [isFocused, sheetState]);
+
+  useLayoutEffect(() => {
+    if (!supportsAccessory) return;
+    const merchant = sheetState === 'collapsed' ? selectedMerchant : null;
+    navigation.setOptions({
+      bottomAccessory: merchant ? () => (
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Open ${merchant.tags?.name || 'Bitcoin Merchant'} details`}
+          style={styles.merchantAccessory} onPress={() => { setSheetIndex(1); setSheetState('open'); }}>
+          <Text style={styles.accessoryName} numberOfLines={1}>{merchant.tags?.name || 'Bitcoin Merchant'}</Text>
+          <MaterialIcons name="keyboard-arrow-up" size={20} color={theme.colors.primary} />
+        </TouchableOpacity>
+      ) : undefined,
+    });
+  }, [navigation, selectedMerchant, sheetState, styles, supportsAccessory, theme]);
   const hasRequestedLocation = useRef(false);
 
   useEffect(() => {
@@ -169,12 +194,19 @@ export default function MapScreen() {
 
   const toggleMapType = () => setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
 
+  const selectSheetHeight = (index: number) => {
+    if (sheetState !== 'open') return;
+    if (supportsAccessory && index === 0) setSheetState('collapsing');
+    else setSheetIndex(index);
+  };
+
   const handleMapInteraction = () => {
-    if (selectedMerchant && !closingSheet) setSheetIndex(0);
+    if (selectedMerchant) selectSheetHeight(0);
   };
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
     if (closingSheet) return;
+    setSheetState('open');
     setSelectedMerchant(merchant);
     setSheetIndex(1);
 
@@ -406,14 +438,14 @@ export default function MapScreen() {
           </TouchableOpacity>
         </View>
 
-        {selectedMerchant && isFocused && (
+        {selectedMerchant && isFocused && sheetState !== 'collapsed' && (
           <MerchantBottomSheet
             merchant={selectedMerchant}
             index={sheetIndex}
-            onIndexChange={setSheetIndex}
+            onIndexChange={selectSheetHeight}
             closing={closingSheet}
-            onClose={() => setClosingSheet(true)}
-            onDismiss={() => { setSelectedMerchant(null); setClosingSheet(false); }}
+            onClose={() => setSheetState(current => current === 'collapsing' ? current : 'closing')}
+            onDismiss={finishDismissal}
           />
         )}
       </View>
@@ -422,6 +454,8 @@ export default function MapScreen() {
 }
 
 const createStyles = (theme: any) => StyleSheet.create({
+  merchantAccessory: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, gap: 8 },
+  accessoryName: { flexShrink: 1, fontWeight: '700', color: theme.colors.primary },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
