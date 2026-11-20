@@ -20,12 +20,13 @@ jest.mock('@react-navigation/native', () => ({
   useIsFocused: jest.fn(),
 }));
 
+const mockAnimateToRegion = jest.fn();
 jest.mock('react-native-maps', () => {
   const React = require('react');
   const { View } = require('react-native');
   const MapView = React.forwardRef((props: any, ref: any) => {
     React.useImperativeHandle(ref, () => ({
-      animateToRegion: jest.fn(),
+      animateToRegion: mockAnimateToRegion,
     }));
     return (
       <View testID="map-view" mapType={props.mapType} onPanDrag={props.onPanDrag} onRegionChangeComplete={props.onRegionChangeComplete}>
@@ -297,6 +298,19 @@ describe('MapScreen Component', () => {
     if (failure !== 'failed position') {
       expect(Location.getCurrentPositionAsync).not.toHaveBeenCalled();
     }
+  });
+
+  it('preserves a user pan when the first location arrives late and still allows recentering', async () => {
+    let resolveLocation!: (location: { coords: { latitude: number; longitude: number } }) => void;
+    (Location.getCurrentPositionAsync as jest.Mock).mockReturnValueOnce(new Promise(resolve => { resolveLocation = resolve; }));
+    (useSWR as jest.Mock).mockReturnValue({ data: [], isLoading: false });
+    const view = render(<MapScreen />);
+    await waitFor(() => expect(Location.getCurrentPositionAsync).toHaveBeenCalled());
+    fireEvent(view.getByTestId('map-view'), 'panDrag');
+    await act(async () => resolveLocation({ coords: { latitude: 40, longitude: -74 } }));
+    expect(mockAnimateToRegion).not.toHaveBeenCalled();
+    fireEvent.press(view.getByLabelText('Center map on my location'));
+    expect(mockAnimateToRegion).toHaveBeenCalledWith(expect.objectContaining({ latitude: 40, longitude: -74 }), 1000);
   });
 
   it('retries location after focus changes during a pending request', async () => {
