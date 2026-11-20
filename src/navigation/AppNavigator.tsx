@@ -356,7 +356,6 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
       return <SheetHeader
         title={typeof title === 'string' ? title : ''}
         trailing={options.headerRight?.({})}
-        smallNativeSheet={route.name === 'AddWalletOptions' || route.name === 'BackupDisclaimer'}
       />;
     },
   };
