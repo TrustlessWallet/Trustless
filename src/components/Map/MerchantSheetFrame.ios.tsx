@@ -1,6 +1,6 @@
 import React from 'react';
 import { BottomSheet, Group, Host, RNHostView } from '@expo/ui/swift-ui';
-import { interactiveDismissDisabled, presentationBackground, presentationBackgroundInteraction, presentationDetents, presentationDragIndicator } from '@expo/ui/swift-ui/modifiers';
+import { ignoreSafeArea, interactiveDismissDisabled, presentationBackground, presentationBackgroundInteraction, presentationDetents, presentationDragIndicator } from '@expo/ui/swift-ui/modifiers';
 import { useTheme } from '../../contexts/ThemeContext';
 import type { MerchantSheetProps } from './MerchantSheetFrame';
 
@@ -18,6 +18,8 @@ export default function MerchantSheetFrame({ index, onIndexChange, closing, onCl
         } }),
         presentationBackgroundInteraction('enabled'), interactiveDismissDisabled(),
         presentationDragIndicator('visible'), presentationBackground(theme.colors.background),
+        // Let the scroll viewport reach the sheet edge instead of clipping at the safe area.
+        ignoreSafeArea({ regions: 'container', edges: 'bottom' }),
       ]}>
         <RNHostView>{children}</RNHostView>
       </Group>

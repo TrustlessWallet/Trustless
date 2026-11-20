@@ -158,13 +158,13 @@ export default function MerchantBottomSheet({ merchant, onClose, index, onIndexC
               { backgroundColor: theme.colors.primary }
             ]}
             onPress={handleDirections}
-            activeOpacity={0.8}
           >
             <Text style={[styles.directionsText, { color: theme.colors.background }]}>Directions</Text>
           </TouchableOpacity>
         </View>
 
-        <DetailsScroll style={styles.scrollContainer} contentContainerStyle={styles.scrollInnerContent}>
+        <DetailsScroll style={styles.scrollContainer} contentContainerStyle={styles.scrollInnerContent}
+          contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false}>
 
           {hasPaymentMethods && (
             <>
@@ -295,7 +295,8 @@ const styles = StyleSheet.create({
   },
   scrollInnerContent: {
     paddingHorizontal: 24,
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 24,
   },
   sectionHeader: {
     fontSize: 16,
