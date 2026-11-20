@@ -436,6 +436,8 @@ it('opens Quick items as a scrollable half-height sheet with matching plus contr
   const picker = nativeScreen(view.getByLabelText('Close item picker'));
   expect(picker.props.stackPresentation).toBe('formSheet');
   expect(picker.props.sheetAllowedDetents).toEqual([0.55]);
+  const wrapper = picker.findByType('RNSScreenContentWrapper');
+  expect(wrapper).toHaveStyle({ top: 0, bottom: 0 });
   expect(picker.props.sheetGrabberVisible).toBe(false);
   expect(view.getByLabelText('Add Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
   fireEvent.press(view.getByLabelText('Add Tea'));
