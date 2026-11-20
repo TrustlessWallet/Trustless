@@ -63,8 +63,9 @@ const parseOpeningHours = (hoursString?: string): { status: 'open' | 'closed', t
 };
 
 export default function MerchantBottomSheet({ merchant, onClose, index, onIndexChange, closing, onDismiss }: Props) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const headerColor = useSheetHeaderColor();
+  const headerDividerColor = Platform.OS === 'ios' && isDark ? 'transparent' : theme.colors.border;
   const tags = merchant.tags || {};
 
   const handleDirections = () => {
@@ -122,7 +123,7 @@ export default function MerchantBottomSheet({ merchant, onClose, index, onIndexC
     <MerchantSheetFrame index={index} onIndexChange={onIndexChange} closing={closing} onClose={onClose} onDismiss={onDismiss}>
       <View style={styles.sheetWrapper}>
 
-        <View style={[styles.headerContainer, { borderBottomColor: theme.colors.border, backgroundColor: Platform.OS === 'ios' ? headerColor : undefined }]}>
+        <View style={[styles.headerContainer, { borderBottomColor: headerDividerColor, backgroundColor: Platform.OS === 'ios' ? headerColor : undefined }]}>
           <View style={styles.headerTopRow}>
             <Text style={styles.title} numberOfLines={1}>
               {tags.name || 'Bitcoin Merchant'}
