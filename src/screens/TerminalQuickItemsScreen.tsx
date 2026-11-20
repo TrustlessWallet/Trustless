@@ -36,7 +36,7 @@ export default function TerminalQuickItemsScreen({ error = '', catalog, catalogP
   }, [catalog, lines, unit]);
   const showCreate = rows.length === 0 && !onRetry && !catalogPending && !!onCreate;
   return <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
-    <TerminalSheetHeader title="Items" closeLabel="Close item picker" onClose={onClose} />
+    <TerminalSheetHeader smallNativeSheet title="Items" closeLabel="Close item picker" onClose={onClose} />
     {/* A native wrapper keeps react-native-screens from misplacing this list in an iOS formSheet. */}
     <View collapsable={false} style={styles.scrollContainer}>
       {showCreate ? <ScrollView contentContainerStyle={styles.emptySetup} contentInsetAdjustmentBehavior="never" automaticallyAdjustContentInsets={false} bounces={false}>

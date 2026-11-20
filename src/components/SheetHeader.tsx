@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { SHEET_HEADER_HEIGHT, SHEET_HEADER_HORIZONTAL_PADDING, SHEET_HEADER_SIDE_WIDTH } from '../constants/theme';
 import { Text } from './StyledText';
@@ -9,6 +9,7 @@ type Props = {
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
   enabled?: boolean;
+  smallNativeSheet?: boolean;
 };
 
 export function useSheetHeaderColor() {
@@ -16,10 +17,11 @@ export function useSheetHeaderColor() {
   return isDark ? theme.colors.surface : theme.colors.background;
 }
 
-export default function SheetHeader({ title, leading, trailing, enabled = true }: Props) {
-  const { theme } = useTheme();
+export default function SheetHeader({ title, leading, trailing, enabled = true, smallNativeSheet = false }: Props) {
+  const { theme, isDark } = useTheme();
   const backgroundColor = useSheetHeaderColor();
-  return <View pointerEvents={enabled ? 'auto' : 'none'} style={[styles.header, { backgroundColor, borderBottomColor: theme.colors.border }]}>
+  const borderBottomColor = smallNativeSheet && Platform.OS === 'ios' && isDark ? 'transparent' : theme.colors.border;
+  return <View pointerEvents={enabled ? 'auto' : 'none'} style={[styles.header, { backgroundColor, borderBottomColor }]}>
     <View style={styles.side}>{leading}</View>
     <Text pointerEvents="none" style={[styles.title, { color: theme.colors.primary }]} numberOfLines={1}>{title}</Text>
     <View style={[styles.side, styles.trailing]}>{trailing}</View>
