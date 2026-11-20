@@ -31,6 +31,7 @@ export default function MapScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
+  const userMovedMap = useRef(false);
   const mapRef = useRef<MapView>(null);
   const [sheetIndex, setSheetIndex] = useState(1);
   const [closingSheet, setClosingSheet] = useState(false);
@@ -126,7 +127,7 @@ export default function MapScreen() {
   }, [isFocused]);
 
   useEffect(() => {
-    if (!isLoading && location && mapRef.current) {
+    if (!userMovedMap.current && !isLoading && location && mapRef.current) {
       const targetRegion = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -172,11 +173,13 @@ export default function MapScreen() {
   const toggleMapType = () => setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
 
   const handleMapInteraction = () => {
+    userMovedMap.current = true;
     if (selectedMerchant && sheetIndex > 0 && !closingSheet) setSheetIndex(0);
   };
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
     if (closingSheet) return;
+    userMovedMap.current = true;
     setSelectedMerchant(merchant);
     setSheetIndex(1);
 
@@ -194,6 +197,7 @@ export default function MapScreen() {
 
   const handleClusterPress = (lat: number, lon: number) => {
     if (!clusterResult || clusterResult.elements !== elements || clusterResult.filterId !== activeFilter) return;
+    userMovedMap.current = true;
     mapRef.current?.animateToRegion({
       latitude: lat,
       longitude: lon,
