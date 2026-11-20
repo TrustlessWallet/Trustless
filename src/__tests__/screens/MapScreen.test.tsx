@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { Platform, Text } from 'react-native';
 import useSWR from 'swr';
 import * as Location from 'expo-location';
 import { useIsFocused } from '@react-navigation/native';
@@ -16,7 +16,9 @@ jest.mock('expo-location', () => ({
   getCurrentPositionAsync: jest.fn(),
 }));
 
+const mockNavigation = { setOptions: jest.fn() };
 jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => mockNavigation,
   useIsFocused: jest.fn(),
 }));
 
@@ -211,6 +213,29 @@ describe('MapScreen Component', () => {
     expect(sheet().closing).toBe(true);
     act(() => sheet().onDismiss());
     expect(view.queryByTestId('merchant-bottom-sheet')).toBeNull();
+  });
+
+  it('collapses to the native Map accessory and restores the merchant after switching tabs', async () => {
+    const version = jest.spyOn(Platform, 'Version', 'get').mockReturnValue('26.2');
+    try {
+      (useSWR as jest.Mock).mockReturnValue({ data: [restaurant], isLoading: false });
+      const view = render(<MapScreen />);
+      fireEvent.press(await view.findByTestId('custom-marker-restaurant'));
+      fireEvent(view.getByTestId('map-view'), 'panDrag');
+      const sheet = () => view.UNSAFE_getByType(MerchantBottomSheet).props;
+      expect(sheet().closing).toBe(true);
+      act(() => sheet().onDismiss());
+      expect(view.queryByTestId('merchant-bottom-sheet')).toBeNull();
+      (useIsFocused as jest.Mock).mockReturnValue(false);
+      view.rerender(<MapScreen />);
+      (useIsFocused as jest.Mock).mockReturnValue(true);
+      view.rerender(<MapScreen />);
+      const accessory = mockNavigation.setOptions.mock.lastCall![0].bottomAccessory;
+      const bar = render(accessory());
+      fireEvent.press(bar.getByRole('button'));
+      expect(sheet()).toMatchObject({ merchant: restaurant, index: 1, closing: false });
+      expect(mockNavigation.setOptions.mock.lastCall![0].bottomAccessory).toBeUndefined();
+    } finally { version.mockRestore(); }
   });
 
   it('reuses warm filter indexes and shows their markers immediately', async () => {
