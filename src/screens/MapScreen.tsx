@@ -7,7 +7,6 @@ import type Supercluster from 'supercluster';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import BottomSheet from '@gorhom/bottom-sheet';
 
 import { useTheme } from '../contexts/ThemeContext';
 import { Text } from '../components/StyledText';
@@ -33,8 +32,8 @@ export default function MapScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const mapRef = useRef<MapView>(null);
-  const bottomSheetRef = useRef<BottomSheet>(null);
-  const sheetState = useRef<'open' | 'closing' | 'closed'>('closed');
+  const [sheetIndex, setSheetIndex] = useState(1);
+  const [closingSheet, setClosingSheet] = useState(false);
 
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [selectedMerchant, setSelectedMerchant] = useState<BtcMapElement | null>(null);
@@ -90,6 +89,12 @@ export default function MapScreen() {
   }, [elements, activeFilter]);
 
   const isFocused = useIsFocused();
+  useEffect(() => {
+    if (!isFocused && closingSheet) {
+      setSelectedMerchant(null);
+      setClosingSheet(false);
+    }
+  }, [isFocused, closingSheet]);
   const hasRequestedLocation = useRef(false);
 
   useEffect(() => {
@@ -165,20 +170,14 @@ export default function MapScreen() {
   const toggleMapType = () => setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
 
   const handleMapInteraction = () => {
-    if (selectedMerchant && bottomSheetRef.current && sheetState.current === 'open') {
-      bottomSheetRef.current.snapToIndex(0);
-    }
+    if (selectedMerchant && !closingSheet) setSheetIndex(0);
   };
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
-    if (selectedMerchant?.id === merchant.id) {
-      sheetState.current = 'open';
-      bottomSheetRef.current?.snapToIndex(1);
-    } else {
-      sheetState.current = 'open';
-      setSelectedMerchant(merchant);
-    }
-    
+    if (closingSheet) return;
+    setSelectedMerchant(merchant);
+    setSheetIndex(1);
+
     const latDelta = 0.003;
     const lonDelta = 0.003;
     const targetLatitude = Number(merchant.lat) - (latDelta * 0.25);
@@ -407,17 +406,14 @@ export default function MapScreen() {
           </TouchableOpacity>
         </View>
 
-        {selectedMerchant && (
+        {selectedMerchant && isFocused && (
           <MerchantBottomSheet
             merchant={selectedMerchant}
-            onClose={() => {
-              sheetState.current = 'closed';
-              setSelectedMerchant(null);
-            }}
-            bottomSheetRef={bottomSheetRef}
-            onStateChange={(state) => {
-              sheetState.current = state;
-            }}
+            index={sheetIndex}
+            onIndexChange={setSheetIndex}
+            closing={closingSheet}
+            onClose={() => setClosingSheet(true)}
+            onDismiss={() => { setSelectedMerchant(null); setClosingSheet(false); }}
           />
         )}
       </View>
