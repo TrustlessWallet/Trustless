@@ -710,7 +710,7 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Exit terminal" style={[styles.glassControl, styles.glassControlEnd]} disabled={changing || cashierBusy || stage === 'creating' || hasRequest} onPress={close}>
         <GlassView width={40} height={40} shape="circle" interactive={checkoutFocused && !transitioning} style={styles.glassSurface}>
-          <Feather name="x" size={21} color={theme.colors.primary} />
+          <Feather name="x" size={20} color={theme.colors.primary} />
         </GlassView>
       </Pressable>
     </View>

@@ -23,7 +23,7 @@ import { EXPLORER_UI_URL, COIN_TYPE } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeyboardScroll } from '../hooks/useKeyboardScroll';
-import { GlassView } from '../components/GlassView';
+import GlassIconButton from '../components/GlassIconButton';
 import { useWalletUTXOs, getWalletUtxoQueryAddresses } from '../hooks/useBalance';
 
 
@@ -89,20 +89,12 @@ const BalanceDetailScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <GlassView
-            width={32}
-            height={32}
-            borderRadius={16}
-            shape="circle"
-            interactive={true}
-          >
-            <Feather name="x" size={20} color={theme.colors.primary} />
-          </GlassView>
-        </TouchableOpacity>
+        <GlassIconButton onPress={() => navigation.goBack()} accessibilityLabel="Close" align="flex-end" disabled={!isFocused}>
+          <Feather name="x" size={20} color={theme.colors.primary} />
+        </GlassIconButton>
       ),
     });
-  }, [navigation, theme.colors.primary]);
+  }, [navigation, theme.colors.primary, isFocused]);
 
   useEffect(() => {
     if (editingUtxoKey && sortedUtxos.length > 0) {
