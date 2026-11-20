@@ -434,7 +434,9 @@ it('opens Quick items as a scrollable half-height sheet with matching plus contr
   await waitFor(() => expect(view.getByLabelText('Items')).toBeTruthy());
   fireEvent.press(view.getByLabelText('Items'));
   const picker = nativeScreen(view.getByLabelText('Close item picker'));
-  expect(picker.props.stackPresentation).toBe('transparentModal');
+  expect(picker.props.stackPresentation).toBe('formSheet');
+  expect(picker.props.sheetAllowedDetents).toEqual([0.55]);
+  expect(picker.props.sheetGrabberVisible).toBe(false);
   expect(view.getByLabelText('Add Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
   fireEvent.press(view.getByLabelText('Add Tea'));
   expect(view.getByLabelText('Add one Tea').findByType(Feather).props).toMatchObject({ name: 'plus', size: 20 });
