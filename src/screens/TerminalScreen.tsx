@@ -763,6 +763,9 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
     presentation: 'formSheet' as const,
     animation: 'default' as const,
     sheetAllowedDetents: [0.55],
+    // iOS form sheets omit the wrapper's bottom constraint for content-sized sheets.
+    // This sheet has a fixed detent, so its list and footer need the full viewport.
+    contentStyle: { backgroundColor: theme.colors.background, ...(Platform.OS === 'ios' && { bottom: 0 }) },
     sheetExpandsWhenScrolledToEdge: false,
     sheetGrabberVisible: false,
     gestureEnabled: true,
