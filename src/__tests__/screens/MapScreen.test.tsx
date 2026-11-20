@@ -16,9 +16,7 @@ jest.mock('expo-location', () => ({
   getCurrentPositionAsync: jest.fn(),
 }));
 
-const mockNavigation = { setOptions: jest.fn() };
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => mockNavigation,
   useIsFocused: jest.fn(),
 }));
 
@@ -30,7 +28,7 @@ jest.mock('react-native-maps', () => {
       animateToRegion: jest.fn(),
     }));
     return (
-      <View testID="map-view" mapType={props.mapType} onPanDrag={props.onPanDrag}>
+      <View testID="map-view" mapType={props.mapType} onPanDrag={props.onPanDrag} onRegionChangeComplete={props.onRegionChangeComplete}>
         {props.children}
       </View>
     );
@@ -215,7 +213,7 @@ describe('MapScreen Component', () => {
     expect(view.queryByTestId('merchant-bottom-sheet')).toBeNull();
   });
 
-  it('collapses to the native Map accessory and restores the merchant after switching tabs', async () => {
+  it('finishes a pan before showing the compact merchant pill and restores the merchant after switching tabs', async () => {
     const version = jest.spyOn(Platform, 'Version', 'get').mockReturnValue('26.2');
     try {
       (useSWR as jest.Mock).mockReturnValue({ data: [restaurant], isLoading: false });
@@ -223,6 +221,8 @@ describe('MapScreen Component', () => {
       fireEvent.press(await view.findByTestId('custom-marker-restaurant'));
       fireEvent(view.getByTestId('map-view'), 'panDrag');
       const sheet = () => view.UNSAFE_getByType(MerchantBottomSheet).props;
+      expect(sheet().closing).toBe(false);
+      fireEvent(view.getByTestId('map-view'), 'regionChangeComplete', { latitude: 40, longitude: -74, latitudeDelta: 1, longitudeDelta: 1 });
       expect(sheet().closing).toBe(true);
       act(() => sheet().onDismiss());
       expect(view.queryByTestId('merchant-bottom-sheet')).toBeNull();
@@ -230,11 +230,11 @@ describe('MapScreen Component', () => {
       view.rerender(<MapScreen />);
       (useIsFocused as jest.Mock).mockReturnValue(true);
       view.rerender(<MapScreen />);
-      const accessory = mockNavigation.setOptions.mock.lastCall![0].bottomAccessory;
-      const bar = render(accessory());
-      fireEvent.press(bar.getByRole('button'));
+      fireEvent.press(view.getByLabelText('Change map type'));
+      expect(view.getByTestId('map-view').props.mapType).toBe('satellite');
+      expect(view.getByLabelText('Center map on my location')).toBeEnabled();
+      fireEvent.press(view.getByLabelText('Open Bitcoin Merchant details'));
       expect(sheet()).toMatchObject({ merchant: restaurant, index: 1, closing: false });
-      expect(mockNavigation.setOptions.mock.lastCall![0].bottomAccessory).toBeUndefined();
     } finally { version.mockRestore(); }
   });
 
