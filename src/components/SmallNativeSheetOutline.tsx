@@ -14,7 +14,7 @@ const styles = StyleSheet.create({
   outline: {
     ...StyleSheet.absoluteFill,
     zIndex: 3,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderRadius: SMALL_NATIVE_SHEET_CORNER_RADIUS,
     borderCurve: 'continuous',
   },
