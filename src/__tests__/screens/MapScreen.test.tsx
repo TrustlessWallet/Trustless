@@ -206,8 +206,10 @@ describe('MapScreen Component', () => {
     expect(sheet()).toMatchObject({ merchant: restaurant, index: 0, closing: false });
     fireEvent(view.getByTestId('map-view'), 'regionChangeComplete', { latitude: 40, longitude: -74, latitudeDelta: 0.08, longitudeDelta: 0.08 });
     expect(sheet()).toMatchObject({ merchant: restaurant, index: 0, closing: false });
+    expect(view.getByLabelText('Change map type')).toBeDisabled();
+    expect(view.getByLabelText('Center map on my location')).toBeDisabled();
     fireEvent.press(view.getByLabelText('Change map type'));
-    expect(view.getByTestId('map-view').props.mapType).toBe('satellite');
+    expect(view.getByTestId('map-view').props.mapType).toBe('standard');
     act(() => sheet().onIndexChange(2));
     expect(sheet().index).toBe(2);
     fireEvent.press(view.getByTestId('custom-marker-restaurant'));
@@ -216,7 +218,10 @@ describe('MapScreen Component', () => {
     expect(sheet()).toMatchObject({ merchant: shop, index: 1 });
     act(() => sheet().onClose());
     expect(sheet().closing).toBe(true);
+    expect(view.getByLabelText('Change map type')).toBeDisabled();
     act(() => sheet().onDismiss());
+    fireEvent.press(view.getByLabelText('Change map type'));
+    expect(view.getByTestId('map-view').props.mapType).toBe('satellite');
     expect(view.queryByTestId('merchant-bottom-sheet')).toBeNull();
   });
 

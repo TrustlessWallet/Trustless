@@ -89,8 +89,7 @@ export default function MapScreen() {
     return () => clearTimeout(timer);
   }, [elements, activeFilter]);
 
-  const sheetCollapsed = !!selectedMerchant && sheetIndex === 0;
-  const controlsBlocked = !!selectedMerchant && !sheetCollapsed;
+  const controlsBlocked = !!selectedMerchant;
   const isFocused = useIsFocused();
   useEffect(() => {
     if (!isFocused && closingSheet) {
