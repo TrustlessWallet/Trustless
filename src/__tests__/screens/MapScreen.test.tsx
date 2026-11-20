@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
-import { Platform, Text } from 'react-native';
+import { Text } from 'react-native';
 import useSWR from 'swr';
 import * as Location from 'expo-location';
 import { useIsFocused } from '@react-navigation/native';
@@ -196,14 +196,20 @@ describe('MapScreen Component', () => {
   it('keeps the merchant selected while panning and reopens it from its marker', async () => {
     (useSWR as jest.Mock).mockReturnValue({ data: [restaurant, shop], isLoading: false });
     const view = render(<MapScreen />);
-    const marker = await view.findByTestId('custom-marker-restaurant');
-    fireEvent.press(marker);
+    await view.findByTestId('custom-marker-restaurant');
+    fireEvent.press(view.getByTestId('custom-marker-restaurant'));
     const sheet = () => view.UNSAFE_getByType(MerchantBottomSheet).props;
     expect(sheet()).toMatchObject({ merchant: restaurant, index: 1 });
     act(() => sheet().onIndexChange(2));
     fireEvent(view.getByTestId('map-view'), 'panDrag');
+    expect(sheet().index).toBe(2);
+    fireEvent(view.getByTestId('map-view'), 'regionChangeComplete', { latitude: 40, longitude: -74, latitudeDelta: 0.08, longitudeDelta: 0.08 });
     expect(sheet()).toMatchObject({ merchant: restaurant, index: 0, closing: false });
-    fireEvent.press(marker);
+    fireEvent.press(view.getByLabelText('Change map type'));
+    expect(view.getByTestId('map-view').props.mapType).toBe('satellite');
+    act(() => sheet().onIndexChange(2));
+    expect(sheet().index).toBe(2);
+    fireEvent.press(view.getByTestId('custom-marker-restaurant'));
     expect(sheet().index).toBe(1);
     fireEvent.press(view.getByTestId('custom-marker-shop'));
     expect(sheet()).toMatchObject({ merchant: shop, index: 1 });
@@ -211,31 +217,6 @@ describe('MapScreen Component', () => {
     expect(sheet().closing).toBe(true);
     act(() => sheet().onDismiss());
     expect(view.queryByTestId('merchant-bottom-sheet')).toBeNull();
-  });
-
-  it('finishes a pan before showing the compact merchant pill and restores the merchant after switching tabs', async () => {
-    const version = jest.spyOn(Platform, 'Version', 'get').mockReturnValue('26.2');
-    try {
-      (useSWR as jest.Mock).mockReturnValue({ data: [restaurant], isLoading: false });
-      const view = render(<MapScreen />);
-      fireEvent.press(await view.findByTestId('custom-marker-restaurant'));
-      fireEvent(view.getByTestId('map-view'), 'panDrag');
-      const sheet = () => view.UNSAFE_getByType(MerchantBottomSheet).props;
-      expect(sheet().closing).toBe(false);
-      fireEvent(view.getByTestId('map-view'), 'regionChangeComplete', { latitude: 40, longitude: -74, latitudeDelta: 1, longitudeDelta: 1 });
-      expect(sheet().closing).toBe(true);
-      act(() => sheet().onDismiss());
-      expect(view.queryByTestId('merchant-bottom-sheet')).toBeNull();
-      (useIsFocused as jest.Mock).mockReturnValue(false);
-      view.rerender(<MapScreen />);
-      (useIsFocused as jest.Mock).mockReturnValue(true);
-      view.rerender(<MapScreen />);
-      fireEvent.press(view.getByLabelText('Change map type'));
-      expect(view.getByTestId('map-view').props.mapType).toBe('satellite');
-      expect(view.getByLabelText('Center map on my location')).toBeEnabled();
-      fireEvent.press(view.getByLabelText('Open Bitcoin Merchant details'));
-      expect(sheet()).toMatchObject({ merchant: restaurant, index: 1, closing: false });
-    } finally { version.mockRestore(); }
   });
 
   it('reuses warm filter indexes and shows their markers immediately', async () => {

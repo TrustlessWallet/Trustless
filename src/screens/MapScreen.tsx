@@ -18,10 +18,6 @@ import { FILTER_GROUPS, getMapIndex, peekMapIndex } from '../services/mapIndex';
 import { GlassView } from '../components/GlassView';
 import { useIsFocused } from '@react-navigation/native';
 
-const MERCHANT_PILL_BOTTOM = 90;
-const MERCHANT_PILL_HEIGHT = 44;
-const MAP_CONTROL_GAP = 16;
-
 const getBounds = (region: Region): [number, number, number, number] => [
   region.longitude - region.longitudeDelta / 2,
   region.latitude - region.latitudeDelta / 2,
@@ -35,12 +31,10 @@ export default function MapScreen() {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
+  const pendingPanCollapse = useRef(false);
   const mapRef = useRef<MapView>(null);
   const [sheetIndex, setSheetIndex] = useState(1);
-  const [sheetState, setSheetState] = useState<'open' | 'collapsing' | 'collapsed' | 'closing'>('open');
-  const closingSheet = sheetState === 'closing' || sheetState === 'collapsing';
-  const supportsAccessory = Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 26;
-  const pendingPanCollapse = useRef(false);
+  const [closingSheet, setClosingSheet] = useState(false);
 
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [selectedMerchant, setSelectedMerchant] = useState<BtcMapElement | null>(null);
@@ -95,20 +89,15 @@ export default function MapScreen() {
     return () => clearTimeout(timer);
   }, [elements, activeFilter]);
 
+  const sheetCollapsed = !!selectedMerchant && sheetIndex === 0;
+  const controlsBlocked = !!selectedMerchant && !sheetCollapsed;
   const isFocused = useIsFocused();
-  const finishDismissal = () => {
-    if (sheetState === 'collapsing') {
-      setSheetState('collapsed');
-    } else {
-      setSelectedMerchant(null);
-      setSheetState('open');
-    }
-  };
-
   useEffect(() => {
-    if (!isFocused && closingSheet) finishDismissal();
-  }, [isFocused, sheetState]);
-
+    if (!isFocused && closingSheet) {
+      setSelectedMerchant(null);
+      setClosingSheet(false);
+    }
+  }, [isFocused, closingSheet]);
   const hasRequestedLocation = useRef(false);
 
   useEffect(() => {
@@ -187,19 +176,12 @@ export default function MapScreen() {
 
   const toggleMapType = () => setMapType(prev => (prev === 'standard' ? 'satellite' : 'standard'));
 
-  const selectSheetHeight = (index: number) => {
-    if (sheetState !== 'open') return;
-    if (supportsAccessory && index === 0) setSheetState('collapsing');
-    else setSheetIndex(index);
-  };
-
   const handleMapInteraction = () => {
-    if (selectedMerchant) selectSheetHeight(0);
+    if (selectedMerchant && !closingSheet) setSheetIndex(0);
   };
 
   const handleMarkerPress = (merchant: BtcMapElement) => {
     if (closingSheet) return;
-    setSheetState('open');
     pendingPanCollapse.current = false;
     setSelectedMerchant(merchant);
     setSheetIndex(1);
@@ -250,9 +232,6 @@ export default function MapScreen() {
     ];
   }, [theme]);
 
-  const collapsedMerchant = sheetState === 'collapsed' ? selectedMerchant : null;
-  const controlsBlocked = !!selectedMerchant && !collapsedMerchant;
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
@@ -269,10 +248,7 @@ export default function MapScreen() {
           onRegionChangeComplete={handleRegionChangeComplete}
           initialRegion={region}
           onPress={handleMapInteraction}
-          onPanDrag={() => {
-            if (supportsAccessory) pendingPanCollapse.current = !!selectedMerchant && sheetState === 'open';
-            else handleMapInteraction();
-          }}
+          onPanDrag={() => { pendingPanCollapse.current = !!selectedMerchant && sheetIndex > 0 && !closingSheet; }}
         >
           {(clusterResult?.elements === elements && clusterResult?.filterId === activeFilter
             ? clusterResult.clusters : []).map((cluster) => {
@@ -376,7 +352,7 @@ export default function MapScreen() {
           </View>
         )}
 
-        <View style={[styles.fabContainer, collapsedMerchant && styles.raisedControls]} pointerEvents={controlsBlocked ? 'none' : 'box-none'}>
+        <View style={[styles.fabContainer, sheetCollapsed && styles.collapsedMapControls]} pointerEvents={controlsBlocked ? 'none' : 'box-none'}>
           <TouchableOpacity
             style={styles.fab}
             accessibilityRole="button"
@@ -438,25 +414,14 @@ export default function MapScreen() {
           </TouchableOpacity>
         </View>
 
-        {collapsedMerchant && <TouchableOpacity accessibilityRole="button"
-          accessibilityLabel={`Open ${collapsedMerchant.tags?.name || 'Bitcoin Merchant'} details`}
-          style={styles.merchantPill} activeOpacity={1} onPress={() => { setSheetIndex(1); setSheetState('open'); }}>
-          <GlassView width={200} height={MERCHANT_PILL_HEIGHT} shape="capsule" interactive>
-            <View style={styles.merchantAccessory}>
-              <Text style={styles.accessoryName} numberOfLines={1}>{collapsedMerchant.tags?.name || 'Bitcoin Merchant'}</Text>
-              <MaterialIcons name="keyboard-arrow-up" size={20} color={theme.colors.primary} />
-            </View>
-          </GlassView>
-        </TouchableOpacity>}
-
-        {selectedMerchant && isFocused && sheetState !== 'collapsed' && (
+        {selectedMerchant && isFocused && (
           <MerchantBottomSheet
             merchant={selectedMerchant}
             index={sheetIndex}
-            onIndexChange={selectSheetHeight}
+            onIndexChange={setSheetIndex}
             closing={closingSheet}
-            onClose={() => setSheetState(current => current === 'collapsing' ? current : 'closing')}
-            onDismiss={finishDismissal}
+            onClose={() => setClosingSheet(true)}
+            onDismiss={() => { setSelectedMerchant(null); setClosingSheet(false); }}
           />
         )}
       </View>
@@ -465,10 +430,6 @@ export default function MapScreen() {
 }
 
 const createStyles = (theme: any) => StyleSheet.create({
-  merchantPill: { position: 'absolute', alignSelf: 'center', bottom: MERCHANT_PILL_BOTTOM },
-  raisedControls: { bottom: MERCHANT_PILL_BOTTOM + MERCHANT_PILL_HEIGHT + MAP_CONTROL_GAP },
-  merchantAccessory: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, gap: 8 },
-  accessoryName: { flexShrink: 1, fontWeight: '700', color: theme.colors.primary },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -549,11 +510,12 @@ const createStyles = (theme: any) => StyleSheet.create({
   errorText: {
     color: theme.colors.error,
   },
+  collapsedMapControls: { bottom: '26%', marginBottom: 40 },
   fabContainer: {
     position: 'absolute',
     bottom: 140,
     right: 20,
-    gap: MAP_CONTROL_GAP,
+    gap: 16,
     overflow: 'visible',
   },
   fab: {
