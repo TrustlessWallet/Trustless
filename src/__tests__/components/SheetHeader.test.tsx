@@ -18,7 +18,7 @@ it.each([false, true])('keeps centered sheet geometry and themed surface in dark
     height: SHEET_HEADER_HEIGHT,
     paddingHorizontal: SHEET_HEADER_HORIZONTAL_PADDING,
     backgroundColor: dark ? '#222' : '#fff',
-    borderBottomColor: '#888',
+    borderBottomColor: dark ? 'transparent' : '#888',
     zIndex: 2,
     elevation: 2,
   });
