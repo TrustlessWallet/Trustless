@@ -352,7 +352,7 @@ export default function MapScreen() {
           </View>
         )}
 
-        <View style={[styles.fabContainer, sheetCollapsed && styles.collapsedMapControls]} pointerEvents={controlsBlocked ? 'none' : 'box-none'}>
+        <View style={styles.fabContainer} pointerEvents={controlsBlocked ? 'none' : 'box-none'}>
           <TouchableOpacity
             style={styles.fab}
             accessibilityRole="button"
@@ -510,7 +510,6 @@ const createStyles = (theme: any) => StyleSheet.create({
   errorText: {
     color: theme.colors.error,
   },
-  collapsedMapControls: { bottom: '26%', marginBottom: 40 },
   fabContainer: {
     position: 'absolute',
     bottom: 140,
