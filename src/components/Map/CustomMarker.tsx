@@ -19,6 +19,7 @@ export default function CustomMarker({ merchant, onPress, theme }: Props) {
   return (
     <Marker
       coordinate={{ latitude: Number(merchant.lat), longitude: Number(merchant.lon) }}
+      stopPropagation
       onPress={onPress}
     >
       <View style={[

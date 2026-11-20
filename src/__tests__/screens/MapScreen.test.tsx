@@ -1,11 +1,12 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
 import { Text } from 'react-native';
 import useSWR from 'swr';
 import * as Location from 'expo-location';
 import { useIsFocused } from '@react-navigation/native';
 import Supercluster from 'supercluster';
 import MapScreen from '../../screens/MapScreen';
+import MerchantBottomSheet from '../../components/Map/MerchantBottomSheet';
 
 // --- Mocks ---
 
@@ -27,7 +28,7 @@ jest.mock('react-native-maps', () => {
       animateToRegion: jest.fn(),
     }));
     return (
-      <View testID="map-view" mapType={props.mapType}>
+      <View testID="map-view" mapType={props.mapType} onPanDrag={props.onPanDrag}>
         {props.children}
       </View>
     );
@@ -36,18 +37,6 @@ jest.mock('react-native-maps', () => {
     __esModule: true,
     default: MapView,
   };
-});
-
-jest.mock('@gorhom/bottom-sheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  class BottomSheet extends React.Component {
-    snapToIndex = jest.fn();
-    render() {
-      return <View testID="bottom-sheet">{this.props.children}</View>;
-    }
-  }
-  return BottomSheet;
 });
 
 jest.mock('../../contexts/ThemeContext', () => ({
@@ -204,30 +193,24 @@ describe('MapScreen Component', () => {
     });
   });
 
-  it('opens the merchant bottom sheet when a marker is pressed', async () => {
-    const mockElements = [
-      { id: '1', lat: 40.01, lon: -74.01, tags: { name: 'Merchant A' } },
-    ];
-
-    (useSWR as jest.Mock).mockReturnValue({
-      data: mockElements,
-      error: undefined,
-      isLoading: false,
-    });
-
-    const { getByTestId, queryByTestId } = render(<MapScreen />);
-
-    expect(queryByTestId('merchant-bottom-sheet')).toBeNull();
-
-    await waitFor(() => {
-      expect(getByTestId('custom-marker-1')).toBeTruthy();
-    });
-
-    fireEvent.press(getByTestId('custom-marker-1'));
-
-    await waitFor(() => {
-      expect(getByTestId('merchant-bottom-sheet')).toBeTruthy();
-    });
+  it('keeps the merchant selected while panning and reopens it from its marker', async () => {
+    (useSWR as jest.Mock).mockReturnValue({ data: [restaurant, shop], isLoading: false });
+    const view = render(<MapScreen />);
+    const marker = await view.findByTestId('custom-marker-restaurant');
+    fireEvent.press(marker);
+    const sheet = () => view.UNSAFE_getByType(MerchantBottomSheet).props;
+    expect(sheet()).toMatchObject({ merchant: restaurant, index: 1 });
+    act(() => sheet().onIndexChange(2));
+    fireEvent(view.getByTestId('map-view'), 'panDrag');
+    expect(sheet()).toMatchObject({ merchant: restaurant, index: 0, closing: false });
+    fireEvent.press(marker);
+    expect(sheet().index).toBe(1);
+    fireEvent.press(view.getByTestId('custom-marker-shop'));
+    expect(sheet()).toMatchObject({ merchant: shop, index: 1 });
+    act(() => sheet().onClose());
+    expect(sheet().closing).toBe(true);
+    act(() => sheet().onDismiss());
+    expect(view.queryByTestId('merchant-bottom-sheet')).toBeNull();
   });
 
   it('reuses warm filter indexes and shows their markers immediately', async () => {

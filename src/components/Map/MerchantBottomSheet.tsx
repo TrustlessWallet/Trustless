@@ -1,18 +1,24 @@
-import React, { useEffect, useMemo } from 'react';
-import { StyleSheet, View, Linking, Platform, ActionSheetIOS } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import BottomSheet, { BottomSheetScrollView, TouchableOpacity } from '@gorhom/bottom-sheet';
+import React from 'react';
+import { StyleSheet, View, Linking, Platform, ActionSheetIOS, ScrollView, TouchableOpacity as NativeTouchable } from 'react-native';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { BottomSheetScrollView, TouchableOpacity as SheetTouchable } from '@gorhom/bottom-sheet';
 import { Text } from '../StyledText';
 import { useTheme } from '../../contexts/ThemeContext';
 import { BtcMapElement } from '../../services/btcmap';
-import { getCategoryIcon } from './CustomMarker';
-import { GlassView } from '../GlassView';
+import { getCategoryIcon } from '../../services/mapCategory';
+import GlassIconButton from '../GlassIconButton';
+import MerchantSheetFrame from './MerchantSheetFrame';
+
+const DetailsScroll = Platform.OS === 'ios' ? ScrollView : BottomSheetScrollView;
+const TouchableOpacity = Platform.OS === 'ios' ? NativeTouchable : SheetTouchable;
 
 interface Props {
   merchant: BtcMapElement;
   onClose: () => void;
-  bottomSheetRef: React.RefObject<any>;
-  onStateChange?: (state: 'open' | 'closing' | 'closed') => void;
+  index: number;
+  onIndexChange: (index: number) => void;
+  closing: boolean;
+  onDismiss: () => void;
 }
 
 const parseOpeningHours = (hoursString?: string): { status: 'open' | 'closed', time: string } | null => {
@@ -54,20 +60,9 @@ const parseOpeningHours = (hoursString?: string): { status: 'open' | 'closed', t
   }
 };
 
-export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef, onStateChange }: Props) {
+export default function MerchantBottomSheet({ merchant, onClose, index, onIndexChange, closing, onDismiss }: Props) {
   const { theme } = useTheme();
   const tags = merchant.tags || {};
-
-  const snapPoints = useMemo(() => ['26%', '50%', '85%'], []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (bottomSheetRef.current) {
-        bottomSheetRef.current.snapToIndex(1);
-      }
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [merchant, bottomSheetRef]);
 
   const handleDirections = () => {
     const lat = merchant.lat;
@@ -80,11 +75,13 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef,
       ActionSheetIOS.showActionSheetWithOptions(
         { options: ['Cancel', 'Apple Maps', 'Google Maps'], cancelButtonIndex: 0 },
         (buttonIndex) => {
+          if (buttonIndex === 1 || buttonIndex === 2) onIndexChange(0);
           if (buttonIndex === 1) Linking.openURL(appleUrl);
           if (buttonIndex === 2) Linking.openURL(googleUrl);
         }
       );
     } else {
+      onIndexChange(0);
       Linking.openURL(`geo:${lat},${lon}?q=${lat},${lon}(${encodeURIComponent(name)})`)
         .catch(() => Linking.openURL(googleUrl));
     }
@@ -119,30 +116,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef,
   const hasDetails = Boolean(addressString || tags.opening_hours || tags.phone || tags.website);
 
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={1}
-      snapPoints={snapPoints}
-      enableDynamicSizing={false}
-      enablePanDownToClose={false}
-      onAnimate={(from, to) => {
-        if (to === -1) {
-          onStateChange?.('closing');
-        } else {
-          onStateChange?.('open');
-        }
-      }}
-      onChange={(index) => {
-        if (index === -1) {
-          onStateChange?.('closed');
-          onClose();
-        } else {
-          onStateChange?.('open');
-        }
-      }}
-      handleIndicatorStyle={{ backgroundColor: theme.colors.border, width: 40 }}
-      backgroundStyle={{ backgroundColor: theme.colors.background, borderRadius: 36 }}
-    >
+    <MerchantSheetFrame index={index} onIndexChange={onIndexChange} closing={closing} onClose={onClose} onDismiss={onDismiss}>
       <View style={styles.sheetWrapper}>
 
         <View style={[styles.headerContainer, { borderBottomColor: theme.colors.border }]}>
@@ -150,23 +124,9 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef,
             <Text style={styles.title} numberOfLines={1}>
               {tags.name || 'Bitcoin Merchant'}
             </Text>
-            <TouchableOpacity 
-              onPress={() => {
-                onStateChange?.('closing');
-                bottomSheetRef.current?.close();
-              }} 
-              activeOpacity={0.8}
-            >
-              <GlassView
-                width={32}
-                height={32}
-                shape="circle"
-                interactive={true}
-                style={{ overflow: 'visible' }}
-              >
-                <MaterialIcons name="close" size={16} color={theme.colors.primary} />
-              </GlassView>
-            </TouchableOpacity>
+            <GlassIconButton accessibilityLabel="Close merchant details" onPress={onClose} disabled={closing} align="flex-end">
+              <Feather name="x" size={20} color={theme.colors.primary} />
+            </GlassIconButton>
           </View>
 
           <View style={styles.infoRow}>
@@ -204,7 +164,7 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef,
           </TouchableOpacity>
         </View>
 
-        <BottomSheetScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollInnerContent}>
+        <DetailsScroll style={styles.scrollContainer} contentContainerStyle={styles.scrollInnerContent}>
 
           {hasPaymentMethods && (
             <>
@@ -267,10 +227,10 @@ export default function MerchantBottomSheet({ merchant, onClose, bottomSheetRef,
             </>
           )}
 
-        </BottomSheetScrollView>
+        </DetailsScroll>
 
       </View>
-    </BottomSheet>
+    </MerchantSheetFrame>
   );
 }
 
@@ -280,7 +240,7 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     paddingHorizontal: 24,
-    paddingTop: 8,
+    paddingTop: Platform.OS === 'ios' ? 20 : 8,
     paddingBottom: 16,
     borderBottomWidth: 1,
   },
@@ -315,10 +275,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.7,
     fontFamily: 'SpaceMono-Regular',
-  },
-  closeBtn: {
-    padding: 6,
-    borderRadius: 16,
   },
   directionsBtn: {
     flexDirection: 'row',
