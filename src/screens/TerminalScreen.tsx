@@ -759,7 +759,14 @@ export default function TerminalScreen({ visible = true, onExit }: { visible?: b
   </View>;
 
   const sheetOptions = Platform.OS === 'android' ? { presentation: 'formSheet' as const, sheetAllowedDetents: [0.95], sheetCornerRadius: 24, sheetGrabberVisible: true, animation: 'slide_from_bottom' as const } : { presentation: 'modal' as const, animation: 'slide_from_bottom' as const };
-  const quickItemsSheetOptions = { presentation: 'transparentModal' as const, contentStyle: { backgroundColor: 'transparent' }, gestureEnabled: false, animation: 'none' as const };
+  const quickItemsSheetOptions = {
+    presentation: 'formSheet' as const,
+    animation: 'default' as const,
+    sheetAllowedDetents: [0.55],
+    sheetExpandsWhenScrolledToEdge: false,
+    sheetGrabberVisible: false,
+    gestureEnabled: true,
+  };
   return <TerminalOwnerFocusContext.Provider value={visible && terminalFocused}><TerminalSheetInteractionContext.Provider value={!transitioning && terminalFocused}><TerminalStack.Navigator key={scope} screenListeners={{ transitionStart: () => setTransitioning(true), transitionEnd: () => setTransitioning(false), gestureCancel: () => setTransitioning(false) }} screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: theme.colors.background } }}>
     <TerminalStack.Screen name="Checkout">
       {({ navigation }) => {
