@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { validateBitcoinAddress, getTransactionDetails } from '../services/bitcoin';
 import { useTipHeight } from '../hooks/useBalance';
 import { useQuery } from '@tanstack/react-query';
-import { GlassView } from '../components/GlassView';
+import GlassIconButton from '../components/GlassIconButton';
 
 type RoutePropType = RouteProp<RootStackParamList, 'TransactionDetails'>;
 const HIDE_WALLET_BALANCE_KEY = '@hideWalletBalance';
@@ -46,20 +46,12 @@ const TransactionDetailsScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <GlassView
-            width={32}
-            height={32}
-            shape="circle"
-            interactive={true}
-            style={{ overflow: 'visible' }}
-          >
-            <Feather name="x" size={20} color={theme.colors.primary} />
-          </GlassView>
-        </TouchableOpacity>
+        <GlassIconButton onPress={() => navigation.goBack()} accessibilityLabel="Close" align="flex-end" disabled={!isFocused}>
+          <Feather name="x" size={20} color={theme.colors.primary} />
+        </GlassIconButton>
       ),
     });
-  }, [navigation, theme.colors.primary]);
+  }, [navigation, theme.colors.primary, isFocused]);
 
   const { data: tipHeight } = useTipHeight();
 

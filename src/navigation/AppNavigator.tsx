@@ -361,7 +361,7 @@ const AppNavigator = ({ onBootReady }: { onBootReady?: () => void }) => {
   };
 
   const CloseButton = ({ onPress }: { onPress: () => void }) => (
-    <GlassIconButton onPress={onPress} accessibilityLabel="Close" visualSize={32} align="flex-end" touchable>
+    <GlassIconButton onPress={onPress} accessibilityLabel="Close" align="flex-end" touchable>
         <Feather name="x" size={20} color={theme.colors.primary} />
     </GlassIconButton>
   );

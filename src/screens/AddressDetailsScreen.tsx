@@ -77,7 +77,7 @@ const AddressDetailsContent = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <GlassIconButton onPress={() => navigation.goBack()} accessibilityLabel="Close" visualSize={32} align="flex-end" touchable disabled={!isFocused}>
+        <GlassIconButton onPress={() => navigation.goBack()} accessibilityLabel="Close" align="flex-end" touchable disabled={!isFocused}>
           <Feather name="x" size={20} color={theme.colors.primary} />
         </GlassIconButton>
       ),

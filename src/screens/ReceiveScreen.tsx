@@ -14,6 +14,7 @@ import { EXPLORER_UI_URL, COIN_TYPE, IS_TESTNET } from '../constants/network';
 import { formatBitcoinAddressShort } from '../constants/format';
 import { AddressText } from '../components/AddressText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import GlassIconButton from '../components/GlassIconButton';
 import { GlassView } from '../components/GlassView';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Receive'>;
@@ -73,20 +74,12 @@ const ReceiveScreen = () => {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => navigation.goBack()}>
-          <GlassView
-            width={32}
-            height={32}
-            shape="circle"
-            interactive={true}
-            style={{ overflow: 'visible' }}
-          >
-            <Feather name="x" size={20} color={theme.colors.primary} />
-          </GlassView>
-        </Pressable>
+        <GlassIconButton onPress={() => navigation.goBack()} accessibilityLabel="Close" align="flex-end" disabled={!isFocused}>
+          <Feather name="x" size={20} color={theme.colors.primary} />
+        </GlassIconButton>
       ),
     });
-  }, [navigation, theme.colors.primary]);
+  }, [navigation, theme.colors.primary, isFocused]);
 
   useEffect(() => {
     return () => {
@@ -366,17 +359,9 @@ const ReceiveScreen = () => {
             <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Set request amount</Text>
-                <Pressable onPress={() => setIsAmountModalVisible(false)}>
-                  <GlassView
-                    width={32}
-                    height={32}
-                    shape="circle"
-                    interactive={true}
-                    style={{ overflow: 'visible' }}
-                  >
-                    <Feather name="x" size={20} color={theme.colors.primary} />
-                  </GlassView>
-                </Pressable>
+                <GlassIconButton accessibilityLabel="Close request amount" onPress={() => setIsAmountModalVisible(false)} align="flex-end">
+                  <Feather name="x" size={20} color={theme.colors.primary} />
+                </GlassIconButton>
               </View>
 
               <StyledInput
@@ -418,20 +403,9 @@ const ReceiveScreen = () => {
                     You can always change it later
                   </Text>
                 </View>
-                <Pressable
-                  onPress={() => !isRegisteringAddress && setIsAddressModalVisible(false)}
-                  disabled={isRegisteringAddress}
-                >
-                  <GlassView
-                    width={32}
-                    height={32}
-                    shape="circle"
-                    interactive={true}
-                    style={{ overflow: 'visible' }}
-                  >
-                    <Feather name="x" size={20} color={theme.colors.primary} />
-                  </GlassView>
-                </Pressable>
+                <GlassIconButton accessibilityLabel="Close Lightning address" onPress={() => setIsAddressModalVisible(false)} disabled={isRegisteringAddress} align="flex-end">
+                  <Feather name="x" size={20} color={theme.colors.primary} />
+                </GlassIconButton>
               </View>
 
               <StyledInput
