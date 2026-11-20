@@ -15,6 +15,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     zIndex: 3,
     borderWidth: 1,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     borderRadius: SMALL_NATIVE_SHEET_CORNER_RADIUS,
     borderCurve: 'continuous',
   },
