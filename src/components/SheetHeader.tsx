@@ -11,9 +11,15 @@ type Props = {
   enabled?: boolean;
 };
 
-export default function SheetHeader({ title, leading, trailing, enabled = true }: Props) {
+export function useSheetHeaderColor() {
   const { theme, isDark } = useTheme();
-  return <View pointerEvents={enabled ? 'auto' : 'none'} style={[styles.header, { backgroundColor: isDark ? theme.colors.surface : theme.colors.background, borderBottomColor: theme.colors.border }]}>
+  return isDark ? theme.colors.surface : theme.colors.background;
+}
+
+export default function SheetHeader({ title, leading, trailing, enabled = true }: Props) {
+  const { theme } = useTheme();
+  const backgroundColor = useSheetHeaderColor();
+  return <View pointerEvents={enabled ? 'auto' : 'none'} style={[styles.header, { backgroundColor, borderBottomColor: theme.colors.border }]}>
     <View style={styles.side}>{leading}</View>
     <Text pointerEvents="none" style={[styles.title, { color: theme.colors.primary }]} numberOfLines={1}>{title}</Text>
     <View style={[styles.side, styles.trailing]}>{trailing}</View>

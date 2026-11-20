@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, AppState } from 'react-native';
 import { Text } from '../components/StyledText';
+import SmallNativeSheetOutline from '../components/SmallNativeSheetOutline';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -144,6 +145,7 @@ const BackupDisclaimerScreen = () => {
                         <Feather name="chevron-right" size={20} color={theme.colors.muted} />}
                 </TouchableOpacity>
             ))}
+            <SmallNativeSheetOutline />
         </View>
     );
 };

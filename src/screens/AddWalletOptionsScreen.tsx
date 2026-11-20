@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text } from '../components/StyledText';
+import SmallNativeSheetOutline from '../components/SmallNativeSheetOutline';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -26,6 +27,7 @@ const AddWalletOptionsScreen = () => {
                     <Feather name="chevron-right" size={20} color={theme.colors.muted} />
                 </TouchableOpacity>
             ))}
+            <SmallNativeSheetOutline />
         </View>
     );
 };
