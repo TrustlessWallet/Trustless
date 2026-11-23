@@ -291,9 +291,9 @@ const OnboardingWalletScreen = () => {
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 51 }).current;
 
-  const handle_link_press = (url: string) => {
+  const handle_link_press = useCallback((url: string) => {
     Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
-  };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -309,9 +309,8 @@ const OnboardingWalletScreen = () => {
         viewabilityConfig={viewabilityConfig}
         getItemLayout={(_, position) => ({ index: position, length: width, offset: position * width })}
         keyExtractor={item => item.key}
-        initialNumToRender={2}
-        maxToRenderPerBatch={2}
-        windowSize={5}
+        initialNumToRender={slides.length}
+        removeClippedSubviews={false}
         renderItem={({ item }) => <View style={{ width }}>
           <SlideItem item={item} styles={styles} handle_link_press={handle_link_press} theme={theme} />
         </View>}
