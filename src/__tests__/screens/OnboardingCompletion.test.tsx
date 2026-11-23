@@ -26,6 +26,8 @@ beforeEach(async () => { await AsyncStorage.clear(); jest.clearAllMocks(); mockF
 it('registers consecutive taps and closes the carousel through native navigation', async () => {
   const view = render(<OnboardingWalletScreen />);
   expect(view.getByText('Create your wallet')).toBeTruthy();
+  // Offscreen pages can start loading their bundled images before the first swipe.
+  expect(view.getByText('Open source')).toBeTruthy();
   for (let step = 0; step < 8; step++) fireEvent.press(view.getByRole('button', { name: 'Next' }));
   expect(await AsyncStorage.getItem('@hasCompletedOnboarding')).toBeNull();
   expect(mockBootstrap).not.toHaveBeenCalled();
